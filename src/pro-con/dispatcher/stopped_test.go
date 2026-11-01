@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/card"
 	"pro-con/eventlog"
-	"testwait"
 )
 
 // 止まったかを見る間を短くした ExecRunner (実時間の 30 秒を待たない)。

@@ -9,7 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // pull/push 完了トーストの退場 (leaving) が tick で hidden まで到達することの回帰テスト。

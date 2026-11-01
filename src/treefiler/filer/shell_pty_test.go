@@ -20,7 +20,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"golang.org/x/sys/unix"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // `!` で起こしたプロセスが終わった後、端末の前面が起こした側 (treefiler / glogx) へ戻っていること。

@@ -22,7 +22,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // b → y/N → git push (glogx の独自機能)。

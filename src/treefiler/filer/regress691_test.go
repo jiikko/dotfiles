@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 2026-10-09 に再現した不具合の回帰テスト。

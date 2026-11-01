@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"testing"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func TestWiredName(t *testing.T) {

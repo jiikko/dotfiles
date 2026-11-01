@@ -1,6 +1,7 @@
 # testwait
 
-Go のテストで「条件が成り立つまで上限つきで待つ」を 1 つに持つ module。各 module が `replace testwait => ../testwait` で取り込む (テストからだけ使う)。
+Go のテストで「条件が成り立つまで上限つきで待つ」を 1 つに持つ module。各 module が `replace github.com/jiikko/dotfiles/src/testwait => ../testwait` で取り込む (テストからだけ使う)。
+module 名をドット付きのパスにしているのは、dotfiles の外の repo が取り込む module (chromecookie) のテストもこれを使うため。ドットの無い名前だと、取り込む側の `go mod tidy` が依存グラフを辿るときに `malformed module path` で落ちる (取り込む側は replace を見ない)。
 
 - `testwait.Until(t, what, cond, opts...)` — 上限 (既定 10 秒) を超えたら落とす。option は `Within` (上限)・`Tick` (間隔)・`Step` (1 周ごとの処理)・`Diag` (呼び出し側の診断)
 - `testwait.Poll(limit, cond, opts...)` — 成り立ったかを返すだけ (落とさない)

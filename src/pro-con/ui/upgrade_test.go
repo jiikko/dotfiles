@@ -15,7 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // upgradeModel は一時ディレクトリの repo の形 (src/pro-con/{go.mod,pro-con} + bin/lib/go_autobuild.zsh) から

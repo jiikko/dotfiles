@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // ctx の期限で子を殺した後、pipe を継承した孫が残っていても Run が戻る (WaitDelay)。

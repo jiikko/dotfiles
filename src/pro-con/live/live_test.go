@@ -21,7 +21,7 @@ import (
 	"pro-con/wake"
 	"sync/atomic"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 実測 (Claude Code 2.1.281) の transcript の形を縮めた見本。人間の発言は origin.kind=human、ツールの結果と

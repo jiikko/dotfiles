@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/eventlog"
-	"testwait"
 )
 
 var logT0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)

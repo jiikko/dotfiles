@@ -19,7 +19,7 @@ import (
 	"mac-lan-manager/live"
 	"mac-lan-manager/netinfo"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // lanScans はテストの中で起こした走査 (最後が今の走査)。

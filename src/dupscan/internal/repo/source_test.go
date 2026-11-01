@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // commitAll は作業ツリーの全部を commit し、その hash を返す。

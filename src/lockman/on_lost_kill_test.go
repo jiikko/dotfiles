@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 🚨 この file のテストは数秒ずつ実時間で走る (子の sleep 3/4 が lease の期限を跨ぎ、更新の ticker も本物)。時計を注入して

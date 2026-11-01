@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 var bin string // テスト用にビルドした runtimeout の絶対パス

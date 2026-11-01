@@ -22,7 +22,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 type presenterSnapshot struct {

@@ -15,7 +15,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 type failingUIWriter struct{ writes int }

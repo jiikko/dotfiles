@@ -11,7 +11,7 @@ import (
 	"pro-con/live"
 	"pro-con/store"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func btw(t *testing.T, dir, id, q string) {

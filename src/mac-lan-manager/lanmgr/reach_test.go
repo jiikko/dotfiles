@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/reach"
-	"testwait"
 )
 
 // fakeReach は Reach の偽物。呼ばれた名前と ctx を控え、results に送った結果を返す (送るまで確かめている途中のまま)。

@@ -14,7 +14,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // alive は pid のプロセスがまだ居るか (ゾンビは reap されるまで居る扱いになるので、上限つきで居なくなるのを待つ側で使う)。

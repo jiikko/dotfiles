@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 猶予が切れた**後**でも、SIGKILL の直前に「もう終わったか」を見直すこと。

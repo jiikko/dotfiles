@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // rig は sh の台本を子にして、起こした回数と出来事を数える。

@@ -14,7 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 走査中に行が増えても、選択は同じエントリに留まる。

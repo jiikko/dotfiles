@@ -11,7 +11,7 @@ import (
 
 	"pro-con/flockmark"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func open(t *testing.T, dir string) *Screen {

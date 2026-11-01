@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // newBig は root/big/sub に n 個のファイルを置き、カーソルを big に置く。> で見える項目は sub と n 個のファイルで n+1 個。

@@ -16,7 +16,7 @@ import (
 	"time"
 	"unsafe"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 var bin string // テスト用にビルドした serial-run の絶対パス

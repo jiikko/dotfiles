@@ -15,7 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 外のコマンドへ渡す前に前面を持っていたときだけ、戻った後に取り戻す (持っていなかった前面を奪わない)。

@@ -12,7 +12,7 @@ import (
 	"pro-con/card"
 	"pro-con/store"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeRunner は実行を記録し、release に終了コードが来るまで終わらない。ログに 1 行書く。

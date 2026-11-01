@@ -18,7 +18,7 @@ import (
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // TestPTYRunnerHelper is the child process used by the real-terminal tests.

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeStarter は dns-sd の偽物。-B は行を出した後、止められる (ctx の取り消し・Close) まで閉じない (本物と同じく終わらない)。

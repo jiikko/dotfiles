@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // graveyard の retention は **退避した時刻**から測ること。

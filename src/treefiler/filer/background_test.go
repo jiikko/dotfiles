@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // settleBackground は裏の走査と git の取得が終わるまで Advance を回す (hang guard 10 秒)。

@@ -12,7 +12,7 @@ import (
 	"pro-con/card"
 	"pro-con/wake"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 var t0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)

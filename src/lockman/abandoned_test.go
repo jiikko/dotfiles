@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // `--io-timeout` で見捨てた goroutine が、失敗を報告した後に副作用を置いていく。

@@ -17,7 +17,7 @@ import (
 	"glogx/internal/lanview"
 	"glogx/internal/testenv"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 	"treefiler/filer"
 )
 

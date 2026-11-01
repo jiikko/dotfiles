@@ -5,10 +5,10 @@ go 1.25.0
 require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/jiikko/dotfiles/src/testwait v0.0.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/term v0.45.0
-	testwait v0.0.0
 	tmpclean v0.0.0
 )
 
@@ -68,4 +68,4 @@ replace userdirs => ../userdirs
 
 replace tmpclean => ../tmpclean
 
-replace testwait => ../testwait
+replace github.com/jiikko/dotfiles/src/testwait => ../testwait

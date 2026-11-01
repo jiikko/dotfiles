@@ -22,7 +22,7 @@ import (
 	"zundamon-kaisetsu/internal/outfile"
 	"zundamon-kaisetsu/internal/paths"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // withAppCtx は Ctx を取り消せるものに差し替える (テストの後に戻す)。

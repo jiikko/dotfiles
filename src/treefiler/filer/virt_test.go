@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // virt_test.go は巨大なフォルダの仮想化 (virt.go) が、全部を動かした場合と同じ画面を描くことを固定する。

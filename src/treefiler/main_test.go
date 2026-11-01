@@ -15,7 +15,7 @@ import (
 
 	"treefiler/filer"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // q で終わるとき Close を呼ぶ (Remember place が保存される)。

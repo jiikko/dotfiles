@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/dispatcher"
 	"pro-con/relay"
-	"testwait"
 )
 
 func screenCmd(t *testing.T, args ...string) (int, string, string) {

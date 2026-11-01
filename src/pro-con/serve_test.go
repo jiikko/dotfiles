@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bytes"
+	"github.com/jiikko/dotfiles/src/testwait"
 	"path/filepath"
 	"pro-con/agents"
 	"pro-con/dispatcher"
@@ -19,7 +20,6 @@ import (
 	"pro-con/wake"
 	"strings"
 	"sync"
-	"testwait"
 )
 
 // listEveryTick は暇な間の一覧の間引きを切る。この file のテストは空の状態 (暇) で回し、一覧を取った回数で Tick を数える

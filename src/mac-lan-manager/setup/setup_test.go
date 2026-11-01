@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"mac-lan-manager/netinfo"
-	"testwait"
 )
 
 // sandbox は偽の networksetup / sudo / nohup だけが見える PATH を作る。偽の networksetup は引数を 1 つずつ [..] で囲んで log に書く。

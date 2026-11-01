@@ -11,7 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // popup の中身は外の tmux サーバの環境で起きるので、attach の作業場所・環境を渡し、入れ子の tmux は TMUX を落として

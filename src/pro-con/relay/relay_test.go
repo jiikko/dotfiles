@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/flockmark"
-	"testwait"
 )
 
 func fastInterval(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // buildLockman は本物の lockman (src/lockman) をテストの一時ディレクトリへ build する (偽物では lockman の契約 = 121・子のグループ・シグナルの受け渡しを確かめられない)。

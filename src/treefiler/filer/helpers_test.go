@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // needGit は git の無い環境ではテストを飛ばす。CI (macos runner には git がある) で無いのは環境の壊れなので落とす

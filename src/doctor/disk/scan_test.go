@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeRunner はコマンド名 + 先頭引数で応答を返す。calls で「読み取り系しか呼んでいない」を確かめる。

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // helperEnv はテストバイナリを「後始末の被験体」として再実行するための目印。

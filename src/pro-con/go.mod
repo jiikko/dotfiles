@@ -27,6 +27,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
+	github.com/jiikko/dotfiles/src/testwait v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
@@ -35,7 +36,6 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	ratelimit v0.0.0
 	subproc v0.0.0
-	testwait v0.0.0
 )
 
 replace (
@@ -55,4 +55,4 @@ replace (
 
 replace userdirs => ../userdirs
 
-replace testwait => ../testwait
+replace github.com/jiikko/dotfiles/src/testwait => ../testwait

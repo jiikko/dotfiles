@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )

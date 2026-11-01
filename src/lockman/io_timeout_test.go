@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // --io-timeout (091:418) のテスト。着手時点で **0 件**だった。

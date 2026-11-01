@@ -12,7 +12,7 @@ import (
 	"pro-con/wtclean"
 	"subproc"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeDispatcherPidEnv が付いていると、テストの二進は dispatcher として起こされたときに偽物になる: 自分の pid をこのパスへ書き、

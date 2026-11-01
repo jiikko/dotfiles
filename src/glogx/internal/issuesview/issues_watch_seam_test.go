@@ -12,7 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 回帰 (2026-08-21 実測): 消えて戻ったディレクトリを再び watch する。

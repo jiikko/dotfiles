@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // lockHelperEnv は TestLockExecHelper を入れ替えの役で走らせる印 (値は段: old / new)。lockHelperDir は状態の置き場。

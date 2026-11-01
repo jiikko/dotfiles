@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // app.CleanupLatch が守る中心の不変条件: **カウント 0 での登録が、看取りと同時に走っても壊れない**。

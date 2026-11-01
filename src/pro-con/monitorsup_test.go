@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/dispatcher"
 	"pro-con/monitor"
 	"pro-con/store"
 	supervisor "process_supervisor"
-	"testwait"
 )
 
 // supRig は起こし直しの係を、sh の台本を見張りの代わりにして回す。

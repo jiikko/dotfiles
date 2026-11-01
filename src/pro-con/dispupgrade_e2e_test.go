@@ -15,7 +15,7 @@ import (
 	"pro-con/eventlog"
 	"pro-con/upgrade"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 本物の pro-con のバイナリで、動いている dispatcher が新版へ自分で切り替わる。shim は偽物 (呼ばれたら新版を置く)、

@@ -12,7 +12,7 @@ import (
 
 	"github.com/creack/pty"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // `!` のキー待ちで矢印キー (ESC [ D) を押しても、残りのバイトが戻った先へ漏れない。

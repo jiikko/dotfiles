@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 期限切れした掃除は「どこまで進んだか」を報告すること。

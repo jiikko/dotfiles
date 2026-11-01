@@ -15,11 +15,11 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/jiikko/dotfiles/src/testwait v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	golang.org/x/sys v0.47.0 // indirect
-	testwait v0.0.0
 )
 
 replace atomicfile => ../atomicfile
@@ -34,4 +34,4 @@ replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 
 replace safefs => ../safefs
 
-replace testwait => ../testwait
+replace github.com/jiikko/dotfiles/src/testwait => ../testwait

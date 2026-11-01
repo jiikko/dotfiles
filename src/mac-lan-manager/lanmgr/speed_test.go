@@ -12,12 +12,12 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/speedtest"
 	"mac-lan-manager/sshdest"
-	"testwait"
 )
 
 // fakeSpeed は SpeedTest の偽物。呼ばれた宛先と ctx を控え、results に送った結果を返す (送るまで測定中のまま)。

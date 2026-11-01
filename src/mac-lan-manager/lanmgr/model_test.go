@@ -21,13 +21,13 @@ import (
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"mac-lan-manager/discover"
 	"mac-lan-manager/lanmgr/lanmgrtest"
 	"mac-lan-manager/ledger"
 	"mac-lan-manager/netinfo"
 	"mac-lan-manager/prefs"
 	"mac-lan-manager/setup"
-	"testwait"
 )
 
 func TestMain(m *testing.M) { widthenv.ExitIfUnsupported(); m.Run() }

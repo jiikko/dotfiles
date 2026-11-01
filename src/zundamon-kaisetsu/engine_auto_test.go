@@ -24,7 +24,7 @@ import (
 	"zundamon-kaisetsu/internal/engine"
 	"zundamon-kaisetsu/internal/paths"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeEngine は起動・停止を切り替えられる偽のエンジン。止まっている間はポートで誰も待ち受けない (接続を拒否される)。

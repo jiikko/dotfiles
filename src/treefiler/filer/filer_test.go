@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 var fixedNow = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)

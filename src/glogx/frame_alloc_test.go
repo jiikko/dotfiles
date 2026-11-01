@@ -20,7 +20,7 @@ import (
 	"glogx/internal/term"
 	"glogx/internal/testenv"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // reapplyAfterResetRe は置き換える前の実装 (正規表現版)。**テスト専用**で、

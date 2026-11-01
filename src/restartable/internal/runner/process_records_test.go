@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func startTrackedTestProcess(t *testing.T, script string) *process {

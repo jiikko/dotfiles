@@ -10,7 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // modalStates は actionModal の「モーダルとしての状態」を 1 つずつ立てたもの。

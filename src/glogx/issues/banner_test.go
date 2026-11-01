@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 const testBanner = "> 🚨 **担当中: host (glogx)**（2026-09-19〜）"

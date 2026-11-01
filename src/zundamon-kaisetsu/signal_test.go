@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"testing"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func buildBinary(t *testing.T) string {

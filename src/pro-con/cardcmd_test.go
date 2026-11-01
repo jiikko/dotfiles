@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/card"
 	"pro-con/dispatcher"
 	"pro-con/store"
-	"testwait"
 )
 
 func card_(t *testing.T, dir string, args ...string) (rc int, out, errOut string) {

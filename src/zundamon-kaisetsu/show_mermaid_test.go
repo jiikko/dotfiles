@@ -15,7 +15,7 @@ import (
 	"zundamon-kaisetsu/internal/script"
 	"zundamon-kaisetsu/internal/show"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeMermaid は PATH の先頭に偽の npx を置く。偽物は引数と PUPPETEER_SKIP_DOWNLOAD を log に 1 行ずつ書き、mode に従って動く:

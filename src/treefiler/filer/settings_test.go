@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func TestSaveSettingKeepsOtherLines(t *testing.T) {

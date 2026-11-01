@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func newTestLocker(t *testing.T) *Locker {

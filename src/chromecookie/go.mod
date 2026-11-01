@@ -7,6 +7,7 @@ require modernc.org/sqlite v1.28.0
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
+	github.com/jiikko/dotfiles/src/testwait v0.0.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -23,7 +24,6 @@ require (
 	modernc.org/opt v0.1.3 // indirect
 	modernc.org/strutil v1.1.3 // indirect
 	modernc.org/token v1.0.1 // indirect
-	testwait v0.0.0
 )
 
-replace testwait => ../testwait
+replace github.com/jiikko/dotfiles/src/testwait => ../testwait

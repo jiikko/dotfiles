@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func TestPutSGRColorsAndWidth(t *testing.T) {

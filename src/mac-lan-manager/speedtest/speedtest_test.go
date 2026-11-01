@@ -14,7 +14,7 @@ import (
 
 	"mac-lan-manager/sshdest"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 var dest = sshdest.Dest{User: "koji", IP: "192.168.100.12", HostKeyAlias: "m2macmini.local"}

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // codexRateLimitsJSON は実機の app-server 応答 (2026-07-31 取得) の result 部。

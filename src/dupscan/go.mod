@@ -15,9 +15,9 @@ require (
 )
 
 require (
+	github.com/jiikko/dotfiles/src/testwait v0.0.0
 	golang.org/x/tools v0.52.0
 	subproc v0.0.0
-	testwait v0.0.0
 )
 
 replace subproc => ../subproc
@@ -26,4 +26,4 @@ replace subproc => ../subproc
 // go mod tidy (scripts/go_module_graph.sh の tidy -diff) が止まる。空の代わりに向ける。文法の版を上げてテストの import が直ったら外す。
 replace github.com/tree-sitter/tree-sitter-swift => ./third_party/tree-sitter-swift-teststub
 
-replace testwait => ../testwait
+replace github.com/jiikko/dotfiles/src/testwait => ../testwait

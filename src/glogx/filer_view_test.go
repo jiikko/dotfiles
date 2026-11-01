@@ -17,7 +17,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // filerDir は treefiler で開く小さな木 (pwd の代わりに t.Chdir する)。

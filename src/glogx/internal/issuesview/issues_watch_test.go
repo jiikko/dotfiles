@@ -14,7 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // openedWatchView は「viewer を開いてスキャン結果を受け取り、見張りの基準も取れた」状態を作る。

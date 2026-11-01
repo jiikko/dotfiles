@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // wrapAtoms は幅の数え方が食い違いやすい部品 (キーキャップ・VS16・肌色・ZWJ・国旗・結合文字・全角・SGR・空白)。

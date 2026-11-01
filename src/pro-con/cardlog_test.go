@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/backend"
-	"testwait"
 )
 
 // card log はカードの PG の活動 (応答の文と道具の呼び出し) を、session を名乗ってから時刻の順に出す。--json は 1 行 1 活動。

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/testwait"
 	"pro-con/card"
 	"pro-con/store"
-	"testwait"
 )
 
 // progressGit は本物の git を一時ディレクトリで走らせる (進捗は本物の git の出力の形に依る)。

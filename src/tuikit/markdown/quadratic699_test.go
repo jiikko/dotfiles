@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // 閉じない `*` `~~` `[` が多い段落と、とても長い段落は線形の時間で描く。

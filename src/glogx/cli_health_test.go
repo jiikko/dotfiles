@@ -17,7 +17,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 func TestParseClaudeAuthStatus(t *testing.T) {

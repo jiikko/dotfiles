@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"testwait"
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeOpen は openCommand を差し替え、open(1) に渡そうとした引数を 1 回につき 1 つの文字列 (空白区切り) で記録する。
