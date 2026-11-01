@@ -417,3 +417,4 @@ dotfiles の chromecookie (esa-cli / slack-cli / newrelic-nrql-cli が go get �
   1 スロットだけを切り替える作りで、実際のカーソルがスロット 8 の上にあった (playing の遷移が想定 135 件に対して 15 件で気づいた)。
   背景の計測の最後の ⌘Q は、ユーザーが別のアプリを前面にした後で key window が無く届かず、終了待ちで止まった。
   全スロットを切り替える意味の口 (`playback/toggle-all`) と、bundle id を名指しした終了の要求に替えた
+- esa-cli retro 007 / 017: `go get golang.org/x/term@latest` が go.mod の `go 1.25.0` を `1.26.0` へ上げた (出力に 1 行出ただけで rc=0)。CI は `go-version-file: go.mod`、Homebrew も同じ go.mod で build するので、気づかなければ両方の版が変わっていた。依存グラフにある v0.44.0 を指定して避けた
