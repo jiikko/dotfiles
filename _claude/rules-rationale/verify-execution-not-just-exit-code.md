@@ -402,6 +402,12 @@ dotfiles の chromecookie (esa-cli / slack-cli / newrelic-nrql-cli が go get �
 自分が背景で起こした `make test` を pid の `kill` で止めようとして、権限で拒否された。ハーネスの `TaskStop` (背景のタスクの ID) では止まった。
 ハーネスが起こした run はハーネスが止め方を持っており、pid を探して kill するより手数が少なく、広いパターンの kill で他人のプロセスに届く事故も起きない。
 
+## 拒否も canary で較正する (obaket retro 1321, 2026-10-26)
+
+S3 互換の server (Garage) が `x-amz-copy-source-if-match` を守るかを curl の `--aws-sigv4` で測ると、違う ETag で 403 だった。
+これだけなら「守っている」と読めたが、正しい ETag でも 403 で、本文は Invalid signature だった。道具 (curl の署名) の側の失敗で、
+Python で署名し直すと 412 / 200 が得られた。
+
 ## 本文から移した実例 (2026-10-30。常時読み込みの字数を減らすため、rule の本文の括弧書きから移した)
 
 - retro 940: 省略されたのは参照の一覧なのに定義の本体を取り直させる案内と、完全な一覧から同じ argv を繰り返させる案内が、文言の assert を通っていた
