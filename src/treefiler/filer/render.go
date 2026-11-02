@@ -21,6 +21,10 @@ type canvas struct {
 	w, h  int
 	cells []cell
 	blank []cell // 地の色の空白で埋めた見本 (reset が 1 回の copy で戻す)
+	// prev は前の lines が返した行。中身が同じ行はその文字列を返す (毎フレーム全行を string へ写すと、確保の最大の出どころだった。
+	// tfprobe の -memprofile で全体の 2 割)。buf は行を組む作業用の入れ物
+	prev []string
+	buf  []byte
 }
 
 func newCanvas(w, h int) *canvas {
@@ -266,7 +270,7 @@ var decimals = func() [256]string {
 // lines は格子を行ごとの文字列 (24bit の SGR つき) にする。
 func (c *canvas) lines() []string {
 	out := make([]string, c.h)
-	var b []byte
+	b := c.buf
 	for y := range c.h {
 		b = b[:0]
 		var last *cell
@@ -294,7 +298,12 @@ func (c *canvas) lines() []string {
 			b = append(b, p.s...)
 		}
 		b = append(b, sgr.Reset...)
-		out[y] = string(b)
+		if y < len(c.prev) && c.prev[y] == string(b) { // 比べるだけの string(b) は確保しない
+			out[y] = c.prev[y]
+		} else {
+			out[y] = string(b)
+		}
 	}
+	c.buf, c.prev = b, out
 	return out
 }

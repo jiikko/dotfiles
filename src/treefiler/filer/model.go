@@ -71,6 +71,8 @@ type Model struct {
 	linkCache  map[string]string
 	cv         *canvas                     // 使い回す格子 (大きさが変わったら作り直す)
 	posBuf     reusedMap[*node, place]     // layout の結果の入れ物 (毎 tick 作り直さない。layout の doc)
+	colBuf     [2][]colEntry               // layoutWith の列の親の入れ物 (交互に使い回す)
+	y0Buf      []int                       // layoutWith の親ごとの先頭の行の入れ物
 	nowBuf     reusedMap[*node, [2]int]    // draw の「今の位置」の入れ物
 	kpBuf      [][2]int                    // linesInto の子の位置の入れ物
 	gridBuf    reusedMap[[2]int, lineCell] // drawLines の線の格子の入れ物 (毎フレーム作り直さない)

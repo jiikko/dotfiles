@@ -230,10 +230,17 @@ func (w *walker) store(found map[string]walkResult, forgot []forgotten, now time
 
 // walkDir は dir の配下を深さ優先で数え、通ったフォルダごとの結果を found に入れる。
 func walkDir(dir string, budget *int, found map[string]walkResult) walkResult {
-	var r walkResult
+	var self time.Time
 	if info, err := os.Lstat(dir); err == nil {
-		r.newest = info.ModTime()
+		self = info.ModTime()
 	}
+	return walkDirFrom(dir, self, budget, found)
+}
+
+// walkDirFrom は walkDir の本体。self は dir 自身の mtime で、潜った先では親が読んだ項目の値を渡す
+// (フォルダごとに lstat をもう 1 回打たない。親の項目もフォルダは lstat の値。direntries_darwin.go の parseBulkRecord)。
+func walkDirFrom(dir string, self time.Time, budget *int, found map[string]walkResult) walkResult {
+	r := walkResult{newest: self}
 	ents, err := readEntries(dir)
 	if err != nil {
 		r.complete = true // 読めないフォルダは自分の mtime だけ (待っても変わらない)
@@ -253,7 +260,7 @@ func walkDir(dir string, budget *int, found map[string]walkResult) walkResult {
 			r.newest = e.mtime
 		}
 		if e.dir {
-			sub := walkDir(filepath.Join(dir, e.name), budget, found)
+			sub := walkDirFrom(filepath.Join(dir, e.name), e.mtime, budget, found)
 			if sub.newest.After(r.newest) {
 				r.newest = sub.newest
 			}

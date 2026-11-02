@@ -61,7 +61,9 @@ func (m *Model) layoutWith(virt bool) map[*node]place {
 	}
 	pos := m.posBuf.take(len(m.anims) + 1)
 	pos[m.root] = place{0, 0, true}
-	var parents []colEntry
+	// 列の親の入れ物は 2 つを交互に使い回す (毎 tick の確保。開いたフォルダが多いと 1 列で数百件になる)
+	parents, spare := m.colBuf[0][:0], m.colBuf[1][:0]
+	defer func() { m.colBuf[0], m.colBuf[1] = parents[:0], spare[:0] }()
 	if m.root.dir && m.root.expanded && len(m.kids(m.root)) > 0 {
 		parents = append(parents, colEntry{m.root, 0})
 	}
@@ -81,7 +83,10 @@ func (m *Model) layoutWith(virt bool) map[*node]place {
 			break
 		}
 		sort.Slice(parents, func(i, j int) bool { return parents[i].y < parents[j].y })
-		y0 := make([]int, len(parents))
+		if cap(m.y0Buf) < len(parents) {
+			m.y0Buf = make([]int, 2*len(parents))
+		}
+		y0 := m.y0Buf[:len(parents)] // 下の for で全部に書く
 		pin := -1
 		for j, p := range parents {
 			ks := m.kids(p.n)
@@ -115,7 +120,7 @@ func (m *Model) layoutWith(virt bool) map[*node]place {
 		// 次の列の x = 列の x + 列の幅 + lanes + gap (3 以上) + branch (spec §3.2)
 		nx := colX + w + lanes + max(m.set.ColumnGap, 3) + m.set.BranchOffset
 		colX = nx
-		var next []colEntry
+		next := spare[:0]
 		namew = 0
 		for j, p := range parents {
 			v := m.visOf(p.n)
@@ -138,7 +143,7 @@ func (m *Model) layoutWith(virt bool) map[*node]place {
 				}
 			}
 		}
-		parents = next
+		parents, spare = next, parents
 	}
 	m.posBuf.fit(len(pos))
 	return pos

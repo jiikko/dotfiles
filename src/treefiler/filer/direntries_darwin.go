@@ -97,8 +97,10 @@ func readEntriesBulk(dir string) ([]dirEntry, error) {
 }
 
 // parseBulkRecord は p の先頭の 1 件を読み、項目とその記録の長さを返す。名前が空なら落とす項目 (読み直しで消えていた)。
+var errBadBulkRecord = errors.New("getattrlistbulk の記録を読めない")
+
 func parseBulkRecord(dir string, p []byte) (dirEntry, int, error) {
-	bad := errors.New("getattrlistbulk の記録を読めない")
+	bad := errBadBulkRecord
 	if len(p) < 4 {
 		return dirEntry{}, 0, fmt.Errorf("%w: %w", errNoBulk, bad)
 	}
