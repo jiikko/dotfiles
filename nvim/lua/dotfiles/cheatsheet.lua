@@ -4,12 +4,16 @@
 -- 全て buffer-local に寄せてある (nvim/ftplugin/*.lua と lsp.lua の on_attach) ので、
 -- 「buffer-local を並べる」だけで「今の言語で使えるキー」になる。手書きの一覧を持たない
 -- のは、キーを足す/改名するたびにここも直す二重管理を避けるため (desc が唯一の出典)。
+-- global のうち忘れやすい束 (telescope の <leader>f 等) は、setup の global_prefixes に
+-- 渡した prefix で始まるものだけを先頭に足す。キーではなく prefix で渡すので、束にキーを
+-- 足してもここは直さなくてよい。先頭なのは、言語キーの多いバッファで MAX_LINES に
+-- 押し出されないため。
 --
 -- split でなく float なのは、フォーカスに入らず (focusable=false)、<C-w> 巡回にも出ず、
 -- 本文のレイアウトを動かさないため。incline.nvim がファイル名を右上に出しているのと同じ手法。
 -- which-key の <leader>? (押した瞬間の popup) とは補完関係で、こちらは常に見えている側。
 --
--- 出さない条件: buffer-local マッピングが無いバッファ (プレーンテキスト等) / 本文の window が
+-- 出さない条件: 出すキーが 1 つも無いバッファ / 本文の window が
 -- 小さすぎる / float・特殊 buftype (telescope, nvim-tree, trouble 等) にいるとき。
 -- トグル: <leader>k (setup で張る)。状態はセッション内で保持する (既定 on)。
 local M = {}
@@ -24,15 +28,20 @@ local state = {
   enabled = true,
   win = nil,
   buf = nil,
+  global_prefixes = {}, -- setup で渡す ("<leader>f" の形。<leader> は refresh 時に展開)
 }
 
 local MAX_LINES = 18
 local MIN_MAIN_HEIGHT = 24 -- 本文の window がこれより低いときは出さない (本文が隠れる)
 local MIN_MAIN_WIDTH = 120
 
+local function mapleader()
+  return vim.g.mapleader or "\\"
+end
+
 -- lhs の表示用整形。mapleader (空白) は見えないので SPC に置き換え、termcode は <> 表記のまま。
 local function pretty_lhs(lhs)
-  local leader = vim.g.mapleader or "\\"
+  local leader = mapleader()
   local s = lhs
   if leader ~= "" then
     s = s:gsub("^" .. vim.pesc(leader), "SPC ")
@@ -49,20 +58,54 @@ local function is_internal(desc)
   return desc:find("which-key-trigger", 1, true) ~= nil
 end
 
--- 現在バッファの buffer-local normal マッピング (desc 付き) を集める。
+local function shown(m)
+  return m.desc and m.desc ~= "" and not is_internal(m.desc)
+end
+
+local function expand_leader(prefix)
+  return (prefix:gsub("<[Ll]eader>", mapleader))
+end
+
+-- global の normal マッピングのうち、global_prefixes のどれかで始まるもの。
+-- buffer-local が同じ lhs を張っていたらそちらが効くので、global 側は出さない。
+local function collect_global(local_lhs)
+  local prefixes = {}
+  for _, p in ipairs(state.global_prefixes) do table.insert(prefixes, expand_leader(p)) end
+  if #prefixes == 0 then return {} end
+  local items = {}
+  for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
+    if shown(m) and not local_lhs[m.lhs] then
+      for _, p in ipairs(prefixes) do
+        if m.lhs:sub(1, #p) == p then
+          table.insert(items, { lhs = pretty_lhs(m.lhs), desc = m.desc, global = true })
+          break
+        end
+      end
+    end
+  end
+  return items
+end
+
+-- 現在バッファの buffer-local normal マッピング (desc 付き) と、global_prefixes に当たる
+-- global マッピングを集める。
 -- desc の無いものは意図を表示できないので出さない (出すなら desc を付けるのが正)。
 local function collect(bufnr)
-  local items = {}
+  local items, local_lhs = {}, {}
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
-    if m.desc and m.desc ~= "" and not is_internal(m.desc) then
+    local_lhs[m.lhs] = true
+    if shown(m) then
       table.insert(items, { lhs = pretty_lhs(m.lhs), desc = m.desc })
     end
   end
-  -- 並びを固定する (LspAttach の順序で揺れないように)。素のキー (gd / ]] / <C-k>) を先、
-  -- SPC 始まりを後にまとめ、それぞれ大文字小文字を無視した辞書順
-  local function rank(lhs) return lhs:match("^SPC") and 2 or 1 end
+  vim.list_extend(items, collect_global(local_lhs))
+  -- 並びを固定する (LspAttach の順序で揺れないように)。global の束を先頭、次に素のキー
+  -- (gd / ]] / <C-k>)、SPC 始まりを後にまとめ、それぞれ大文字小文字を無視した辞書順
+  local function rank(it)
+    if it.global then return 0 end
+    return it.lhs:match("^SPC") and 2 or 1
+  end
   table.sort(items, function(a, b)
-    local ra, rb = rank(a.lhs), rank(b.lhs)
+    local ra, rb = rank(a), rank(b)
     if ra ~= rb then return ra < rb end
     return a.lhs:lower() < b.lhs:lower()
   end)
@@ -195,7 +238,9 @@ end
 -- テストが読むための状態公開 (window が出ているか / 中身)
 function M._state() return state end
 
-function M.setup()
+-- opts.global_prefixes: global マッピングのうち常に出す束の prefix (例 { "<leader>f" })
+function M.setup(opts)
+  state.global_prefixes = (opts and opts.global_prefixes) or {}
   local hl = require("dotfiles.hl")
   local pal = require("dotfiles.palette")
   -- 本文の邪魔にならない淡色。キーだけ明るくして目が拾えるようにする

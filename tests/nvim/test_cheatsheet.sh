@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 # dotfiles.cheatsheet (右下の常駐チートシート) の headless テスト。
-# 検証内容は cheatsheet_check.lua 参照 (desc 付きを出す / which-key の内部トリガーを出さない)。
+# 検証内容は cheatsheet_check.lua 参照 (desc 付きを出す / which-key の内部トリガーを出さない /
+# telescope の global キーを出す)。
 
 set -euo pipefail
 unset CDPATH

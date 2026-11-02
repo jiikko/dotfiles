@@ -1175,4 +1175,5 @@ require("dotfiles.folds").setup()
 
 -- 常駐チートシート (右下 float に buffer-local キーを出し続ける。<leader>k / :Cheatsheet でトグル。
 -- 中身は desc 付き buffer-local keymap から動的生成。モジュール冒頭コメント参照)
-require("dotfiles.cheatsheet").setup()
+-- telescope (<leader>f の束と <leader>a の診断一覧) は global なので、prefix を渡して常に出す
+require("dotfiles.cheatsheet").setup({ global_prefixes = { "<leader>f", "<leader>a" } })
