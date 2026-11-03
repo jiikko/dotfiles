@@ -6,7 +6,8 @@
 --      同じ文字列で自己識別している (which-key/triggers.lua:32 / buf.lua:125)
 --   3. 実設定の global_prefixes (_nviminit.lua) で telescope の global キー (<leader>ff 等) が
 --      出て、言語キーより先頭に並ぶ。prefix に当たらない global (<leader>k 等) は出ない
---   4. buffer-local が同じ lhs を張ったら global 側は出さない (効くのは buffer-local)
+--   4. buffer-local が同じ lhs を張ったら global 側は出さない (効くのは buffer-local)。
+--      buffer-local の <leader> 始まりは素のキー (gd) より後ろに並ぶ
 local function fail(msg)
   io.stderr:write("FAIL: " .. msg .. "\n")
   os.exit(1)
@@ -39,7 +40,7 @@ local text = table.concat(lines, "\n")
 -- prefix に当たらない global (<leader>k / gx 等) が混ざると、ここに無い行が出る。
 -- 混ざると MAX_LINES で gd が押し出されて下の検査も落ちるので、こちらを先に見る
 for _, l in ipairs(lines) do
-  if not (l:match("^ SPC [fa]") or l:match("^ gd ")) then
+  if not (l:match("^ <leader>[fa]") or l:match("^ gd ")) then
     fail("global_prefixes に当たらない行が出ている (" .. l .. "):\n" .. text)
   end
 end
@@ -48,8 +49,8 @@ for _, desc in ipairs({ "Find files", "Live grep", "List buffers", "Diagnostics 
     fail("telescope の global キーが出ていない (" .. desc .. "):\n" .. text)
   end
 end
-if not (lines[1] or ""):find("SPC ", 1, true) then
-  fail("先頭行が global の束 (SPC f…) ではない:\n" .. text)
+if not (lines[1] or ""):find("^ <leader>") then
+  fail("先頭行が global の束 (<leader>f…) ではない:\n" .. text)
 end
 
 if not text:find("Goto definition", 1, true) then
@@ -65,6 +66,10 @@ cheatsheet.refresh()
 text = table.concat(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false), "\n")
 if text:find("Live grep", 1, true) or not text:find("Local grep override", 1, true) then
   fail("buffer-local が同じ lhs を張っても global 側が出ている:\n" .. text)
+end
+-- buffer-local の <leader> 始まりは、素のキー (gd) の後ろにまとめる
+if text:find("Local grep override", 1, true) < text:find("Goto definition", 1, true) then
+  fail("buffer-local の <leader> キーが素のキーより前に並んでいる:\n" .. text)
 end
 
 print("OK cheatsheet: desc 付きを表示し、which-key トリガーを除外し、telescope の global キーを先頭に出す")

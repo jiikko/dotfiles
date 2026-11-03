@@ -39,12 +39,15 @@ local function mapleader()
   return vim.g.mapleader or "\\"
 end
 
--- lhs の表示用整形。mapleader (空白) は見えないので SPC に置き換え、termcode は <> 表記のまま。
+-- mapleader (空白) はそのままでは見えないので、map を書くときと同じ <leader> 表記で出す
+local LEADER_LABEL = "<leader>"
+
+-- lhs の表示用整形。先頭の mapleader を LEADER_LABEL に置き換え、termcode は <> 表記のまま。
 local function pretty_lhs(lhs)
   local leader = mapleader()
   local s = lhs
   if leader ~= "" then
-    s = s:gsub("^" .. vim.pesc(leader), "SPC ")
+    s = s:gsub("^" .. vim.pesc(leader), LEADER_LABEL)
   end
   s = s:gsub(" $", "")
   return s
@@ -99,10 +102,10 @@ local function collect(bufnr)
   end
   vim.list_extend(items, collect_global(local_lhs))
   -- 並びを固定する (LspAttach の順序で揺れないように)。global の束を先頭、次に素のキー
-  -- (gd / ]] / <C-k>)、SPC 始まりを後にまとめ、それぞれ大文字小文字を無視した辞書順
+  -- (gd / ]] / <C-k>)、<leader> 始まりを後にまとめ、それぞれ大文字小文字を無視した辞書順
   local function rank(it)
     if it.global then return 0 end
-    return it.lhs:match("^SPC") and 2 or 1
+    return it.lhs:sub(1, #LEADER_LABEL) == LEADER_LABEL and 2 or 1
   end
   table.sort(items, function(a, b)
     local ra, rb = rank(a), rank(b)
@@ -148,7 +151,7 @@ local function render_lines(items, title)
   local max_w = math.floor(vim.o.columns / 3)
   for i, it in ipairs(items) do
     if i > MAX_LINES then
-      table.insert(lines, string.format("  … 他 %d 件 (SPC ? で全部)", #items - MAX_LINES))
+      table.insert(lines, string.format("  … 他 %d 件 (%s? で全部)", #items - MAX_LINES, LEADER_LABEL))
       table.insert(marks, { line = #lines - 1, col = 0, len = -1, hl = ns_hl_desc })
       break
     end
