@@ -1,5 +1,7 @@
 # 1017 (feat): cleanup-tmp-dir で Xcode の DerivedData と Apple container も掃除するかを聞く
 
+> 🚨 **担当中: air5 (glogx)**（2026-11-03〜）
+
 起票日: 2026-11-03
 
 ## 依頼 (原文)
