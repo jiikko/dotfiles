@@ -21,9 +21,11 @@ type deps struct {
 	sessionRoot string // Claude Code の scratchpad の根 (/private/tmp/claude-<uid>)
 	tmpDirEnv   string // $TMPDIR の生の値 (空 = 無い)
 	trashRoot   string // ゴミ箱 (~/.Trash)
-	selfSID     string // 自分の CLAUDE_CODE_SESSION_ID
-	selfPID     int    // 祖先をたどって自分の claude を探す起点
-	now         func() time.Time
+	// derivedDataRoot は Xcode の DerivedData の根 (~/Library/Developer/Xcode/DerivedData)
+	derivedDataRoot string
+	selfSID         string // 自分の CLAUDE_CODE_SESSION_ID
+	selfPID         int    // 祖先をたどって自分の claude を探す起点
+	now             func() time.Time
 	// inner は safefs に渡す検査点の内側。production は safefs.ProductionGuard (テストのバイナリの中では拒否する)、
 	// テストは safefs/sandbox。tmpclean 自身の検査 (根の中・深さちょうど) はこの外側に必ず被せる (trashGuard)
 	inner safefs.Guard
@@ -34,19 +36,21 @@ type deps struct {
 
 func prodDeps() deps {
 	home, _ := os.UserHomeDir()
-	trash := ""
+	trash, derivedData := "", ""
 	if home != "" {
 		trash = filepath.Join(home, ".Trash")
+		derivedData = filepath.Join(home, "Library/Developer/Xcode/DerivedData")
 	}
 	return deps{
-		run:         runner.Exec,
-		sessionRoot: fmt.Sprintf("/private/tmp/claude-%d", os.Getuid()),
-		tmpDirEnv:   os.Getenv("TMPDIR"),
-		trashRoot:   trash,
-		selfSID:     os.Getenv("CLAUDE_CODE_SESSION_ID"),
-		selfPID:     os.Getpid(),
-		now:         time.Now,
-		inner:       safefs.ProductionGuard,
-		strictRoots: true,
+		run:             runner.Exec,
+		sessionRoot:     fmt.Sprintf("/private/tmp/claude-%d", os.Getuid()),
+		tmpDirEnv:       os.Getenv("TMPDIR"),
+		trashRoot:       trash,
+		derivedDataRoot: derivedData,
+		selfSID:         os.Getenv("CLAUDE_CODE_SESSION_ID"),
+		selfPID:         os.Getpid(),
+		now:             time.Now,
+		inner:           safefs.ProductionGuard,
+		strictRoots:     true,
 	}
 }

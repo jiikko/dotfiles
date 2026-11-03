@@ -55,6 +55,7 @@ type fakeSys struct {
 	lsofAll func() (string, int) // 全体の lsof を差し替える (失敗を作る)
 	psEtime func() (string, int) // ps -Ao pid=,etime=,command= を差し替える (失敗を作る)
 	onPS    func(n int)          // ps -Ao pid=,ppid=,command= が呼ばれた回数 (1 始まり) を受ける。途中で状況を変える
+	onLsof1 func(path string)    // 1 件の lsof が呼ばれたときに受ける。移す直前に状況を変える
 	nPS     int
 	calls   []string
 }
@@ -139,8 +140,18 @@ func (f *fakeSys) run(_ context.Context, name string, args ...string) (string, s
 			fmt.Fprintf(&b, "p1\nn/usr/lib/dummy%d.dylib\n", i)
 		}
 		return b.String(), "", 0, nil
+	case strings.HasPrefix(call, "plutil -extract WorkspacePath raw -o - "):
+		// fake の info.plist は WorkspacePath をそのまま書いたテキスト。空なら key が無い (plutil は rc=1)
+		body, readErr := os.ReadFile(args[len(args)-1])
+		if readErr != nil || len(body) == 0 {
+			return "", "Could not extract value", 1, nil //nolint:nilerr // 本物の plutil も読めない・key が無いときは rc=1 で返す (起動の失敗ではない)
+		}
+		return string(body) + "\n", "", 0, nil
 	case strings.HasPrefix(call, "lsof -w -Fn "): // 本物は +D で開いているものを見つけても rc=1 で stdout に出す
 		path := args[len(args)-1]
+		if f.onLsof1 != nil {
+			f.onLsof1(path)
+		}
 		if r, ok := f.openNow[path]; ok {
 			return r[0].(string), r[1].(string), r[2].(int), nil
 		}
@@ -154,6 +165,7 @@ func (f *fakeSys) run(_ context.Context, name string, args ...string) (string, s
 type fixture struct {
 	t                           *testing.T
 	session, tmpdir, trash, out string
+	derivedData                 string
 	sys                         *fakeSys
 	d                           deps
 }
@@ -165,13 +177,14 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f := &fixture{
-		t:       t,
-		session: filepath.Join(root, "claude-501"),
-		tmpdir:  filepath.Join(root, "T"),
-		trash:   filepath.Join(root, "Trash"),
-		out:     filepath.Join(root, "out"),
+		t:           t,
+		session:     filepath.Join(root, "claude-501"),
+		tmpdir:      filepath.Join(root, "T"),
+		trash:       filepath.Join(root, "Trash"),
+		out:         filepath.Join(root, "out"),
+		derivedData: filepath.Join(root, "DerivedData"),
 	}
-	for _, dir := range []string{f.session, f.tmpdir, f.trash, f.out} {
+	for _, dir := range []string{f.session, f.tmpdir, f.trash, f.out, f.derivedData} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -186,14 +199,15 @@ func newFixture(t *testing.T) *fixture {
 		openNow: map[string][3]any{},
 	}
 	f.d = deps{
-		run:         f.sys.run,
-		sessionRoot: f.session,
-		tmpDirEnv:   f.tmpdir,
-		trashRoot:   f.trash,
-		selfSID:     selfSID,
-		selfPID:     selfPID,
-		now:         func() time.Time { return testNow },
-		inner:       sb.Guard,
+		run:             f.sys.run,
+		sessionRoot:     f.session,
+		tmpDirEnv:       f.tmpdir,
+		trashRoot:       f.trash,
+		derivedDataRoot: f.derivedData,
+		selfSID:         selfSID,
+		selfPID:         selfPID,
+		now:             func() time.Time { return testNow },
+		inner:           sb.Guard,
 	}
 	f.mkdir(filepath.Join(f.session, "-self-proj", selfSID, "scratchpad"))
 	return f

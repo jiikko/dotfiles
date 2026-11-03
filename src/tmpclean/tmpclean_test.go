@@ -429,7 +429,7 @@ func TestPreconditionsStop(t *testing.T) {
 // tmpclean 自身の検査点: 根の配下の決まった深さだけを移し、今回の移し先の外へは移さない (候補の選定が壊れても効く 2 段目)。
 func TestTrashGuard(t *testing.T) {
 	r := roots{session: "/r/claude-501", tmpdir: "/r/T"}
-	g := trashGuard(r, "/h/.Trash/tmpclean-x", func(string, string) error { return nil })
+	g := trashGuard(r, "", "/h/.Trash/tmpclean-x", func(string, string) error { return nil })
 	ok := [][2]string{
 		{"trash", "/r/claude-501/-p/" + deadSID},
 		{"trash", "/r/T/go-build1"},
@@ -679,5 +679,38 @@ func TestCountDir(t *testing.T) {
 	}
 	if c.Total != 3 || c.TopLevel != 1 || c.EmptyDirs != 0 || len(c.Projects)+len(c.Prefixes) != 0 {
 		t.Fatalf("CountDir が違う: %+v", c)
+	}
+}
+
+// plan の種類を書き換えて ID を計算し直しても、種類ごとの取り直し (session の生きている claude) を飛ばせない。
+// 種類で古さの判定・移す直前の取り直し・移し先が変わるので、apply は今の候補の種類と照合する
+func TestTamperedPlanCannotChangeKind(t *testing.T) {
+	f := newFixture(t)
+	s := f.deadSession("-dead-proj", deadSID, 30)
+	_, path := f.plan("session,tmpdir")
+	var p planFile
+	body, _ := os.ReadFile(path)
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatal(err)
+	}
+	for i := range p.Entries {
+		p.Entries[i].Kind = kindTmpdir
+	}
+	p.ID = planID(p.CreatedAt, p.Selection, p.Entries)
+	body, _ = json.Marshal(p)
+	tampered := filepath.Join(f.out, "plan-"+p.ID+".json")
+	if err := os.WriteFile(tampered, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// apply の冒頭の判定の後、移す直前の lsof の間に claude -r で再開された (session の取り直しが要る)
+	f.sys.onLsof1 = func(string) {
+		f.sys.procs = append(f.sys.procs, fproc{pid: 402, ppid: 1, command: "claude -r " + deadSID, ucomm: "claude"})
+	}
+	rc, out, errOut := f.apply(p.ID, tampered)
+	if rc != exitOK {
+		t.Fatalf("rc=%d\n%s\n%s", rc, out, errOut)
+	}
+	if !exists(s) || !strings.Contains(out, "plan の後に種類が変わった") {
+		t.Fatalf("種類を書き換えた plan のセッションが移った・理由が出ていない\n%s", out)
 	}
 }

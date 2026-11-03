@@ -1,12 +1,12 @@
 # tmpclean
 
-一時領域 (Claude Code の scratchpad = `/private/tmp/claude-<uid>/<project>/<session-id>/`、`$TMPDIR` の直下) を数え、
+一時領域 (Claude Code の scratchpad = `/private/tmp/claude-<uid>/<project>/<session-id>/`、`$TMPDIR` の直下) と、Xcode の DerivedData のうち持ち主の消えたものを数え、
 **ユーザーが承認した plan の範囲だけ**、**生きているもの・使用中のものを避けて**、**ゴミ箱へ移す** CLI `bin/tmpclean`。
 手順 (数える → 候補を見せる → 承認 → 移す) は skill `cleanup-tmp-dir`。dotfiles の `tmp/` は扱わない (`make clean-tmp`)。
 
 ```
 tmpclean count [-json]
-tmpclean plan  -kinds session,tmpdir -out <dir> [-session-days 7] [-tmpdir-days 3] [-json]
+tmpclean plan  -kinds session,tmpdir,derived-data -out <dir> [-session-days 7] [-tmpdir-days 3] [-json]
 tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
 tmpclean sweep [-days 3] [-json]
 ```
@@ -16,6 +16,27 @@ tmpclean sweep [-days 3] [-json]
   1 件ずつ判定し直してから `~/.Trash/tmpclean-<日時>-<ID>/<kind>/[<project>/]<名前>` へ移す。何をどこへ移したかは `<dir>/moved-<ID>.jsonl` (1 件ごとに fsync)
 - 終了コード (doctor の exitcode とは別の語彙): 0 = 走り切った / 1 = 移せなかったものがある / 2 = 前提の検査で止めた (1 件も移していない) /
   3 = 実行環境の失敗 / 4 = 途中で止めた (一部は移した)
+
+## derived-data (issue 1017)
+
+`~/Library/Developer/Xcode/DerivedData` の直下の `<名前>-<英小文字 28 字>` の dir のうち、持ち主 (info.plist の `WorkspacePath`。`plutil` で読む) が
+無いと言い切れるものだけを候補にする。古さ (mtime) では選ばない (1 つで数十万ファイルあり全部を歩くと重い。持ち主が在るものは古くても次のビルドで使う)。
+`count` は数えない (skill は `du -sh` で見せる)。
+
+- 持ち主が「無いと言い切れる」: 絶対パスで正規化済み、`Lstat` で無い (切れた symlink は在る扱い)、存在する最も近い祖先が 2 階層以上の深さにある
+  (`/Volumes/<名前>` が外れているだけのものは残す)
+- SwiftPM の package を xcodebuild でビルドすると、info.plist を持つ `<package 名>-<hash>` と別に、Build・SourcePackages を持ち info.plist の無い
+  `<ディレクトリ名>-<hash>` ができる (2026-11-03 に実測。容量の大半はこちら)。info.plist の無い dir は、同じ hash で info.plist を持つ entry が 1 つ以上あり、
+  その全部の持ち主が消えているときだけ候補にする
+- 持ち主が分からないとして残すもの: `/Volumes/` の下 (外付けの volume は外れているだけかもしれない)・存在する最も近い祖先が symlink (その先の volume が
+  外れていると、中の持ち主は無いように見える)・info.plist が symlink / dir / 読めない (その hash の info.plist の無い兄弟も残す)
+- 残す: 形の違う dir (`ModuleCache.noindex` など)・symlink・持ち主が在る / 分からない・開かれている。1 件ずつ、移す直前に `lsof +D` と持ち主を取り直す
+  (同じ apply の中で先に移した info.plist の hash は、持ち主が消えていたものとして数える。`lsof +D` は 2.5 万ファイルの DerivedData で 0.5 秒。2026-11-03 実測)。
+  apply は plan の種類も今の候補の種類と照合する。移し先は `~/.Trash/tmpclean-<日時>-<ID>/derived-data/<名前>`
+- 検出しないもの: Xcode の設定で DerivedData の場所を変えている (既定の場所だけを見る) / 同じ hash で info.plist を持つ entry が 1 つも無い dir
+  (持ち主が分からないので残す) / `/Volumes` 以外に置いた mount point (`~/mnt/nas` など) が外れて空の dir として残っているときの、その下の持ち主 /
+  持ち主の確認から移すまでの窓 (1 件ぶん) / 数十万ファイルの DerivedData で `lsof +D` が 60 秒の上限を超えると「判定できない」で移せない (rc=1。大きいものでは未実測) /
+  検査点は根の和で見る (種類ごとに根を分けない。session・tmpdir と同じ)
 
 ## sweep (承認なしで消す唯一の経路。issue 851)
 
@@ -43,7 +64,7 @@ tmpclean sweep [-days 3] [-json]
 | 使用中 | lsof の全体の写し (100 件未満なら失敗とみなす) と、移す直前の 1 件の取り直し (stdout・stderr・rc の 3 つで判定。判定不能は残す) |
 | 古さ | 自身と中の全部 (ファイルも dir も) が N 日より前。走査に失敗したら残す。`$TMPDIR` では socket / FIFO を含むもの・`com.apple.*`・rename を拒む属性 (immutable・append・SIP の restricted / nounlink) が付いたもの・symlink も残す |
 | plan を信用しない | apply は候補を作り直して plan との交わりだけを移す。dev/ino が変わったものは残す |
-| 検査点 | `safefs.TrashMove` に渡す Guard が、根の配下の決まった深さ以外と今回の移し先の外を拒否する。ゴミ箱の経路の symlink は何も作る前に断る |
+| 検査点 | `safefs.TrashMove` に渡す Guard が、根の配下の決まった深さ (session = 根/project/セッション、tmpdir・derived-data = 根の直下) 以外と今回の移し先の外を拒否する。ゴミ箱の経路の symlink は何も作る前に断る |
 
 ## 検出しないもの
 

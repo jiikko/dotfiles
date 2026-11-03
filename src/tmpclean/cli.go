@@ -23,8 +23,9 @@ const (
 const usage = `使い方:
   tmpclean count [-json]
       一時領域 (Claude Code の scratchpad の根・$TMPDIR) を数える。何も動かさない
-  tmpclean plan -kinds session,tmpdir -out <dir> [-session-days 7] [-tmpdir-days 3] [-json]
-      移す候補を選び、<dir>/plan-<ID>.json に書く。何も動かさない
+  tmpclean plan -kinds session,tmpdir,derived-data -out <dir> [-session-days 7] [-tmpdir-days 3] [-json]
+      移す候補を選び、<dir>/plan-<ID>.json に書く。何も動かさない。
+      derived-data は Xcode の DerivedData のうち、持ち主 (info.plist の WorkspacePath) が消えたもの (古さでは選ばない)
   tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
       plan に載っていて今も候補であるものだけを、1 件ずつ判定し直してからゴミ箱 (~/.Trash/tmpclean-…) へ移す。
       移した記録は plan と同じ dir の moved-<ID>.jsonl
@@ -135,7 +136,7 @@ type planOutput struct {
 
 func runPlan(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("plan", stderr)
-	kinds := fs.String("kinds", "", "session,tmpdir のどれか (カンマ区切り)")
+	kinds := fs.String("kinds", "", "session,tmpdir,derived-data のどれか (カンマ区切り)")
 	out := fs.String("out", "", "plan を書く dir")
 	sessionDays := fs.Int("session-days", 7, "")
 	tmpdirDays := fs.Int("tmpdir-days", 3, "")

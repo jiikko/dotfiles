@@ -57,8 +57,9 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 	for _, e := range cur {
 		now[e.Path] = e
 	}
-	guard := trashGuard(w.roots, base, d.inner)
+	guard := trashGuard(w.roots, w.derivedDataRoot, base, d.inner)
 	keep := func(path, why string) { res.kept = append(res.kept, kept{path: path, reason: why}) }
+	movedGone := map[string]bool{}
 
 	for _, e := range p.Entries {
 		c, ok := now[e.Path]
@@ -68,6 +69,10 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 			continue
 		case c.Dev != e.Dev || c.Ino != e.Ino:
 			keep(e.Path, "plan の後に差し替わった")
+			continue
+		case c.Kind != e.Kind:
+			// 種類で古さの判定と移し先が変わるので、plan の種類を信用しない
+			keep(e.Path, "plan の後に種類が変わった")
 			continue
 		}
 		dest := filepath.Join(base, e.Kind)
@@ -85,13 +90,16 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 			}
 			dest = filepath.Join(dest, proj)
 		}
-		days := p.Selection.TmpdirDays
-		if e.Kind == kindSession {
-			days = p.Selection.SessionDays
-		}
-		if why := staleReason(e.Path, d.now().Add(-time.Duration(days)*24*time.Hour), e.Kind == kindTmpdir); why != "" {
-			keep(e.Path, "移す直前に"+why)
-			continue
+		// derived-data は古さで選ばない (持ち主が消えたかで選ぶ。候補を作り直した今の判定が candidates にある)
+		if e.Kind != kindDerivedData {
+			days := p.Selection.TmpdirDays
+			if e.Kind == kindSession {
+				days = p.Selection.SessionDays
+			}
+			if why := staleReason(e.Path, d.now().Add(-time.Duration(days)*24*time.Hour), e.Kind == kindTmpdir); why != "" {
+				keep(e.Path, "移す直前に"+why)
+				continue
+			}
 		}
 		switch openNow(ctx, d, e.Path, isRealDir(e.Path)) {
 		case isOpen:
@@ -103,10 +111,23 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 			continue
 		case notOpen:
 		}
+		plistHash := ""
+		if e.Kind == kindDerivedData {
+			still, h := derivedDataStillCandidate(ctx, d, w.derivedDataRoot, e, movedGone)
+			if !still {
+				keep(e.Path, "移す直前に持ち主が戻った・分からなくなった")
+				continue
+			}
+			plistHash = h
+		}
 		to, err := safefs.TrashMove(e.Path, dest, safefs.ID{Dev: e.Dev, Ino: e.Ino}, guard)
 		if err != nil {
 			res.failed = append(res.failed, kept{path: e.Path, reason: err.Error()})
 			continue
+		}
+		if plistHash != "" {
+			// 移せた後にだけ数える (移せずに残った info.plist は、読み直しで今の持ち主を見る)
+			movedGone[plistHash] = true
 		}
 		m := moved{Kind: e.Kind, From: e.Path, To: to, At: d.now().UTC()}
 		res.moved = append(res.moved, m)
@@ -146,15 +167,16 @@ func prepareTrash(d deps, now time.Time, id string) (string, error) {
 	return base, nil
 }
 
-// trashGuard は tmpclean 自身の検査点。移す元は根の配下の決まった深さ (session = 根/project/セッション、tmpdir = 根の直下) だけ、
+// trashGuard は tmpclean 自身の検査点。移す元は根の配下の決まった深さ (session = 根/project/セッション、tmpdir・derived-data = 根の直下) だけ、
 // 移す先は今回の移し先の配下だけを通し、その上で inner (production は safefs.ProductionGuard、テストは sandbox) を呼ぶ。
 // 候補の選定が壊れても、根の外・根そのもの・浅い dir を移せないようにする 2 段目。
-func trashGuard(r roots, base string, inner safefs.Guard) safefs.Guard {
+func trashGuard(r roots, derivedDataRoot, base string, inner safefs.Guard) safefs.Guard {
 	return func(op, path string) error {
 		path = filepath.Clean(path)
 		switch op {
 		case "trash":
-			if !underAtDepth(r.session, path, 2) && (r.tmpdir == "" || !underAtDepth(r.tmpdir, path, 1)) {
+			if !underAtDepth(r.session, path, 2) && (r.tmpdir == "" || !underAtDepth(r.tmpdir, path, 1)) &&
+				(derivedDataRoot == "" || !underAtDepth(derivedDataRoot, path, 1)) {
 				return fmt.Errorf("tmpclean: 根の配下の決まった深さでないので移さない: %s", path)
 			}
 		case "trash-dest":

@@ -53,7 +53,7 @@ func (s selection) validate() error {
 	}
 	seen := map[string]bool{}
 	for _, k := range s.Kinds {
-		if k != kindSession && k != kindTmpdir {
+		if k != kindSession && k != kindTmpdir && k != kindDerivedData {
 			return stopf("知らない種類: %q", k)
 		}
 		if seen[k] {
@@ -75,7 +75,12 @@ type world struct {
 	live  liveInfo
 	open  openSet
 	procs map[string]bool // 動いているプロセスの名前 (tmpdir で使う)
-	now   time.Time
+	// derivedData は DerivedData の直下と読んだ持ち主 (derived-data で使う)。derivedDataRoot が空なら根が無い (0 件)
+	derivedData     []ddEntry
+	derivedDataRoot string
+	// derivedDataMovedGone は同じ apply の中で、持ち主が消えていると確かめて移した info.plist の hash (移した後は読み直しても見えない)
+	derivedDataMovedGone map[string]bool
+	now                  time.Time
 }
 
 func gatherWorld(ctx context.Context, d deps, sel selection) (world, error) {
@@ -95,6 +100,14 @@ func gatherWorld(ctx context.Context, d deps, sel selection) (world, error) {
 	if sel.has(kindTmpdir) {
 		if w.procs, err = collectProcNames(ctx, d); err != nil {
 			return world{}, err
+		}
+	}
+	if sel.has(kindDerivedData) {
+		if w.derivedDataRoot, err = resolveDerivedDataRoot(d); err != nil {
+			return world{}, err
+		}
+		if w.derivedDataRoot != "" {
+			w.derivedData = collectDerivedData(ctx, d, w.derivedDataRoot, "")
 		}
 	}
 	return w, nil
@@ -169,6 +182,9 @@ func candidates(w world, sel selection) ([]entry, []kept) {
 				}
 			}
 		}
+	}
+	if sel.has(kindDerivedData) {
+		out = append(out, derivedDataCandidates(w, keep)...)
 	}
 	return out, ks
 }
