@@ -91,9 +91,10 @@ func TestPulseRunsFromCursorTowardRoot(t *testing.T) {
 	if heads[len(heads)-1] > rootLine {
 		t.Fatalf("光が root の線 (桁 %d) まで届かない: 頭の列=%v", rootLine, heads)
 	}
-	// 一定の速さ: root の線に着くのは走る時間 (pulseDur*pulseRun ≒ 24 フレーム) の終わりの方。ease-out だと 10 フレーム前後で着く
-	if i := slices.Index(heads, rootLine); i < 18 {
-		t.Fatalf("光が %d フレーム目で root の線に着いた (一定の速さなら 18 フレーム目より後): 頭の列=%v", i, heads)
+	// 一定の速さ: root の線に着くのは走る時間 (pulseDur*pulseRun) の終わりの方。ease-out だと 4 割ほどで着く
+	late := int(math.Floor(pulseDur * pulseRun / 0.016 * 0.7))
+	if i := slices.Index(heads, rootLine); i < late {
+		t.Fatalf("光が %d フレーム目で root の線に着いた (一定の速さなら %d フレーム目より後): 頭の列=%v", i, late, heads)
 	}
 	_, cur := pulseDiff(t, m)
 	if heads[0] < cur[0]-4 || heads[len(heads)-1] >= heads[0]-4 {
@@ -176,7 +177,12 @@ func TestPulseSpacedMoveEndsHold(t *testing.T) {
 	m.HandleKey("j")
 	at = at.Add(200 * time.Millisecond)
 	m.Advance(at) // 間の空いた変化 (重いフレーム): ここで 1 本
-	advBy(m, &at, 300*time.Millisecond)
+	// 離したとみなす間 (holdGap) は過ぎ、その 1 本はまだ走っている間だけ進める
+	wait := holdGap + 0.05
+	if wait+0.05 >= pulseDur {
+		t.Fatalf("前提: 光 (%v 秒) が離した判定 (%v 秒) の後まで残らない", pulseDur, wait)
+	}
+	advBy(m, &at, time.Duration(wait*float64(time.Second)))
 	if len(m.pulses) != 1 {
 		t.Fatalf("間の空いた変化の後に光が %d 本 (1 本のはず)", len(m.pulses))
 	}
@@ -351,14 +357,24 @@ func TestPulseDoesNotJumpOnParent(t *testing.T) {
 	advBy(m, &at, 200*time.Millisecond) // 押しっぱなしとみなされない間を空ける
 	m.draw()
 	before := m.trackBuf[int(math.Round(m.pulseBuf[0].head))]
+	start := m.trackBuf[m.pulseBuf[0].start] // 出発点の桁 (頭の跳びは光の残りの割合で縮むので、光が走り終えかけた時点では見えにくい)
+	// 1 フレームで頭が進むセル数 (経路のセル数 / 走るフレーム数) に、丸めの 1 セルを足した幅まで許す。比べるのは経路の上の
+	// 位置で、画面の桁ではない (経路は名前の上を飛ばすので、名前を越えるフレームでは桁が進みより大きく動く)
+	step := math.Ceil(float64(len(m.trackBuf))*0.016/(pulseDur*pulseRun)) + 1
 	m.HandleKey("h")
 	if m.cur.raw != "deep" {
 		t.Fatalf("前提: 親へ上がっていない (%s)", m.cur.raw)
 	}
 	advBy(m, &at, 16*time.Millisecond)
 	m.draw()
-	after := m.trackBuf[int(math.Round(m.pulseBuf[0].head))]
-	if d := before - after; d < 0 || d > 2 {
-		t.Fatalf("親へ上がった次のフレームで光の頭が %d 桁動いた (%d → %d。1 フレームの進みは 1〜2 桁)", d, before, after)
+	if got := m.trackBuf[m.pulseBuf[0].start]; got != start {
+		t.Fatalf("親へ上がったら光の出発点が動いた (桁 %d → %d)", start, got)
+	}
+	from := slices.Index(m.trackBuf, before) // 前のフレームの頭が、今の経路の何セル目か (出発点が動けばずれる)
+	if from < 0 {
+		t.Fatalf("前のフレームの頭 (桁 %d) が今の経路に無い: %v", before, m.trackBuf)
+	}
+	if d := m.pulseBuf[0].head - float64(from); d < -0.5 || d > step {
+		t.Fatalf("親へ上がった次のフレームで光の頭が経路の上を %.1f セル動いた (1 フレームの進みは %.0f セルまで。経路=%v)", d, step, m.trackBuf)
 	}
 }

@@ -39,15 +39,16 @@ func (s *tween) snap() {
 	}
 }
 
-// 長さ (秒)。「終わりの減速が見える時間」で決めた: quint は最後の数 % が 1 桁未満で画面に出ないので、
-// 0.30 秒では減速が 90ms しか見えなかった (モックを tmux で実測。spec §0.1 の表)。
+// 長さ (秒)。初めは「終わりの減速が見える時間」で 0.5 秒前後に決めたが (quint は最後の数 % が 1 桁未満で画面に出ず、
+// 0.30 秒では減速が 90ms しか見えなかった。モックを tmux で実測。spec §0.1 の表)、操作の待ちが長いので一律 0.6 倍にした
+// (ユーザー要望 2026-11-03「アニメを短くしてみて」)。減速を長く見せたいなら設定の Motion を slow にする。
 const (
-	moveDur    = 0.50
-	camDur     = 0.55
-	popupDur   = 0.50
-	scrollDur  = 0.30
-	fadeInDur  = 0.25
-	fadeOutDur = 0.35
-	beadDur    = 0.35 // ビーズが前のカーソルから今のカーソルまで走る時間 (treebeard は smooth 0.13 のばね)
-	pulseDur   = 0.45 // 経路の光がカーソルから root まで走る時間 (pulse.go)
+	moveDur    = 0.30
+	camDur     = 0.33
+	popupDur   = 0.30
+	scrollDur  = 0.18
+	fadeInDur  = 0.15
+	fadeOutDur = 0.21
+	beadDur    = 0.21 // ビーズが前のカーソルから今のカーソルまで走る時間 (treebeard は smooth 0.13 のばね)
+	pulseDur   = 0.32 // 経路の光がカーソルから root まで走る時間 (pulse.go)。0.6 倍にしない: 重いフレーム (1 回の進みは 0.05 秒で頭打ち) で光が maxPulses 本重なるには 0.05*maxPulses 秒より長く要る
 )
