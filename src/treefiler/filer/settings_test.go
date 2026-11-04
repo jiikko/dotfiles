@@ -318,3 +318,23 @@ func TestIgnoredBranchIsThin(t *testing.T) {
 		}
 	}
 }
+
+// New の最初のカーソルと root.last は、その Model の設定の並びで決まる。package の並び (order) は同じプロセスで前に作った Model の
+// 設定のまま残っている (glogx は別のフォルダで F を開くと New し直す) ので、前の Model が逆順で終わっていても先頭は設定どおりの子。
+func TestNewPicksFirstChildInItsOwnOrder(t *testing.T) {
+	isolateConfig(t)
+	dir := t.TempDir()
+	mkfile(t, filepath.Join(dir, "alpha", "x.txt"), "x")
+	mkfile(t, filepath.Join(dir, "zeta.txt"), "z")
+	saved := order
+	t.Cleanup(func() { order = saved })
+	order = sortOrder{natural: true, by: "name", reverse: true} // 前の Model が Reverse で終わった
+	m := newAt(t, dir)
+	last := "<nil>"
+	if m.root.last != nil {
+		last = m.root.last.name
+	}
+	if m.cur.name != "alpha" || last != "alpha" || m.kids(m.root)[0] != m.cur {
+		t.Fatalf("最初のカーソル = %s・root.last = %s、want どちらも設定の並びの先頭 alpha", m.cur.name, last)
+	}
+}

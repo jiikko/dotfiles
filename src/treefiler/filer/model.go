@@ -161,10 +161,6 @@ func New(dir string, opts Options) (*Model, error) {
 	if root.readErr != nil {
 		m.fail("読めません: " + root.name)
 	}
-	if ks := m.kids(root); len(ks) > 0 {
-		m.cur = ks[0]
-		root.last = ks[0]
-	}
 	m.set, m.setErrs = loadSettings(configPath())
 	m.prompt.history = loadHistory(historyPath(), historyKeep, nil)
 	m.searchHist = loadSearchHistory()
@@ -174,7 +170,9 @@ func New(dir string, opts Options) (*Model, error) {
 	m.watch.pause(!m.set.Live)
 	m.applyGlobals()
 	m.resort(root)
-	if ks := m.kids(root); len(ks) > 0 && m.cur == root {
+	// 最初のカーソルは設定の並びを当てた後に決める。newRoot は package の並び (order) で子を並べ、それは同じプロセスで前に作った
+	// Model の設定のまま (glogx は別のフォルダで F を開くと New し直す)。当てる前に選ぶと、前の Model の並びの先頭がカーソルと root.last に残る
+	if ks := m.kids(root); len(ks) > 0 {
 		m.cur, root.last = ks[0], ks[0]
 	}
 	m.restorePlace()
