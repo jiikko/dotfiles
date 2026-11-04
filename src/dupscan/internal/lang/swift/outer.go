@@ -12,10 +12,7 @@ import "dupscan/internal/tree"
 // guard の後ろ (親の並びの続き) では効かせる。
 // (Swift の tree-sitter に名前解決が無いので近似。Go は parser の名前解決で決めている)。
 func markOuter(body *tree.Node, params []string) {
-	known := make(map[string]bool, len(params))
-	for _, p := range params {
-		known[p] = true
-	}
+	known := set(params...)
 	var visit func(n *tree.Node, deferred *[]string)
 	visit = func(n *tree.Node, deferred *[]string) {
 		switch n.Role {

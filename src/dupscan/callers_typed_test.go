@@ -197,3 +197,16 @@ func TestTypedCallersTextSeparatesPartialPackages(t *testing.T) {
 		t.Errorf("依存の誤りのパッケージを「数えていない」の見出しに並べている: %q", out)
 	}
 }
+
+// alias を受け手に書いたメソッド (値でもポインタでも) は、元の型のメソッドと同じ形の鍵になる (package のパスを 2 度書かない)。
+func TestTypedCallersKeysAliasReceiverAsOriginType(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"go.mod": "module fix\n\ngo 1.26\n",
+		"a/a.go": "package a\n\ntype T struct{}\n\ntype AT = T\n\nfunc (AT) M() {}\n\nfunc (*AT) P() {}\n\nfunc (T) N() {}\n\nfunc Use() { T{}.M(); (&T{}).P(); AT{}.N() }\n",
+	})
+	for query, want := range map[string]string{"M": "fix/a.T.M", "P": "fix/a.T.P", "N": "fix/a.T.N"} {
+		if got := keysOf(typedCallers(t, root, query).Confirmed, ""); got[want] != 1 || len(got) != 1 {
+			t.Errorf("%s: 鍵は %s の 1 件のはず: %v", query, want, got)
+		}
+	}
+}

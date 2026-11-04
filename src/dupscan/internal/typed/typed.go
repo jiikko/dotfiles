@@ -255,15 +255,14 @@ func Key(fn *types.Func) string {
 	}
 	sig, _ := fn.Type().(*types.Signature)
 	if sig != nil && sig.Recv() != nil {
-		t := sig.Recv().Type()
+		// alias を受け手に書いたメソッド (`type AT = T; func (AT) M()`) は、T のメソッドと同じ鍵にする。alias の型を String() で
+		// 書くと package のパスが付いて `fix/a.fix/a.T.M` になり、T の他のメソッドの鍵 (`fix/a.T.N`) と食い違う
+		t := types.Unalias(sig.Recv().Type())
 		if ptr, ok := t.(*types.Pointer); ok {
-			t = ptr.Elem()
+			t = types.Unalias(ptr.Elem())
 		}
-		switch nt := t.(type) {
-		case *types.Named:
+		if nt, ok := t.(*types.Named); ok {
 			return fn.Pkg().Path() + "." + nt.Origin().Obj().Name() + "." + fn.Name()
-		case *types.Alias:
-			return fn.Pkg().Path() + "." + types.Unalias(nt).String() + "." + fn.Name()
 		}
 		return fn.Pkg().Path() + "." + fn.Name()
 	}
