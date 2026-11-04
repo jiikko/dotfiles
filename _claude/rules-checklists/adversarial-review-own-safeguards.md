@@ -113,6 +113,9 @@
 - **字句の検査 (lint の regex・token の種類で絞る設定) の red を確かめる fixture には、型・generic・修飾を含む形を 1 つ入れる**。token の種類で絞る設定
   (swiftlint の `match_kinds` 等) は、型の token を含む書き方を黙って対象外にする。素の形だけを植えた red は、この取りこぼしを見ない
   (obaket retro 1293: `match_kinds: identifier` の rule が `Task<Void, Never>.detached` を丸ごと外していた)
+- **既製の検査 (linter の規則) を、当たる件数を数えて選ぶなら、採るときと同じ設定で数える**。既定の設定で数えると、採った後には出ない指摘まで
+  直す計画を立てる (retro 1031: exhaustive を既定の `default-signifies-exhaustive: false` で数えて 20 件、採る設定 (true) では 13 件。default の
+  ある switch まで直しかけた)
 
 ### 2. 「沈黙 = 成功」になっていないか確認する
 
