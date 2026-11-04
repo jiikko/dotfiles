@@ -73,6 +73,14 @@ type textSource struct {
 	readErr bool  // 末尾の前で読めなくなった (タイルに「途中で読めなくなりました」と出す。末尾と見分ける)
 }
 
+// firstLine は読めている最初の行 (改行がまだ来ていなければその頭)。言語を shebang で選ぶのに使う
+func (s *textSource) firstLine() string {
+	if len(s.lines) > 0 {
+		return s.lines[0]
+	}
+	return string(s.partial)
+}
+
 func openText(path string) (*textSource, error) {
 	if st, err := os.Stat(path); err != nil {
 		return nil, err

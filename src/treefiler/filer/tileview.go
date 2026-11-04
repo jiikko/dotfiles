@@ -74,7 +74,7 @@ func (t *tile) setSource(n *node, src *textSource) {
 		// 🚨 描く前のキーでも読み進めるので、中身を決めたここで付ける
 		src.limit = markdownCap
 	} else {
-		t.hl = highlight.ForPath(n.raw)
+		t.hl = highlight.ForPath(n.raw, src.firstLine())
 	}
 }
 

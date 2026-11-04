@@ -12,6 +12,7 @@ package highlight
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -96,14 +97,67 @@ func Lang(lang, code string) string {
 	return codeLine(lexers.Get(lang), code)
 }
 
-// ForPath はファイル名 (拡張子・名前) で言語を選び、コード 1 行を色付けする関数を返す。言語が分からなければ nil。
+// ForPath はファイル名 (拡張子・名前) で言語を選び、コード 1 行を色付けする関数を返す。名前で決まらなければ、
+// 1 行目 (firstLine) の shebang の interpreter で選ぶ (拡張子の無い script)。言語が分からなければ nil。
 // 🚨 lexer の選択 (lexers.Match は全 lexer の名前の型と照合する) は行ごとに呼ぶと重いので、1 つのファイルで 1 回だけ選ぶ形にしている。
-func ForPath(path string) func(code string) string {
+func ForPath(path, firstLine string) func(code string) string {
 	lex := lexers.Match(filepath.Base(path))
+	if lex == nil {
+		lex = shebangLexer(firstLine)
+	}
 	if lex == nil {
 		return nil
 	}
 	return func(code string) string { return codeLine(lex, code) }
+}
+
+// interpreterLexers は chroma の lexer の名前・別名と一致しない interpreter の名前 → lexer の名前
+// (`lexers.Get("node")` などは nil。chroma v2.27.0 で実測)
+var interpreterLexers = map[string]string{
+	"node": "javascript", "nodejs": "javascript", "deno": "javascript", "bun": "javascript",
+	"dash": "bash", "Rscript": "r", "tclsh": "tcl", "wish": "tcl", "expect": "tcl", "osascript": "applescript",
+}
+
+var interpreterVersion = regexp.MustCompile(`[0-9][0-9.]*$`)
+
+// shebangLexer は `#!/usr/bin/env bash` / `#!/bin/zsh -f` / `#!/usr/bin/env -S python3 -u` の interpreter から lexer を選ぶ。
+// 名前 → 版の数字を外した名前 (python3.11 → python) → 対応表の順に引き、決まらなければ chroma の内容の判定に任せる。
+func shebangLexer(line string) chroma.Lexer {
+	rest, ok := strings.CutPrefix(line, "#!")
+	if !ok {
+		return nil
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return nil
+	}
+	name := filepath.Base(fields[0])
+	if name == "env" {
+		// env の後の option (-S など) と変数の代入 (LANG=C) を飛ばした最初の語が interpreter
+		name = ""
+		for _, field := range fields[1:] {
+			if strings.HasPrefix(field, "-") || strings.Contains(field, "=") {
+				continue
+			}
+			name = filepath.Base(strings.Trim(field, `"'`))
+			break
+		}
+	}
+	if name == "" {
+		return nil
+	}
+	for _, candidate := range []string{name, interpreterVersion.ReplaceAllString(name, "")} {
+		if alias, ok := interpreterLexers[candidate]; ok {
+			candidate = alias
+		}
+		if candidate == "" {
+			continue
+		}
+		if lex := lexers.Get(candidate); lex != nil {
+			return lex
+		}
+	}
+	return lexers.Analyse(line)
 }
 
 // hlEscCache はトークン種別 → ANSI エスケープ列 ("" = 装飾なし) のメモ。

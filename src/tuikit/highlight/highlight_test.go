@@ -128,14 +128,47 @@ func TestDiffMultiFileResetsState(t *testing.T) {
 }
 
 func TestForPath(t *testing.T) {
-	hl := ForPath("/x/y/main.go")
+	hl := ForPath("/x/y/main.go", "")
 	if hl == nil {
 		t.Fatal("main.go の lexer が選ばれない")
 	}
 	if got := hl("func f() {}"); !strings.Contains(got, "\x1b[") || ansi.Strip(got) != "func f() {}" {
 		t.Fatalf("色付け = %q", got)
 	}
-	if ForPath("/x/no-such-kind.zzzq") != nil {
+	if ForPath("/x/no-such-kind.zzzq", "") != nil {
 		t.Fatal("知らない拡張子で lexer が選ばれた")
+	}
+}
+
+// 拡張子の無い script は 1 行目の shebang の interpreter で言語を選ぶ (env 越し・版の数字・option・chroma に無い名前の対応表)
+func TestForPathFallsBackToShebang(t *testing.T) {
+	for _, c := range []struct{ line, want string }{
+		{"#!/usr/bin/env bash", "Bash"},
+		{"#!/bin/zsh -f", "Bash"},
+		{"#!/usr/bin/env -S LANG=C python3 -u", "Python"},
+		{"#!/usr/local/bin/python3.11", "Python"},
+		{"#!/usr/bin/env node", "JavaScript"},
+		{"#!/usr/bin/env ruby", "Ruby"},
+	} {
+		lex := shebangLexer(c.line)
+		if lex == nil || lex.Config().Name != c.want {
+			got := "<nil>"
+			if lex != nil {
+				got = lex.Config().Name
+			}
+			t.Fatalf("%q: got %s, want %s", c.line, got, c.want)
+		}
+		if ForPath("/x/bin/tool", c.line) == nil {
+			t.Fatalf("%q: 拡張子の無い名前で色付けの関数が返らない", c.line)
+		}
+	}
+	for _, line := range []string{"", "echo hi", "#!", "#!/usr/bin/env", "#!/usr/bin/env -S"} {
+		if lex := shebangLexer(line); lex != nil {
+			t.Fatalf("%q: 言語を選んでしまった: %s", line, lex.Config().Name)
+		}
+	}
+	// 名前で決まるときは shebang より名前を優先する (.go のファイルの 1 行目が #! でも Go)
+	if hl := ForPath("/x/main.go", "#!/usr/bin/env bash"); hl == nil || !strings.Contains(hl("package main"), "\x1b[") {
+		t.Fatal("名前で決まる言語を shebang で上書きした / 色が付かない")
 	}
 }

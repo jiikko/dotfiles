@@ -168,7 +168,7 @@ func loadPane(k paneKey) paneResult {
 		}
 	} else {
 		src.ensure(k.h)
-		hl := highlight.ForPath(k.raw)
+		hl := highlight.ForPath(k.raw, src.firstLine())
 	lines:
 		for i, l := range src.lines {
 			pieces := []string{l}

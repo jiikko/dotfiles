@@ -305,3 +305,47 @@ func TestPaneDimsAfterResizeBeforeAdvance(t *testing.T) {
 		t.Fatal("幅を変えた直後に、前の幅の本文を今の中身として出した")
 	}
 }
+
+// 拡張子の無い script は 1 行目の shebang で言語を選んで色を付ける。shebang の無い拡張子なしのファイルは素通し (対照)
+func TestLoadPaneHighlightsShebangScript(t *testing.T) {
+	dir := t.TempDir()
+	for _, c := range []struct {
+		name, body string
+		colored    bool
+	}{
+		{"deploy", "#!/usr/bin/env bash\nif [ -n \"$1\" ]; then echo hi; fi\n", true},
+		{"notes", "if [ -n \"$1\" ]; then echo hi; fi\n", false},
+	} {
+		p := filepath.Join(dir, c.name)
+		mustWrite(t, p, c.body)
+		r := loadPane(paneKey{path: p, raw: c.name, name: c.name, w: 60, h: 10, wrap: true})
+		joined := strings.Join(r.lines, "\n")
+		if colored := joined != termwidth.StripSGR(joined); colored != c.colored {
+			t.Fatalf("%s: 色付き=%v (期待 %v)\n%q", c.name, colored, c.colored, joined)
+		}
+	}
+}
+
+// タイルも同じく shebang で言語を選ぶ (setSource が 1 行目を渡す)
+func TestTileHighlightsShebangScript(t *testing.T) {
+	dir := t.TempDir()
+	for _, c := range []struct {
+		name, body string
+		colored    bool
+	}{
+		{"deploy", "#!/usr/bin/env python3\nprint('hi')\n", true},
+		{"notes", "print('hi')\n", false},
+	} {
+		p := filepath.Join(dir, c.name)
+		mustWrite(t, p, c.body)
+		src, err := openText(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tl := &tile{}
+		tl.setSource(&node{raw: c.name, name: c.name}, src)
+		if (tl.hl != nil) != c.colored {
+			t.Fatalf("%s: 色付けの関数の有無=%v (期待 %v)", c.name, tl.hl != nil, c.colored)
+		}
+	}
+}
