@@ -39,5 +39,5 @@ treefiler に `'` (起動時のカーソルへ戻る。commit「feat(treefiler):
 
 ## 進捗
 
-- [ ] A: ユーザーの判断待ち
+- [x] A: `_claude/CLAUDE.md`「止まってよいのは」の項の下に追記 (commit「CLAUDE.md: 一時的に見える外部の失敗は再試行を尽くしてから返す」)
 - [x] B: 却下 (上)
