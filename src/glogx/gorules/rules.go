@@ -52,15 +52,17 @@ func execViaForeground(m dsl.Matcher) {
 
 // issueReadErrorNotDiscarded: issue のファイルを読む API (issues.Issue の LoadMeta / ReadBody) の失敗を `_` で捨てない。
 // 読めなかった issue は見出しがファイル名に落ち、見出しで親を宣言した epic (`# NNN (epic):`) は親と判定されず、
-// 一覧の形が黙って変わる (loadAllMeta が全部の失敗を捨てていた。issue 1026)。捨てるなら警告へ渡すか、
+// 一覧の形が黙って変わる。捨てるなら警告へ渡すか、
 // 捨ててよい理由を //nolint:gocritic の後に書く。
 // errcheck の check-blank を有効にする形は採らない: repo 全体で `_ = f()` は約 250 箇所あり、大半が理由つきの best-effort
 // (Close / Remove / Kill・キャッシュの保存) なので、読み込みの失敗が埋もれる。
-// 検出しない形: 戻り値を変数に受けてから使わない (`err := iss.LoadMeta()` だけ。これは go vet / ineffassign の担当)・
-// `if iss.LoadMeta() == nil` で判定してから黙って先へ進む (失敗の扱いを書いているので、レビューで見る)
+// 検出しない形: 受けた err を上書きして読まない (ineffassign の担当。受けて一度も使わない形はコンパイラが止める)・
+// `if iss.LoadMeta() == nil` や `if err := …; err != nil {}` で判定してから黙って先へ進む (失敗の扱いを書いているので、レビューで見る)・
+// 値型の Issue・Issue を埋め込んだ型・メソッド値 (`f := iss.LoadMeta`) 経由の呼び出し (どれも今の呼び出し元に無い)・
+// glogx の外の module (pro-con の picker は親を番号の形だけで決めるので、読めなくても見出しが slug に落ちるだけ)
 func issueReadErrorNotDiscarded(m dsl.Matcher) {
 	m.Import("glogx/issues")
-	m.Match(`_ = $x.LoadMeta()`, `$_, _ = $x.ReadBody()`).
+	m.Match(`_ = $x.LoadMeta()`, `$_, _ = $x.ReadBody()`, `$_, _ := $x.ReadBody()`).
 		Where(m["x"].Type.Is(`*issues.Issue`)).
 		Report(`issue の読み込みの失敗を捨てない (警告へ渡すか、捨ててよい理由を //nolint:gocritic の後に書く。issue 1026)`)
 }
