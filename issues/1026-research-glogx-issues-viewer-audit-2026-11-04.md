@@ -9,8 +9,8 @@
 
 ## 走査した母集合
 
-- 範囲: `src/glogx/internal/issuesview` と `src/glogx/issues` (47 ファイル、うちテスト 28。非テストは 7,007 行) と `docs/issues-viewer-spec.md`
-- 差分: `git diff -M f61d1e664..HEAD` で非テスト 17 ファイル +1256 / −765 行・38 commit。大半は 817 の package への移設と 754 の指摘 (748〜753) の修正。
+- 範囲: `src/glogx/internal/issuesview` と `src/glogx/issues` (Go 46 ファイル、うちテスト 28。非テストは 7,007 行) と `docs/issues-viewer-spec.md` (`git ls-files` で 3 つ合わせて 47)
+- 差分: `git diff -M f61d1e664..HEAD -- src/glogx/internal/issuesview src/glogx/issues 'src/glogx/issues_*.go' src/glogx/url_picker.go ':!*_test.go'` (移設元を含める) で非テスト 17 ファイル +1256 / −765 行・38 commit。大半は 817 の package への移設と 754 の指摘 (748〜753) の修正。
   **監査を通っていない新しい挙動**は epic の親の判定 (c1dd755a3・6356e7d72・756b24a4e・5c2388f5e。`issues/parse.go` の
   `GroupParentRank`・`PreferGroupParent`・`groupOpenParents`・`closedGroupKeys`・`showsIssue`)、親行の案内 (c51ec537d)、一覧の `u` (5385ff22f) の 3 つで、ここを全部読んだ
 - 全部を読んだ: `issues/parse.go` の差分全部・`issuesview/issues_view.go` の `rebuildDisplayRows`・`appendOpenHintItems`・`scanIssues`・`loadAllMeta`・`HandleKey` の一覧の分岐、
@@ -26,7 +26,7 @@
 |---|---|---|
 | error-handling | 1 (直した) | `loadAllMeta` が `LoadMeta` の失敗を全部捨てていた。見出しの形の epic の親 (`# NNN (epic):`) は見出しが読めないと親と判定されず、理由が画面に出ない → 走査の警告と同じ行に出す (ENOENT は除く) |
 | duplication | 1 (直した) | `rebuildDisplayRows` の 1 つ目の case が `PreferGroupParent(iss, nil)` と同じ判定で、親の選び方が viewer にも書かれていた。sweep の節 1 `Status.String` ~ `Badge` は default 無しの switch 2 本 (exhaustive が新しい状態を強制する。表にすると強制が消える) で寄せない。節 2 `TakeWantQuit` ~ `TakeWantPull` は `TakeWantCross` と同じ「一度きりの合図」の 3 行の形。節 3 `WriteRealIssue` ~ `filelink_test.go` の `writeFileContent` は、`issues` の package 内テストから `issuesviewtest` (issues を import する) を使えないので寄せられない |
-| design / encapsulation | 0 | 親の判定の 3 つの集合 (open な親・終わった group・閉じた group) が同じ親を選ぶか: `groupOpenParents` は全件から `PreferGroupParent` で選び、viewer は見えている行から同じ関数で選ぶ。違う親になりうるのは「最強の親が伏せられ、弱い形の親が見えている」ときだけだが、弱い形の親が open なら `closedGroupKeys` がそれを子に数えて group は閉じない (伏せる条件が成り立たない) ので食い違わない。`retiredGroupKeys` が `IsGroupParent` (どの形でも) で親の done を見るのは、全員 done のときだけ効くので、選んだ親で見ても結果は同じ |
+| design / encapsulation | 0 (却下 1) | 親の判定: `groupOpenParents` は全件から `PreferGroupParent` で選び、viewer の親行 (`rebuildDisplayRows`) は**見えている行から**同じ関数で選ぶ。なので表示の親行は段階・タブ・番号フィルタで変わりうる (反証レビューの再現: `done/467-feat-root.md` と見出しが `# 480 (epic):` の `pending/480-*.md` だと、`a` の pending 段では 480 が親行、全部の段では 467 が親行。`epic` タブでは feat の 467 が伏せられて `500-epic-467.md` が親行)。**却下**: 見た目だけで、伏せる・閉じる判定は `groupOpenParents` (全件) だけで決まり、弱い形の親は子として数えられるので壊れない。強い親が done で弱い形の親が pending に居る形も、タブで親が別のカテゴリになる形も dotfiles には無い (再提起するなら、実 repo でこの配置が起きた例を添える)。`retiredGroupKeys` が `IsGroupParent` (どの形でも) で親の done を見るのは、全員 done のときだけ効くので、選んだ親で見ても結果は同じ |
 | concurrency / resource-leaks | 0 | 移設で `stopWatch` が `issuesWatch{Chain: v.watch.Advance()}` になった。`Advance` は `Close` してから世代を進める (`internal/fswatch`)。`-race` 緑 |
 | security | 0 | `openIssueFile` (O_NOFOLLOW・O_NONBLOCK・通常のファイルの確認) は親ディレクトリの差し替えを見ないと doc に理由つきで書いてある。`ReadBody` が大きさの上限なしに全部読むのは手元の repo の issue だけが相手 |
 | performance | 0 (見積もり) | `refresh` はタブごとに `issues.Filter(v.all, …)` を呼び、毎回 group の 3 集合を全件から作り直す (タブ数 × 4 × 全件。dotfiles の 1016 件・タブ 20 前後で 8 万回程度の map 操作)。キー・再走査のたびで、毎フレームではない。実測はしていない |
@@ -38,6 +38,11 @@
 | responsibility / polymorphism / leaky-abstraction / ui-components / test-cleanup / test-helpers / dependency / lint-from-done / general | 0 | 754 から構造は変わっていない (817 で package を分けたが、責務の割り方は同じ)。test-helpers は sweep の節 3 の 1 組 (上の duplication の行) だけ |
 
 全数: 直した 2 (error-handling 1・duplication 1)、起票 0。ユーザーの判断が要るもの 1 (ux の Enter と pull の確認)。
+
+## 反証レビュー
+
+- 2026-11-04、opus の読み取りのみのサブエージェント 1 本に b3d70225e と 1026 を反証させた。b3d70225e は壊せなかった (親の選び方は等価・警告は制御文字を通さない・並び順の規約と矛盾しない)。1026 の design の行の「食い違わない」は誤り (上の行に再現と却下理由を書いた)・母集合の数え方の書き方を直した
+- 5385ff22f (一覧の u) は別に opus の敵対レビューを通した (P3 のコメントのずれ 3 件を 053297f02 で直した)
 
 ## 対応
 
