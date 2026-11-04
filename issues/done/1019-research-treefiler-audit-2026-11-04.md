@@ -4,9 +4,9 @@
 
 ## 概要
 
-`/audit` で src/treefiler に全観点を直接実行 (main が読んで判定) で回した。前回 ([992](done/992-research-treefiler-audit-2026-10-30.md)、2026-10-30) の
+`/audit` で src/treefiler に全観点を直接実行 (main が読んで判定) で回した。前回 ([992](992-research-treefiler-audit-2026-10-30.md)、2026-10-30) の
 監査範囲の終わり `c6c6b6329` から `f47ecf97e` までに src/treefiler に入った差分 (テストを除く 31 ファイル (うち Go 26)・+2046 / -211 行) と、992 が
-「精読していない」と書いた layout / virt / pulse / tileview の変更を重点にした。直したのは 3 点 (下の「対応」)、起票は 1 本 ([1020](1020-test-treefiler-virt-seed269-flaky-gomaxprocs1.md))。
+「精読していない」と書いた layout / virt / pulse / tileview の変更を重点にした。直したのは 3 点 (下の「対応」)、起票は 1 本 ([1020](../1020-test-treefiler-virt-seed269-flaky-gomaxprocs1.md))。
 
 ## 走査した母集合
 
@@ -57,3 +57,5 @@
 ## 進捗
 
 - 2026-11-04: 監査・対応・起票
+- 2026-11-04: 決着。「対応」の 3 点は master にある (`liveAncestorEdge` が `filer/model.go` に在り、`load_test.go` の `statusLine` は無く、`history.go` のコメントは `readHistory` が link を辿ると書く。`grep` で確認)。
+  seed 269 の flake は [1020](../1020-test-treefiler-virt-seed269-flaky-gomaxprocs1.md) が持つので、この記録に残課題は無い。done へ送る
