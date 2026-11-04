@@ -30,12 +30,27 @@ import (
 //   (走り続けるなら済みと読む)。帯・IP を変えた後は、古い IP をどの I/F も持っていなければ広告は止まる (上の項) が、名前が新しい IP を
 //   指すのは、初期設定を開き直して名前の手順まで進めてから。
 // - dns-sd -P は広告する I/F を選べないので、名前は Wi-Fi 側にも見える (受容。747)。
+// - ファイル共有 (SMB) が有効な間は、有線の名前でも `_smb._tcp` を広告する (1011): SMB クライアント (Finder・obaket の「近くのホスト」) が
+//   探すのは `_smb._tcp` で、目印の種類 (wiredService) だけでは有線の名前が候補に出ない。同じホスト名を 2 本の dns-sd -P で登録しても
+//   衝突しない (2026-11-04 に実測。両方 registered and active、-G v4 は同じ IP を 1 つ返す)。有効の判定は
+//   `launchctl print system/com.apple.smbd` が通るか (共有を切ると job が外れる: 有効の ms / air5 で rc 0、切った m2macmini と未設定の M3 で
+//   rc 113。`_smb._tcp` の広告の有無とも一致。macOS 15.7.5 / 26.7 / 27 で実測。管理者は要らない)。表示名は「<コンピュータ名> (有線)」で、
+//   macOS 自身が出す「<コンピュータ名>」の行と見分ける。受容: コンピュータ名が長く 63 バイトを超えると dns-sd が登録できず、周ごとに起こし直す。
+//   受容: SMB の行も Wi-Fi 側に見える (上の 747 の項と同じ) ので、有線に居ない端末の Finder・ファイル App にも出て、そこから繋ぐと届かない。
+//   コンピュータ名を変えても、SMB の dns-sd を起こし直す (共有の切り替え・IP の喪失・再ログイン) まで前の名前で出る。
+//   SMB の側だけを止めても、同じ名前の A レコードは目印の側の登録で引け続ける (別の Mac から -G v4 で実測)。
 
 // WiredNameLabel は LaunchAgent の名前 (~/Library/LaunchAgents/<これ>.plist)。dotfiles の setup.sh がこの行を sed で読む。
 const WiredNameLabel = "com.jiikko.mac-lan-manager.wired-name"
 
 // wiredService は dns-sd -P が名前と一緒に登録する目印のサービスの種類 (名前だけは登録できない)。
 const wiredService = "_mac-lan-manager._tcp"
+
+// smbService はファイル共有が有効な間だけ有線の名前でも登録するサービスの種類 (smbPort はその口)。
+const (
+	smbService = "_smb._tcp"
+	smbPort    = 445
+)
 
 var reLabel = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 
@@ -75,8 +90,10 @@ func (a NameAdvert) Validate() error {
 // launchctl print の arguments の 4 番目 (AdvertTag)・7 番目 (名前)・8 番目 (IP) を読み、RemoveScript は plist の ProgramArguments.6 (名前)
 // を読む。名前と IP の位置は dns-sd を直接起こしていた形・sh -c でループを書いていた形と同じに保つ (前の形で走っている Mac の名前と IP も
 // 同じ数え方で読み、止める・入れ直すときに使う)。2・3 番目の ifconfig と dns-sd はその位置を埋めるだけでなく、テストが偽物に差し替える口。
+// 9・10 番目の launchctl (ファイル共有が有効か) と scutil (コンピュータ名) も差し替える口で、前の形の位置を動かさないよう末尾に足す。
 func (a NameAdvert) args(exe string) []string {
-	return []string{exe, "/sbin/ifconfig", "/usr/bin/dns-sd", AdvertTag, strings.TrimSuffix(a.Name, ".local"), wiredService, a.Name, a.IP}
+	return []string{exe, "/sbin/ifconfig", "/usr/bin/dns-sd", AdvertTag, strings.TrimSuffix(a.Name, ".local"), wiredService, a.Name, a.IP,
+		"/bin/launchctl", "/usr/sbin/scutil"}
 }
 
 // AdvertEvery はループが ifconfig を見る間隔 (秒。確認の板の説明も読む)。
@@ -84,22 +101,33 @@ const AdvertEvery = 10
 
 // AdvertTag はループの形の目印 (実行ファイルの $3)。ループの中身・引数の並びを変えたら上げる: 前の形で走っている Mac を「済み」と読まず、初期設定の名前の
 // 手順で入れ直させる (Advertises が見る)。
-const AdvertTag = "mac-lan-manager-wired-name-v3"
+const AdvertTag = "mac-lan-manager-wired-name-v4"
 
 // advertScript は IP を持っている間だけ dns-sd -P を走らせる実行ファイルの中身 (引数は args の 2 番目から: ifconfig・dns-sd・目印・
-// dns-sd に渡すインスタンス名・サービスの種類・名前・IP)。AdvertEvery 秒ごとに ifconfig を見る。dns-sd が自分で落ちても次の回で
-// 起こし直す。止める合図 (bootout の TERM) では子の dns-sd と待ちの sleep も止めてから抜ける。
+// dns-sd に渡すインスタンス名・サービスの種類・名前・IP・launchctl・scutil)。AdvertEvery 秒ごとに ifconfig を見る。IP を持っていて
+// ファイル共有も有効な間は、同じ名前と IP で smbService の dns-sd (q) も走らせる。dns-sd が自分で落ちても次の回で起こし直す。止める合図
+// (bootout の TERM) では子の dns-sd と待ちの sleep も止めてから抜ける。
 var advertScript = fmt.Sprintf(`#!/bin/sh
-ifc=$1 dns=$2; shift 3
-p=; s=
-trap '[ -n "$p" ] && kill "$p" 2>/dev/null; [ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM INT HUP
+ifc=$1 dns=$2 lc=$8 scu=$9; shift 3
+p=; q=; s=
+trap '[ -n "$p" ] && kill "$p" 2>/dev/null; [ -n "$q" ] && kill "$q" 2>/dev/null; [ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM INT HUP
 while :; do
 	if "$ifc" | /usr/bin/grep -qF "inet $4 "; then
 		if [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null; then "$dns" -P "$1" "$2" local 9 "$3" "$4" >/dev/null 2>&1 & p=$!; fi
-	elif [ -n "$p" ]; then kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; p=; fi
+		smb=1; "$lc" print system/com.apple.smbd >/dev/null 2>&1 || smb=
+	else
+		smb=
+		if [ -n "$p" ]; then kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; p=; fi
+	fi
+	if [ -n "$smb" ]; then
+		if [ -z "$q" ] || ! kill -0 "$q" 2>/dev/null; then
+			n=$("$scu" --get ComputerName 2>/dev/null) || n=
+			"$dns" -P "${n:-$1} (有線)" %s local %d "$3" "$4" >/dev/null 2>&1 & q=$!
+		fi
+	elif [ -n "$q" ]; then kill "$q" 2>/dev/null; wait "$q" 2>/dev/null; q=; fi
 	sleep %d & s=$!; wait "$s"; s=
 done
-`, AdvertEvery)
+`, smbService, smbPort, AdvertEvery)
 
 // plistPath は sh の中で使う plist の置き場 ($HOME を sh に展開させる)。
 const plistPath = `"$HOME/Library/LaunchAgents/` + WiredNameLabel + `.plist"`

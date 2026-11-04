@@ -305,47 +305,71 @@ func TestNameAdvertOldFormNotDone(t *testing.T) {
 }
 
 // 広告のループ: IP をこの Mac が持っている間だけ dns-sd を走らせ、無くなったら止め、戻ったら起こし直す。dns-sd が自分で落ちても起こし直す。
-// 止める合図 (TERM) では子の dns-sd も止めてから抜ける。ifconfig と dns-sd は偽物 (dns-sd は自分の pid を書いて sleep に置き換わる)。
+// IP を持っていてファイル共有も有効な間は、同じ名前と IP で _smb._tcp の dns-sd も走らせ、共有を切ったら止める (1011)。
+// 止める合図 (TERM) では子の dns-sd も止めてから抜ける。ifconfig・dns-sd・launchctl・scutil は偽物 (dns-sd は自分の pid を書いて
+// sleep に置き換わる。launchctl は smb のファイルがある間だけ通り、scutil は noname のファイルがある間は落ちる)。
 func TestAdvertLoopFollowsIP(t *testing.T) {
 	d, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	ifc, pids := filepath.Join(d, "ifconfig.out"), filepath.Join(d, "pids")
+	ifc, pids, smbOn, noName := filepath.Join(d, "ifconfig.out"), filepath.Join(d, "pids"), filepath.Join(d, "smb"), filepath.Join(d, "noname")
 	setIfc := func(s string) {
 		t.Helper()
 		if err := os.WriteFile(ifc, []byte(s), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	fakeIfc, fakeDNS := filepath.Join(d, "ifconfig"), filepath.Join(d, "dns-sd")
+	touch := func(p string, on bool) {
+		t.Helper()
+		if on {
+			if err := os.WriteFile(p, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeIfc, fakeDNS, fakeLC, fakeScu := filepath.Join(d, "ifconfig"), filepath.Join(d, "dns-sd"), filepath.Join(d, "launchctl"), filepath.Join(d, "scutil")
 	calls := filepath.Join(d, "calls")
-	if err := os.WriteFile(fakeIfc, []byte("#!/bin/sh\necho x >> '"+calls+"'\ncat '"+ifc+"'\n"), 0o755); err != nil {
-		t.Fatal(err)
+	for p, body := range map[string]string{
+		fakeIfc: "#!/bin/sh\necho x >> '" + calls + "'\ncat '" + ifc + "'\n",
+		// 引数は | で区切って 1 つずつ書く ($* で書くと、表示名が空白で 2 つの引数に割れても同じ行になる)
+		fakeDNS: "#!/bin/sh\n{ printf %s $$; for a; do printf '|%s' \"$a\"; done; echo; } >> '" + pids + "'\nexec /bin/sleep 1000\n",
+		// 本物と同じ引数で来たときだけ通す (別の job を見ている変異を赤にする)
+		fakeLC:  "#!/bin/sh\n[ \"$*\" = 'print system/com.apple.smbd' ] && [ -f '" + smbOn + "' ]\n",
+		fakeScu: "#!/bin/sh\n[ \"$*\" = '--get ComputerName' ] && [ ! -f '" + noName + "' ] && echo 'kojiのMac Studio'\n",
+	} {
+		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(fakeDNS, []byte("#!/bin/sh\necho \"$$ $*\" >> '"+pids+"'\nexec /bin/sleep 1000\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	started := func() []string { // 起こされた dns-sd の行 ("<pid> <引数>")
+	started := func(svc string) []string { // 起こされた svc の dns-sd の行 ("<pid>|<引数>|<引数>…")
 		b, _ := os.ReadFile(pids)
-		return strings.Fields(strings.ReplaceAll(strings.TrimSpace(string(b)), " ", "_"))
+		var out []string
+		for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			if strings.Contains(l, "|"+svc+"|") {
+				out = append(out, l)
+			}
+		}
+		return out
 	}
 	pidOf := func(line string) int {
 		var pid int
-		if _, err := fmt.Sscan(strings.SplitN(line, "_", 2)[0], &pid); err != nil {
+		if _, err := fmt.Sscan(strings.SplitN(line, "|", 2)[0], &pid); err != nil {
 			t.Fatal(err)
 		}
 		return pid
 	}
 	alive := func(pid int) bool { return syscall.Kill(pid, 0) == nil }
 	t.Cleanup(func() { // 落ちた途中で残った偽の dns-sd を止める (自分が起こした pid だけ)
-		for _, l := range started() {
+		for _, l := range append(started(wiredService), started(smbService)...) {
 			_ = syscall.Kill(pidOf(l), syscall.SIGKILL)
 		}
 	})
 
 	// ループの argv は InstallScript が書いた plist から読み戻し、plist が指す実行ファイルを走らせる (args の並びとループの引数の対応も
-	// 一緒に見る)。本物の ifconfig / dns-sd (argv の 2・3 番目) と周期だけを偽物に差し替える
+	// 一緒に見る)。本物の ifconfig / dns-sd / launchctl / scutil (argv の 2・3・9・10 番目) と周期だけを偽物に差し替える
 	env, home, _ := wiredSandbox(t)
 	if out, err := runScript(t, env, (NameAdvert{Name: "air5.wired.local", IP: "192.168.100.11"}).InstallScript()); err != nil {
 		t.Fatalf("入れられない: %v %s", err, out)
@@ -356,11 +380,11 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 		t.Fatal(err)
 	}
 	var argv []string
-	if err := json.Unmarshal(raw, &argv); err != nil || len(argv) != 8 || filepath.Base(argv[0]) != AdvertExe ||
-		argv[1] != "/sbin/ifconfig" || argv[2] != "/usr/bin/dns-sd" {
+	if err := json.Unmarshal(raw, &argv); err != nil || len(argv) != 10 || filepath.Base(argv[0]) != AdvertExe ||
+		argv[1] != "/sbin/ifconfig" || argv[2] != "/usr/bin/dns-sd" || argv[8] != "/bin/launchctl" || argv[9] != "/usr/sbin/scutil" {
 		t.Fatalf("plist の ProgramArguments = %q %v", argv, err)
 	}
-	argv[1], argv[2] = fakeIfc, fakeDNS
+	argv[1], argv[2], argv[8], argv[9] = fakeIfc, fakeDNS, fakeLC, fakeScu
 	body, err := os.ReadFile(argv[0])
 	if err != nil {
 		t.Fatal(err)
@@ -372,6 +396,7 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 	if err := os.WriteFile(argv[0], []byte(strings.Replace(string(body), "sleep 10 ", "sleep 0.05 ", 1)), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	touch(smbOn, true)
 	setIfc("en7: flags=8863<UP>\n\tinet 192.168.100.111 netmask 0xffffff00\n") // 前方一致 (.11 と .111) を持っているとは読まない
 	cmd := exec.Command(argv[0], argv[1:]...)
 	if err := cmd.Start(); err != nil {
@@ -385,25 +410,50 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 	// 起こしていないことの確認は待つ事象が無いので、ループが 20 周 (約 1 秒) 回るのを待ってから見る。偽の dns-sd は & で起こす sh で、
 	// pid を書くまで数周かかる (3 周では、前方一致で起こす変異を見逃した)。本物の実装を赤にする向きには外れない
 	testwait.Until(t, "ifconfig を 20 回見る", func() bool { return ifcCalls() >= 20 })
-	if n := len(started()); n != 0 {
-		t.Fatalf("192.168.100.111 しか無いのに dns-sd を %d 回起こした (前方一致で持っていると読んだ)", n)
+	if n, m := len(started(wiredService)), len(started(smbService)); n != 0 || m != 0 {
+		t.Fatalf("192.168.100.111 しか無いのに dns-sd を %d + %d 回起こした (前方一致で持っていると読んだ・IP が無いのに SMB を広告した)", n, m)
 	}
 	setIfc("en7: flags=8863<UP>\n\tinet 192.168.100.11 netmask 0xffffff00\n")
-	testwait.Until(t, "IP を持ったら dns-sd を起こす", func() bool { return len(started()) == 1 })
-	first := pidOf(started()[0])
-	if want := "_-P_air5.wired_" + wiredService + "_local_9_air5.wired.local_192.168.100.11"; !strings.HasSuffix(started()[0], want) {
-		t.Errorf("dns-sd の引数 = %q, want …%q", started()[0], want)
+	testwait.Until(t, "IP を持ったら dns-sd を 2 本起こす", func() bool { return len(started(wiredService)) == 1 && len(started(smbService)) == 1 })
+	first, smb1 := pidOf(started(wiredService)[0]), pidOf(started(smbService)[0])
+	if want := "|-P|air5.wired|" + wiredService + "|local|9|air5.wired.local|192.168.100.11"; !strings.HasSuffix(started(wiredService)[0], want) {
+		t.Errorf("dns-sd の引数 = %q, want …%q", started(wiredService)[0], want)
+	}
+	if want := "|-P|kojiのMac Studio (有線)|" + smbService + "|local|445|air5.wired.local|192.168.100.11"; !strings.HasSuffix(started(smbService)[0], want) {
+		t.Errorf("SMB の dns-sd の引数 = %q, want …%q", started(smbService)[0], want)
+	}
+	touch(smbOn, false)
+	testwait.Until(t, "ファイル共有を切ったら SMB の dns-sd を止める", func() bool { return !alive(smb1) })
+	if !alive(first) {
+		t.Errorf("ファイル共有を切ったら有線の名前の広告まで止めた")
+	}
+	touch(noName, true)
+	touch(smbOn, true)
+	testwait.Until(t, "ファイル共有が戻ったら SMB の dns-sd を起こし直す", func() bool { return len(started(smbService)) == 2 })
+	smb2 := pidOf(started(smbService)[1])
+	if want := "|-P|air5.wired (有線)|" + smbService + "|"; !strings.Contains(started(smbService)[1], want) {
+		t.Errorf("コンピュータ名を読めないときの SMB の表示名 = %q, want …%q…", started(smbService)[1], want)
 	}
 	setIfc("en7: flags=8863<UP>\n\tinet 169.254.48.172 netmask 0xffff0000\n")
-	testwait.Until(t, "IP を失ったら dns-sd を止める", func() bool { return !alive(first) })
+	testwait.Until(t, "IP を失ったら dns-sd を 2 本とも止める", func() bool { return !alive(first) && !alive(smb2) })
 	setIfc("en8: flags=8863<UP>\n\tinet 192.168.100.11 netmask 0xffffff00\n")
-	testwait.Until(t, "IP が戻ったら起こし直す", func() bool { return len(started()) == 2 })
-	second := pidOf(started()[1])
+	testwait.Until(t, "IP が戻ったら起こし直す", func() bool { return len(started(wiredService)) == 2 && len(started(smbService)) == 3 })
+	second := pidOf(started(wiredService)[1])
 	if err := syscall.Kill(second, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	testwait.Until(t, "dns-sd が落ちたら起こし直す", func() bool { return len(started()) == 3 })
-	third := pidOf(started()[2])
+	testwait.Until(t, "dns-sd が落ちたら起こし直す", func() bool { return len(started(wiredService)) == 3 })
+	// 起こし直さないことの確認は待つ事象が無いので、ループが 20 周回るのを待ってから数える
+	n0 := ifcCalls()
+	testwait.Until(t, "ifconfig をさらに 20 回見る", func() bool { return ifcCalls() >= n0+20 })
+	if n := len(started(smbService)); n != 3 {
+		t.Errorf("有線の名前の dns-sd を起こし直したら SMB の dns-sd も %d 本目まで起こした (生きているのに起こし直した)", n)
+	}
+	if err := syscall.Kill(pidOf(started(smbService)[2]), syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	testwait.Until(t, "SMB の dns-sd が落ちたら起こし直す", func() bool { return len(started(smbService)) == 4 })
+	third, smb3 := pidOf(started(wiredService)[2]), pidOf(started(smbService)[3])
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
@@ -419,5 +469,5 @@ func TestAdvertLoopFollowsIP(t *testing.T) {
 		}
 	})
 
-	testwait.Until(t, "TERM で子の dns-sd も止める", func() bool { return !alive(third) })
+	testwait.Until(t, "TERM で子の dns-sd も止める", func() bool { return !alive(third) && !alive(smb3) })
 }
