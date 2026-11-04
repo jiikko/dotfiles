@@ -355,6 +355,13 @@ next_session; expect_silent "grep の対象が別の Go だけの repo" "$(run_b
 next_session; expect_silent "git -C <別の Go だけの repo> grep" "$(run_bash "git -C $GO_REPO grep -n FooBar")"
 next_session; expect_silent "rg の対象が変数の dir" "$(run_bash 'rg -n FooBar $W')"
 next_session; expect_nudge "対象のパスがセッションの repo の中なら従来どおり" "$(run_bash "grep -rn FooBar $SWIFT_REPO")" FooBar
+mkdir -p "$TMP_ROOT/outside"   # どの git の repo にも入っていない dir
+next_session; expect_silent "cd の先が repo の外なら、セッションの repo で判定しない" "$(run_bash "cd $TMP_ROOT/outside && grep -rn FooBar .")"
+next_session; expect_silent "cd の先が repo の外なら、言語の指定があっても判定しない" "$(run_bash "cd $TMP_ROOT/outside && grep -rn FooBar --include='*.go' .")"
+next_session; expect_nudge "popd で pushd の前の dir に戻る" "$(run_bash "pushd $GO_REPO && git status; popd; grep -rn FooBar .")" FooBar
+next_session; expect_silent "pushd <dir> > /dev/null の dir を追う" "$(run_bash "pushd $GO_REPO > /dev/null && grep -rn FooBar .")"
+next_session; expect_nudge "( cd … ) が閉じた後の grep は元の dir で判定する" "$(run_bash "( cd $GO_REPO && git status ); grep -rn FooBar .")" FooBar
+next_session; expect_silent "( cd … ) の中の grep は cd の先で判定する" "$(run_bash "( cd $GO_REPO && grep -rn FooBar . )")"
 REPO="$GO_REPO"
 REPO="$MIXED_REPO"
 
