@@ -1,14 +1,12 @@
 # 1020 (test): treefiler の仮想化の等価性のテストが GOMAXPROCS=1 の全体 run で seed 269 だけ落ちる (光のセル)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-04〜）
-
 起票日: 2026-11-04
 
 ## 概要
 
 `src/treefiler/filer/virt_test.go` の `TestVirtualizedRandomOpsMatchFull` が、`TREEFILER_VIRT_SEEDS=300` の全体 run で seed 269 だけ落ちる。
 違うのは線の 1 セルの色だけで、全部を動かす側に経路の光 (pulse.go の頭。背景も明るい) が乗り、仮想化した側には乗っていない。
-[871](done/871-test-treefiler-virt-equivalence-flaky-under-load.md) と同じ「負荷で 1 セルの色だけ違う」型だが、871 で直した 2 種類 (粒の速さ・走査の到着) とは別の部品 (光)。
+[871](871-test-treefiler-virt-equivalence-flaky-under-load.md) と同じ「負荷で 1 セルの色だけ違う」型だが、871 で直した 2 種類 (粒の速さ・走査の到着) とは別の部品 (光)。
 
 ## 詳細
 
