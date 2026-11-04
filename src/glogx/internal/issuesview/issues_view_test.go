@@ -1764,8 +1764,9 @@ func TestIssuesViewURLPickerNone(t *testing.T) {
 	}
 }
 
-// 一覧モードでは u は効かない (本文を読んでいないため)。
-func TestIssuesViewOpenURLListModeIsNoop(t *testing.T) {
+// 一覧モードの u は URL ピッカーを開かない (本文を読んでいないため。一覧の u は pull の確認を頼む =
+// TestIssuesViewerListModeUAsksPull)。
+func TestIssuesViewURLPickerNotOpenedInListMode(t *testing.T) {
 	testenv.StubBrowserFunc(t, func(string) error { t.Fatal("一覧モードでブラウザを開いた"); return nil })
 
 	v := loadedView(issuesviewtest.SampleIssues()...)

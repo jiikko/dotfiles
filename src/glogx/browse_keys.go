@@ -246,8 +246,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	//
 	// 🚨 この dispatch の位置は動かさないこと。前 (actModal の確認・実行中ガード / tmux prefix /
 	// 再起動ダイアログ / C・X の update) へ動かすと viewer の語彙が外側に奪われ、後ろ (裸の
-	// b / u = push / pull、U / R / D) へ動かすと viewer を見ている最中の u が
-	// git pull --rebase の確認を開く footgun になる。
+	// b / u = push / pull、U / R / D) へ動かすと viewer を見ている最中の b が
+	// git push の確認を開く footgun になる (issues 一覧の u の pull は viewer が合図で頼む)。
 	switch m.activeFullScreen() {
 	case FullScreenDoctor:
 		return m.routeKeyToDoctor(key)

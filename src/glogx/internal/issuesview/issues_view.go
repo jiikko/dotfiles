@@ -1419,8 +1419,8 @@ func (v *IssuesView) OwnsKeys() bool {
 // handleKey は viewer 表示中のキーを処理する。
 //
 // 全画面モーダルなのでキーは全部ここで飲む (呼び出し側へ素通りさせない)。素通りさせると
-// 一覧を見ている最中の u が git pull --rebase の確認を開く類の誤爆になる: 呼び出し側の
-// dispatch は裸の b / u を push / pull に割り当てているため。
+// 一覧を見ている最中の b が git push の確認を開く類の誤爆になる: 呼び出し側の
+// dispatch は裸の b / u を push / pull に割り当てているため (一覧の u の pull は wantPull で明示的に頼む)。
 //
 // page は画面に使える行数 (hint 行を除く)。リスト/本文に実際に使える行数はヘッダーを
 // 差し引いた visibleRows で、描画と同じ値を使う (ずれると G が末尾に届かなくなる)。

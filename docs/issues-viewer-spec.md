@@ -479,7 +479,7 @@ viewer 表示中の `U` を弾いていた)。前面順は一覧側と同じで 
 一覧モードでは URL ピッカーにしない (本文を読んでいないため。キー 1 打ごとにファイルを読むことになり、しかも
 「その issue に URL があるか」は一覧に出ていない)。一覧の `u` は git log 一覧と同じ **`git pull --rebase`**
 (ユーザー要望 2026-11-04)。確認 (y/N) と実行は git log 一覧と同じ action モーダルが viewer の上に重ねて出し、
-pull で降ってきた issue は下の「表示の鮮度」の自動反映が拾う。status viewer が `u` を pull に使わない
+pull で降ってきた issue は下の「表示の鮮度」の自動反映が拾う (pull するのは glogx を起動した repo だけで、`<sub>/issues` が別 repo なら更新されない)。status viewer が `u` を pull に使わない
 (`p` にしている) のは staging の語彙の隣で remote 操作へ滑らせないためで、実ファイルを動かすキーが
 確認つきの `n` だけの issues viewer にはその理由が当たらない。
 
