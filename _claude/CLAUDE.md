@@ -163,6 +163,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | キーワード | 参照先 |
 |-----------|-------|
 | 監査, audit, コードレビュー全体 | `~/.claude/skills/audit/SKILL.md` |
+| all-audit-on-diy, 全部の観点で監査して直して, 全タイプの監査をこのセッションで対応 | `~/.claude/skills/all-audit-on-diy/SKILL.md` (対象を引数で渡す。タイプを選んで issue に書くだけなら audit) |
 | コミット, commit, git commit | `~/.claude/skills/c/SKILL.md` |
 | forge, 専門家実装, 専門家エージェントで実装/修正（修正・実装まで任せる） | `~/.claude/skills/forge/SKILL.md` |
 | CSS, Node.js, Electron, フロントエンド, デスクトップアプリ | agent: `css-expert` / `nodejs-expert` / `electron-expert` |
