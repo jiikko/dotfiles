@@ -5,7 +5,7 @@
 //	tfperf run -bin <treefiler> -root <dir> -out <dir> [-keys 'j*30 k*30'] [-interval 200ms] [-snap]
 //	tfperf report <out>
 //
-// run は report まで行う。out には perf.log (treefiler のログ)・sends.tsv (送った時刻)・keys.tsv (打鍵ごと)・summary.txt を置く。
+// run は report まで行う。out には perf.log (treefiler のログ)・sends.tsv (送った時刻)・quits.tsv (閉じるために送った q の時刻)・keys.tsv (打鍵ごと)・summary.txt を置く。
 // -snap は動作の確かめ用 (Claude が実物を動かして判定する): 打鍵の後ごとの画面 (screens/NNN-<キー>.txt。起動直後が 000-start) と、
 // treefiler の内部の状態のログ (state.jsonl。TREEFILER_DEBUG。1 行 1 状態で、時計が進んだだけで変わらない行は書かない) も残す。
 package main
@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -160,7 +161,12 @@ func run(args []string) error {
 	if err := sends.Close(); err != nil {
 		return err
 	}
-	if err := t.quit(); err != nil {
+	quits, err := os.Create(filepath.Join(o.out, "quits.tsv"))
+	if err != nil {
+		return err
+	}
+	qerr := t.quit(func(before, done int64) { fmt.Fprintf(quits, "%d\t%d\tq\n", before, done) })
+	if err := errors.Join(qerr, quits.Close()); err != nil {
 		return err
 	}
 	f, err := os.Create(filepath.Join(o.out, "summary.txt"))
@@ -254,11 +260,14 @@ func (t *tmuxServer) start(o runOpts, bin, root, cfg, logPath, debugPath string)
 }
 
 // quit は q を送って treefiler を閉じる。台本の終わりにタイル・キー一覧が開いていると q はそれを 1 枚閉じるだけなので、
-// session が終わるまで送り直す (8 回まで)。
-func (t *tmuxServer) quit() error {
+// session が終わるまで送り直す (8 回まで)。送った q は sent に渡す (quits.tsv。analyze が台本の打鍵と分ける)。
+func (t *tmuxServer) quit(sent func(before, done int64)) error {
 	gone := func() bool { return t.cmd("has-session", "-t", t.session) != nil }
 	for range 8 {
-		if err := t.cmd("send-keys", "-t", t.session, "q"); err != nil {
+		before := time.Now().UnixNano()
+		err := t.cmd("send-keys", "-t", t.session, "q")
+		sent(before, time.Now().UnixNano()) // 失敗しても届いたかもしれない (閉じた後の send-keys も失敗する)
+		if err != nil {
 			if gone() {
 				return nil
 			}
@@ -433,7 +442,7 @@ func readSends(path string) ([]send, error) {
 	return out, nil
 }
 
-// keyStat は 1 打の集計。時間は ms。窓は送った時刻から次の打鍵を送った時刻 (最後の打鍵は記録の終わり) まで。
+// keyStat は 1 打の集計。時間は ms。窓は送った時刻から次の打鍵を送った時刻 (最後の打鍵は閉じる q を送った時刻) まで。
 type keyStat struct {
 	key string
 	// deliver は送り始めてから key の Update が始まるまで (tmux のクライアント・pty・bubbletea の読み取り。端末側の分)。
@@ -459,7 +468,15 @@ func report(dir string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	stats, err := analyze(evs, sends)
+	quits, err := readSends(filepath.Join(dir, "quits.tsv"))
+	if err != nil {
+		return fmt.Errorf("閉じるために送った q の記録: %w", err)
+	}
+	quitAt := int64(math.MaxInt64)
+	if len(quits) > 0 {
+		quitAt = quits[0].t
+	}
+	stats, err := analyze(evs, sends, quitAt)
 	if err != nil {
 		return err
 	}
@@ -471,16 +488,14 @@ func report(dir string, w io.Writer) error {
 
 // analyze は i 番目に送った打鍵を i 番目の key の Update と組にする。数か名前が合わなければ判定不能 (取りこぼした・
 // 別のキーが混ざった。順番の組み合わせが崩れているので、どの打鍵の数字も信用できない)。
-func analyze(evs []event, sends []send) ([]keyStat, error) {
+// quitAt は閉じるための最初の q を送り始めた時刻 (quits.tsv)。それより後に始まった key の Update と、その後の記録は数えない
+// (閉じる q は開いている層の数だけ送る。本数で外すと、台本の最後の q を取りこぼしたときに閉じる q がその穴を埋めて数が合う)。
+func analyze(evs []event, sends []send, quitAt int64) ([]keyStat, error) {
 	var keyIdx []int
 	for i, e := range evs {
-		if e.kind == "update" && e.msg == "key" {
+		if e.kind == "update" && e.msg == "key" && e.t-e.ns < quitAt {
 			keyIdx = append(keyIdx, i)
 		}
-	}
-	// 最後の q (閉じる) は送った記録に無い
-	if n := len(keyIdx); n == len(sends)+1 && evs[keyIdx[n-1]].key == "q" {
-		keyIdx = keyIdx[:n-1]
 	}
 	if len(keyIdx) != len(sends) {
 		return nil, fmt.Errorf("送った打鍵 %d 件と、ログの key の Update %d 件が合わない (判定不能)", len(sends), len(keyIdx))
@@ -494,7 +509,7 @@ func analyze(evs []event, sends []send) ([]keyStat, error) {
 	stats := make([]keyStat, 0, len(sends))
 	for i, s := range sends {
 		k := evs[keyIdx[i]]
-		end := int64(1<<63 - 1)
+		end := quitAt // 最後の打鍵の窓は閉じる q を送るまで (閉じる操作の描画を最後の打鍵に数えない)
 		if i+1 < len(sends) {
 			end = sends[i+1].t
 		}

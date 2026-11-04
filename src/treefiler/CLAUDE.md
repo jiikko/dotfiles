@@ -78,7 +78,7 @@ tfprobe は Model をヘッドレスで回すので、bubbletea の描画の周�
 `make -C src/treefiler perf` (既定は `src/` で `j*30 k*30`。`ROOT=` `KEYS=` `BIN=` `ARGS="-interval 700ms -width 320 -height 85"`) で測る。
 実物の bin/treefiler を run ごとの tmux (`-S <out>/tmux.sock`) で起こし (本番の tmux には繋がない)、打鍵を 1 つずつ送って、`TREEFILER_PERFLOG` のログ
 (perflog。update / view / write の 1 行ずつ) と送った時刻を組にする。結果は本体の checkout の `tmp/tfperf-<日時>/`
-(`summary.txt`・打鍵ごとの `keys.tsv`・生の `perf.log`)。設定は `treefiler.toml` だけを写し、places と history は本物を触らない。
+(`summary.txt`・打鍵ごとの `keys.tsv`・生の `perf.log`・送った打鍵の `sends.tsv`・閉じるために送った q の `quits.tsv`)。設定は `treefiler.toml` だけを写し、places と history は本物を触らない。
 
 - 指標: `deliver` (送ってから届くまで = tmux と pty。treefiler の外) / `handle` (キーの Update) / `draw` (届いてから最初の書き込み) /
   `next_frame` (キーから動きの次のフレームの tick。16ms 前後でなければ tick の張り方が動きを待たせている) / `settle` (動きが止まるまで) /
