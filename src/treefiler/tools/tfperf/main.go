@@ -151,7 +151,10 @@ func run(args []string) error {
 			return err
 		}
 		// 送り終えた時刻も残す: send-keys は tmux のクライアントを 1 本起こすので、その起動の分を treefiler の所要から外して読む
-		fmt.Fprintf(sends, "%d\t%d\t%s\n", before, time.Now().UnixNano(), k)
+		if _, err := fmt.Fprintf(sends, "%d\t%d\t%s\n", before, time.Now().UnixNano(), k); err != nil {
+			sends.Close()
+			return err
+		}
 		time.Sleep(o.interval) // sleep-ok: 打鍵の間隔そのもの (人の打鍵の速さを模す入力)
 		if err := t.snap(o, i+1, k); err != nil {
 			sends.Close()
@@ -165,8 +168,13 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	qerr := t.quit(func(before, done int64) { fmt.Fprintf(quits, "%d\t%d\tq\n", before, done) })
-	if err := errors.Join(qerr, quits.Close()); err != nil {
+	var werr error
+	qerr := t.quit(func(before, done int64) {
+		if _, err := fmt.Fprintf(quits, "%d\t%d\tq\n", before, done); err != nil && werr == nil {
+			werr = err
+		}
+	})
+	if err := errors.Join(qerr, werr, quits.Close()); err != nil {
 		return err
 	}
 	f, err := os.Create(filepath.Join(o.out, "summary.txt"))
@@ -260,19 +268,18 @@ func (t *tmuxServer) start(o runOpts, bin, root, cfg, logPath, debugPath string)
 }
 
 // quit は q を送って treefiler を閉じる。台本の終わりにタイル・キー一覧が開いていると q はそれを 1 枚閉じるだけなので、
-// session が終わるまで送り直す (8 回まで)。送った q は sent に渡す (quits.tsv。analyze が台本の打鍵と分ける)。
+// session が終わるまで送り直す (8 回まで)。届けた q (send-keys が成功したもの) は sent に渡す (quits.tsv。analyze が台本の打鍵と分ける)。
 func (t *tmuxServer) quit(sent func(before, done int64)) error {
 	gone := func() bool { return t.cmd("has-session", "-t", t.session) != nil }
 	for range 8 {
 		before := time.Now().UnixNano()
-		err := t.cmd("send-keys", "-t", t.session, "q")
-		sent(before, time.Now().UnixNano()) // 失敗しても届いたかもしれない (閉じた後の send-keys も失敗する)
-		if err != nil {
+		if err := t.cmd("send-keys", "-t", t.session, "q"); err != nil {
 			if gone() {
 				return nil
 			}
 			return err
 		}
+		sent(before, time.Now().UnixNano())
 		if waitFor(1500*time.Millisecond, gone) == nil {
 			return nil
 		}
@@ -427,7 +434,11 @@ func readSends(path string) ([]send, error) {
 		return nil, err
 	}
 	var out []send
-	for i, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	body := strings.TrimSpace(string(b))
+	if body == "" {
+		return nil, nil // 1 本も届けていない (閉じる q を送る前に session が終わった)
+	}
+	for i, l := range strings.Split(body, "\n") {
 		c := strings.Split(l, "\t")
 		if len(c) != 3 {
 			return nil, fmt.Errorf("%s:%d: 読めない行 %q", path, i+1, l)
@@ -442,7 +453,7 @@ func readSends(path string) ([]send, error) {
 	return out, nil
 }
 
-// keyStat は 1 打の集計。時間は ms。窓は送った時刻から次の打鍵を送った時刻 (最後の打鍵は閉じる q を送った時刻) まで。
+// keyStat は 1 打の集計。時間は ms。窓は送った時刻から次の打鍵を送った時刻 (最後の打鍵は閉じる最初の q の Update が始まるまで) まで。
 type keyStat struct {
 	key string
 	// deliver は送り始めてから key の Update が始まるまで (tmux のクライアント・pty・bubbletea の読み取り。端末側の分)。
@@ -472,11 +483,7 @@ func report(dir string, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("閉じるために送った q の記録: %w", err)
 	}
-	quitAt := int64(math.MaxInt64)
-	if len(quits) > 0 {
-		quitAt = quits[0].t
-	}
-	stats, err := analyze(evs, sends, quitAt)
+	stats, err := analyze(evs, sends, len(quits))
 	if err != nil {
 		return err
 	}
@@ -488,18 +495,32 @@ func report(dir string, w io.Writer) error {
 
 // analyze は i 番目に送った打鍵を i 番目の key の Update と組にする。数か名前が合わなければ判定不能 (取りこぼした・
 // 別のキーが混ざった。順番の組み合わせが崩れているので、どの打鍵の数字も信用できない)。
-// quitAt は閉じるための最初の q を送り始めた時刻 (quits.tsv)。それより後に始まった key の Update と、その後の記録は数えない
-// (閉じる q は開いている層の数だけ送る。本数で外すと、台本の最後の q を取りこぼしたときに閉じる q がその穴を埋めて数が合う)。
-func analyze(evs []event, sends []send, quitAt int64) ([]keyStat, error) {
+// quits は閉じるために届けた q の本数 (quits.tsv)。key の Update は送った打鍵 + quits 本あり、後ろの quits 本は q でなければならない。
+// 🚨 時刻 (q を送った時刻より後に始まった Update を外す) で分けない: 遅い最後の打鍵 (perf で探したいもの) の Update が q の後に始まり、
+// 判定不能になる。本数で分けても、台本の最後の q を取りこぼすと数が 1 つ足りなくなるので、閉じる q と取り違えない。
+func analyze(evs []event, sends []send, quits int) ([]keyStat, error) {
 	var keyIdx []int
 	for i, e := range evs {
-		if e.kind == "update" && e.msg == "key" && e.t-e.ns < quitAt {
+		if e.kind == "update" && e.msg == "key" {
 			keyIdx = append(keyIdx, i)
 		}
 	}
-	if len(keyIdx) != len(sends) {
-		return nil, fmt.Errorf("送った打鍵 %d 件と、ログの key の Update %d 件が合わない (判定不能)", len(sends), len(keyIdx))
+	if len(keyIdx) != len(sends)+quits {
+		return nil, fmt.Errorf("送った打鍵 %d 件と閉じる q %d 件に、ログの key の Update %d 件が合わない (判定不能)", len(sends), quits, len(keyIdx))
 	}
+	for _, j := range keyIdx[len(sends):] {
+		if k := evs[j].key; k != "q" {
+			return nil, fmt.Errorf("閉じる q の所に %s の key がある (判定不能)", k)
+		}
+	}
+	// 最後の打鍵の窓は、閉じる最初の q の Update が始まるまで (閉じる操作の描画を最後の打鍵に数えない)。Update は順に処理されるので、
+	// 最後の打鍵の View と書き込みはそれより前に終わる
+	quitStart := int64(math.MaxInt64)
+	if quits > 0 {
+		q := evs[keyIdx[len(sends)]]
+		quitStart = q.t - q.ns
+	}
+	keyIdx = keyIdx[:len(sends)]
 	for i, s := range sends {
 		if got, want := evs[keyIdx[i]].key, teaKeyName(s.key); got != want {
 			return nil, fmt.Errorf("%d 打目: 送ったのは %s (%s) だが、ログの key は %s (判定不能)", i, s.key, want, got)
@@ -509,7 +530,7 @@ func analyze(evs []event, sends []send, quitAt int64) ([]keyStat, error) {
 	stats := make([]keyStat, 0, len(sends))
 	for i, s := range sends {
 		k := evs[keyIdx[i]]
-		end := quitAt // 最後の打鍵の窓は閉じる q を送るまで (閉じる操作の描画を最後の打鍵に数えない)
+		end := quitStart
 		if i+1 < len(sends) {
 			end = sends[i+1].t
 		}

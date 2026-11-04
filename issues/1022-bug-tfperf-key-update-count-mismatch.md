@@ -17,14 +17,25 @@
 
 ## 対応
 
-- `quit` が送った q の時刻を `quits.tsv` に書く (`sends.tsv` と同じ形)
-- `analyze` は、閉じるための最初の q を送り始めた時刻 (`quitAt`) より後に始まった key の Update を照合から外す (本数ではなく時刻で分ける)。
-  最後の打鍵の窓も `quitAt` で切る
+- `quit` が届けた q (send-keys が成功したもの) を `quits.tsv` に書く (`sends.tsv` と同じ形)
+- `analyze` は key の Update が「送った打鍵 + 届けた q の本数」あることを求め、後ろの q の本数ぶんは全部 `q` でなければ判定不能にする。
+  台本の最後の q を取りこぼすと数が 1 つ足りなくなるので、閉じる q と取り違えない
+- 最後の打鍵の窓は、閉じる最初の q の Update が始まるまでで切る (Update は順に処理されるので、最後の打鍵の View と書き込みはその前に終わる)
+- `sends.tsv` / `quits.tsv` の書き込みの誤りを捨てない。空の `quits.tsv` (q を 1 本も届けずに session が終わった) は 0 本として読む
 - `report` は `quits.tsv` が無いと誤りを返す (この変更より前の run の dir を `tfperf report` で集計し直すと落ちる。その run の summary.txt は作ったときに出ている)
+
+## 敵対的レビュー (opus 1 本、2026-11-04)
+
+最初の実装 (閉じる最初の q を送った時刻より後に始まった key の Update を外す) に当てた。採った:
+- P2: 遅い最後の打鍵 (前の Update で詰まり、q を送った後に Update が始まる。perf で探したいもの) を外して判定不能にする → 時刻ではなく本数で分ける形に変えた (`TestAnalyzeKeepsSlowLastKey`)
+- P2: `report` が quits.tsv を読む配線にテストが無い → `TestReportUsesQuitsFile`
+- P3: 最後の打鍵の View / 書き込みが q の送信の後に来ると黙って数字が落ちる → 窓の終わりを q の Update の始まりにした (本数で分けたので時計に頼らない)
+- P3: 空の quits.tsv が「読めない行」になる / 書き込みの誤りを捨てる → 直した
+- P3 (記録だけ): session が生きているのに send-keys が失敗すると run は summary の前で止まる。届けた q までは quits.tsv にあるので、手で `tfperf report` できる
 
 ## 進捗
 
-- [x] 2026-11-04: 実装・テスト (`TestAnalyzeRejectsMismatchedKeys` に閉じる q 2 本の形・`TestAnalyzeDoesNotPairQuitKeyWithLostScriptKey`・`TestAnalyzeLastWindowEndsAtQuit`)
-- 変異で red を確認 (mutate-verify): 時刻で外すのをやめる → TestAnalyzeRejectsMismatchedKeys / 最後の窓を記録の終わりへ戻す → TestAnalyzeLastWindowEndsAtQuit /
-  旧来の「末尾の q を 1 本だけ外す」に戻す → TestAnalyzeDoesNotPairQuitKeyWithLostScriptKey
-- 実物: `make debug KEYS='?'` (閉じる q 2 本) が rc=0 で集計まで通る (`tmp/tfdebug-20261104-215929/`。修正前は同じ形で判定不能)。`KEYS='? j'` (閉じる q 1 本) も rc=0
+- [x] 2026-11-04: 実装・テスト。変異で red を確認 (mutate-verify): 届けた q の本数を見ず末尾 1 本だけ外す → TestAnalyzeRejectsMismatchedKeys /
+  後ろが q かを見ない → TestAnalyzeRejectsMismatchedKeys / 最後の窓を記録の終わりへ戻す → TestAnalyzeLastWindowEndsAtQuit /
+  report が quits の本数を渡さない → TestReportUsesQuitsFile / 空の quits.tsv を 0 本として読まない → TestReportUsesQuitsFile
+- 実物: `make debug KEYS='?'` (閉じる q 2 本) と `KEYS='? j'` (1 本) がどちらも rc=0 で集計まで通る (修正前は前者が判定不能)
