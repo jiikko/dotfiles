@@ -801,7 +801,7 @@ func TestFilterHidesClosedEpicUntilDoneIsShown(t *testing.T) {
 }
 
 // TestFilterHidesRetiredEpicAtEveryStage は「親 issue を done へ送った終わった epic は、`a` で全部を
-// 見せる段階でも出ない」ことを固定する (2026-10-02 ユーザー要望)。親の形は 2 つ (IsGroupParent) とも見る。
+// 見せる段階でも出ない」ことを固定する (2026-10-02 ユーザー要望)。親の形のうち、番号と名前の 2 つを見る (見出しの形は TestIsGroupParentForms と viewer のテスト)。
 // 親の無い epic・親だけ先に閉じて open な子が残る epic は従来どおり出る。
 func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")
