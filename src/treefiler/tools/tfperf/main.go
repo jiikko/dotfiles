@@ -276,9 +276,6 @@ func (t *tmuxServer) start(o runOpts, bin, root, cfg, logPath, debugPath string)
 // session が終わるまで送り直す (8 回まで)。届けた q (send-keys が成功したもの) は sent に渡す (quits.tsv。analyze が台本の打鍵と分ける)。
 func (t *tmuxServer) quit(sent func(before, done int64)) error {
 	for range 8 {
-		if t.gone() {
-			return nil
-		}
 		before := time.Now().UnixNano()
 		if err := t.cmd("send-keys", "-t", t.session, "q"); err != nil {
 			if t.gone() {
@@ -525,11 +522,15 @@ func analyze(evs []event, sends []send, quits int) ([]keyStat, error) {
 	}
 	// 最後の打鍵の窓: Update と View は閉じる最初の q の Update が始まるまで (Update と View は順に処理されるので、最後の打鍵のものは
 	// その前に終わる)。書き込みは描画の goroutine が自分の周期で行うので、q の Update の後に来うる。q の後の最初の View が
-	// 終わるより前に書き始めたものは、最後の打鍵のフレームとして数える (drawn と同じ境目)
+	// 終わるより前に書き始めたものは、最後の打鍵のフレームとして数える (drawn と同じ境目)。
+	// 遅い最後の打鍵は、q が待っていると自分のフレームを単独では書かれず、q のフレーム (か閉じるときの書き出し) にまとめて書かれる
+	// (描画の goroutine は周期ごとに今の View を書く)。そのときは q の後の最初の書き込みを 1 回だけ最後の打鍵の draw に数える
+	// (量には q の差分も入る)。q の後に View が無い (閉じる合図が先に来た) ときは q の Update の始まりで切る
 	quitStart, quitDrawn := int64(math.MaxInt64), int64(math.MaxInt64)
 	if quits > 0 {
 		q := evs[keyIdx[len(sends)]]
 		quitStart = q.t - q.ns
+		quitDrawn = quitStart
 		for _, e := range evs[keyIdx[len(sends)]:] {
 			if e.kind == "view" {
 				quitDrawn = e.t
@@ -570,8 +571,11 @@ func analyze(evs []event, sends []send, quits int) ([]keyStat, error) {
 				if !last {
 					break
 				}
-				if e.kind != "write" || e.t-e.ns >= writeEnd {
-					continue // 最後の打鍵の後ろは、閉じる q の前のフレームの書き込みだけを拾う
+				if e.kind != "write" || e.t-e.ns < drawn {
+					continue // 最後の打鍵の q の後ろは書き込みだけを拾う (前のフレームのものは除く)
+				}
+				if e.t-e.ns >= writeEnd && st.draw >= 0 {
+					continue // q のフレーム。自分のフレームが書かれていないときだけ、まとめて書かれた最初の 1 回を数える
 				}
 			}
 			switch e.kind {

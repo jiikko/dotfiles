@@ -171,6 +171,26 @@ func TestAnalyzeLastKeyWriteAfterQuitUpdate(t *testing.T) {
 	}
 }
 
+// 遅い最後の打鍵のフレームが単独で書かれず、q のフレームとまとめて書かれたときは、q の後の最初の書き込みを 1 回だけ draw に数える。
+func TestAnalyzeLastKeyMergedIntoQuitFrame(t *testing.T) {
+	sends := []send{{t: 0, done: 1, key: "j"}}
+	evs := []event{
+		{t: 5, kind: "update", ns: 1, msg: "key", key: "j", anim: false},
+		{t: 6, kind: "view", ns: 1},
+		{t: 8, kind: "update", ns: 1, msg: "key", key: "q"},
+		{t: 9, kind: "view", ns: 1},
+		{t: 20, kind: "write", ns: 2, bytes: 900}, // 18 に書き始めた (j と q をまとめたフレーム)
+		{t: 30, kind: "write", ns: 2, bytes: 50},  // 閉じるときの書き出し
+	}
+	st, err := analyze(evs, sends, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st[0].draw != 16e-6 || st[0].frames != 1 || st[0].bytes != 900 {
+		t.Fatalf("まとめて書かれた最後の打鍵の draw を取らない / 閉じる書き出しまで数えた: draw=%v frames=%d bytes=%d", st[0].draw, st[0].frames, st[0].bytes)
+	}
+}
+
 // report は quits.tsv の本数で閉じる q を外す (台本の最後でキー一覧が開いていて q を 2 本送った run)。
 func TestReportUsesQuitsFile(t *testing.T) {
 	dir := t.TempDir()
