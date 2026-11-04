@@ -641,3 +641,31 @@ func TestIssuesWatchCatchesEditDuringScan(t *testing.T) {
 		})
 	}
 }
+
+// 見出しを読めない issue は警告に出す (黙ってファイル名の表示に落とさない)。走査の後に消えたものは警告にしない。
+func TestLoadAllMetaWarnsUnreadableButNotVanished(t *testing.T) {
+	dir := t.TempDir()
+	locked := issuesviewtest.WriteRealIssue(t, dir, "010-feat-locked.md", "# 010 (epic): locked\n")
+	if err := os.Chmod(locked.Path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked.Path, 0o644) })
+	ok := issuesviewtest.WriteRealIssue(t, dir, "011-feat-ok.md", "# 011 ok\n")
+	gone := issuesviewtest.Path2Issue(dir, "012-feat-gone.md") // 走査の後に消えた
+
+	// 消えたものを先頭に置く: 警告は先頭の 1 件だけを名指しするので、後ろに置くと誤って数えても文に出ない
+	warnings := loadAllMeta([]*issues.Issue{gone, locked, ok})
+
+	if len(warnings) != 1 {
+		t.Fatalf("警告が 1 件でない: %q", warnings)
+	}
+	if !strings.Contains(warnings[0], "010-feat-locked.md") || strings.Contains(warnings[0], dir) {
+		t.Errorf("警告が読めないファイルを相対パスで名指ししていない: %q", warnings[0])
+	}
+	if strings.Contains(warnings[0], "012") || strings.Contains(warnings[0], "件") {
+		t.Errorf("消えたファイルまで警告にした: %q", warnings[0])
+	}
+	if ok.Title != "011 ok" {
+		t.Errorf("読めるファイルの見出しが読まれていない: %q", ok.Title)
+	}
+}

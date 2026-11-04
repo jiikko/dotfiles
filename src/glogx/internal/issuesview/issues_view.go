@@ -3,6 +3,8 @@
 package issuesview
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/gutter"
@@ -545,18 +548,38 @@ func scanIssues(cwd string) IssuesScanMsg {
 	if issuesFingerprint(issuesWatchDirs(dirs, nil), nil) != before {
 		fp = issuesStaleBaseline
 	}
-	loadAllMeta(found)
+	warnings = append(warnings, loadAllMeta(found)...)
 	return IssuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings, fp: fp}
 }
 
 // loadAllMeta は全件のメタデータを読む。読み終えた時点の差し込み口を同じ関数に持つのは、読む位置を動かす
 // 変更 (指紋の後ろ → 前) で差し込み口も一緒に動き、テストが「読んだ後から指紋までの窓」を見続けるため。
-func loadAllMeta(found []*issues.Issue) {
+//
+// 読めなかった issue は警告にまとめて返す (一覧ではファイル名の表示に落ちる)。黙って捨てない: 見出しで親を宣言した
+// epic (`# NNN (epic):`) は見出しが読めないと親と判定されず、group が親行の無い形で出る。走査の後に消えたファイルは
+// 警告にしない (見張りの次の観測で取り直す、ふつうの競合)。
+func loadAllMeta(found []*issues.Issue) []string {
+	var failed []string
 	for _, iss := range found {
-		// メタデータの読み取り失敗は無視する (タイトルがスラッグ表示に落ちるだけ)
-		_ = iss.LoadMeta()
+		err := iss.LoadMeta()
+		if err == nil || errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err // パスは Rel で出す (絶対パスを重ねると幅で原因が切れる)
+		}
+		failed = append(failed, termsafe.PlainLine(iss.Rel+": "+app.FirstLine(err.Error())))
 	}
 	scanIssuesStage("read")
+	switch len(failed) {
+	case 0:
+		return nil
+	case 1:
+		return []string{"見出しを読めない issue があります (ファイル名で出しています): " + failed[0]}
+	default:
+		return []string{"見出しを読めない issue が " + strconv.Itoa(len(failed)) + " 件あります (ファイル名で出しています): " + failed[0]}
+	}
 }
 
 // issuesScanDirs はテストの差し込み口 (走査の最中に入った追加・移動を作る)。
@@ -942,15 +965,15 @@ func (v *IssuesView) rebuildDisplayRows() {
 			groups[key] = g
 			groupList = append(groupList, g)
 		}
-		switch {
-		case issues.IsGroupParent(iss) && g.parent == nil:
-			g.parent = iss // その epic 自身の親 issue (形は issues.IsGroupParent)
-		case issues.PreferGroupParent(iss, g.parent):
-			// v.rows の並び (番号の降順) に任せると、後から足した `NNN-epic-<番号>` や見出しに (epic) を残した
-			// 旧 epic が本物の親を子へ落とす。先に親にしたものは子へ戻す
-			g.children = append(g.children, g.parent)
+		// 親の選び方は issues.PreferGroupParent だけが持つ (groupOpenParents と同じ親を選ぶため)。
+		// v.rows の並び (番号の降順) に任せると、後から足した `NNN-epic-<番号>` や見出しに (epic) を残した
+		// 旧 epic が本物の親を子へ落とす。先に親にしたものは子へ戻す
+		if issues.PreferGroupParent(iss, g.parent) {
+			if g.parent != nil {
+				g.children = append(g.children, g.parent)
+			}
 			g.parent = iss
-		default:
+		} else {
 			g.children = append(g.children, iss)
 		}
 		n, ok := issues.Number(iss)
