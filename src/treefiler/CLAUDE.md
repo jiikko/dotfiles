@@ -33,6 +33,7 @@
 - `filer/goto.go` — `:` 入力したパスへカーソルを飛ばす (root の外なら root を上げる。issue 746)。入力は `!` と同じ欄
 - `filer/settings.go` / `filer/places.go` — 設定の板と保存、前回の場所
 - `filer/open.go` / `filer/explode.go` — `o` (外のアプリで開く)・`>` (配下を全部開く。見える項目が 100 件以上なら確認の板)
+- `filer/help.go` — `?` のキー一覧の板 (分類ごとの節・幅があれば 2 段。キーを足したら `helpSections` の節に足す)
 - `filer/ask.go` — 中央の確認の板 (`d` のゴミ箱と `>` が使う。開いている間は全部のキーを取る)
 - `filer/tileview.go` — タイルに出す表示の行 (本体 / diff・Markdown の整形)
 - `tools/tfprobe/` — 実物のディレクトリで台本を回して所要と資源を測る道具 (下の「実物で測る」)

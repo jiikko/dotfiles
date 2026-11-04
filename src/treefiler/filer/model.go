@@ -1625,62 +1625,6 @@ func (m *Model) searchBar(c *canvas) {
 	}
 }
 
-// helpKeys はキー一覧 (? の板。treebeard の KEYS から、写さないもの (マウス・音声・画像) を除いて日本語にした)。
-var helpKeys = [][2]string{
-	{"j k ↓ ↑ ^N ^P", "同じ階層の中で移動"},
-	{"J K / ^D ^U", "10 件 / 半ページ"},
-	{"g G", "兄弟の先頭 / 末尾"},
-	{"l → ^F enter", "フォルダへ潜る · ファイルを開く"},
-	{"h ← ^B", "親へ (root なら 1 段上へ)"},
-	{"space tab", "フォルダの開閉"},
-	{"c C", "このフォルダを畳む · 経路以外を畳む"},
-	{"> <", "配下を全部開く (esc で中断。100 件以上は確認) · 配下を全部畳む"},
-	{"Z", "全部畳んで root 直下に戻る (カーソルは経路の root 直下へ)"},
-	{"e", "エディタで開く (フォルダも)"},
-	{"/ n N", "開いた木の全体を検索 · 次 · 前"},
-	{"- backspace ^H", "root を 1 段上へ"},
-	{". I", "dotfile の表示を切り替え"},
-	{",", "設定"},
-	{"p", "右のプレビューの欄を開閉"},
-	{"o O", "外のアプリで開く (open) · Finder で表示"},
-	{"y Y", "パスをコピー (絶対 · root からの相対)"},
-	{":", "入力したパスへ移動 (root の外なら root を上げる)"},
-	{"'", "起動時のカーソルへ戻る (開いたフォルダはそのまま)"},
-	{"a m d", "新規作成 (末尾 / でフォルダ) · 名前の変更 · ゴミ箱へ移す"},
-	{"S", "並びを巡回 (名前 → 更新の新しい順 → 大きい順)"},
-	{"r", "読み直す"},
-	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ (e で選んだ先を編集) · J K で隣 · d で diff · e でエディタ · o で外のアプリ · O で Finder"},
-	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
-	{"!", "ここでコマンドを 1 行 ($f = 選んだパス)"},
-	{"s", "ここでシェルを開く (抜けると戻る)"},
-	{"?", "このキー一覧"},
-}
-
-// drawHelp はキー一覧の板 (中央。spec §8.1 の幅 64)。
-func (m *Model) drawHelp(c *canvas) {
-	w := min(64, m.w-2)
-	h := min(len(helpKeys)+4, m.h-1)
-	if w < 20 || h < 4 {
-		return
-	}
-	x0, y0 := (m.w-w)/2, max((m.h-1-h)/2, 0)
-	c.frame(rect{x0, y0, w, h}, cAccRoute)
-	c.put(x0+2, y0, " treefiler ", cText, true)
-	rows := h - 3 // 枠の上下と題の下の空行を除いた行
-	shown := helpKeys
-	if len(shown) > rows { // 収まらないなら最後の行に残りの数を出す (黙って切ると、切れたことが分からない。issue 731)
-		shown = shown[:max(rows-1, 0)]
-	}
-	for i, kv := range shown {
-		y := y0 + 2 + i
-		kx := c.put(x0+2, y, termwidth.FillLeft(kv[0], 16), cAccRoute, true)
-		c.put(kx+2, y, termwidth.Truncate(kv[1], max(w-22, 1), "…"), cText, false)
-	}
-	if rest := len(helpKeys) - len(shown); rest > 0 {
-		c.put(x0+2, y0+2+len(shown), termwidth.Truncate("… 残り "+itoa(rest)+" 行 (端末を高くすると全部出る)", max(w-4, 1), "…"), cMuted, false)
-	}
-}
-
 // promptBar は足元の入力欄の最下行 (`!` は spec §3.4 の ! プロンプト行。a / m の名前の入力と `:` のパスも同じ欄)。
 func (m *Model) promptBar(c *canvas) {
 	f, _ := m.inputField()
