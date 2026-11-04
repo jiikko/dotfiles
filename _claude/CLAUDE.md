@@ -193,3 +193,4 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | pro-con, カード, PM, PG, レーン, dispatcher, dogfooding (pro-con を外から動かす・調べる) | `~/.claude/skills/pro-con/SKILL.md` (正本は `pro-con help <話題>`) |
 | 視認性, 色被り, UXレビュー | `~/.claude/skills/ux-visibility-review/SKILL.md` |
 | ずんだもん解説, VOICEVOX, ずんだもん, キャラ音声の掛け合い動画, 読み上げ動画 | `~/.claude/skills/zundamon-kaisetsu/SKILL.md` |
+| 自然な日本語, 日本語がおかしい, 主語がない, 文言を見直して, UI の文言・ストアの説明文を日本語で書く, ja-writing | `~/.claude/skills/ja-writing/SKILL.md` (書き癖の機械の検査は `ja-textlint` (dotfiles の `bin/`)。主語の抜け・語の選び方は機械では拾えない) |

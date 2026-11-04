@@ -1,0 +1,10 @@
+{
+  "name": "ja-writing-textlint",
+  "private": true,
+  "description": "bin/ja-textlint が使う textlint と規則の版の固定 (skill ja-writing)",
+  "dependencies": {
+    "textlint": "15.8.0",
+    "textlint-rule-preset-ja-technical-writing": "12.0.2",
+    "textlint-filter-rule-comments": "1.3.0"
+  }
+}
