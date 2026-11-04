@@ -85,7 +85,7 @@ dotfiles mac-lan-manager から広告したホストは見れないのかな？�
     - 記録だけの 3 件 (低・未確認): `launchctl print` が一時的に失敗するとその周で SMB の行が消えて次の周で戻る / q が落ちた後の pid の再利用
       (p にも前からある型) / TERM が `& q=$!` の間に届いたときの取りこぼし (launchd の bootout はプロセスグループごと止める見込み。p と同じ型)
   - この M3 は `bin/mac-lan-manager upgrade-advert` で v4 に入れ直した (rc 0。launchctl の arguments の 4 番目が v4、9・10 番目が launchctl と scutil。共有が無効なので `_smb._tcp` に行は出ない = 期待どおり)
-  - セルフレビュー: 初期設定の確認の板が SMB の広告を説明していなかったので 1 行足した。各 Mac の入れ直しと目視は [1023](1023-human-reinstall-wired-name-advert-v4-on-each-mac.md) に起こした
+  - セルフレビュー: 初期設定の確認の板が SMB の広告を説明していなかったので 1 行足した。各 Mac の入れ直しと目視は 1023 に起こしたが、ユーザーが自分でやるとのことで 1023 は消した (2026-11-04)
   - 残り: 各 Mac で入れ直す (dotfiles のある Mac は `setup.sh` が `bin/mac-lan-manager upgrade-advert` を呼ぶ。相手の Mac は初期設定の名前の手順)。
     入れ直した後に、共有が有効な ms / air5 で `dns-sd -B _smb._tcp local.` に「(有線)」の行が出ること、obaket の「近くのホスト」に `ms.wired.local` が
     出ること (実機の目視) は未確認
