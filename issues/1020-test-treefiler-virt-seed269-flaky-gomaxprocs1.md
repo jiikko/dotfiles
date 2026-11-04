@@ -1,5 +1,7 @@
 # 1020 (test): treefiler の仮想化の等価性のテストが GOMAXPROCS=1 の全体 run で seed 269 だけ落ちる (光のセル)
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-04〜）
+
 起票日: 2026-11-04
 
 ## 概要
