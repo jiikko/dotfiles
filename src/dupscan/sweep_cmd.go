@@ -120,7 +120,12 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	w.section("1. 同じ形の組 (既定の下限 %d 節・段 %s)", opt.MinNodes, *c.levels)
 	sweepGroups(w, base, *c.limit)
 	w.section("2. 下限を %d 節に下げ、メンバー名だけ違う写し (L1m) も見て新しく出た組 (小さい単位が多く、雑音も混ざる。allow 印で静かにできる)", sweepDeepMinNodes)
-	sweepGroups(w, deep, *c.limit)
+	deepShown, tables := deep, []sweepTable(nil)
+	if !*c.verbose {
+		deepShown, tables = splitTableGroups(deep, defaultMinClosure)
+	}
+	sweepGroups(w, deepShown, *c.limit)
+	sweepTableText(w, tables, *c.limit)
 	if skippedSimilar != "" {
 		w.section("3. 部分木が似ている対 (飛ばした)")
 		w.printf("%s\n", skippedSimilar)
@@ -235,6 +240,92 @@ func sweepGroups(w *lineWriter, groups []group.Group, limit int) {
 		if report.SingleCall(g.Members) {
 			w.printf("%s\n", report.SingleCallMark)
 		}
+	}
+}
+
+// sweepTable は、節 2 で畳んだ「1 つの単位の中のクロージャだけの組」を、囲む単位ごとにまとめたもの。
+type sweepTable struct {
+	file, owner     string
+	groups, members int
+}
+
+// splitTableGroups は、メンバーが全部同じ 1 つの単位 (関数・表の変数) の中のクロージャである組を外し、囲む単位ごとに数える。
+// 設定の表・キーの割り当て・計測の列のような「表の行」は 1 行ずつ同じ形のクロージャになり、下限を下げた節 2 の先頭を
+// 埋める (treefiler の settings.go の items で 3 組 28 件。表の行は寄せる先が無い)。
+// 消さずに単位ごとの 1 行へ畳み、-v で組ごとに出す。節 1 (既定の下限) と、節 2 に初めて出る組でも節が bigNodes 以上の組は畳まない:
+// 大きいクロージャの写しは本物のことが多い (同じ関数で登録する 2 つの handler の、メンバー名だけ違う本体は L1m なので節 2 にしか出ない)。
+// 囲む単位が別のクロージャ (入れ子) なら、その鍵で数える (同じ関数の中でも別のクロージャの中の組は畳まない)。
+// bigNodes は既定のクロージャの下限 (defaultMinClosure) に固定する。-min-closure-nodes に連動させない: 0 は節 1 では既定へ読み替えられるのに
+// ここでは全部を残し、上げると残すはずの大きい写しまで畳み、どちらも出力に出ないまま畳み方が振れる。
+func splitTableGroups(groups []group.Group, bigNodes int) ([]group.Group, []sweepTable) {
+	var shown []group.Group
+	byOwner := map[string]*sweepTable{}
+	var order []string
+	for _, g := range groups {
+		owner, ok := sameOwnerClosures(g)
+		if !ok || g.Members[0].Result.Nodes >= bigNodes {
+			shown = append(shown, g)
+			continue
+		}
+		t := byOwner[owner]
+		if t == nil {
+			u := g.Members[0].Unit
+			t = &sweepTable{file: u.File, owner: u.OwnerName}
+			byOwner[owner] = t
+			order = append(order, owner)
+		}
+		t.groups++
+		t.members += len(g.Members)
+	}
+	tables := make([]sweepTable, 0, len(order))
+	for _, k := range order {
+		tables = append(tables, *byOwner[k])
+	}
+	sort.SliceStable(tables, func(i, j int) bool { return tables[i].members > tables[j].members })
+	return shown, tables
+}
+
+// sameOwnerClosures は、組のメンバーが全部クロージャで、囲む単位が同じかを返す (同じなら囲む単位の鍵)。
+// 囲む単位の無いクロージャ (Go の package の変数の初期化子) は、ファイル・型・変数の名前で同じ単位とみなす。
+// 名前が `_` の変数は宣言ごとに別の単位なので、名前では同じとみなさない (`var _ = register(…)` の並び)。
+func sameOwnerClosures(g group.Group) (string, bool) {
+	key := ""
+	for i, m := range g.Members {
+		u := m.Unit
+		if u.Kind != tree.KindClosure {
+			return "", false
+		}
+		k := u.Owner
+		if k == "" {
+			if u.OwnerName == "" || u.OwnerName == "_" {
+				return "", false
+			}
+			k = u.File + "|" + u.Enclosing + "|" + u.OwnerName
+		}
+		if i == 0 {
+			key = k
+		} else if k != key {
+			return "", false
+		}
+	}
+	return key, key != ""
+}
+
+func sweepTableText(w *lineWriter, tables []sweepTable, limit int) {
+	if len(tables) == 0 {
+		return
+	}
+	n := 0
+	for _, t := range tables {
+		n += t.groups
+	}
+	w.printf("1 つの単位の中のクロージャだけの組 %d (表の行・登録の並びが多いので畳んだ。組ごとには -v で出す):\n", n)
+	for i, t := range tables {
+		if limit > 0 && i == limit {
+			w.printf("  … 他 %d 単位 (-limit 0 で全部)\n", len(tables)-limit)
+			break
+		}
+		w.printf("  %s {closure} in %s: %d 組 %d 件\n", t.file, t.owner, t.groups, t.members)
 	}
 }
 

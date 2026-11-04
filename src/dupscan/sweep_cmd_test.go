@@ -635,3 +635,95 @@ func TestSweepNarrowScopeAllowGroupBindsCoarseWhenLanguageIsInside(t *testing.T)
 		t.Errorf("効いている印を人数の合わない印と数えている: %q", out)
 	}
 }
+
+// 節 2 の下限 12 節以上・既定の下限 20 節未満のクロージャ。op を変えると別の形になる (リテラルだけ変えると L2 でファイルをまたいで 1 つの組になる)。
+func tableClosure(op string) string {
+	return fmt.Sprintf("func(s *T, n int) int { return s.A %s n*2 }", op)
+}
+
+// 1 つの単位 (表の変数・登録の関数) の中のクロージャだけの組は、節 2 の最後に単位ごとの 1 行へ畳み、-v で組ごとに出す。
+// 別の単位どうしの組は畳まない。
+func TestSweepFoldsClosureGroupsInsideOneUnit(t *testing.T) {
+	a, b, c := tableClosure("+"), tableClosure("-"), tableClosure("|")
+	root := repoWith(t, map[string]string{
+		"a/table.go": "package a\n\ntype T struct{ A int }\n\nvar table = []func(*T, int) int{\n" + a + ",\n" + a + ",\n" + a + ",\n}\n",
+		"b/reg.go":   "package b\n\ntype T struct{ A int }\n\nfunc add(f func(*T, int) int) {}\n\nfunc reg() {\n\tadd(" + b + ")\n\tadd(" + b + ")\n}\n",
+		"c/apart.go": "package c\n\ntype T struct{ A int }\n\nfunc add(f func(*T, int) int) {}\n\nfunc one() {\n\tadd(" + c + ")\n}\n\nfunc two(xs []int) {\n\tfor range xs {\n\t\tadd(" + c + ")\n\t}\n}\n",
+	})
+	rc, out, errs := sweep(t, "-limit", "0", root)
+	if rc != 0 {
+		t.Fatalf("rc=%d %q", rc, errs)
+	}
+	s := sweepSection(t, out, 2)
+	for _, want := range []string{
+		"1 つの単位の中のクロージャだけの組 2 ",
+		"a/table.go {closure} in table: 1 組 3 件",
+		"b/reg.go {closure} in reg: 1 組 2 件",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("畳んだ行 %q が無い: %q", want, s)
+		}
+	}
+	if strings.Contains(s, "a/table.go:") || strings.Contains(s, "b/reg.go:") {
+		t.Errorf("畳んだ組のメンバーは出さない: %q", s)
+	}
+	if !strings.Contains(s, "c/apart.go:8 {closure} in one") || !strings.Contains(s, "c/apart.go:13 {closure} in two") {
+		t.Errorf("別の単位どうしの組は畳まずに出す: %q", s)
+	}
+
+	_, vout, _ := sweep(t, "-v", "-limit", "0", root)
+	v := sweepSection(t, vout, 2)
+	if strings.Contains(v, "1 つの単位の中のクロージャだけの組") || !strings.Contains(v, "a/table.go:6 {closure} in table") || !strings.Contains(v, "b/reg.go:8 {closure} in reg") {
+		t.Errorf("-v では畳まずに組ごとに出す: %q", v)
+	}
+}
+
+// 畳まない形: 節 1 のクロージャの下限 (20 節) 以上の組 (同じ関数で登録する handler の、メンバー名だけ違う本体は L1m なので節 2 にしか出ない) と、
+// 名前が `_` の変数の初期化子 (宣言ごとに別の単位)。
+func TestSweepKeepsBigOrBlankVarClosureGroups(t *testing.T) {
+	big := func(field string) string {
+		return "func(s *T) int {\n\t\tt := 0\n\t\tfor _, c := range s." + field + " {\n\t\t\tt += int(c) * 3\n\t\t}\n\t\treturn t\n\t}"
+	}
+	root := repoWith(t, map[string]string{
+		"d/d.go": "package d\n\ntype T struct{ A, B string }\n\nfunc add(f func(*T) int) {}\n\nfunc reg() {\n\tadd(" + big("A") + ")\n\tadd(" + big("B") + ")\n}\n",
+		"e/e.go": "package e\n\ntype T struct{ A int }\n\nfunc register(f func(*T, int) int) int { return 0 }\n\nvar _ = register(" + tableClosure("+") + ")\nvar _ = register(" + tableClosure("+") + ")\n",
+	})
+	_, out, _ := sweep(t, "-limit", "0", root)
+	s := sweepSection(t, out, 2)
+	if strings.Contains(s, "1 つの単位の中のクロージャだけの組") {
+		t.Errorf("どちらの組も畳まない: %q", s)
+	}
+	if !strings.Contains(s, "d/d.go:8 {closure} in reg") || !strings.Contains(s, "e/e.go:7 {closure} in _") {
+		t.Errorf("組ごとに出す: %q", s)
+	}
+}
+
+// 畳んだ行も -limit で打ち切る (単位の多い repo で節 2 の末尾が伸びない)。
+func TestSweepFoldedTablesHonorLimit(t *testing.T) {
+	files := map[string]string{}
+	for i, op := range []string{"+", "-", "|"} {
+		files[fmt.Sprintf("p%d/t.go", i)] = fmt.Sprintf("package p%d\n\ntype T struct{ A int }\n\nvar table = []func(*T, int) int{\n%s,\n%s,\n}\n", i, tableClosure(op), tableClosure(op))
+	}
+	root := repoWith(t, files)
+	_, out, _ := sweep(t, "-limit", "2", root)
+	s := sweepSection(t, out, 2)
+	if !strings.Contains(s, "1 つの単位の中のクロージャだけの組 3 ") || !strings.Contains(s, "… 他 1 単位") || strings.Count(s, "{closure} in table:") != 2 {
+		t.Errorf("畳んだ行は -limit の数だけ出して残りを数える: %q", s)
+	}
+}
+
+// 畳む上限は -min-closure-nodes に連動しない: 0 にしても表の行は畳み、上げても大きい写しは畳まない。
+func TestSweepFoldThresholdIgnoresMinClosureNodes(t *testing.T) {
+	big := "func(s *T) int {\n\t\tt := 0\n\t\tfor _, c := range s.%s {\n\t\t\tt += int(c) * 3\n\t\t}\n\t\treturn t\n\t}"
+	root := repoWith(t, map[string]string{
+		"a/table.go": "package a\n\ntype T struct{ A int }\n\nvar table = []func(*T, int) int{\n" + tableClosure("+") + ",\n" + tableClosure("+") + ",\n}\n",
+		"d/d.go":     "package d\n\ntype T struct{ A, B string }\n\nfunc add(f func(*T) int) {}\n\nfunc reg() {\n\tadd(" + fmt.Sprintf(big, "A") + ")\n\tadd(" + fmt.Sprintf(big, "B") + ")\n}\n",
+	})
+	for _, v := range []string{"0", "50"} {
+		_, out, _ := sweep(t, "-limit", "0", "-min-closure-nodes", v, root)
+		s := sweepSection(t, out, 2)
+		if !strings.Contains(s, "a/table.go {closure} in table: 1 組 2 件") || !strings.Contains(s, "d/d.go:8 {closure} in reg") {
+			t.Errorf("-min-closure-nodes %s: 表は畳み、大きい写しは組ごとに出す: %q", v, s)
+		}
+	}
+}
