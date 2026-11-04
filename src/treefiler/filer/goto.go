@@ -114,3 +114,14 @@ func (m *Model) reveal(abs string) bool {
 	m.setCur(n)
 	return true
 }
+
+// goHome は起動時のカーソル (home) へ戻す (')。開いていたフォルダは畳まない (掘っていた先へまた行けるように)。
+// root は上へしか動かないので home はいつも root の中にある。消えていたら動かさずに知らせる。
+func (m *Model) goHome() {
+	if m.home == "" || m.cur.path() == m.home {
+		return
+	}
+	if !m.reveal(m.home) {
+		m.fail("戻れません: 起動時の項目が見つかりません: " + termsafeLine(m.home))
+	}
+}

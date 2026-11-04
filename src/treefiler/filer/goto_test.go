@@ -216,3 +216,49 @@ func TestGotoSymlinkToRootIsTheLinkItself(t *testing.T) {
 		t.Fatalf("root = %s cur = %s dir=%v (symlink の項目へ移ること)", m.root.abs, m.cur.abs, m.cur.dir)
 	}
 }
+
+// ' は起動時のカーソルへ戻る。掘っていた先のフォルダは開いたまま残し、root を上げた後でも同じ項目へ戻る。
+func TestQuoteReturnsToStartCursorKeepingOpened(t *testing.T) {
+	m := newTest(t)
+	start := m.cur.path()
+	goTo(t, m, "b/deep/x.txt")
+	deep := m.cur.parent
+	m.HandleKey("-")
+	m.HandleKey("'")
+	if m.cur.path() != start {
+		t.Fatalf("' のカーソル = %s, want 起動時の %s", m.cur.path(), start)
+	}
+	if !deep.expanded || !deep.parent.expanded {
+		t.Errorf("掘っていたフォルダが畳まれた: %s=%v %s=%v", deep.abs, deep.expanded, deep.parent.abs, deep.parent.expanded)
+	}
+	if ns := m.TakeNotices(); len(ns) != 0 {
+		t.Errorf("戻れたのに知らせが出た: %+v", ns)
+	}
+}
+
+// 前回の場所を戻したときは、戻した位置が起動時のカーソルになる (glogx は New の後に RestorePlace でもう一度戻す)。
+func TestQuoteReturnsToRestoredPlace(t *testing.T) {
+	m := newTest(t)
+	want := filepath.Join(m.root.abs, "b", "deep", "x.txt")
+	m.RestorePlace(Place{Start: m.startDir, Cursor: want})
+	goTo(t, m, "a")
+	m.HandleKey("'")
+	if m.cur.path() != want {
+		t.Fatalf("' のカーソル = %s, want 戻した場所 %s", m.cur.path(), want)
+	}
+}
+
+// 起動時の項目が消えていたら、カーソルを動かさずに知らせる。
+func TestQuoteMissingStartKeepsPlace(t *testing.T) {
+	m := newTest(t)
+	goTo(t, m, "b/deep/x.txt")
+	at := m.cur
+	m.home = filepath.Join(m.root.abs, "gone")
+	m.HandleKey("'")
+	if m.cur != at {
+		t.Fatalf("消えた項目へ戻ろうとしてカーソルが動いた: %s", m.cur.path())
+	}
+	if ns := m.TakeNotices(); len(ns) != 1 || !strings.Contains(ns[0].Text, "戻れません") {
+		t.Errorf("知らせ = %+v", ns)
+	}
+}

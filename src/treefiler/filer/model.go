@@ -98,6 +98,7 @@ type Model struct {
 	virtOverride int    // 0 = 既定 (virtMin)。テストの差し替え
 	animsPeak    int    // anims が最近いちばん多かったときの数 (compactAnims)
 	startDir     string // 起動したフォルダ (前回の場所を覚える鍵)
+	home         string // 起動時のカーソルの絶対パス (' で戻る先。前回の場所を戻した後の位置。goto.go の goHome)
 	walker       *walker
 	recs         map[string]walkResult // walker の結果の写し (Advance で取り込む)
 	git          gitWatch
@@ -177,6 +178,7 @@ func New(dir string, opts Options) (*Model, error) {
 		m.cur, root.last = ks[0], ks[0]
 	}
 	m.restorePlace()
+	m.home = m.cur.path()
 	m.startGit(true)
 	m.pulseFor = m.cur
 	return m, nil
@@ -1042,6 +1044,7 @@ func init() {
 	bind(do((*Model).startRename), "m")
 	bind(do((*Model).startTrash), "d")
 	bind(do((*Model).startGoto), ":") // goto.go (issue 746)
+	bind(do((*Model).goHome), "'")
 	bind(func(m *Model) Result { m.requestShell(); return Exec }, "s")
 	bind(do(func(m *Model) {
 		m.set.ShowHidden = !m.set.ShowHidden // 設定の Dotfiles と同じ (保存もする)
@@ -1638,6 +1641,7 @@ var helpKeys = [][2]string{
 	{"o O", "外のアプリで開く (open) · Finder で表示"},
 	{"y Y", "パスをコピー (絶対 · root からの相対)"},
 	{":", "入力したパスへ移動 (root の外なら root を上げる)"},
+	{"'", "起動時のカーソルへ戻る (開いたフォルダはそのまま)"},
 	{"a m d", "新規作成 (末尾 / でフォルダ) · 名前の変更 · ゴミ箱へ移す"},
 	{"S", "並びを巡回 (名前 → 更新の新しい順 → 大きい順)"},
 	{"r", "読み直す"},
