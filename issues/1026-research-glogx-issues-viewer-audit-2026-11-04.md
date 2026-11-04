@@ -37,7 +37,7 @@
 | broken-code | 0 | 移設の罠 (cwd 相対で読むテストの Skip / 0 件) は `structure_ratchet_test.go` と retro 815 の対象。今回の差分で `..` を読むテストは足されていない |
 | responsibility / polymorphism / leaky-abstraction / ui-components / test-cleanup / test-helpers / dependency / lint-from-done / general | 0 | 754 から構造は変わっていない (817 で package を分けたが、責務の割り方は同じ)。test-helpers は sweep の節 3 の 1 組 (上の duplication の行) だけ |
 
-全数: 直した 2 (error-handling 1・duplication 1)、起票 0。ユーザーの判断が要るもの 1 (ux の Enter と pull の確認)。
+全数: 直した 2 (error-handling 1・duplication 1)、起票 0。ux の Enter と pull の確認は、ユーザーが今の形 (`u` の後の Enter で pull) で確定した (2026-11-04)。
 
 ## 反証レビュー
 
@@ -51,3 +51,4 @@
 ## 進捗
 
 - 2026-11-04: 監査・対応
+- 2026-11-04: ux の判断待ち (pull の確認の Enter) はユーザーが今の形で確定。残課題なしで done
