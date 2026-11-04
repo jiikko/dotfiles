@@ -177,7 +177,9 @@ func benchIssuesBrowse(tb testing.TB, files, w, h int) *browseModel {
 	}
 	found, warnings := issues.Scan([]string{dir})
 	for _, iss := range found {
-		_ = iss.LoadMeta()
+		if err := iss.LoadMeta(); err != nil {
+			tb.Fatal(err)
+		}
 	}
 	m.handleKey("i")
 	m.issuesOv.Fixture().SetCwd(root)

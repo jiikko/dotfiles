@@ -63,8 +63,10 @@ func BenchmarkIssueScan(b *testing.B) {
 	for b.Loop() {
 		found, _ := issues.Scan(dirs)
 		for _, iss := range found {
-			// scanIssues (issues_view.go) と同じく読み取り失敗は無視する
-			_ = iss.LoadMeta()
+			// 読めないまま測ると、見出しを読まない (速い) 経路を測って緑になる
+			if err := iss.LoadMeta(); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }

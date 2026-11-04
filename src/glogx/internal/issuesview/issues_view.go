@@ -864,7 +864,7 @@ func (v *IssuesView) rebindOpenIssue(path string) {
 		// 捨てると、自分で直した見出しのせいで起きていない事象を告げられ、読んでいた位置を失う。
 		// 黙って入れ替わるのを防ぐ目的は notice で足りる (利用者が見て判断できる)。
 		if v.open != nil && v.open.Title != "" {
-			_ = moved.LoadMeta() // 見出しは遅延読み。読めなければ突き合わせを諦める (下の条件が偽)
+			_ = moved.LoadMeta() //nolint:gocritic // 見出しは遅延読み。読めなければ突き合わせを諦める (下の条件が偽。一覧の走査が次に読めない警告を出す)
 			if moved.Title != "" && moved.Title != v.open.Title {
 				v.setNotice("見出しが変わりました (別 issue の可能性): "+base, app.NoticeError)
 			}

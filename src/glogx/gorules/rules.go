@@ -49,3 +49,18 @@ func execViaForeground(m dsl.Matcher) {
 	m.Match(`tea.ExecProcess($*_)`).
 		Report(`端末を渡す実行は x := foreground.NewExec(cmd) を tea.Exec(x, fn) に渡し、fn で x.Err を読む (戻った後に端末の前面を取り戻す。issue 707・757)`)
 }
+
+// issueReadErrorNotDiscarded: issue のファイルを読む API (issues.Issue の LoadMeta / ReadBody) の失敗を `_` で捨てない。
+// 読めなかった issue は見出しがファイル名に落ち、見出しで親を宣言した epic (`# NNN (epic):`) は親と判定されず、
+// 一覧の形が黙って変わる (loadAllMeta が全部の失敗を捨てていた。issue 1026)。捨てるなら警告へ渡すか、
+// 捨ててよい理由を //nolint:gocritic の後に書く。
+// errcheck の check-blank を有効にする形は採らない: repo 全体で `_ = f()` は約 250 箇所あり、大半が理由つきの best-effort
+// (Close / Remove / Kill・キャッシュの保存) なので、読み込みの失敗が埋もれる。
+// 検出しない形: 戻り値を変数に受けてから使わない (`err := iss.LoadMeta()` だけ。これは go vet / ineffassign の担当)・
+// `if iss.LoadMeta() == nil` で判定してから黙って先へ進む (失敗の扱いを書いているので、レビューで見る)
+func issueReadErrorNotDiscarded(m dsl.Matcher) {
+	m.Import("glogx/issues")
+	m.Match(`_ = $x.LoadMeta()`, `$_, _ = $x.ReadBody()`).
+		Where(m["x"].Type.Is(`*issues.Issue`)).
+		Report(`issue の読み込みの失敗を捨てない (警告へ渡すか、捨ててよい理由を //nolint:gocritic の後に書く。issue 1026)`)
+}
