@@ -4,7 +4,7 @@
 
 ## 概要
 
-[1029](done/1029-retro-issues-viewer-u-audit-serialrun-flake-2026-11-04.md) の後の作業: glogx の ruleguard に `issueReadErrorNotDiscarded` を足した
+[1029](1029-retro-issues-viewer-u-audit-serialrun-flake-2026-11-04.md) の後の作業: glogx の ruleguard に `issueReadErrorNotDiscarded` を足した
 (20b77f6a6・3f848d130)。踏んだ所だけを書く。
 
 ## どこで踏んだか
