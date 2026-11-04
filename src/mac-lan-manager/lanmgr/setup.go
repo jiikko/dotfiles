@@ -605,6 +605,7 @@ func (m *Model) setupAction(st setup.Step) (*ask, string) {
 			"ユーザーの LaunchAgent (~/Library/LaunchAgents/" + setup.WiredNameLabel + ".plist) が ~/Library/Application Support/mac-lan-manager/" +
 				setup.AdvertExe + " (バックグラウンド項目にこの名前で出る) を起こし、" + ip + " をどれかの I/F が持っている間だけ dns-sd -P を走らせる (持っていない間は広告しない)。sudo は要らない",
 			"$ dns-sd -P " + strings.TrimSuffix(name, ".local") + " … " + name + " " + ip + "  (" + strconv.Itoa(setup.AdvertEvery) + " 秒ごとに ifconfig で " + ip + " を見る)",
+			"ファイル共有が有効な間は、同じ名前で _smb._tcp も「<コンピュータ名> (有線)」として広告する (Finder・SMB クライアントの近くのホストに出る。Wi-Fi 側にも見える)",
 		}, exec: &ExecRequest{Argv: argv, ExitIsFailure: true}, step: st.ID}, ""
 	case setup.StepLedger:
 		if why := m.ledgerBlocked(su.host, su.obs.IP); why != "" {
