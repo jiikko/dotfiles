@@ -79,3 +79,4 @@
   `quit` の各 q の前の session の確認を外したこと
 - 実物: `make debug KEYS='?'` (閉じる q 2 本)・`KEYS='? j'` (1 本)・`KEYS='j j q' ARGS=-interval 40ms` (台本の q で閉じる。閉じる q 0 本) がどれも rc=0 で集計まで通る
   (修正前は 1 つ目が判定不能)
+- 2026-11-04: 完了。`make -C src/treefiler lint` 0 issues・root の `make test` (コメントの経緯の語を 1 か所直した後) を回して push

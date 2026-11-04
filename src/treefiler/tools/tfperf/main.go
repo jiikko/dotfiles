@@ -526,7 +526,7 @@ func analyze(evs []event, sends []send, quits int) ([]keyStat, error) {
 	// q の後に View が無い (閉じる合図が先に来た) ときは q の Update の始まりで切る。
 	// 🚨 遅い最後の打鍵のフレームが q のフレームにまとめて書かれた (描画の goroutine は周期ごとに今の View を書く) ときは、draw は取れない (-1。
 	// summarize が 🚨 で数を出す)。q の後の書き込みを最後の打鍵の draw に数える形にしない: 画面を変えない打鍵 (末尾での j) は書き込みが無く、
-	// まとめて書かれた場合と見分けられないので、q のフレームの時刻を「遅い打鍵」として出してしまう (1022 の敵対的レビュー 4 周目)。途中の打鍵も同じ扱い
+	// まとめて書かれた場合と見分けられないので、q のフレームの時刻を「遅い打鍵」として出してしまう。途中の打鍵も同じ扱い
 	quitStart, quitDrawn := int64(math.MaxInt64), int64(math.MaxInt64)
 	if quits > 0 {
 		q := evs[keyIdx[len(sends)]]
