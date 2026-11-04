@@ -23,8 +23,7 @@ treefiler で「統合できるメソッドはあるか」を dupscan で調べ�
 
 ## 提案
 
-- **A. 採番の骨組みを push する前に `git log --oneline origin/<既定のブランチ>..HEAD` の出力を読み、骨組み以外の commit があるなら、その push を止める**
-  (骨組みだけを origin から切った一時の worktree で commit して push する)
+- **A. 採番の骨組みを push する前に `git log --oneline origin/<既定のブランチ>..HEAD` の出力を読み、骨組み以外の commit を一緒に出してよい (検証済み) かを確かめる。出せないものがあれば、骨組みだけを origin から切った一時の worktree で commit して push する**
   - 切り出し先: `_claude/issue-rules.md` の「採番したら即 commit & push する」の項への追記 (既存への追記。claim の規約と同じく、数えずに出力を読む形にした)
 - 却下: 2 (fixture の作り直し)。「テストの fixture を本物に 1 回通して、狙った状態に入ったかを見る」は `survey-receiver-guards-before-passing-new-values.md` の「その状態に入ったことを assert する」と
   `measure-external-cli-streams-separately.md` の「本物を呼んで取った値を貼る」で既に言われている (前者の文脈は HTTP の fake だが、形は同じ)。今回は従うのが遅れただけで、新しい規範は無い
@@ -44,3 +43,5 @@ P2 2 件・P3 4 件。採った: 追記を「数える」と書き、claim の�
 
 - [x] A: `_claude/issue-rules.md` に追記 (commit「retro 1027: 採番の骨組みの push もブランチ単位 (未 push の commit が混ざるなら push しない)」)
 - [x] 局所の手直し: 同じ commit
+- [x] セルフレビューで A の追記を直した (commit「issue-rules: 採番の骨組みの push の注意を claim の規約に揃える (検証済みの commit は一緒に出してよい)」)。
+  最初の追記は「骨組み以外の commit があるなら push しない」と言い切り、検証済みの commit まで止めていた。claim の規約は「飛ばしてよいかを先に確かめる」
