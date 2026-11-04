@@ -207,7 +207,8 @@ func Usage() string {
                             p 番号コピー / y パスコピー (子を持つだけの group 親行では group 名) /
                             Y 参照 (番号+タイトル+パス) コピー /
                             N 次に採番すべき番号コピー / n 次にやる目印 (next/ に symlink) /
-                            a done も表示 / u 本文中の URL ピッカー (本文表示中のみ) /
+                            a done も表示 / u 一覧では pull --rebase (y/N 確認。
+                            git log 一覧の u と同じ)、本文では URL ピッカー /
                             Tab 本文中のファイルパスのジャンプ (本文表示中のみ。j・k で選び
                             Enter で開く (.md は viewer 内に積んで h で戻る、他は nvim -R)、
                             e で編集、y でパスコピー、Esc で戻る) /

@@ -82,6 +82,7 @@ method IssuesView.StopGlides
 method IssuesView.StopWatch
 method IssuesView.TakeNotice
 method IssuesView.TakeWantCross
+method IssuesView.TakeWantPull
 method IssuesView.TakeWantQuit
 method IssuesView.Toggle
 method IssuesView.TypingInput

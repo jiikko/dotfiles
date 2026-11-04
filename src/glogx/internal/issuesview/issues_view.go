@@ -197,6 +197,9 @@ type IssuesView struct {
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
+	// wantPull は一覧の u で「git pull --rebase の確認を出したい」の一度きりの信号 (同上。確認と実行は
+	// browseModel の actModal の仕事で、git log 一覧の u と同じ経路を通す)。
+	wantPull bool
 	// closing は閉じる演出 (開く演出の逆再生) の途中か (ユーザー要望 2026-08-01)。
 	//
 	// 🚨 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
@@ -465,6 +468,13 @@ func (v *IssuesView) TakeWantCross() string {
 func (v *IssuesView) TakeWantQuit() bool {
 	want := v.wantQuit
 	v.wantQuit = false
+	return want
+}
+
+// TakeWantPull は「一覧の u で pull --rebase の確認を出したい」を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *IssuesView) TakeWantPull() bool {
+	want := v.wantPull
+	v.wantPull = false
 	return want
 }
 
@@ -1483,12 +1493,11 @@ func (v *IssuesView) HandleKey(key string, vp IssuesViewport) tea.Cmd {
 		// i は toggle で一覧へ戻る (閉じる意図が明確なので 1 段戻りはしない)
 		v.close()
 	case "u":
-		// 🚨 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
-		// 「pull は p です」を返す — 一覧だけ無音だと「押したのに何も起きない」= 壊れて見える
-		// (status viewer 側で明文化されている規律)。
-		// 効かせない理由は openURLPicker の doc: 一覧で押せるようにするとキー 1 打ごとにファイルを
-		// 読むことになり、しかも「その issue に URL があるか」は一覧に出ていない。
-		v.setNotice("URL 一覧は本文を開いてから u で出します", app.NoticeRefused)
+		// 一覧の u は git log 一覧と同じ pull --rebase (ユーザー要望 2026-11-04)。確認 (y/N) は browseModel の
+		// actModal が viewer の上に重ねて出す。本文の u は URL ピッカーのまま (一覧で URL を出さない理由は
+		// openURLPicker の doc)。status viewer が u を pull に使わないのは staging の隣接キーの誤爆を避けるためで、
+		// 実ファイルを動かすキーが n (確認つき) だけの issues viewer には当たらない。
+		v.wantPull = true
 	case "/":
 		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
 	// 範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。

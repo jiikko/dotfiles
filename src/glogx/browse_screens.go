@@ -264,6 +264,10 @@ func (m *browseModel) routeKeyToIssues(key string) (tea.Model, tea.Cmd) {
 	if m.issuesOv.TakeWantQuit() {
 		return m.quit()
 	}
+	// 一覧の u = git log 一覧と同じ pull --rebase の確認 (status viewer の p と同じく actModal が viewer の上に出す)
+	if m.issuesOv.TakeWantPull() {
+		m.actModal.askPull()
+	}
 	// 横断 (s / R / D。表は CrossTarget。ユーザー要望 2026-08-06 / 2026-09-01)。閉じる演出は待たず即着地させる:
 	// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
 	if target := crossScreen(m.issuesOv.TakeWantCross()); target != FullScreenNone {

@@ -734,12 +734,21 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if !m.issuesOv.Visible() {
 		t.Fatal("i で issues viewer が開かない")
 	}
-	// 🚨 回帰防止の主眼: viewer 表示中のキーは viewer が全部飲む。判定順を崩すと、一覧を
-	// 見ている最中の u / b が pull / push の確認を開く (裸の b/u が push/pull なので)
+	// 一覧の u は git log 一覧と同じ pull --rebase の確認を開く (ユーザー要望 2026-11-04)。
+	// 確認は viewer を閉じずに上へ重なり、確認以外のキーで取り消すと viewer に戻る
 	m.handleKey("u")
-	if m.actModal.pullConfirm {
-		t.Fatal("viewer 表示中の u が pull 確認を開いた")
+	if !m.actModal.pullConfirm || !m.issuesOv.Visible() {
+		t.Fatalf("viewer の一覧の u が pull 確認を開かない / viewer を閉じた (confirm=%v visible=%v)", m.actModal.pullConfirm, m.issuesOv.Visible())
 	}
+	if view := m.viewLines(); !strings.Contains(view, "pull --rebase") {
+		t.Fatalf("pull の確認が viewer の上に描かれていない:\n%s", view)
+	}
+	m.handleKey("n")
+	if m.actModal.pullConfirm || !m.issuesOv.Visible() {
+		t.Fatalf("n で確認が取り消されない / viewer が閉じた (confirm=%v visible=%v)", m.actModal.pullConfirm, m.issuesOv.Visible())
+	}
+	// 🚨 b は viewer が飲む (push は viewer の中から打たせない)。判定順を崩すと、一覧を
+	// 見ている最中の b が push の確認を開く (裸の b が push なので)
 	m.handleKey("b")
 	if m.actModal.pushConfirm {
 		t.Fatal("viewer 表示中の b が push 確認を開いた")
@@ -1195,15 +1204,20 @@ func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
 	m.width, m.height = 100, 16
 	m.handleKey("i")
-	m.issuesOv.Receive(issuesview.FixtureScanMsg(
-		"",
-		[]string{"/repo/issues"},
-		[]*issues.Issue{issuesviewtest.FakeIssue("030", "feat", "alpha", issues.StatusOpen)},
-	))
+	iss := issuesviewtest.RealIssue(t) // 本文を開くので実ファイルを持つ issue にする
+	m.issuesOv.Receive(issuesview.FixtureScanMsg("", []string{"/repo/issues"}, []*issues.Issue{iss}))
 	m.issuesOv.Fixture().FinishAnim()
 	m.lastWarning = "pull に失敗: rejected"
-	for _, key := range []string{"u"} { // 一覧モードの u は「本文を開いてから」の断り
+	if !m.issuesOv.Fixture().OpenIssue(iss) {
+		t.Fatal("本文を開けない")
+	}
+	// 本文で最後の issue の J は「これが最後」の断り。本文の u は URL ピッカーで、URL の無い本文では断る
+	// (一覧の u と違って pull の確認を開かない)
+	for _, key := range []string{"J", "u"} {
 		m.handleKey(key)
+		if m.actModal.pullConfirm {
+			t.Fatalf("%s: 本文のキーが pull の確認を開いた", key)
+		}
 		if !m.toast.Visible() || m.toast.OK() {
 			t.Fatalf("%s: 断りが失敗色のトーストになっていない: visible=%v ok=%v", key, m.toast.Visible(), m.toast.OK())
 		}

@@ -2034,25 +2034,34 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	}
 }
 
-// 一覧モードの u は無音で消えず、理由を返す。
-//
-// u は git log 一覧では pull、本文では URL ピッカー、status viewer では「pull は p です」を
-// 返すのに、issues 一覧だけが無音だった。効かせない理由は openURLPicker の doc にあるが、
-// それが画面に出ていなかった。
-func TestIssuesViewerListModeUReturnsReason(t *testing.T) {
-	v := loadedView(issuesviewtest.RealIssue(t))
+// 一覧モードの u は git log 一覧と同じ pull --rebase の確認を browseModel へ頼み、本文の u は頼まない
+// (本文の u は URL ピッカー)。確認モーダルは browseModel が出すので、viewer は通知を重ねない。
+func TestIssuesViewerListModeUAsksPull(t *testing.T) {
+	iss := issuesviewtest.RealIssue(t)
+	v := loadedView(iss)
 	if v.body != nil {
 		t.Fatal("前提が崩れた: 一覧モードでない")
 	}
 
 	v.HandleKey("u", vp(20))
 
-	notice, _ := testenv.NoticeOKOf(v.TakeNotice())
-	if notice == "" {
-		t.Error("一覧モードの u が無音 (押したのに何も起きない = 壊れて見える)")
+	if !v.TakeWantPull() {
+		t.Error("一覧モードの u が pull の確認を頼まない")
 	}
-	if !strings.Contains(notice, "本文") {
-		t.Errorf("理由が「本文を開いてから」を案内していない: %q", notice)
+	if v.TakeWantPull() {
+		t.Error("pull の合図が一度きりで消えない (次のキーでも確認が開く)")
+	}
+	if notice, _ := testenv.NoticeOKOf(v.TakeNotice()); notice != "" {
+		t.Errorf("一覧モードの u が通知も出した (確認モーダルと二重になる): %q", notice)
+	}
+
+	// 本文の u は URL ピッカーで、pull を頼まない
+	if !v.openIssue(iss) {
+		t.Fatal("本文を開けない")
+	}
+	v.HandleKey("u", vp(20))
+	if v.TakeWantPull() {
+		t.Error("本文の u が pull の確認を頼んだ")
 	}
 }
 
