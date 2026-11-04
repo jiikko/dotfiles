@@ -855,11 +855,15 @@ func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 	}
 }
 
-// TestIsGroupParentForms は親 issue の 2 つの形と、似ているが親ではない形を固定する。
+// TestIsGroupParentForms は親 issue の 3 つの形と、似ているが親ではない形を固定する。
 func TestIsGroupParentForms(t *testing.T) {
 	epic := func(name, group string) *Issue {
 		iss := newIssue("/r/issues", filepath.Join("epic", group, name))
 		iss.Group, iss.GroupKind = group, GroupEpic
+		return iss
+	}
+	titled := func(iss *Issue, title string) *Issue {
+		iss.Title = title
 		return iss
 	}
 	for _, tc := range []struct {
@@ -873,6 +877,9 @@ func TestIsGroupParentForms(t *testing.T) {
 		{"group 名と同じ slug だが epic でない", epic("956-perf-pane-perf.md", "pane-perf"), false},
 		{"番号の無い README", epic("README.md", "pane-perf"), false},
 		{"group に属さない epic 種別", newIssue("/r/issues", "956-epic-pane-perf.md"), false},
+		{"見出しで epic と宣言した親", titled(epic("440-feat-smart-playback-subscription.md", "smart-playback"), "440 (epic): スマート再生"), true},
+		{"見出しの番号がファイルと違う", titled(epic("441-feat-x.md", "smart-playback"), "440 (epic): スマート再生"), false},
+		{"見出しの種別が epic でない", titled(epic("441-feat-x.md", "smart-playback"), "441 (feat): x"), false},
 	} {
 		if got := IsGroupParent(tc.iss); got != tc.want {
 			t.Errorf("%s: got %v want %v", tc.name, got, tc.want)

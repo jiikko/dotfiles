@@ -980,15 +980,19 @@ func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups, closed
 	return f.shows(iss.Status)
 }
 
-// IsGroupNumberParent は親 issue のうち group 名と同じ番号の形か。1 つの group に 2 つの形が並んだら
+// IsGroupNumberParent は親 issue のうち group 名と同じ番号の形か。1 つの group に複数の形が並んだら
 // こちらを親行にする (この形が先に在った。後から `NNN-epic-<番号>` を足しても旧来の親を子へ落とさない)。
 func IsGroupNumberParent(iss *Issue) bool {
 	return IsGroupParent(iss) && iss.Number == iss.Group
 }
 
-// IsGroupParent は epic group の親 issue (その epic 自身を表す issue) か。親の形は 2 つ:
-// group 名と同じ番号 (`epic/467/467-*.md`) と、名前付きの group の `NNN-epic-<group 名>.md`
-// (obaket の issues/README.md「epic」節の形。`epic/pane-perf/956-epic-pane-perf.md`)。
+// IsGroupParent は epic group の親 issue (その epic 自身を表す issue) か。親の形は 3 つ:
+// group 名と同じ番号 (`epic/467/467-*.md`)、名前付きの group の `NNN-epic-<group 名>.md`
+// (obaket の issues/README.md「epic」節の形。`epic/pane-perf/956-epic-pane-perf.md`)、
+// 見出しが `# NNN (epic): …` の issue (issue 運用規約の本文テンプレート `# NNN (<type>): タイトル` で
+// 種別を epic と宣言したもの。ファイル名の type が feat のまま epic に格上げされた親が実在する:
+// vlc-multi-video-player の `epic/smart-playback/440-feat-smart-playback-subscription.md`)。
+// 見出しは走査の直後に全件読む (issuesview の loadAllMeta) ので、viewer の判定では揃っている。
 //
 // 🚨 親の判定はここだけで行う。viewer の親行 (rebuildDisplayRows) と「閉じた epic」の判定
 // (retiredGroupKeys) が別々に書くと、片方だけが親を見つけて「親行は出るのに閉じても消えない」になる。
@@ -996,7 +1000,16 @@ func IsGroupParent(iss *Issue) bool {
 	if iss.GroupKind != GroupEpic || iss.Group == "" || iss.Number == "" {
 		return false
 	}
-	return iss.Number == iss.Group || (iss.Category == EpicDirName && iss.Slug == iss.Group)
+	return iss.Number == iss.Group || (iss.Category == EpicDirName && iss.Slug == iss.Group) || isEpicTitle(iss)
+}
+
+// epicTitleRe は見出しの `NNN (epic):` (全角のコロンも受ける)。番号はファイル名の番号と一致したときだけ親とみなす
+// (他の epic の名前を見出しに引いた子を親へ上げない)。
+var epicTitleRe = regexp.MustCompile(`^([0-9]+)\s*\(epic\)\s*[:：]`)
+
+func isEpicTitle(iss *Issue) bool {
+	m := epicTitleRe.FindStringSubmatch(iss.Title)
+	return m != nil && m[1] == iss.Number
 }
 
 // retiredGroupKeys は「親 issue が done で、group の全員 (親と子) が done」の group の GroupKey 集合。
@@ -1032,7 +1045,7 @@ func retiredGroupKeys(list []*Issue) map[string]bool {
 
 // groupOpenParents は group ごとの親 issue (1 件) のうち、位置が group 直下 (open) のもの。
 //
-// 🚨 親は group ごとに 1 件だけ選ぶ。IsGroupParent の 2 つの形が 1 つの group に並ぶと、viewer
+// 🚨 親は group ごとに 1 件だけ選ぶ。IsGroupParent の複数の形が 1 つの group に並ぶと、viewer
 // (issuesview の rebuildDisplayRows) は番号の形を親行にして、もう一方を子として描く。ここで 2 つとも
 // 親として数えから外すと、子として見えている open な issue ごと epic が「終わった」ことになり消える。
 // 選び方は viewer と同じ (番号の形を優先し、無ければ list の並びで先のもの)。

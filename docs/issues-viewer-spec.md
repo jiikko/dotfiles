@@ -98,11 +98,14 @@ epic 全体の進捗ではない。カテゴリタブを選ぶと分母も分子
 展開した子 issue の行は半角 2 桁右へ寄せる (`groupChildIndent`)。単独 issue と同じ桁に並べると、
 開いたときにどの行が group の所属か読めない (2026-09-05 ユーザー要望)。
 
-group 内に **親 issue** があれば、それを合成の親行の代わりに親行として描く。親 issue の形は 2 つ —
-**group 名と同じ番号を持つ issue** (`epic/467/467-*.md`) と、名前付きの group の **`NNN-epic-<group 名>.md`**
-(`epic/pane-perf/956-epic-pane-perf.md`。obaket の issues/README.md「epic」節の形。2026-10-02 に追加)。
+group 内に **親 issue** があれば、それを合成の親行の代わりに親行として描く。親 issue の形は 3 つ —
+**group 名と同じ番号を持つ issue** (`epic/467/467-*.md`)、名前付きの group の **`NNN-epic-<group 名>.md`**
+(`epic/pane-perf/956-epic-pane-perf.md`。obaket の issues/README.md「epic」節の形。2026-10-02 に追加)、
+**見出しが `# NNN (epic): …` の issue** (番号はファイル名と一致するものだけ。issue 運用規約の本文テンプレート
+`# NNN (<type>): タイトル` で epic と宣言したもの。ファイル名の type が `feat` のまま epic に格上げされた
+`epic/smart-playback/440-feat-…md` が合成の親行になり、`o` で本文を開けなかった。2026-11-04 ユーザー要望で追加)。
 判定は `issues.IsGroupParent` の 1 箇所 (親行と下の「閉じた epic」の判定が同じ関数を使う)。
-2 つの形が 1 つの group に並んだら番号の形を親行にする (旧来の親を、後から足した `NNN-epic-<番号>` で子へ落とさない)。
+複数の形が 1 つの group に並んだら番号の形を親行にする (旧来の親を、後から足した `NNN-epic-<番号>` で子へ落とさない)。
 描画は `▾ (N) 467 ○ feat  タイトル`。合成行 + 親の子行の 2 行に割れるのを避けるため (2026-09-05 ユーザー要望)。この統合行は **実体が issue** なので、open・コピー・`n` は
 そのまま効く (`kind` は `issue` のまま `groupHead` が立つ)。`N` は親を除いた子の数。
 

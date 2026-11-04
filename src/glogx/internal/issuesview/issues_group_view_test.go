@@ -622,6 +622,43 @@ func TestIssuesViewMergedParentRowOpensBodyWithO(t *testing.T) {
 	}
 }
 
+// TestIssuesViewTitleDeclaredEpicParentOpensBodyWithO は、ファイル名の type が epic でなくても見出しで
+// `# NNN (epic): …` と宣言した issue が親行へ統合され、親行の o で本文が開くことを固定する
+// (2026-11-04 ユーザー要望: vlc-multi-video-player の epic smart-playback の親 440 が合成の親行になり、
+// o が「親行では issue を開けません」で断られた)。
+func TestIssuesViewTitleDeclaredEpicParentOpensBodyWithO(t *testing.T) {
+	dir := t.TempDir()
+	parent := fakeEpicIssue(dir, "smart-playback", "440", "smart-playback-subscription", issues.StatusOpen)
+	child := fakeEpicIssue(dir, "smart-playback", "450", "analysis", issues.StatusOpen)
+	for _, f := range []struct {
+		iss  *issues.Issue
+		body string
+	}{
+		{parent, "# 440 (epic): スマート再生\n\nepic body\n"},
+		{child, "# 450 (design): 解析基盤\n"},
+	} {
+		if err := os.MkdirAll(filepath.Dir(f.iss.Path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f.iss.Path, []byte(f.body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loadAllMeta([]*issues.Issue{parent, child}) // 本物の走査 (scanIssues) と同じく、受け取る前に見出しを読む
+	v := loadedView(parent, child)
+	if len(v.displayRows) != 1 || !v.displayRows[0].groupHead || v.displayRows[0].issue != parent {
+		t.Fatalf("見出しで epic と宣言した親が親行へ統合されていない: %+v", v.displayRows)
+	}
+
+	v.HandleKey("o", vp(10))
+	if text, kind := v.TakeNotice(); kind == app.NoticeRefused || kind == app.NoticeError {
+		t.Fatalf("o が断り / 失敗の notice を出した: %q (kind=%v)", text, kind)
+	}
+	if v.open != parent || v.body == nil || !strings.Contains(strings.Join(v.body.Lines(80, false), "\n"), "epic body") {
+		t.Fatalf("親行の o で親 issue の本文が開かない: open=%+v", v.open)
+	}
+}
+
 // TestIssuesViewNamedGroupParentMergesAndHidesWhenDone は名前付きの group の親 (`NNN-epic-<group 名>.md`。
 // obaket の形) が親行へ統合されることと、親と子を全部 done へ送ると `a` で全開にしても一覧から
 // 消えることを固定する (2026-10-02 ユーザー要望)。親の判定は issues.IsGroupParent の 1 箇所。
