@@ -623,39 +623,53 @@ func TestIssuesViewMergedParentRowOpensBodyWithO(t *testing.T) {
 }
 
 // TestIssuesViewTitleDeclaredEpicParentOpensBodyWithO は、ファイル名の type が epic でなくても見出しで
-// `# NNN (epic): …` と宣言した issue が親行へ統合され、親行の o で本文が開くことを固定する
-// (2026-11-04 ユーザー要望: vlc-multi-video-player の epic smart-playback の親 440 が合成の親行になり、
-// o が「親行では issue を開けません」で断られた)。
+// `# NNN (epic): …` と宣言した issue が親行へ統合され、親行の o で本文が開くことを、本物の走査 (scanIssues) を
+// 通して固定する (2026-11-04 ユーザー要望: vlc-multi-video-player の epic smart-playback の親 440 が合成の親行になり、
+// o が「親行では issue を開けません」で断られた)。走査を通すのは、見出しを読む loadAllMeta を走査から外す退行も見るため。
+// 同じ group に、見出しに (epic) を残したまま done へ送った旧 epic (453) を置く: 番号の降順に任せると 453 が親を取り、
+// 440 が子に落ちて、子を片付けても epic が既定の一覧から消えなくなる (同じ形なら done の外を優先する。issues.PreferGroupParent)。
 func TestIssuesViewTitleDeclaredEpicParentOpensBodyWithO(t *testing.T) {
-	dir := t.TempDir()
-	parent := fakeEpicIssue(dir, "smart-playback", "440", "smart-playback-subscription", issues.StatusOpen)
-	child := fakeEpicIssue(dir, "smart-playback", "450", "analysis", issues.StatusOpen)
-	for _, f := range []struct {
-		iss  *issues.Issue
-		body string
-	}{
-		{parent, "# 440 (epic): スマート再生\n\nepic body\n"},
-		{child, "# 450 (design): 解析基盤\n"},
-	} {
-		if err := os.MkdirAll(filepath.Dir(f.iss.Path), 0o755); err != nil {
+	root := t.TempDir()
+	group := filepath.Join(root, "issues", issues.EpicDirName, "smart-playback")
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(group, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(f.iss.Path, []byte(f.body), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	loadAllMeta([]*issues.Issue{parent, child}) // 本物の走査 (scanIssues) と同じく、受け取る前に見出しを読む
-	v := loadedView(parent, child)
-	if len(v.displayRows) != 1 || !v.displayRows[0].groupHead || v.displayRows[0].issue != parent {
-		t.Fatalf("見出しで epic と宣言した親が親行へ統合されていない: %+v", v.displayRows)
-	}
+	write("440-feat-smart-playback-subscription.md", "# 440 (epic): スマート再生\n\nepic body\n")
+	write("450-design-analysis.md", "# 450 (design): 解析基盤\n")
+	write("done/453-feat-old.md", "# 453 (epic): 吸収した旧 epic\n")
 
+	v := newTestIssuesView()
+	v.shown = true
+	v.Receive(scanOf(t, root))
+	if len(v.displayRows) != 1 || !v.displayRows[0].groupHead || v.displayRows[0].issue == nil ||
+		v.displayRows[0].issue.Number != "440" {
+		t.Fatalf("見出しで epic と宣言した 440 が親行へ統合されていない: %+v", v.displayRows)
+	}
 	v.HandleKey("o", vp(10))
 	if text, kind := v.TakeNotice(); kind == app.NoticeRefused || kind == app.NoticeError {
 		t.Fatalf("o が断り / 失敗の notice を出した: %q (kind=%v)", text, kind)
 	}
-	if v.open != parent || v.body == nil || !strings.Contains(strings.Join(v.body.Lines(80, false), "\n"), "epic body") {
+	if v.open == nil || v.open.Number != "440" || v.body == nil ||
+		!strings.Contains(strings.Join(v.body.Lines(80, false), "\n"), "epic body") {
 		t.Fatalf("親行の o で親 issue の本文が開かない: open=%+v", v.open)
+	}
+
+	// 残りの子を done へ送ると、子に open が無い epic として既定の一覧から消える
+	if err := os.Rename(filepath.Join(group, "450-design-analysis.md"), filepath.Join(group, "done", "450-design-analysis.md")); err != nil {
+		t.Fatal(err)
+	}
+	v = newTestIssuesView()
+	v.shown = true
+	v.Receive(scanOf(t, root))
+	if len(v.displayRows) != 0 {
+		t.Fatalf("子を片付けた epic が既定の一覧に残っている (旧 epic 453 が親を取った疑い): %+v", v.displayRows)
 	}
 }
 

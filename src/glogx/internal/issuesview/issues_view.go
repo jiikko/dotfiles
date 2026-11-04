@@ -935,9 +935,9 @@ func (v *IssuesView) rebuildDisplayRows() {
 		switch {
 		case issues.IsGroupParent(iss) && g.parent == nil:
 			g.parent = iss // その epic 自身の親 issue (形は issues.IsGroupParent)
-		case issues.IsGroupNumberParent(iss) && !issues.IsGroupNumberParent(g.parent):
-			// 番号の形を優先する (v.rows の並び = 番号の降順に任せると、後から足した
-			// `NNN-epic-<番号>` が旧来の親を子へ落とす)。先に親にしたものは子へ戻す
+		case issues.PreferGroupParent(iss, g.parent):
+			// v.rows の並び (番号の降順) に任せると、後から足した `NNN-epic-<番号>` や見出しに (epic) を残した
+			// 旧 epic が本物の親を子へ落とす。先に親にしたものは子へ戻す
 			g.children = append(g.children, g.parent)
 			g.parent = iss
 		default:

@@ -887,6 +887,47 @@ func TestIsGroupParentForms(t *testing.T) {
 	}
 }
 
+// TestGroupParentRankOrdersForms は 1 つの group に親の候補が並んだときの強さ (番号 > 名前 > 見出し) を固定する。
+// 見出しの形が弱くないと、見出しに (epic) を残したまま吸収した旧 epic が本物の親を子へ落とす。
+func TestGroupParentRankOrdersForms(t *testing.T) {
+	epic := func(name, group, title string) *Issue {
+		iss := newIssue("/r/issues", filepath.Join("epic", group, name))
+		iss.Group, iss.GroupKind, iss.Title = group, GroupEpic, title
+		return iss
+	}
+	number := epic("467-feat-x.md", "467", "467 (epic): x")
+	named := epic("470-epic-467.md", "467", "")
+	titled := epic("480-feat-y.md", "467", "480 (epic): y")
+	child := epic("481-feat-z.md", "467", "481 (feat): z")
+	ranks := []int{GroupParentRank(number), GroupParentRank(named), GroupParentRank(titled), GroupParentRank(child)}
+	if ranks[0] <= ranks[1] || ranks[1] <= ranks[2] || ranks[2] <= ranks[3] || ranks[3] != 0 {
+		t.Fatalf("強さの順が崩れた: number=%d named=%d titled=%d child=%d", GroupParentRank(number),
+			GroupParentRank(named), GroupParentRank(titled), GroupParentRank(child))
+	}
+}
+
+// TestPreferGroupParentBreaksTieByDone は同じ強さの候補どうしでは done の外のものを優先し、強さの差は状態より勝つことを固定する。
+func TestPreferGroupParentBreaksTieByDone(t *testing.T) {
+	epic := func(name, title string, st Status) *Issue {
+		iss := newIssue("/r/issues", filepath.Join("epic", "sp", name))
+		iss.Group, iss.GroupKind, iss.Title, iss.Status = "sp", GroupEpic, title, st
+		return iss
+	}
+	live := epic("440-feat-x.md", "440 (epic): x", StatusOpen)
+	old := epic("453-feat-old.md", "453 (epic): old", StatusDone)
+	if !PreferGroupParent(live, old) || PreferGroupParent(old, live) {
+		t.Fatal("同じ強さで done の外の候補が優先されない")
+	}
+	named := epic("460-epic-sp.md", "", StatusDone)
+	if !PreferGroupParent(named, live) || PreferGroupParent(live, named) {
+		t.Fatal("強い形 (名前) が状態に負けた")
+	}
+	other := epic("441-feat-y.md", "441 (epic): y", StatusOpen)
+	if PreferGroupParent(other, live) || PreferGroupParent(live, other) {
+		t.Fatal("同じ強さ・同じ状態では並び (今の候補) のまま")
+	}
+}
+
 // TestClosedGroupKeysCountsParentAndIgnoresStrays は「終わった epic」の数え方を固定する。
 // 親 issue は数えない (親が open でも子に open が無ければ終わり。親だけの group は終わらない) /
 // 予約外ディレクトリの迷子は数に入れない (迷子を 1 件

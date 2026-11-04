@@ -980,10 +980,37 @@ func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups, closed
 	return f.shows(iss.Status)
 }
 
-// IsGroupNumberParent は親 issue のうち group 名と同じ番号の形か。1 つの group に複数の形が並んだら
-// こちらを親行にする (この形が先に在った。後から `NNN-epic-<番号>` を足しても旧来の親を子へ落とさない)。
-func IsGroupNumberParent(iss *Issue) bool {
-	return IsGroupParent(iss) && iss.Number == iss.Group
+// GroupParentRank は親 issue の形の強さ (0 = 親ではない)。1 つの group に複数の候補が並んだときの選び方は
+// PreferGroupParent。番号の形が最も強いのは先に在った形だから (後から `NNN-epic-<番号>` を
+// 足しても旧来の親を子へ落とさない)。見出しの形が最も弱いのは、吸収した旧 epic の親 (`# 453 (epic):` のまま done へ送った子) も
+// 見出しの形に当たるため。並びに任せると番号の大きい旧 epic が本物の親を子へ落とし、選んだ親が open でないと
+// groupOpenParents から外れて本物の親が子に数えられ、epic が閉じなくなる。
+func GroupParentRank(iss *Issue) int {
+	switch {
+	case !IsGroupParent(iss):
+		return 0
+	case iss.Number == iss.Group:
+		return 3
+	case iss.Category == EpicDirName && iss.Slug == iss.Group:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// PreferGroupParent は 1 つの group の親の候補 a を、今の候補 cur より優先するか。強い形 (GroupParentRank) を優先し、
+// 同じ強さなら done の外にあるものを done にあるものより優先する (吸収した旧 epic は見出しに (epic) を残したまま done へ
+// 送られる。番号の降順に任せると、番号の大きい旧 epic が本物の親を子へ落とす)。どちらでも決まらなければ cur のまま
+// (list の並びで先のもの)。viewer の親行と groupOpenParents が同じ親を選ぶよう、選び方はここだけに置く。
+func PreferGroupParent(a, cur *Issue) bool {
+	if cur == nil {
+		return GroupParentRank(a) > 0
+	}
+	ra, rc := GroupParentRank(a), GroupParentRank(cur)
+	if ra != rc {
+		return ra > rc
+	}
+	return ra > 0 && a.Status != StatusDone && cur.Status == StatusDone
 }
 
 // IsGroupParent は epic group の親 issue (その epic 自身を表す issue) か。親の形は 3 つ:
@@ -1048,7 +1075,7 @@ func retiredGroupKeys(list []*Issue) map[string]bool {
 // 🚨 親は group ごとに 1 件だけ選ぶ。IsGroupParent の複数の形が 1 つの group に並ぶと、viewer
 // (issuesview の rebuildDisplayRows) は番号の形を親行にして、もう一方を子として描く。ここで 2 つとも
 // 親として数えから外すと、子として見えている open な issue ごと epic が「終わった」ことになり消える。
-// 選び方は viewer と同じ (番号の形を優先し、無ければ list の並びで先のもの)。
+// 選び方は viewer と同じ (PreferGroupParent)。
 // 🚨 open 以外 (next / pending / waiting / done) の親は入れない。親をそこへ置いたのは宣言なので、
 // 子と同じく Status で数え・見せる (next の親を外すと、▶ を付けた epic が終わった扱いになり子の進捗が消える)。
 func groupOpenParents(list []*Issue) map[string]*Issue {
@@ -1058,7 +1085,7 @@ func groupOpenParents(list []*Issue) map[string]*Issue {
 		if !ok || !IsGroupParent(iss) {
 			continue
 		}
-		if cur := parents[key]; cur == nil || (IsGroupNumberParent(iss) && !IsGroupNumberParent(cur)) {
+		if cur := parents[key]; cur == nil || PreferGroupParent(iss, cur) {
 			parents[key] = iss
 		}
 	}
