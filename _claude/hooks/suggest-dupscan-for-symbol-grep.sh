@@ -25,12 +25,18 @@
 #     追跡ファイルの多い言語に従い (一方が他方の 10 倍以上なら少ない方は数えない)、拮抗する repo では Swift 専用の def / refs を勧めず、
 #     両方で使える index / callers を案内する (941)。Go 優位の repo は Go だけの repo と同じく黙る
 #   - 全部が小文字の語で言語を明示していない grep (`grep -n refresh config.yml`)・全部が大文字の語 (`TODO`)・正規表現 (`foo.*bar`)
-#   - grep の語が変数・エイリアス・`sh -c "..."` の中にあるもの / `-C` や cd・`$W/…` で別の repo を指したもの (cwd の repo で判定する)
+#   - grep の語が変数・エイリアス・`sh -c "..."` の中にあるもの
+#   - grep の repo は、対象 (`git -C` の dir か最初の名指しのパス)・cd / pushd の先・セッションの cwd の順で決める。
+#     変数・コマンド置換・glob の dir (`cd $W`・`rg Foo $W`・`cd wt-*`) はどの repo か分からないので、言語の手掛かりが無い検索は黙る。
+#     glob の対象 (`src/*.go`) は dir を決めない。対象の dir が git の repo の外ならセッションの repo で判定する
+#   - 名指しのファイル (glob でない x.go / X.swift・Grep ツールの path のファイル) だけで言語が決まる検索の、宣言の語が無い小文字の語
+#     (そのファイルの中を読む grep。`grep -n libexec main.go`)。`-t go`・`--include=*.go`・glob の対象は横断の検索として案内する
+#   - test 関数の接頭辞だけの語 (`func Test` / `func Benchmark` / `func test`。一覧を見る grep)
 #   - パイプの後ろの grep (stdin を絞る形)・識別子でない部分や 4 つ以上の alternation・BRE grep の `A|B` (文字の `|`)
 #   - `-i` (大文字小文字を無視する) の grep (def / refs は完全一致なので、案内しても引けない名前になりうる)
 #   - 対象が対応するsource以外のファイルだけのgrep (`grep -c Error build.log`・`grep -n Foo .gitignore`)
 #   - `cd <dir> && grep … x.go` は <dir> を相対パスの基準にして x.go の有無を見る (リテラルの dir だけ。変数・glob・存在しない dir は追わず、
-#     そのときは相対パスで言語を決めない)。`(cd …)` の括弧の閉じは追わない
+#     そのときは相対パスで言語を決めない)。`(cd …)` の括弧の閉じは追わない (閉じた後の grep も cd 先で判定する)
 #   - grep / rg がコマンドの先頭の語でないもの (`xargs grep …`・`find … -exec grep …`・`time grep …`)
 #   - python3 / jq / git が無い環境 (fail-open)
 #   - 1 つ目のパターンだけを見る (`-e a -e b` の b は見ない)
@@ -71,6 +77,7 @@ esac
 
 [ -n "$cwd" ] && [ -d "$cwd" ] || exit 0
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
+session_root=$root
 # 言語と名前を返す。対象dirの内容を調べて言語を推測しない。
 match=$(HOOK_TOOL="$tool" HOOK_CMD="$cmd" HOOK_INPUT="$input" HOOK_CWD="$cwd" python3 -I - <<'PY' 2>/dev/null
 import json, os, re, shlex
@@ -177,9 +184,13 @@ def from_segment(words):
     i = 0
     while i < len(words) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', words[i]):
         i += 1
+    global SEG_TARGETS
+    SEG_TARGETS = []
     if i < len(words) and words[i] == 'git':
         j = i + 1
         while j < len(words) and words[j].startswith('-'):
+            if words[j] == '-C' and j + 1 < len(words):
+                SEG_TARGETS.append(words[j + 1])
             j += 2 if words[j] in ('-C', '-c') else 1
         if j < len(words) and words[j] == 'grep':
             i = j
@@ -222,6 +233,7 @@ def from_segment(words):
         k += 1
     if pattern is None:
         return None
+    SEG_TARGETS.extend(paths)
     langs, insensitive = selector_languages(rest)
     # rg / egrep と、grep の -E / -P は ERE 系 (alternation は `|`)。grep / git grep の既定は BRE (`\|`)
     ere = os.path.basename(words[i]) in ('rg', 'egrep') or any(
@@ -301,15 +313,37 @@ def split_shell(cmd):
     parts.append(''.join(buf))
     return parts
 
+SEG_TARGETS = []
+
+def target_dir(targets, cwd):
+    """grep の対象 (git -C の dir か最初の名指しのパス) の dir。変数・コマンド置換なら '?'、名指しが無い・glob・
+    在ることを確かめられないなら ''。対象が別の repo を指す grep (`grep -rn Foo /other/repo`) を、cd 先やセッションの repo で判定しない"""
+    for t in targets:
+        if t.startswith(('!', ':')) or re.search(r'[*?\[{]', t):
+            return ''
+        if re.search(r'[$`]', t):
+            return '?'
+        t = os.path.expanduser(t)
+        if not os.path.isabs(t):
+            if not cwd:
+                return ''
+            t = os.path.normpath(os.path.join(cwd, t))
+        if os.path.isdir(t):
+            return t
+        return os.path.dirname(t) if os.path.isfile(t) else ''
+    return ''
+
 def next_cwd(words, cwd):
     # `cd <dir>` の後ろの segment は <dir> が相対パスの基準になる。リテラルの dir だけ追う。
     # 追えない (変数・glob・存在しない dir・引数なし・- ) ときは '' を返し、相対パスの存在で言語を決めない。
-    if not words or words[0] not in ('cd', '(cd'):
+    if not words or words[0] not in ('cd', 'pushd'):
         return cwd
     args = [w for w in words[1:] if w != '--']
-    if len(args) != 1 or not cwd or args[0].startswith('-') or re.search(r'[$`*?\[]', args[0]):
+    if len(args) != 1 or args[0].startswith('-') or re.search(r'[$`*?\[]', args[0]):
         return ''
     target = os.path.expanduser(args[0])
+    if not os.path.isabs(target) and not cwd:
+        return ''  # 相対の dir は、基準の cwd が分からないと追えない (絶対パスは追う)
     full = target if os.path.isabs(target) else os.path.normpath(os.path.join(cwd, target))
     return full if os.path.isdir(full) else ''
 
@@ -335,21 +369,24 @@ if tool == 'Grep':
     ignored_case = ti.get('-i') is True
     langs = glob_languages(glob) | ({typ} if typ in ('go', 'swift') else set())
     go_target = langs == {'go'} or (not glob and not typ and named_languages([path]) == {'go'})
+    # path の dir で repo を決める (別の repo を指す path をセッションの repo で判定しない)。名指しのファイルは、そのファイルを読む検索
+    grep_dir = (target_dir([path], os.environ.get('HOOK_CWD', '')) if path else '') or '-'
+    named_file = bool(path) and grep_dir not in ('-', '?') and os.path.isfile(path if os.path.isabs(path) else os.path.join(os.environ.get('HOOK_CWD', ''), path))
     pattern = str(ti.get('pattern') or '')
     explicit_swift = 'swift' in glob or typ == 'swift' or path.endswith('.swift')
     receiver = '' if (ignored_case or glob or typ or explicit_swift or (path and not_source_files([path], '.go'))) else go_receiver(pattern)
     if go_target:
         ignored = ignored_case or (glob and 'go' not in glob_languages(glob)) or (typ and typ != 'go') or (path and not_source_files([path], '.go'))
-        name, extra = ('', '') if ignored else names(pattern, True, r'(?:func|type|var|const)', True)
-        print('-\tgo\t' + name + '\t' + extra if name else '')
+        name, extra = ('', '') if ignored else names(pattern, not named_file, r'(?:func|type|var|const)', True)
+        print(grep_dir + '\tgo\t' + name + '\t' + extra if name else '')
     elif 'go' in langs:
         print('')
     elif receiver:
-        print('-\tgo\t' + receiver + '\t')
+        print(grep_dir + '\tgo\t' + receiver + '\t')
     else:
         ignored = ignored_case or (glob and 'swift' not in glob) or (typ and typ != 'swift') or (path and not_source_files([path]))
-        name, extra = ('', '') if ignored else names(pattern, explicit_swift, DECL, True)
-        print('-\t' + ('swift' if explicit_swift else 'auto') + '\t' + name + '\t' + extra if name else '')
+        name, extra = ('', '') if ignored else names(pattern, explicit_swift and not named_file, DECL, True)
+        print(grep_dir + '\t' + ('swift' if explicit_swift else 'auto') + '\t' + name + '\t' + extra if name else '')
 else:
     cmd = os.environ['HOOK_CMD']
     # 区切りを残して分け、パイプ (`|`) の直後の segment は stdin を絞る grep なので見ない
@@ -371,15 +408,20 @@ else:
             words = shlex.split(seg, comments=True)
         except ValueError:
             continue
-        if words and words[0] in ('cd', '(cd'):
+        # `( cd …` と `(cd …` の括弧は外す (subshell の閉じは追わない)
+        if words and words[0] == '(':
+            words = words[1:]
+        elif words and words[0].startswith('(') and len(words[0]) > 1:
+            words = [words[0][1:]] + words[1:]
+        if words and words[0] in ('cd', 'pushd'):
             cwd_now = next_cwd(words, cwd_now)
-            unknowable = any(re.search(r'[$`]', w) for w in words[1:])
+            unknowable = any(re.search(r'[$`*?\[]', w) for w in words[1:])
             grep_dir = cwd_now if cwd_now else ('?' if unknowable or grep_dir == '?' else '-')
             continue
         os.environ['HOOK_CWD'] = cwd_now
         got = from_segment(words)
         if got:
-            print(grep_dir + '\t' + got)
+            print((target_dir(SEG_TARGETS, cwd_now) or grep_dir) + '\t' + got)
             break
 PY
 ) || exit 0
@@ -391,7 +433,8 @@ case "$grep_dir" in
   # 変数の dir へ cd した grep はどの repo か分からない。言語の手掛かりが無い検索をセッションの repo で決めると、
   # 別の Go の repo の検索に Swift の def / refs を勧める。言語を明示した検索はセッションの repo で従来どおり確かめる
   '?') [ "$language" != auto ] || exit 0 ;;
-  *) root=$(git -C "$grep_dir" rev-parse --show-toplevel 2>/dev/null) || exit 0 ;;
+  # 追えた dir の repo で数える。dir が git の repo の外 (repo の親を grep する `grep -rn Foo ..`) ならセッションの repo のまま
+  *) root=$(git -C "$grep_dir" rev-parse --show-toplevel 2>/dev/null) || root=$session_root ;;
 esac
 # headの後のSIGPIPEを失敗扱いにしない。追跡sourceのある言語だけ案内する。
 tracks() { [ -n "$(git -C "$root" ls-files -- "*.$1" 2>/dev/null | head -n 1)" ]; }

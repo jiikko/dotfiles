@@ -334,6 +334,28 @@ next_session; expect_silent "小文字の語を名指しの Go のファイル�
 next_session; expect_silent "小文字の語を名指しの Go のファイルで探す" "$(run_bash 'grep -n "libexec" sub/x.go')"
 next_session; expect_go_nudge "名指しの Go のファイルでも宣言の語があれば案内する" "$(run_bash 'grep -n "func libexecDir" sub/x.go')" libexecDir
 next_session; expect_go_nudge "-t go の小文字の語は従来どおり案内する (repo を横断してシンボルを探す)" "$(run_bash 'rg -t go libexecDir .')" libexecDir
+# grep の repo は、対象のパス (名指しの dir・ファイル・git -C) が cd 先より優先し、どちらも無ければセッションの cwd で決める。
+# 変数・glob の dir は追えないので、言語不明の検索は黙る。Grep ツールの path も同じ規則で読む
+run_grep_path() { # $1=pattern $2=path → stdout
+  jq -n --arg p "$1" --arg path "$2" --arg d "$REPO" --arg s "s$session" '{tool_name: "Grep", session_id: $s, cwd: $d, tool_input: {pattern: $p, path: $path}}' |
+    "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true
+}
+next_session; expect_silent "Grep の path の小文字の語 (名指しの Go のファイル)" "$(run_grep_path libexec sub/x.go)"
+next_session; expect_go_nudge "Grep の path でも宣言の語があれば案内する" "$(run_grep_path 'func libexecDir' sub/x.go)" libexecDir
+next_session; expect_nudge "セッションが Go の repo でも、cd を 2 度挟んだ先の Swift の repo で決める" "$(run_bash "cd \$W; cd $SWIFT_REPO && grep -rn FooBar .")" FooBar
+next_session; expect_nudge "cd 先 (Go) と違う repo (Swift) を対象のパスで名指しした grep は対象の repo で決める" "$(run_bash "cd $GO_REPO && grep -rn FooBar $SWIFT_REPO")" FooBar
+REPO="$SWIFT_REPO"
+next_session; expect_silent "Grep の path が別の Go だけの repo" "$(run_grep_path FooBar "$GO_REPO")"
+next_session; expect_silent "Grep の path の小文字の語 (名指しの Swift のファイル)" "$(run_grep_path refresh A.swift)"
+next_session; expect_nudge "Grep の path の Swift のファイルでも宣言の語があれば案内する" "$(run_grep_path 'func refresh' A.swift)" refresh
+next_session; expect_silent "( cd \$W && grep ) (括弧の後に空白)" "$(run_bash '( cd $W && grep -rn FooBar . )')"
+next_session; expect_silent "glob の dir へ cd" "$(run_bash 'cd /x/wt-* && grep -rn FooBar .')"
+next_session; expect_silent "pushd \$W" "$(run_bash 'pushd $W && grep -rn FooBar .')"
+next_session; expect_silent "grep の対象が別の Go だけの repo" "$(run_bash "grep -rn FooBar $GO_REPO/sub")"
+next_session; expect_silent "git -C <別の Go だけの repo> grep" "$(run_bash "git -C $GO_REPO grep -n FooBar")"
+next_session; expect_silent "rg の対象が変数の dir" "$(run_bash 'rg -n FooBar $W')"
+next_session; expect_nudge "対象のパスがセッションの repo の中なら従来どおり" "$(run_bash "grep -rn FooBar $SWIFT_REPO")" FooBar
+REPO="$GO_REPO"
 REPO="$MIXED_REPO"
 
 # hook自身はdupscan/goを起動しない。案内文字列を出すだけ。
