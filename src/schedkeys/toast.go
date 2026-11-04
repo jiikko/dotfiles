@@ -14,6 +14,7 @@ package main
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -113,8 +114,7 @@ func (t *toast) overlay(lines []string, width, height int) []string {
 		pad = 0
 	}
 	row := strings.Repeat(" ", pad) + sgr(revOK+";"+bold, visible)
-	out := make([]string, len(lines))
-	copy(out, lines)
+	out := slices.Clone(lines)
 	if height > len(out) {
 		// 画面の最下行に置く (空行で埋める)
 		for len(out) < height {

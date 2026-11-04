@@ -3,7 +3,6 @@ linters:
   enable:
     - depguard       # lib の依存の不変条件 (下の rules)
     - dupl           # コピペ重複 (glogx から移した部品は glogx の lint が掛からなくなったので同じ網を張る)
-    - exhaustive     # default なし switch の enum 網羅を強制 (anim.Phase を足したら全 switch が止まる)
     - forbidigo      # 幅モデルの 2 本目と、部品の中での時刻取得を禁止 (下の forbid)
     - prealloc       # 事前確保できる append ループ (毎フレーム全行で走る合成の alloc 削減)
     - recvcheck      # value / pointer receiver の混在検出
@@ -11,8 +10,6 @@ linters:
   settings:
     dupl:
       threshold: 120
-    exhaustive:
-      default-signifies-exhaustive: true
     depguard:
       rules:
         # 部品は描画フレームワークに依存しない (「[]string → []string」と壁時計の状態機械だけ)。

@@ -43,7 +43,15 @@ linters:
     - nosprintfhostport
     - reassign
     - tparallel
+    # 堅牢性 (失敗が黙って別の挙動になる形を止める)
+    - errchkjson     # JSON の符号化の失敗を捨てない (time.Time の範囲外・any の中身で失敗し、空の記録・空の出力が rc=0 で出る)
+    - exhaustive     # default なし switch の enum 網羅 (値を足したとき、扱っていない switch が黙って何もしない)
+    - fatcontext     # ループの中で context を積み重ねる形
+    - makezero       # make([]T, n) への append で先頭にゼロ値が残る
   settings:
+    exhaustive:
+      # default 付きの switch は「残りは default で受ける」という意図の表明なので網羅を求めない。default の無い switch にだけ全部の case を求める
+      default-signifies-exhaustive: true
     perfsprint:
       concat-loop: false # ループの中の文字列の連結を strings.Builder へ書き換えさせる。小さなループばかりで、読みやすさを崩すほど効かない
     govet:
@@ -55,6 +63,13 @@ linters:
     nolintlint:
       require-explanation: true # //nolint には理由を書く
       require-specific: true    # 黙らせる linter を名指しする
+
+  exclusions:
+    rules:
+      # テストの fixture を組む JSON は、失敗すれば後の assert が落ちる。全部に err の確認を足しても検出力は増えない
+      - path: _test\.go$
+        linters:
+          - errchkjson
 
 # gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
 formatters:

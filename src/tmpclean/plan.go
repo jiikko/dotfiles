@@ -21,22 +21,30 @@ type planFile struct {
 	Entries   []entry   `json:"entries"`
 }
 
-func planID(createdAt time.Time, sel selection, entries []entry) string {
-	body, _ := json.Marshal(struct {
+func planID(createdAt time.Time, sel selection, entries []entry) (string, error) {
+	body, err := json.Marshal(struct {
 		CreatedAt time.Time `json:"created_at"`
 		Selection selection `json:"selection"`
 		Entries   []entry   `json:"entries"`
 	}{createdAt.UTC(), sel, entries})
+	if err != nil {
+		// 空の入力の hash にすると、別の plan が同じ ID を持つ
+		return "", stopf("plan の ID を計算できない: %v", err)
+	}
 	sum := sha256.Sum256(body)
-	return hex.EncodeToString(sum[:8])
+	return hex.EncodeToString(sum[:8]), nil
 }
 
-func newPlan(now time.Time, sel selection, entries []entry) planFile {
+func newPlan(now time.Time, sel selection, entries []entry) (planFile, error) {
 	if entries == nil {
 		entries = []entry{}
 	}
 	now = now.UTC().Truncate(time.Second)
-	return planFile{ID: planID(now, sel, entries), CreatedAt: now, Selection: sel, Entries: entries}
+	id, err := planID(now, sel, entries)
+	if err != nil {
+		return planFile{}, err
+	}
+	return planFile{ID: id, CreatedAt: now, Selection: sel, Entries: entries}, nil
 }
 
 // writePlan は outDir に plan-<ID>.json を書く。既にあれば上書きしない。
@@ -70,7 +78,11 @@ func readPlan(path, approve string, now time.Time) (planFile, error) {
 	if err := json.Unmarshal(body, &p); err != nil {
 		return p, stopf("plan が壊れている: %v", err)
 	}
-	if got := planID(p.CreatedAt, p.Selection, p.Entries); got != p.ID {
+	got, err := planID(p.CreatedAt, p.Selection, p.Entries)
+	if err != nil {
+		return p, err
+	}
+	if got != p.ID {
 		return p, stopf("plan の中身が ID (%s) と合わない (書き換えられた)", p.ID)
 	}
 	if approve != p.ID {

@@ -33,7 +33,11 @@ func runDU(args []string, home string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "pro-con du:", w)
 	}
 	if *asJSON {
-		data, _ := json.MarshalIndent(u, "", "  ")
+		data, err := json.MarshalIndent(u, "", "  ")
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con du:", err)
+			return 1
+		}
 		_, _ = fmt.Fprintln(stdout, string(data))
 	} else {
 		writeDU(stdout, u, *all)

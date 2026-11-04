@@ -71,7 +71,7 @@ func dieBySignal(s os.Signal) {
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	app.Ctx = ctx
+	app.Ctx = ctx //nolint:fatcontext // 積み重ねではない。app.Ctx はプロセスに 1 つの中断の口 (internal/app の Ctx)
 	var got atomic.Value
 	sigs := make(chan os.Signal, 2)
 	// 起動時に無視されていた signal (nohup の SIGHUP、背景のジョブの SIGINT) は受けない。Notify は無視を解いてしまう

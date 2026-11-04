@@ -6,20 +6,15 @@ linters:
     - depguard       # パッケージの依存の向き (下の rules)
     - dupl           # コピペ重複 (閾値は下)
     - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
-    - exhaustive     # card.State / WaitKind / Ending / OrderKind の switch に case を足し忘れない
-    - fatcontext     # ループ内で context を積み重ねる形
+    # exhaustive は共通の塊 (src/.golangci.yml) が有効にする。card.State / WaitKind / Ending / OrderKind の switch に case を足し忘れない
     - forbidigo      # stdout への直接出力を root の package (CLI の口) に限る (下の forbid)
     - gocritic       # 既定の stable セット
-    - makezero       # make([]T, n) への append で先頭にゼロ値が残る
     - mirror         # bytes / strings の鏡写し API の取り違え
     - unparam        # 常に同じ値の引数・使われない戻り値 (テストは除外 = ヘルパーの汎用引数を許す)
     - usetesting     # テストの os.Chdir / os.Setenv 等を t.Chdir / t.Setenv へ (後始末漏れの構造的防止。MkdirTemp は下の settings)
   settings:
     dupl:
       threshold: 120 # glogx と同じ。導入時 0 件
-    exhaustive:
-      # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない (glogx / doctor と同じ)
-      default-signifies-exhaustive: true
     usetesting:
       # 🚨 os.MkdirTemp("/tmp", …) は外さない: Unix socket のパスには上限 (macOS で 104 バイト) があり、t.TempDir は macOS では
       # /var/folders/… の長いパスになる (wake/wake_test.go の shortDir / live/live_test.go の shortState の注記)。

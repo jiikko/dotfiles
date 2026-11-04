@@ -31,6 +31,8 @@ func markOuter(body *tree.Node, params []string) {
 				known[n.Text] = true
 			}
 			return
+		default:
+			// 名前でも宣言でもない節は、下で子を辿るだけ
 		}
 		var snap, afterGuard map[string]bool
 		scope := scopeKinds[n.Kind]

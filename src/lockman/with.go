@@ -347,6 +347,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				return exitWithLost
 			case renewIndeterminate:
 				return exitWithInvalid
+			case renewOK:
 			}
 			return childExitCode(err)
 		}

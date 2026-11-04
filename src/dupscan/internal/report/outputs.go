@@ -182,6 +182,8 @@ func jsonTypeName(t reflect.Type) (string, reflect.Type, error) {
 			return "", nil, errors.New("名前の無い struct は一覧に書けない")
 		}
 		return t.Name(), t, nil
+	default:
+		// 一覧に書く欄の型は上の種類だけ。他は下で断る
 	}
 	return "", nil, fmt.Errorf("一覧に書けない種類 %s", t.Kind())
 }

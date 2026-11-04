@@ -91,6 +91,7 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 		message = "ビルドに失敗しました"
 	case runner.TransitionReadinessUnconfirmed:
 		message = "起動を確認できませんでした"
+	case runner.TransitionResultNone:
 	}
 	if message := MessageLine(message, width); message != "" {
 		footer = append(footer, message)
@@ -184,6 +185,7 @@ func transitionPanel(state runner.Model, width, frame int) []string {
 		title = "再起動中"
 	case runner.TransitionQuit:
 		title = "終了中"
+	case runner.TransitionNone, runner.TransitionStartup:
 	}
 	current := "アプリを起動しています…"
 	switch state.Transition.Stage {
@@ -193,6 +195,7 @@ func transitionPanel(state runner.Model, width, frame int) []string {
 		current = "ビルドしています…"
 	case runner.TransitionReady:
 		current = "起動を確認しています…"
+	case runner.TransitionLaunch:
 	}
 	steps := transitionSteps(state.Transition)
 	rows := []string{
@@ -225,6 +228,7 @@ func transitionSteps(transition runner.Transition) string {
 		completed = len(steps) - 2
 	case runner.TransitionReady:
 		completed = len(steps) - 1
+	case runner.TransitionStop:
 	}
 	for index := range completed {
 		steps[index] += "✓"

@@ -6,11 +6,8 @@ linters:
     - depguard       # 外部コマンドは runner 経由 (下の rules)
     - dupl           # コピペ重複の検出 (閾値は下。テストは除外)
     - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
-    - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照)
-    - fatcontext     # ループ内で context を積み重ねるパターンの検出
     - forbidigo      # 出力先を引数で受けない裸の print を禁止 (下の forbid)
     - gocritic       # exitAfterDefer 等の診断 (既定の stable セット)
-    - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
     - mirror         # bytes/strings の鏡写し API の取り違え
     - prealloc       # 事前確保できる append ループの検出
     - recvcheck      # value / pointer receiver の混在検出
@@ -45,13 +42,10 @@ linters:
           msg: 出力先を引数で受けること (cmd の emit は stdout/stderr を引数に取る設計)
     dupl:
       threshold: 120
-    exhaustive:
-      # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない
-      # (glogx の .golangci.local.yml と同じ設定。判定の出典を 2 つにしない)。
-      # 🚨 したがって、網羅を守らせたい switch には default を書かず全 case を並べること。
-      # disk/scan.go の scanEntry がその形 (Guard を前後 2 本の switch で分担しており、
-      # どちらにも書き忘れると guard 無しで候補になる = fail-open)。
-      default-signifies-exhaustive: true
+    # exhaustive の設定は共通の塊 (src/.golangci.yml)。この module の注意:
+    # 🚨 網羅を守らせたい switch には default を書かず全 case を並べること。
+    # disk/scan.go の scanEntry がその形 (Guard を前後 2 本の switch で分担しており、
+    # どちらにも書き忘れると guard 無しで候補になる = fail-open)。
   exclusions:
     rules:
       # テストの事前確保には性能上の意味が無い (小さな fixture を組むだけ)

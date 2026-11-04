@@ -86,7 +86,11 @@ func runPS(args []string, dir string, now func() time.Time, list procLister, std
 		_, _ = fmt.Fprintln(stderr, "pro-con ps:", w)
 	}
 	if *asJSON {
-		data, _ := json.MarshalIndent(rows, "", "  ")
+		data, err := json.MarshalIndent(rows, "", "  ")
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con ps:", err)
+			return 1
+		}
 		_, _ = fmt.Fprintln(stdout, string(data))
 	} else {
 		head, secs, tail := backend.SplitPGs(rows, slots.known)

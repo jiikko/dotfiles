@@ -54,7 +54,11 @@ func runHook(stdin io.Reader, stdout io.Writer) int {
 	if note := queueNote(in.Cwd); note != "" {
 		hso["additionalContext"] = note
 	}
-	_ = json.NewEncoder(stdout).Encode(map[string]any{"hookSpecificOutput": hso})
+	if err := json.NewEncoder(stdout).Encode(map[string]any{"hookSpecificOutput": hso}); err != nil {
+		// 書けないと、コマンドは列に並ばずにそのまま走る。tool は止めない (上の 🚨) が、黙らせず hook.log に残す
+		logHookDecision(cmd, false, "出力を書けない: "+err.Error())
+		return 0
+	}
 	return 0
 }
 

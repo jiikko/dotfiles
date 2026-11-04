@@ -434,6 +434,8 @@ func updateKey(m Model, key string) (Model, []Effect) {
 			return rebuildAfterFailure(m)
 		case Running:
 			m.Confirm = ConfirmRestart
+		case Stopping, Exiting:
+			// 止めている最中の R は受けない
 		}
 	case "q", "Q":
 		m.Confirm = ConfirmQuit
@@ -479,6 +481,8 @@ func updateControlRestart(m Model) (Model, []Effect) {
 			m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionStop}
 		}
 		return m, nil
+	case Exiting:
+		// 終わる途中は再起動を受けない (下で断る)
 	}
 	return m, []Effect{{Kind: ControlRejectEffect, Reason: "runner unavailable"}}
 }

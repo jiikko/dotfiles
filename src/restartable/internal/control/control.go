@@ -277,7 +277,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	select {
 	case response := <-req.reply:
 		_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-		_ = json.NewEncoder(conn).Encode(response)
+		_ = json.NewEncoder(conn).Encode(response) //nolint:errchkjson // 相手が去った後の書き込みの失敗は、こちらで直せることが無い (相手は読み取りの時間切れで知る)
 	case <-disconnected:
 		return
 	case <-s.serveDone:
@@ -300,7 +300,7 @@ func readLine(conn net.Conn) ([]byte, error) {
 }
 
 func writeError(w io.Writer, reason string) {
-	_ = json.NewEncoder(w).Encode(Response{OK: false, Reason: reason})
+	_ = json.NewEncoder(w).Encode(Response{OK: false, Reason: reason}) //nolint:errchkjson // 不正な要求への返事。相手が読めなくても、こちらで直せることが無い
 }
 
 // Call sends one command and waits for a single JSON response.

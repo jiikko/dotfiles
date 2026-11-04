@@ -157,7 +157,10 @@ func runPlan(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 		return stopped(stderr, err, false)
 	}
 	entries, ks := candidates(w, sel)
-	p := newPlan(w.now, sel, entries)
+	p, err := newPlan(w.now, sel, entries)
+	if err != nil {
+		return stopped(stderr, err, false)
+	}
 	path, err := writePlan(*out, p)
 	if err != nil {
 		return stopped(stderr, err, false)

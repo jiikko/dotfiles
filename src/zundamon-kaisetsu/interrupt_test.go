@@ -30,7 +30,7 @@ func withAppCtx(t *testing.T) context.CancelFunc {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	old := app.Ctx
-	app.Ctx = ctx
+	app.Ctx = ctx //nolint:fatcontext // 積み重ねではない。app.Ctx はプロセスに 1 つの中断の口 (internal/app の Ctx)
 	t.Cleanup(func() { cancel(); app.Ctx = old })
 	return cancel
 }

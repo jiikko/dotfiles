@@ -293,6 +293,7 @@ func (q queue) heldByAncestorProcess() bool {
 		return info.Pid > 1 && ancestors()[info.Pid]
 	case stateOrphan:
 		return info.ChildPid > 1 && ancestors()[info.ChildPid]
+	case stateGone, stateUnknown:
 	}
 	return false
 }
@@ -413,6 +414,8 @@ func runQueued(q queue, opt options, tn tunables, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "serial-run: 待ちをやめた (シグナル %v を受けた。コマンドは実行していない)\n", got)
 		hist(seq, time.Since(enq), -1, 128+int(got), "signal")
 		return childrun.ExitAs(128+int(got), got)
+	case waitTurn:
+		// 自分の番。下で実行する
 	}
 	waited := time.Since(enq)
 	if waited >= time.Second {
@@ -594,6 +597,8 @@ func (w *waiter) describe(p pred) (string, bool) {
 	case stateOrphan:
 		info, _ := w.q.readInfo(p.seq)
 		return fmt.Sprintf(" 前: #%d の serial-run は死んだが、子 pid %d (%s) がまだ走っている", p.seq, info.ChildPid, printable(info.Cmd)), false
+	case stateAlive, stateGone:
+		// 札の情報を読んで下で書く
 	}
 	info, ok := w.q.readInfo(p.seq)
 	if !ok {

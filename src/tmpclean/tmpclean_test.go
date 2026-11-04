@@ -264,7 +264,11 @@ func TestTamperedPlanCannotAddTargets(t *testing.T) {
 		}
 		p.Entries = append(p.Entries, e)
 	}
-	p.ID = planID(p.CreatedAt, p.Selection, p.Entries)
+	id, err := planID(p.CreatedAt, p.Selection, p.Entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.ID = id
 	body, _ = json.Marshal(p)
 	tampered := filepath.Join(f.out, "plan-"+p.ID+".json")
 	if err := os.WriteFile(tampered, body, 0o600); err != nil {
@@ -696,7 +700,11 @@ func TestTamperedPlanCannotChangeKind(t *testing.T) {
 	for i := range p.Entries {
 		p.Entries[i].Kind = kindTmpdir
 	}
-	p.ID = planID(p.CreatedAt, p.Selection, p.Entries)
+	id, err := planID(p.CreatedAt, p.Selection, p.Entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.ID = id
 	body, _ = json.Marshal(p)
 	tampered := filepath.Join(f.out, "plan-"+p.ID+".json")
 	if err := os.WriteFile(tampered, body, 0o600); err != nil {

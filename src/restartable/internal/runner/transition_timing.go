@@ -56,6 +56,8 @@ func (t *transitionTimer) observe(before, after Transition, state State) string 
 			return t.summary("再起動しました")
 		case TransitionStartup:
 			return t.summary("起動しました")
+		case TransitionNone, TransitionQuit:
+			// 起動の完了を知らせる遷移ではない
 		}
 	}
 	return ""

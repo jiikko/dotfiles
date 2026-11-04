@@ -133,7 +133,12 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 		res.moved = append(res.moved, m)
 		// 1 件ごとに記録して fsync する (途中で止まっても、何をどこへ移したかが残る。TrashMove は名前が埋まっていれば
 		// `<名前> 2` に改名するので、名前からは辿れない)。書けなければそこで止める
-		line, _ := json.Marshal(m)
+		line, err := json.Marshal(m)
+		if err != nil {
+			// 空の行を書くと、移した先の記録が黙って欠ける
+			res.stopped = stopf("移した記録を作れない: %v", err)
+			return res
+		}
 		if _, err := manifest.Write(append(line, '\n')); err != nil {
 			res.stopped = stopf("移した記録を書けない: %v", err)
 			return res

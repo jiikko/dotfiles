@@ -464,7 +464,7 @@ func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 			return nil, nil, app.Fail("%s: 読めない (%v)", queryPath, err)
 		}
 		start := float64(len(pcm)) / 2 / wav.SampleRate
-		pcm = append(pcm, frames...)
+		pcm = append(pcm, frames...) //nolint:makezero // 先頭のゼロは冒頭の無音 (make で確保した長さぶん)
 		if c, ok := line["chapter"]; ok && pyjson.Truthy(c) {
 			chapters = append(chapters, ChapterData{Title: pyjson.Str(c), Start: pyjson.Round3(start)})
 		}
