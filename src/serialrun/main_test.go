@@ -1121,18 +1121,23 @@ func TestGroupIntIsNotForwardedTwice(t *testing.T) {
 	counts := filepath.Join(f.dir, "ints")
 	// 子は INT を受けるたびに 1 行書き、待ち続ける (INT で抜けると、伝え直しの 2 回目を受ける相手がいなくなる)
 	script := "trap 'echo INT >> " + counts + "' INT; echo ready >> " + f.log + "; while :; do read _ < " + g + "; done"
-	cmd := f.start([]string{"SERIAL_RUN_TEST_INT_GRACE=3s"}, "--", "/bin/sh", "-c", script)
+	// 🚨 猶予は判定の窓より十分長くし、終わらせるのは TERM にする。猶予を短く (3 秒) すると、負荷で子の trap が猶予のうちに
+	// 走らなかったとき serial-run が子を止め、「INT を 1 回受ける」が成り立たないまま落ちる (2026-11-04 に root の make test で 1 回)
+	cmd := f.start([]string{"SERIAL_RUN_TEST_INT_GRACE=60s"}, "--", "/bin/sh", "-c", script)
 	testwait.Until(t, "子が待ちに入る", func() bool { return f.hasLog("ready") })
 	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
 		t.Fatal(err)
 	}
 	testwait.Until(t, "子が INT を 1 回受ける", func() bool { return countLines(counts) >= 1 })
-	// sleep-ok: negative: 伝え直しの 2 回目が来ないこと (猶予 3 秒より短い間で見る)
+	// sleep-ok: negative: 伝え直しの 2 回目が来ないこと (伝え直すなら INT を受けた直後なので、1 秒の窓で見る)
 	time.Sleep(time.Second)
 	if n := countLines(counts); n != 1 {
 		t.Fatalf("グループ宛ての INT が子に %d 回届いた", n)
 	}
-	// 子は trap で INT をやり過ごすので、猶予の後に serial-run が子孫ごと止めて終わる (gate を解放しない: 読み手はもう居ないことがある)
+	// 子は trap で INT をやり過ごすので、TERM で serial-run に子孫ごと止めさせて終わる (gate を解放しない: 読み手はもう居ないことがある)
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
 	_ = exitCode(t, cmd)
 	_ = g
 }
