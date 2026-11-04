@@ -701,12 +701,20 @@ func (m *Model) spawnAnim(n *node, p place) *anim {
 
 // spawnFrom は n が湧き出す位置 (いちばん近いアニメ中の祖先の右端。祖先が居なければ自分の置き場)。
 func (m *Model) spawnFrom(n *node, p place) (x, y float64) {
-	for anc := n.parent; anc != nil; anc = anc.parent {
-		if pa, ok := m.anims[anc]; ok && !pa.ghost {
-			return pa.x.v + float64(pa.w), pa.y.v
-		}
+	if x, y, ok := m.liveAncestorEdge(n); ok {
+		return x, y
 	}
 	return float64(p.x), float64(p.y)
+}
+
+// liveAncestorEdge は n のいちばん近い、消えかけでないアニメを持つ祖先の右端 (湧く元・縮む先)。居なければ ok=false。
+func (m *Model) liveAncestorEdge(n *node) (x, y float64, ok bool) {
+	for anc := n.parent; anc != nil; anc = anc.parent {
+		if pa, has := m.anims[anc]; has && !pa.ghost {
+			return pa.x.v + float64(pa.w), pa.y.v, true
+		}
+	}
+	return 0, 0, false
 }
 
 // sortByDepth は浅い順、同じ深さはパス順 (map の反復順に依らず、描く順を毎回同じにする)。
@@ -721,12 +729,8 @@ func sortByDepth(ns []*node) {
 
 // ghostTarget は消える項目が縮んでいく先 (いちばん近い生きた祖先の右端)。
 func (m *Model) ghostTarget(n *node) (float64, float64) {
-	for anc := n.parent; anc != nil; anc = anc.parent {
-		if pa, ok := m.anims[anc]; ok && !pa.ghost {
-			return pa.x.v + float64(pa.w), pa.y.v
-		}
-	}
-	return 0, 0
+	x, y, _ := m.liveAncestorEdge(n) // 居なければ (0, 0)
+	return x, y
 }
 
 func (m *Model) step(dt float64) bool {

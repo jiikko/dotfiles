@@ -41,11 +41,6 @@ func arrive(m *Model, release func()) {
 	m.Advance(fixedNow)
 }
 
-func statusLine(m *Model) string {
-	v := m.View()
-	return v[len(v)-1]
-}
-
 // 間に合わない読み込みは打鍵を止めず、届いたら続きで潜る。待つ間は動きとして扱い (16ms の tick で取り込む)、最下行に出す。
 func TestDescendLoadsOffUI(t *testing.T) {
 	m := newTest(t)
@@ -60,15 +55,15 @@ func TestDescendLoadsOffUI(t *testing.T) {
 	if !m.Animating() || !m.Busy() {
 		t.Fatalf("読み込みを待つ間に Animating=%v Busy=%v (tick が止まると結果を取り込めない)", m.Animating(), m.Busy())
 	}
-	if !strings.Contains(statusLine(m), "reading a") {
-		t.Fatalf("最下行に読み込み中が出ない: %q", statusLine(m))
+	if !strings.Contains(lastRow(m), "reading a") {
+		t.Fatalf("最下行に読み込み中が出ない: %q", lastRow(m))
 	}
 	arrive(m, release)
 	if !a.loaded || m.cur.parent != a || !a.expanded {
 		t.Fatalf("届いた後に潜らない: loaded=%v cur=%s expanded=%v", a.loaded, m.cur.raw, a.expanded)
 	}
-	if strings.Contains(statusLine(m), "reading") || len(m.loads) != 0 {
-		t.Fatalf("届いた後も読み込み中のまま: loads=%d %q", len(m.loads), statusLine(m))
+	if strings.Contains(lastRow(m), "reading") || len(m.loads) != 0 {
+		t.Fatalf("届いた後も読み込み中のまま: loads=%d %q", len(m.loads), lastRow(m))
 	}
 }
 

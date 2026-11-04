@@ -113,7 +113,7 @@ func appendHistory(path, cmd string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
-	// O_NOFOLLOW: 履歴の場所が symlink なら追記しない (先のファイルへ書き、chmod してしまう。読む側の loadHistory も symlink を辿らない)
+	// O_NOFOLLOW: 履歴の場所が symlink なら追記しない (先のファイルへ書き、chmod してしまう。書き直す側の loadHistory も link 先へは書かない。読むのは os.Open で link を辿る)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return
