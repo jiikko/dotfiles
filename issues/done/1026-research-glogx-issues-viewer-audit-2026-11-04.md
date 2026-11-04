@@ -5,7 +5,7 @@
 ## 概要
 
 `all-audit-on-diy` (audit skill の全タイプを直接実行し、その場で直す) を glogx の issues viewer に回す。
-前回の [754](done/754-research-glogx-issues-viewer-audit-2026-10-13.md) (2026-10-13、起点 `f61d1e664`) 以降の差分を重点にする。
+前回の [754](754-research-glogx-issues-viewer-audit-2026-10-13.md) (2026-10-13、起点 `f61d1e664`) 以降の差分を重点にする。
 
 ## 走査した母集合
 
