@@ -28,7 +28,10 @@ while [ $# -gt 0 ]; do [ "$1" = "-name" ] && name="$2"; [ "$1" = "-returns" ] &&
 echo "構文近似: 名前と引数ラベル/個数で照合。"
 # location は作った値: 名前だけでは同じ名前で別の型を返す定義が上位 20 件を埋めて location(at:) が出ず、戻り型と組み合わせると出る形を模す
 if [ "$name" = location ]; then
-  if [ "$returns" = StorageLocation ]; then echo "src/core/Store.swift:40 StorageConnection.location(at: path: String) -> StorageLocation (呼び出し ~12)"; exit 0; fi
+  if [ "$returns" = StorageLocation ]; then
+    echo "src/core/Store.swift:40 StorageConnection.location(at: path: String) -> StorageLocation (呼び出し ~12)"
+    echo "src/core/store.go:40-44 Connection.location(p string) *StorageLocation (呼び出し ~2)"; exit 0
+  fi
   # 汎用の型で引くと、同じ型を返す無関係な定義が並ぶ (hook は汎用の型では -returns を付けないので、これが出たら退行)
   if [ "$returns" = String ]; then echo "src/fmt/Fmt.swift:9 Fmt.location(of: v: Int) -> String (呼び出し ~3)"; exit 0; fi
   for i in $(seq 1 20); do echo "src/ui/V$i.swift:3 View$i.location(in: x: Int) -> CGPoint (呼び出し ~1)"; done
@@ -40,7 +43,11 @@ if [ "$name" = slowWidget ] && [ -n "$returns" ]; then exec sleep 30; fi
 [ -n "$returns" ] && exit 0
 case "$name" in
   slowWidget) echo "src/a/w.go:1-9 slowWidget(x int) Widget (呼び出し ~2)" ;;
-  readCookies) echo "src/chromecookie/cookie.go:291-349 Workspace.ReadCookies(profile string) (Result, error) (呼び出し ~1) // doc" ;;
+  readCookies) echo "src/chromecookie/cookie.go:291-349 Workspace.ReadCookies(profile string) (Result, error) (呼び出し ~1) // doc"
+    echo "src/web/Cookies.swift:10-20 CookieStore.readCookies() -> [Cookie] (呼び出し ~1)" ;;
+  # 言語の混ざる repo (obaket: Swift の app と Go の道具) では、同じ名前の Swift と Go の定義が並ぶ
+  fixture) echo "macOS/ObaketTests/BodyCacheBarrierTests.swift:5-9 BodyCacheBarrierTests.fixture() -> Fixture (呼び出し ~3)"
+    echo "src/a/fx.go:1-3 fixture() string [unexported] (呼び出し ~1)" ;;
   loadSettings) echo "src/a/s.go:10-20 loadSettingsFile(p string) error (呼び出し ~2)"; echo "src/b/s.go:5-9 reloadSettings() (呼び出し ~0)" ;;
   TestReadCookies) echo "src/a/t_test.go:1-9 TestReadCookies(t *testing.T) (呼び出し ~0)" ;;
   read) echo "src/a/r.go:1-2 read() (呼び出し ~9)" ;;
@@ -150,7 +157,15 @@ next_session; expect_silent "書き換え前 (old_string) に既にある型は�
 next_session; run Write "$S" $'final class ArrivalGate {}\n' >/dev/null
 expect_silent "同じ session × 型の 2 回目は出さない" "$(run Write "$S" $'final class ArrivalGate {}\n')"
 next_session; out=$(run Edit "$REPO/src/foo/B.swift" $'    private func readCookies() {}\n')
-expect_has "Swift: 字下げのある func も新しい関数として引く" "$out" "ReadCookies"
+expect_has "Swift: 字下げのある func も新しい関数として引く" "$out" "CookieStore.readCookies"
+# 書くファイルと違う言語の候補は再利用も寄せもできない (Go の test に func fixture を書いたら Swift の test の fixture が並んだ)
+next_session; out=$(run Write "$REPO/src/foo/fx4_test.go" $'package foo\n\nfunc fixture(t *testing.T) string { return "" }\n')
+expect_has "Go のファイルに書くときは Go の候補を出す" "$out" "src/a/fx.go"
+expect_lacks "Go のファイルに書くときは Swift の候補を出さない" "$out" "BodyCacheBarrierTests"
+next_session; out=$(run Write "$REPO/src/foo/Fixture.swift" $'func fixture() -> Fixture { Fixture() }\n')
+expect_has "Swift のファイルに書くときは Swift の候補を出す" "$out" "BodyCacheBarrierTests.fixture"
+expect_lacks "Swift のファイルに書くときは Go の候補を出さない" "$out" "src/a/fx.go"
+next_session; expect_lacks "Swift のファイルに書くときは Go の Workspace.ReadCookies も出さない" "$(run Write "$REPO/src/foo/Cookies2.swift" $'func readCookies() {}\n')" "Workspace.ReadCookies"
 next_session; run Edit "$F" $'func readCookies() {}\n' >/dev/null
 expect_silent "同じ session × 名前の 2 回目は出さない" "$(run Edit "$F" $'func readCookies() {}\n')"
 next_session; expect_silent "DUPSCAN_INJECT=off では、注入の出る名前でも出さない (A-B の対照腕)" "$(DUPSCAN_INJECT=off run Edit "$F" $'func readCookies(x int) int { return x }\n')"
@@ -162,14 +177,14 @@ next_session; expect_has "Go: fixture の後ろにある本物の関数は引く
 next_session; expect_has "Go: backquote の rune は raw string の始まりと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/rune.go" $'package foo\n\nvar bq = \'`\'\n\nfunc readCookies() {}\n')" "Workspace.ReadCookies"
 next_session; expect_silent "Go: /* */ のコメントの中の func は引かない" "$(run Write "$REPO/src/foo/c.go" $'package foo\n\n/*\nfunc readCookies() {}\n*/\n')"
 next_session; expect_silent "Swift: 三重引用符の文字列の中の func は引かない" "$(run Write "$REPO/src/foo/Fx.swift" $'let src = """\nfunc readCookies() {}\n"""\n')"
-next_session; expect_has "Swift: 三重引用符の中の \\\"\"\" を閉じと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/Esc.swift" $'let s = """\n x \\""" y\n"""\nfunc readCookies() {}\n')" "ReadCookies"
-next_session; expect_has "Swift: #\"\"\"…\"\"\"# の raw string の中の \"\"\" を閉じと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/Raw.swift" $'let s = #"""\n x """ y\n"""#\nfunc readCookies() {}\n')" "ReadCookies"
+next_session; expect_has "Swift: 三重引用符の中の \\\"\"\" を閉じと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/Esc.swift" $'let s = """\n x \\""" y\n"""\nfunc readCookies() {}\n')" "CookieStore.readCookies"
+next_session; expect_has "Swift: #\"\"\"…\"\"\"# の raw string の中の \"\"\" を閉じと読まない (後ろの関数を引く)" "$(run Write "$REPO/src/foo/Raw.swift" $'let s = #"""\n x """ y\n"""#\nfunc readCookies() {}\n')" "CookieStore.readCookies"
 next_session; expect_silent "Swift: #\"…\"# の raw string の中の func は引かない" "$(run Write "$REPO/src/foo/Raw2.swift" $'let s = #"""\nfunc readCookies() {}\n"""#\n')"
 next_session; expect_silent "git が ignore するパス (tmp/) では引かない" "$(run Write "$REPO/tmp/tool.go" $'package main\n\nfunc readCookies() {}\n')"
 
 next_session; expect_has "Swift: 戻り型が取れたら名前と組み合わせて引き、同じ名前の別の型の定義に埋もれた既存の関数を出す (954 の形)" "$(run Write "$REPO/src/foo/Ctx.swift" $'struct Ctx {\n    func location(path: String) -> StorageLocation {\n        fatalError()\n    }\n}\n')" "StorageConnection.location(at:"
 next_session; expect_lacks "Swift: 汎用の戻り型 (String) では型で引かない (名前だけの結果になる)" "$(run Write "$REPO/src/foo/Ctx2.swift" $'struct Ctx2 {\n    func location(path: String) -> Swift.String {\n        fatalError()\n    }\n}\n')" "Fmt.location(of:"
-next_session; expect_has "Go: 複数の戻り (T, error) は error でない最初の型で引く" "$(run Write "$REPO/src/foo/loc.go" $'package foo\n\nfunc location(p string) (*StorageLocation, error) {\n\treturn nil, nil\n}\n')" "StorageConnection.location(at:"
+next_session; expect_has "Go: 複数の戻り (T, error) は error でない最初の型で引く" "$(run Write "$REPO/src/foo/loc.go" $'package foo\n\nfunc location(p string) (*StorageLocation, error) {\n\treturn nil, nil\n}\n')" "Connection.location(p string)"
 
 next_session; expect_has "Swift: 汎用の戻り型でも名前の照合の結果は出す (何も出さない退行を見分ける)" "$(run Write "$REPO/src/foo/Ctx3.swift" $'struct Ctx3 {\n    func location(path: String) -> String {\n        fatalError()\n    }\n}\n')" "View1.location(in:"
 next_session; expect_lacks "Swift: 本体の無い protocol の要件では、次の行の別の要件の戻り型で引かない" "$(run Write "$REPO/src/foo/Proto.swift" $'protocol P {\n    func location(path: String)\n    subscript(i: Int) -> StorageLocation { get }\n}\n')" "StorageConnection.location(at:"

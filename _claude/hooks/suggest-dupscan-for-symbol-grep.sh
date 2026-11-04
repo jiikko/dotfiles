@@ -77,6 +77,8 @@ import json, os, re, shlex
 
 DECL = r'(?:func|struct|class|enum|protocol|extension|actor|init|var|let|case|typealias)'
 IDENT = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?'
+# test 関数の接頭辞だけの語 (`func Test` は test の一覧を見る grep で、名前を引く検索ではない)
+TEST_PREFIXES = {'Test', 'Benchmark', 'Example', 'Fuzz', 'test'}
 
 def symbol(pattern, swift_target, declarations=DECL):
     p = pattern.strip()
@@ -87,7 +89,7 @@ def symbol(pattern, swift_target, declarations=DECL):
         return ''
     decl, name = m.group(1), m.group(2)
     base = name.split('.')[-1]
-    if len(base) < 3 or base.isupper():
+    if len(base) < 3 or base.isupper() or base in TEST_PREFIXES:
         return ''
     camel = any(c.isupper() for c in name)  # Type.member の Type の大文字も数える
     if decl or camel or swift_target:
@@ -187,7 +189,11 @@ def from_segment(words):
         return None
     rest = words[i + 1:]
     # Swift を対象にしているか: `.swift` の拡張子 (glob を含む) か `-t swift` / `-tswift` / `--type=swift` (`.swiftlint.yml` には当てない)
-    swift = any(re.search(r'\.swift($|[^A-Za-z0-9_])', w) or w == 'swift' or re.fullmatch(r'(-t|--type=)swift', w) for w in rest)
+    swift_word = lambda w: re.search(r'\.swift($|[^A-Za-z0-9_])', w) or w == 'swift' or re.fullmatch(r'(-t|--type=)swift', w)
+    swift = any(swift_word(w) for w in rest)
+    # 名指しのファイル (glob でない .swift) を除いた Swift の手掛かり。名指しのファイルだけで言語が決まる grep は、
+    # そのファイルの中を読む検索なので、小文字の語は宣言の語が無ければシンボルと読まない (`grep -n libexec Makefile x.go`)
+    swift_spread = any(swift_word(w) and not re.fullmatch(r'[^-*?\[{][^*?\[{]*\.swift', w) for w in rest)
     pattern = None
     paths = []
     k = 0
@@ -231,7 +237,9 @@ def from_segment(words):
         if not path.startswith(('!', ':')) and any(c in path for c in '*?['):
             path_langs.update(glob_languages(path))
     if not langs and path_langs == {'go'}:
-        name, extra = names(pattern, True, go_decl, ere)
+        # 名指しのファイルだけなら小文字の語を宣言の語なしでは読まない。`*.go` の glob は横断の検索なので読む
+        spread = any(any(c in p for c in '*?[') for p in paths if not p.startswith(('!', ':')))
+        name, extra = names(pattern, spread, go_decl, ere)
         return 'go\t' + name + '\t' + extra if name else None
     # Go を除く glob (`-g '!*.go'`) も Swift を選んだ意図として数える
     explicit_swift = swift or 'swift' in langs or 'swift' in path_langs or any(re.search(r'!\*{1,2}\.go(?![A-Za-z0-9_])', w) for w in rest)
@@ -240,7 +248,7 @@ def from_segment(words):
         return 'go\t' + receiver + '\t'
     if not_source_files(paths):
         return None
-    name, extra = names(pattern, swift, DECL, ere)
+    name, extra = names(pattern, swift_spread, DECL, ere)
     if not name:
         return None
     # 言語の手掛かりが無いものは auto: どの言語の repo かは bash 側が追跡しているファイルで決める
@@ -333,21 +341,24 @@ if tool == 'Grep':
     if go_target:
         ignored = ignored_case or (glob and 'go' not in glob_languages(glob)) or (typ and typ != 'go') or (path and not_source_files([path], '.go'))
         name, extra = ('', '') if ignored else names(pattern, True, r'(?:func|type|var|const)', True)
-        print('go\t' + name + '\t' + extra if name else '')
+        print('-\tgo\t' + name + '\t' + extra if name else '')
     elif 'go' in langs:
         print('')
     elif receiver:
-        print('go\t' + receiver + '\t')
+        print('-\tgo\t' + receiver + '\t')
     else:
         ignored = ignored_case or (glob and 'swift' not in glob) or (typ and typ != 'swift') or (path and not_source_files([path]))
         name, extra = ('', '') if ignored else names(pattern, explicit_swift, DECL, True)
-        print(('swift' if explicit_swift else 'auto') + '\t' + name + '\t' + extra if name else '')
+        print('-\t' + ('swift' if explicit_swift else 'auto') + '\t' + name + '\t' + extra if name else '')
 else:
     cmd = os.environ['HOOK_CMD']
     # 区切りを残して分け、パイプ (`|`) の直後の segment は stdin を絞る grep なので見ない
     parts = expand_shell_c(split_shell(cmd))
     prev = None
     cwd_now = os.environ.get('HOOK_CWD', '')  # `cd <dir> &&` を追って相対パスの基準を動かす (cwd がセッションの cwd と違う形)
+    # grep を打つ dir: '-' は cd が無い・追えない相対の dir (セッションの repo で決める)、'?' は変数・コマンド置換の dir へ cd した
+    # (どの repo か分からない)、それ以外は追えた cd 先 (その repo で決める)。空の欄は IFS のタブで詰められるので空にしない
+    grep_dir = '-'
     for seg in parts:
         if seg in ('||', '&&', ';', '\n', '|'):
             prev = seg
@@ -362,17 +373,26 @@ else:
             continue
         if words and words[0] in ('cd', '(cd'):
             cwd_now = next_cwd(words, cwd_now)
+            unknowable = any(re.search(r'[$`]', w) for w in words[1:])
+            grep_dir = cwd_now if cwd_now else ('?' if unknowable or grep_dir == '?' else '-')
             continue
         os.environ['HOOK_CWD'] = cwd_now
         got = from_segment(words)
         if got:
-            print(got)
+            print(grep_dir + '\t' + got)
             break
 PY
 ) || exit 0
 [ -n "$match" ] || exit 0
-IFS=$'\t' read -r language name extra <<<"$match"
+IFS=$'\t' read -r grep_dir language name extra <<<"$match"
 case "$language" in go|swift|auto) ;; *) exit 0 ;; esac
+case "$grep_dir" in
+  -) ;;
+  # 変数の dir へ cd した grep はどの repo か分からない。言語の手掛かりが無い検索をセッションの repo で決めると、
+  # 別の Go の repo の検索に Swift の def / refs を勧める。言語を明示した検索はセッションの repo で従来どおり確かめる
+  '?') [ "$language" != auto ] || exit 0 ;;
+  *) root=$(git -C "$grep_dir" rev-parse --show-toplevel 2>/dev/null) || exit 0 ;;
+esac
 # headの後のSIGPIPEを失敗扱いにしない。追跡sourceのある言語だけ案内する。
 tracks() { [ -n "$(git -C "$root" ls-files -- "*.$1" 2>/dev/null | head -n 1)" ]; }
 tracked_count() { git -C "$root" ls-files -- "*.$1" 2>/dev/null | wc -l | tr -d ' '; }

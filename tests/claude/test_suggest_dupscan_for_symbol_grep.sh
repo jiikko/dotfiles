@@ -312,6 +312,28 @@ next_session; out=$(run_bash 'grep -rn "FooBar\|BazQux" --include=*.swift Source
 expect_nudge "Swift だけの repo の alternation" "$out" FooBar
 expect_extra "Swift の alternation の残りの名前" "$out" BazQux
 next_session; expect_nudge "Swift だけの repo の言語不明は従来どおり Swift 向け" "$(run_bash 'rg -n FooBar .')" FooBar
+next_session; expect_silent "小文字の語を名指しの Swift のファイルで探すのは、そのファイルを読む grep (宣言の語が無い)" "$(run_bash 'grep -n refresh Sources/A.swift')"
+next_session; expect_nudge "名指しのファイルでも宣言の語があれば案内する" "$(run_bash 'grep -n "func refresh" Sources/A.swift')" refresh
+# grep の dir を追えない (cd $W/…) と、どの repo の検索か分からない。セッションの repo (Swift 優位) で決めると、
+# 別の Go の repo の test を探す grep に Swift の def / refs を勧める (dotfiles の treefiler で `grep -n 'func Test' pane_test.go`)
+SWIFT_REPO="$REPO"
+next_session; expect_silent "Swift の func test の一覧 (test 関数の接頭辞)" "$(run_bash 'rg -n -t swift "func test" .')"
+next_session; expect_nudge "test で始まるだけの名前 (testable) は接頭辞ではない" "$(run_bash 'rg -n -t swift "func testableHelper" .')" testableHelper
+next_session; expect_silent "cd \$W/… の後ろの言語不明の grep は、repo が分からないので案内しない" "$(run_bash 'W=$(ls -d /x); cd $W/sub && grep -n "func FooBar" pane_test.go')"
+new_repo 0; GO_REPO="$REPO"; mkdir -p "$GO_REPO/sub"; printf 'package sub\n' > "$GO_REPO/sub/x.go"; printf 'all:\n' > "$GO_REPO/Makefile"
+git -C "$GO_REPO" add -A >/dev/null 2>&1
+REPO="$SWIFT_REPO"
+next_session; expect_silent "cd <別の Go だけの repo> && grep の言語不明は、cd 先の repo で決める (Go だけなので黙る)" "$(run_bash "cd $GO_REPO && grep -rn FooBar .")"
+next_session; expect_go_nudge "cd <別の repo> の Go の名指しは Go 向け" "$(run_bash "cd $GO_REPO/sub && grep -n FooBar x.go")" FooBar
+REPO="$GO_REPO"
+# test 関数の接頭辞 (Test / Benchmark / Example / Fuzz) は一覧を見る grep で、名前を引く検索ではない
+next_session; expect_silent "Go の func Test の一覧" "$(run_bash 'grep -n "func Test" sub/x.go')"
+next_session; expect_silent "Go の func Benchmark の一覧 (-t go)" "$(run_bash 'rg -n -t go "func Benchmark" .')"
+# dir の名前・shell の文字列を、名指しのファイルで探す grep (小文字の語で宣言の語が無い) は案内しない
+next_session; expect_silent "小文字の語を名指しの Go のファイルと Makefile で探す" "$(run_bash 'grep -n libexec Makefile sub/x.go')"
+next_session; expect_silent "小文字の語を名指しの Go のファイルで探す" "$(run_bash 'grep -n "libexec" sub/x.go')"
+next_session; expect_go_nudge "名指しの Go のファイルでも宣言の語があれば案内する" "$(run_bash 'grep -n "func libexecDir" sub/x.go')" libexecDir
+next_session; expect_go_nudge "-t go の小文字の語は従来どおり案内する (repo を横断してシンボルを探す)" "$(run_bash 'rg -t go libexecDir .')" libexecDir
 REPO="$MIXED_REPO"
 
 # hook自身はdupscan/goを起動しない。案内文字列を出すだけ。

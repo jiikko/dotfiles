@@ -20,13 +20,14 @@
 #     書いた後のファイル全体を頭から読んで決める
 #   - git が ignore するパス (tmp/ の使い捨ての道具など) では引かない
 #   - 除く名前: 5 文字未満・Test/Benchmark/Fuzz/Example 始まり・init/main/String/Error/Close/body ほか決まり文句、Go のメソッド (func (r T) name)
-#   - 候補 = index の行のうち、名前が大小無視で等しいもの、または一方が他方の前方で共通部分が 6 文字以上で、短い方の名前が 2 語以上のもの
+#   - 候補 = index の行のうち、書くファイルと同じ拡張子のファイルにあり、名前が大小無視で等しいもの、または一方が他方の前方で共通部分が 6 文字以上で、短い方の名前が 2 語以上のもの
 #     (短い方が 1 語 (`resume`) だと、`resumeReady` に対して語が同じだけの無関係な `resume()` が並ぶ。失うもの: 1 語の既存の関数
 #     (`upload`) を、それに語を足した新しい名前 (`uploadAll`) で書くときは出ない)
 #   - 新しい型 = 書く文字列にある型の宣言 (Swift の class / struct / actor / enum / protocol、Go の行頭の `type 名前`) のうち、書き換え前に無いもの。
 #     同じ言語のファイルに同じ名前の型の宣言があれば (private を含む) 出す。git grep の字句の完全一致で、dupscan は使わない
 #     (index は型を返さず、Go では def が使えない)。型は計測ログに書かない (ログは関数の注入の A-B を数える)
 # 検出しない形 (silent): Bash の書き込み・NotebookEdit・名前が違うが同じ役割の関数 (戻り型は名前と組み合わせて引くだけで、型だけでは引かない。dupscan search / index -returns で引く)・
+#   言語の混ざる repo で、違う言語の候補が上限 (-limit) を埋めて同じ言語の候補が落ちる形 (index は言語で絞れない。落ちたら何も出ない側に倒れる)・
 #   Swift のメソッドと Go の関数の区別 (Swift は字下げのある func も新しい関数として扱う)・Go の `type (` の中の型・
 #   引数付きの属性 (`@available(…)`) の付いた Swift の型・typealias
 # 計測: 注入のたびに ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-inject.log へ「時刻 session 名前 候補数 引き方 (name / returns)」を 1 行足す
@@ -121,9 +122,13 @@ def go_module(root, rel_path):
 
 
 def reachable(root, hit_path, line, rel, ext):
-    """書いているファイルの側から使える候補か。別の Go の module のテストの非公開の helper は、呼ぶことも、共通の置き場へ寄せることも
-    できない (module ごとに別の道具)。同じ module の中なら、別の package でも共通のテストの置き場へ寄せる候補になるので残す。
+    """書いているファイルの側から使える候補か。書くファイルと違う言語の定義は、呼ぶことも寄せることもできない (dupscan index は
+    言語で絞れず、Swift の app と Go の道具が同じ repo にあると、Go の test の fixture に Swift の test の fixture が並ぶ)。
+    別の Go の module のテストの非公開の helper も、呼ぶことも、共通の置き場へ寄せることもできない (module ごとに別の道具)。
+    同じ module の中なら、別の package でも共通のテストの置き場へ寄せる候補になるので残す。
     Swift は module が dir で決まらないので見ない。"""
+    if os.path.splitext(hit_path)[1] != ext:
+        return False
     if ext != ".go":
         return True
     tags = TAGS.search(line)
