@@ -147,6 +147,30 @@ func TestAnalyzeLastWindowEndsAtQuit(t *testing.T) {
 	}
 }
 
+// 最後の打鍵の書き込みが閉じる q の Update の後に来ても (描画の goroutine の周期)、q の後の最初の View より前に書き始めたものは
+// 最後の打鍵のフレームとして数える。q のフレームの書き込みは数えない。
+func TestAnalyzeLastKeyWriteAfterQuitUpdate(t *testing.T) {
+	sends := []send{{t: 0, done: 1, key: "j"}}
+	evs := []event{
+		{t: 5, kind: "update", ns: 1, msg: "key", key: "j", anim: false},
+		{t: 6, kind: "view", ns: 1},
+		{t: 8, kind: "update", ns: 1, msg: "key", key: "q"}, // q はもう待っていた
+		{t: 9, kind: "view", ns: 1},
+		{t: 12, kind: "write", ns: 5, bytes: 100}, // 7 に書き始めた (j のフレーム)
+		{t: 20, kind: "write", ns: 2, bytes: 900}, // 18 に書き始めた (q のフレーム)
+	}
+	st, err := analyze(evs, sends, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st[0].frames != 1 || st[0].bytes != 100 || st[0].draw < 0 {
+		t.Fatalf("q の後に来た最後の打鍵の書き込みを落とした / q の書き込みを数えた: frames=%d bytes=%d draw=%v", st[0].frames, st[0].bytes, st[0].draw)
+	}
+	if st[0].updSum != 1e-6 || st[0].viewSum != 1e-6 {
+		t.Fatalf("q の Update / View を最後の打鍵に数えた: upd=%v view=%v", st[0].updSum, st[0].viewSum)
+	}
+}
+
 // report は quits.tsv の本数で閉じる q を外す (台本の最後でキー一覧が開いていて q を 2 本送った run)。
 func TestReportUsesQuitsFile(t *testing.T) {
 	dir := t.TempDir()

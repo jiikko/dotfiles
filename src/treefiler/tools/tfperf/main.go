@@ -164,6 +164,11 @@ func run(args []string) error {
 	if err := sends.Close(); err != nil {
 		return err
 	}
+	if keys[len(keys)-1] == "q" {
+		// 台本の最後の q が treefiler を閉じているなら、閉じ終わるのを待つ。待たずに閉じる q を送ると、send-keys は
+		// まだ生きている session に届いて成功し、読まれない q を届けた本数に数えて判定不能になる
+		_ = waitFor(1500*time.Millisecond, t.gone)
+	}
 	quits, err := os.Create(filepath.Join(o.out, "quits.tsv"))
 	if err != nil {
 		return err
@@ -270,22 +275,27 @@ func (t *tmuxServer) start(o runOpts, bin, root, cfg, logPath, debugPath string)
 // quit は q を送って treefiler を閉じる。台本の終わりにタイル・キー一覧が開いていると q はそれを 1 枚閉じるだけなので、
 // session が終わるまで送り直す (8 回まで)。届けた q (send-keys が成功したもの) は sent に渡す (quits.tsv。analyze が台本の打鍵と分ける)。
 func (t *tmuxServer) quit(sent func(before, done int64)) error {
-	gone := func() bool { return t.cmd("has-session", "-t", t.session) != nil }
 	for range 8 {
+		if t.gone() {
+			return nil
+		}
 		before := time.Now().UnixNano()
 		if err := t.cmd("send-keys", "-t", t.session, "q"); err != nil {
-			if gone() {
+			if t.gone() {
 				return nil
 			}
 			return err
 		}
 		sent(before, time.Now().UnixNano())
-		if waitFor(1500*time.Millisecond, gone) == nil {
+		if waitFor(1500*time.Millisecond, t.gone) == nil {
 			return nil
 		}
 	}
 	return fmt.Errorf("q を 8 回送っても閉じない (画面: %s)", t.capture())
 }
+
+// gone は treefiler の session が終わったか。
+func (t *tmuxServer) gone() bool { return t.cmd("has-session", "-t", t.session) != nil }
 
 // snap は -snap のとき、今の画面を screens/<i>-<キー>.txt に残す (-snap でなければ何もしない)。
 func (t *tmuxServer) snap(o runOpts, i int, key string) error {
@@ -513,12 +523,19 @@ func analyze(evs []event, sends []send, quits int) ([]keyStat, error) {
 			return nil, fmt.Errorf("閉じる q の所に %s の key がある (判定不能)", k)
 		}
 	}
-	// 最後の打鍵の窓は、閉じる最初の q の Update が始まるまで (閉じる操作の描画を最後の打鍵に数えない)。Update は順に処理されるので、
-	// 最後の打鍵の View と書き込みはそれより前に終わる
-	quitStart := int64(math.MaxInt64)
+	// 最後の打鍵の窓: Update と View は閉じる最初の q の Update が始まるまで (Update と View は順に処理されるので、最後の打鍵のものは
+	// その前に終わる)。書き込みは描画の goroutine が自分の周期で行うので、q の Update の後に来うる。q の後の最初の View が
+	// 終わるより前に書き始めたものは、最後の打鍵のフレームとして数える (drawn と同じ境目)
+	quitStart, quitDrawn := int64(math.MaxInt64), int64(math.MaxInt64)
 	if quits > 0 {
 		q := evs[keyIdx[len(sends)]]
 		quitStart = q.t - q.ns
+		for _, e := range evs[keyIdx[len(sends)]:] {
+			if e.kind == "view" {
+				quitDrawn = e.t
+				break
+			}
+		}
 	}
 	keyIdx = keyIdx[:len(sends)]
 	for i, s := range sends {
@@ -530,8 +547,8 @@ func analyze(evs []event, sends []send, quits int) ([]keyStat, error) {
 	stats := make([]keyStat, 0, len(sends))
 	for i, s := range sends {
 		k := evs[keyIdx[i]]
-		end := quitStart
-		if i+1 < len(sends) {
+		end, writeEnd, last := quitStart, quitDrawn, i+1 == len(sends)
+		if !last {
 			end = sends[i+1].t
 		}
 		start := k.t - k.ns // key の Update が始まった時刻
@@ -550,7 +567,12 @@ func analyze(evs []event, sends []send, quits int) ([]keyStat, error) {
 		}
 		for _, e := range evs[keyIdx[i]:] {
 			if e.t >= end {
-				break
+				if !last {
+					break
+				}
+				if e.kind != "write" || e.t-e.ns >= writeEnd {
+					continue // 最後の打鍵の後ろは、閉じる q の前のフレームの書き込みだけを拾う
+				}
 			}
 			switch e.kind {
 			case "update":
