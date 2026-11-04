@@ -4,9 +4,9 @@
 
 既存helperの発見、誤った「不存在」判断の防止、候補の確認費用を改善する。意味上の同一性や別moduleからの利用可否は、構文一致だけでは証明しない。
 
-## 現在の状態（2026-10-29）
+## 現在の状態（2026-11-04）
 
-子issue44件中35件完了、8件open、1件pending。928は共通能力診断/表示専用案内を限定採用し、環境検証を補完して完了。一般的な効率改善と未実施比較は948で継続する。他担当の941〜944/946/948の内容・claimは保持する。
+子issue63件中54件完了、6件open、3件pending (`ls` で数えた。2026-10-29 は44件中35件完了・8件open・1件pending)。928は共通能力診断/表示専用案内を限定採用し、環境検証を補完して完了。一般的な効率改善と未実施比較は948で継続する。他担当の941〜944/946/948の内容・claimは保持する。
 
 ## 使われやすさと context 消費（2026-10-28 追加）
 
@@ -38,6 +38,8 @@
 | [997](done/997-ux-dupscan-gate-incomplete-noise-from-testdata.md) | Go の testdata の壊れた fixture で gate の 1 行目が毎回「解析が不完全」。testdata だけなら 1 行目を「新しい重複なし」+ 数にした (json・strict は変えない)。done |
 | [990](done/990-bug-dupscan-swift-l1-locals-outside-binding-scope.md) | Swift の L1 が、束縛の届かない所 (closure・ループ・else の中・if の後ろ) の同じ綴りのプロパティを番号にする。[974](done/974-bug-dupscan-l1-numbers-shadowed-outer-names.md) の近似の残り |
 | [993](done/993-test-dupscan-swift-scope-kinds-cover-grammar.md) | Swift の scope の節の種類を文法 (node-types.json) の全部の節と突き合わせてテストで固定。didSet / willSet・局所の型の init / subscript の取りこぼしを直した |
+| [1021](done/1021-ux-dupscan-sweep-fold-same-owner-closure-groups.md) | sweep の節 2 で、1 つの単位の中のクロージャだけの組 (設定の表の行など) を単位ごとの 1 行に畳む (`-v` で畳まない。節 20 以上の組と `_` の変数は畳まない)。treefiler の節 2 は 8 組 → 3 組。done |
+| [1025](done/1025-research-dupscan-audit-2026-11-04.md) | 22 観点の監査 (直接実行、2 回目)。typed の alias の受け手の鍵・markOuter の重複・README の sweep の実測を直した。Swift の文法の版上げは生成物の無い main の commit なので候補が無いと分かり、984 の観測を閉じた。done |
 | [994](done/994-bug-dupscan-swift-decl-roles-setter-and-local-names.md) | Swift の setter の引数を局所の名前に・宣言を作る節の表を nameRole と 1 つに。局所の関数名を宣言にする案は、組への影響が無く採らない |
 
 ## 完了した子issue

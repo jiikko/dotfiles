@@ -54,3 +54,4 @@
 
 - 981 (生成ファイルを gate・report の 1 行目に出す) と 982 (未使用の CallersText / EvidenceText の削除) は対応して done。983 は取り下げ (done に理由)。
   ほかの行は記録だけで、残課題は無い (再評価の trigger は各行に書いた)
+- 2026-11-04: dependency の行の「上げると 958 の読み直しが要らなくなるかは未確認」は [1025](1025-research-dupscan-audit-2026-11-04.md) で閉じた (`go list -m -u` が出す版は生成済みの `src/parser.c` を含まない main の commit で、上げると cgo のビルドが落ちる。今の版がタグ `0.7.4-with-generated-files` で最新)
