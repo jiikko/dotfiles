@@ -18,7 +18,7 @@
   骨組み（タイトル・起票日・概要 1 行）だけを先に push して番号を取り、本文はレビューの後に入れる（骨組みはレビューの対象外。
   本文を書き切るまで commit しないと、レビュー待ちの間に他のセッションが同じ番号を取る。obaket retro 1161 で 5 本の採り直し）
   🚨 **骨組みの push もブランチ単位** (claim の規約の同じ注意を採番にも効かせる): push の前に `git log --oneline origin/<既定のブランチ>..HEAD` の出力を読み、骨組み以外の commit が
-  あるなら push しない。骨組みだけを origin から切った一時の worktree で commit して push する (dotfiles retro 1027: 未検証の WIP 2 本が件名のまま master に出た)
+  あるなら一緒に出してよい (検証済み) かを確かめる。出せないものがあれば、骨組みだけを origin から切った一時の worktree で commit して push する (dotfiles retro 1027: 未検証の WIP 2 本が件名のまま master に出た)
 - 状態ディレクトリへ移してもファイル名は変えない。**`issues/` の外（コード・docs・rules）からは番号で参照し**、
   `issues/done/012-….md` のような裸のパスを書かない（移動で切れる）
 - **slug**: kebab-case の短い説明。日付を残すなら末尾に `-YYYY-MM-DD`
