@@ -12,6 +12,8 @@ proctree.Target{Root: cmd.Process.Pid, Group: true}.Stop(5 * time.Second)
 - `Group` が false (根が呼び出し元のグループに居る) のときは、グループ宛てに撃たない (呼び出し元ごと止めるため)
 - `Forward(sig)` は凍らせずにそのまま伝える (子に後始末の機会を渡す)
 
+`ParseEtime`: ps の `etime` (`[[dd-]hh:]mm:ss`) を時間にする (macOS の ps には秒で返す `etimes` が無い)。doctor の `health` が使う。
+
 止められないもの: 止める前に親を離れて init の子になり、かつグループも抜けたもの (daemon 化した子・`tmux -L` のサーバ等)。
 
 使う側: `src/runtimeout` (時間の上限付き実行。issue 640) / `src/serialrun` / `src/zundamon-kaisetsu` の mermaid の描画 (issue 649)。
