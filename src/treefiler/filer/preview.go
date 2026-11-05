@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
@@ -69,8 +70,15 @@ type textSource struct {
 	cont    []int  // maxLineBytes で切った続きの行の添字 (昇順)。行番号を数えない
 	eof     bool
 	size    int64
-	limit   int64 // 0 でなければ、先頭からここまでで読むのを止める (Markdown は整形のため全体を持つので上限を付ける)
-	readErr bool  // 末尾の前で読めなくなった (タイルに「途中で読めなくなりました」と出す。末尾と見分ける)
+	mtime   time.Time // 開いたときの更新時刻 (rereadTiles が、大きさと合わせて変わっていないファイルを開き直さない)
+	limit   int64     // 0 でなければ、先頭からここまでで読むのを止める (Markdown は整形のため全体を持つので上限を付ける)
+	readErr bool      // 末尾の前で読めなくなった (タイルに「途中で読めなくなりました」と出す。末尾と見分ける)
+}
+
+// unchanged は path のファイルが開いたときから変わっていないか (大きさと更新時刻)。読めなければ false (開き直して理由を出す)。
+func (s *textSource) unchanged() bool {
+	st, err := os.Stat(s.path)
+	return err == nil && st.Size() == s.size && st.ModTime().Equal(s.mtime)
 }
 
 // firstLine は読めている最初の行 (改行がまだ来ていなければその頭)。言語を shebang で選ぶのに使う
@@ -105,7 +113,7 @@ func openText(path string) (*textSource, error) {
 	if bytes.IndexByte(head, 0) >= 0 {
 		return nil, errBinary
 	}
-	s := &textSource{path: path, size: st.Size(), off: int64(n)}
+	s := &textSource{path: path, size: st.Size(), mtime: st.ModTime(), off: int64(n)}
 	s.feed(head)
 	if n < sniffBytes {
 		s.finish()

@@ -113,6 +113,9 @@ func TestTileRereadsFileAfterEditor(t *testing.T) {
 	takeEdit(t, m, "e")
 	mkfile(t, p, body("new", 1500))
 	m.ExecDone(nil)
+	if tl.scroll != 1 || int(tl.sy.v) != 1 {
+		t.Fatalf("開き直した後の scroll = %d・sy = %v (読んでいた位置 1 を保つはず)", tl.scroll, tl.sy.v)
+	}
 	m.HandleKey("G")
 	vl := m.view(tl)
 	if len(vl) == 0 || vl[0].plain != "new 0" {
@@ -152,5 +155,44 @@ func TestTileKeepsOldTextAndTellsWhenFileGoneAfterEditor(t *testing.T) {
 	ns := m.TakeNotices()
 	if len(ns) == 0 || !strings.Contains(ns[0].Text, "one.txt") {
 		t.Fatalf("消えたファイルの知らせ = %+v (one.txt を開けない理由を出すはず)", ns)
+	}
+}
+
+// 変わっていないファイルのタイルは開き直さない (! や s から戻るたびに、深く送ったタイルで読んだ所までを読み直さない)。
+// 縮んだファイルでは、表示の位置 (sy) も本文の中へ合わせる (古い位置の空白と「1999/1500」を描いてから巻き戻さない)。
+func TestTileRereadSkipsUnchangedAndClampsShrunkFile(t *testing.T) {
+	clearEditorEnv(t)
+	m := newTest(t)
+	p := filepath.Join(m.root.path(), "long.txt")
+	var b strings.Builder
+	for i := range 2000 {
+		fmt.Fprintf(&b, "line %d\n", i)
+	}
+	mkfile(t, p, b.String())
+	m.Refresh()
+	settle(m)
+	cdTo(t, m, "long.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	m.HandleKey("G")
+	settle(m) // 表示の位置 (sy) を末尾まで動かし切る (動かないままだと、縮んだときの sy の確かめが何も見ない)
+	if int(tl.sy.v) < 1500 {
+		t.Fatalf("前提: 末尾へ送った sy = %v", tl.sy.v)
+	}
+	src := tl.src
+	m.ExecDone(nil)
+	if tl.src != src {
+		t.Fatal("変わっていないファイルのタイルを開き直した")
+	}
+	if tl.scroll < 1500 {
+		t.Fatalf("前提: 末尾へ送った scroll = %d", tl.scroll)
+	}
+	mkfile(t, p, "short\n")
+	m.ExecDone(nil)
+	if tl.src == src {
+		t.Fatal("縮んだファイルのタイルを開き直さない")
+	}
+	if tl.scroll != 0 || int(tl.sy.v) != 0 {
+		t.Fatalf("1 行に縮んだファイルの scroll = %d・sy = %v (どちらも 0 のはず)", tl.scroll, tl.sy.v)
 	}
 }

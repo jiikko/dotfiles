@@ -163,10 +163,11 @@ func (m *Model) tileLinks(t *tile, upto int) []link {
 
 // forgetLinks はリンクの解決を捨てる (フォルダを読み直して、ファイルが増えた・消えたかもしれないとき)。解決は 2 段で覚えている:
 // 字面ごとの m.linkCache と、タイルが行ごとに覚えた t.links。片方だけ捨てると、もう片方が無かった頃・在った頃の解決を出し続ける
+// ジャンプ中のタイルは抜ける: 選んでいる添字を残すと、作り直したリンクの並びで別のパスを指し、知らせなしに選択が移る。
 func (m *Model) forgetLinks() {
 	clear(m.linkCache)
 	for _, t := range m.tiles {
-		t.links = nil
+		t.links, t.jump = nil, false
 	}
 }
 
@@ -255,8 +256,8 @@ func (m *Model) restoreTile(tp TilePlace) {
 // 本体のスクロールは保ち、diff は取り直す。開けなくなったファイルは古い本文のまま残して理由を知らせる (黙って古いまま見せない)。
 func (m *Model) rereadTiles() {
 	for _, t := range m.tiles {
-		if t.closing {
-			continue
+		if t.closing || t.src.unchanged() {
+			continue // 変わっていないファイルを開き直すと、深く送ったタイルで読んだ所まで (G 1 回で 2 万行) を毎回読み直す
 		}
 		src, msg := openFor(t.n.path(), t.n.raw, t.n.name)
 		if msg != "" {
@@ -270,6 +271,8 @@ func (m *Model) rereadTiles() {
 		}
 		t.src.ensure(t.scroll + 2*m.tileRows(t))
 		t.scroll = min(t.scroll, m.maxScroll(t))
+		t.sy.step(float64(t.scroll), scrollDur, 0) // 縮んだファイルで、古い位置 (本文の外) を描いてから巻き戻さない
+		t.sy.snap()
 	}
 }
 
@@ -278,20 +281,20 @@ func (m *Model) tileRows(t *tile) int { return max(slotRect(t.slot, m.w, m.canva
 // maxScroll はタイルのスクロールの上限 (末尾まで読めていなければ、読めている所まで)。
 func (m *Model) maxScroll(t *tile) int { return max(0, len(m.view(t))-m.tileRows(t)) }
 
-// nextFile は n と同じフォルダの、開けるファイルを delta 方向に探す (タイルの J / K。glogx-ui-guide §6)。
+// nextFile は n と同じフォルダの、木に見えている開けるファイルを delta 方向に探す (タイルの J / K。glogx-ui-guide §6)。
+// 起点は隠すものも含む全部の子の中で探す: 隠したファイル (リンクから重ねて開いた dotfile) は木に見えていないが、隣は数えられる。
+// n が親の子に居なければ (木から外れた) nil。
 func (m *Model) nextFile(n *node, delta int) *node {
 	if n.parent == nil {
 		return nil
 	}
-	s := m.kids(n.parent)
-	i := 0
-	for j, k := range s {
-		if k == n {
-			i = j
-		}
+	s := n.parent.kids
+	i := slices.Index(s, n)
+	if i < 0 {
+		return nil
 	}
 	for j := i + delta; j >= 0 && j < len(s); j += delta {
-		if !s[j].dir && refuse(s[j]) == "" {
+		if !s[j].dir && m.visible(s[j]) && refuse(s[j]) == "" {
 			return s[j]
 		}
 	}
@@ -425,7 +428,7 @@ func (m *Model) replaceTile(t *tile, delta int) {
 		m.fail("このファイルは木の外にあるので隣へ送れません")
 		return
 	}
-	if !slices.Contains(m.kids(t.n.parent), t.n) {
+	if !slices.Contains(t.n.parent.kids, t.n) { // 隠したファイルは見せる子 (m.kids) に居ないが、木には在る
 		// 開いた後に外で消した・名前を変えた (ライブ更新が kids から外した)。起点が無いまま nextFile に渡すと先頭から数え、
 		// K で「これが最初のファイルです」と嘘を言い、J は 2 番目へ飛ぶ
 		m.fail("このファイルは木から外れたので隣へ送れません")

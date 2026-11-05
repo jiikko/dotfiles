@@ -122,7 +122,7 @@ func (m *Model) create(dir *node, text string) {
 		return
 	}
 	m.ensureLoaded(dir)
-	m.reloadDir(dir)
+	m.reloadDir(dir, true)
 	dir.expanded = true
 	if n := m.findNode(filepath.Join(dir.abs, name)); n != nil {
 		m.setCur(n)
@@ -151,7 +151,7 @@ func (m *Model) rename(n *node, text string, id safefs.ID) {
 		m.fail("名前を変えられません: " + opErr(err))
 		return
 	}
-	m.reloadDir(parent)
+	m.reloadDir(parent, true)
 	if k := m.findNode(filepath.Join(parent.abs, text)); k != nil {
 		m.setCur(k)
 	} else {
@@ -201,7 +201,7 @@ func (m *Model) trash(n *node, id safefs.ID) {
 		m.fail("ゴミ箱へ移せません: " + opErr(err))
 		return
 	}
-	m.reloadDir(parent)
+	m.reloadDir(parent, true)
 	if k := m.findNode(nextAbs); k != nil {
 		m.setCur(k)
 	} else {
@@ -220,11 +220,15 @@ func opErr(err error) string {
 	return termsafeLine(err.Error()) // エラーにパスが入る
 }
 
-// reloadDir はフォルダ n を読み直す (ライブ更新の 1 件と、ファイル操作の後)。
-func (m *Model) reloadDir(n *node) {
+// reloadDir はフォルダ n を読み直す (ライブ更新の 1 件と、ファイル操作の後)。listing は項目が増えた・消えたか。
+func (m *Model) reloadDir(n *node, listing bool) {
 	n.reload()
 	m.walker.forget(n.abs, false)
 	m.dropGoneRecs(n.abs) // 消えた・名前の変わったフォルダの走査の結果を手放す (issue 727)
-	m.forgetLinks()       // 増えた・消えたファイルでリンクの解決が変わる
+	if listing {
+		// リンクの解決は在るかどうかだけで決まる。中身だけの変化 (書き込みの続くログ) で捨てると、ジャンプを抜けさせ、
+		// 読んだ全行のリンクを Stat し直させる
+		m.forgetLinks()
+	}
 	m.moving = true
 }

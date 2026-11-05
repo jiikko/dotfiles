@@ -612,7 +612,7 @@ func TestTileJKRefusesWhenFileLeftTree(t *testing.T) {
 	if err := os.Remove(tl.n.path()); err != nil {
 		t.Fatal(err)
 	}
-	m.reloadDir(dir) // ライブ更新の 1 件と同じ
+	m.reloadDir(dir, true) // ライブ更新の 1 件と同じ (項目が消えた)
 	for _, k := range []string{"J", "K"} {
 		m.TakeNotices()
 		m.HandleKey(k)
@@ -623,5 +623,30 @@ func TestTileJKRefusesWhenFileLeftTree(t *testing.T) {
 		if len(ns) != 1 || !strings.Contains(ns[0].Text, "木から外れた") {
 			t.Fatalf("%s: 知らせ = %+v (木から外れたので隣へ送れない、のはず)", k, ns)
 		}
+	}
+}
+
+// 隠したファイル (リンクから重ねて開いた dotfile) のタイルでも、J / K は木に見えている隣のファイルへ送る (木から外れたとは言わない)。
+func TestTileJKFromHiddenFileMovesToVisibleNeighbour(t *testing.T) {
+	m := newTest(t)
+	if m.set.ShowHidden {
+		t.Fatal("前提: dotfile を隠す設定")
+	}
+	hidden := filepath.Join(m.root.abs, "a", ".env")
+	mustWrite(t, hidden, "x\n")
+	m.Refresh()
+	settle(m)
+	m.openTile(m.nodeFor(hidden), m.cursorRect())
+	tl := m.frontTile()
+	if tl == nil || tl.n.raw != ".env" {
+		t.Fatal("前提: .env のタイルが開かない")
+	}
+	m.TakeNotices()
+	m.HandleKey("J")
+	if ns := m.TakeNotices(); len(ns) != 0 {
+		t.Fatalf("隠したファイルの J で知らせが出た: %+v", ns)
+	}
+	if want := m.kids(tl.n.parent)[0].raw; tl.n.raw != "one.txt" || want != "one.txt" {
+		t.Fatalf("J の送り先 = %q (並びで .env の次 = 見えている先頭のファイル one.txt のはず。見えている先頭は %q)", tl.n.raw, want)
 	}
 }

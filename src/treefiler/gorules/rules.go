@@ -55,7 +55,7 @@ func rawViaSetRaw(m dsl.Matcher) {
 
 // linkCacheViaForgetLinks: リンクの解決を捨てるのは forgetLinks (filer/tile.go) だけ。解決は m.linkCache とタイルの t.links の
 // 2 段で覚えていて、linkCache だけを捨てるとタイルが無かった頃・在った頃のリンクを出し続ける。
-// 検出しない形: delete で 1 件ずつ消す・新しい map を代入する・linkCache を別の名前の変数に入れてから clear する (うっかりの範囲で起きない)
+// 検出しない形: delete で 1 件ずつ消す・新しい map を代入する・linkCache を別の名前の変数に入れてから clear する・tile.go の中の forgetLinks 以外の場所で clear する (ファイルで除外している。tile.go を触る人は forgetLinks の隣にいる) (うっかりの範囲で起きない)
 func linkCacheViaForgetLinks(m dsl.Matcher) {
 	m.Match(`clear($x.linkCache)`).
 		Where(!m.File().Name.Matches(`^tile\.go$`)).

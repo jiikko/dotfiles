@@ -387,9 +387,19 @@ func TestTileLinksFollowReloadedDir(t *testing.T) {
 		t.Fatal("前提: まだ無い later.txt でジャンプに入った")
 	}
 	mustWrite(t, filepath.Join(m.root.abs, "later.txt"), "x\n")
-	m.reloadDir(m.root) // ライブ更新の 1 件と同じ
+	m.reloadDir(m.root, true) // ライブ更新の 1 件と同じ (項目が増えた)
 	m.HandleKey("tab")
 	if !tl.jump {
 		t.Fatal("later.txt を作って読み直した後も、タイルのリンクが無かった頃の解決のまま")
+	}
+	// 中身だけの変化 (書き込みの続くログ) ではジャンプを抜けない。項目が増えたら抜ける (選んだ添字が別のパスを指さないように)
+	m.reloadDir(m.root, false)
+	if !tl.jump || tl.links == nil {
+		t.Fatal("中身だけの変化でジャンプを抜けた・リンクを捨てた")
+	}
+	mustWrite(t, filepath.Join(m.root.abs, "other.txt"), "x\n")
+	m.reloadDir(m.root, true)
+	if tl.jump {
+		t.Fatal("項目が増えて読み直したのに、ジャンプの選択を古い添字のまま残した")
 	}
 }
