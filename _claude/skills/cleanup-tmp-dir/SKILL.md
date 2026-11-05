@@ -1,6 +1,6 @@
 ---
 name: cleanup-tmp-dir
-version: 2.1.0
+version: 2.2.0
 description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDIR・dotfiles の tmp/) と、Xcode の DerivedData・Apple container に溜まったものを数え、どれを対象にするかを聞いてから、消す候補を種類ごとに見せる。ユーザーが承認した plan の古くて使用中でないもの (DerivedData は持ち主の消えたもの) だけを bin/tmpclean でゴミ箱へ移す (dotfiles の tmp/ は make clean-tmp、Apple container は container prune で、それぞれ別の承認を取って消す)。「/tmp を掃除して」「一時ファイルを片付けて」「TMPDIR が溜まっていないか見て」「DerivedData を片付けて」「container を掃除して」「cleanup-tmp-dir」で発火。消す前に必ず承認を取る。
 ---
 
@@ -46,7 +46,9 @@ description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDI
 4. **候補を作る**: 一時領域か DerivedData が選ばれていたら `tmpclean plan -kinds <種類> -out <D> > <D>/plan-out.txt 2>&1; echo rc=$?` (何も動かさない)。
    種類は一時領域なら `session,tmpdir`、DerivedData なら `derived-data` (両方なら `session,tmpdir,derived-data`)。どちらも選ばれていなければ plan は作らない。候補は 1 件 1 行で出るので
    ファイルに落とし、`id:` と `plan:` の行、`candidates.<種類>:` の件数、`kept (<理由>): <件数>` を読む。`lsof` の全体を取るので 30〜60 秒かかる。
-   rc≠0 なら止まった理由が出力の `止めた:` の行にある (rc=2 = 生きている claude を見分けられない等、rc=3 = 実行環境の失敗)。理由を伝えて先へ進まない
+   rc≠0 なら止まった理由が出力の `止めた:` の行にある (rc=2 = 生きている claude を見分けられない等、rc=3 = 実行環境の失敗)。理由を伝えて先へ進まない。
+   ただし `止めた:` が claude の cwd・project の行 (`session` を止める判定。`src/tmpclean/README.md` の「判定不能で止める」) なら、
+   止まるのは `session` だけなので、`-kinds` から `session` を外して作り直してよい。手順 5 の質問に、`session` を外した理由 (止めた claude の pid と cwd) を書く
 5. **見せて承認を取る**: AskUserQuestion で「この plan (ID と種類ごとの件数) を移してよいか」を聞く。選択肢は「移す」と「移さない」。
    plan を作っていない (手順 3 で一時領域も DerivedData も選ばれていない) なら、この質問と手順 6 の apply は飛ばし、下の別の質問だけを聞く。
    「移す」の説明に **ID・種類ごとの件数・失うもの・移し先** を書く:
@@ -62,6 +64,8 @@ description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDI
      停止中の container の名前と、使われていない image の名前・容量を見せ、選択肢を分ける (`multiSelect: true`):
      「停止中の container を消す (`container prune`。volume に置いていない、container の中に書いたものも消える)」「タグの無い image を消す (`container image prune`)」
      「使われていない image を全部消す (`container image prune --all`。次に使うときに pull し直す。手元でビルドした image は build し直す)」。動いている container は対象にならない。
+     🚨 `container image ls` はシステムの image (container を起動する `vminit`。名前は `container system property ls` の `[vminit]`) を出さないが、
+     `system df` の image の数には入り、`prune --all` はそれも消す (2026-11-05 に 1.5.0 で実測)。数が合わないときは、表に出ていない image として `vminit` を名指しする
      **volume は選択肢に出さない**。`container volume ls` の名前と `container system df` の容量を見せ、「データを持つことがあるのでこの skill では消さない。
      要らないと確かめたものは `container volume rm <名前>` で 1 つずつ消す」と書く
 
