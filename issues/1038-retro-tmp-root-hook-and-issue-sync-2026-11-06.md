@@ -29,8 +29,8 @@
 ## 提案
 
 - 却下 (1): §8 に既にある。踏んだ原因は規範が無いことではなく、指摘の採否を決めるときに §8 を読み直さなかったこと。新しい規範は足さない。
-- 却下 (2): 既存の rule (`verify-execution-not-just-exit-code.md` と `parallel-write-agents-need-worktree-isolation.md` の「レビュー中は書き換えない・分ける側はレビュー」) のとおり。
-- 却下 (3): `mutation-verify-new-tests.md` の「その assert が見ている量は、壊れたときに動くのか」で足りる。今回も変異で見つけて直した。
-- 却下 (4): 「ラッパーの rc を本体の rc と読まない」(`verify-execution-not-just-exit-code.md`) の範囲。
+- 却下 (2): `verify-execution-not-just-exit-code.md` の「検証・計測がバックグラウンドで走っている間は、止めるか終了を見届けるまで同じ対象を編集・計測しない」がそのまま当たる。
+- 却下 (3): `rules-checklists/mutation-verify-new-tests.md` の「fixture と前提」の「fixture を『検査対象が壊れない形』に選んでいないか」が当たる (入力の名前・並び・有無で機構を通らない形)。今回も変異で見つけて直した。
+- 却下 (4): `verify-execution-not-just-exit-code.md` の「ラッパーの rc を本体の rc と読まない」の範囲 (最後のコマンドが `echo` でなく `grep -c` だっただけで、仕組みは同じ)。今回も、自分で仕込んだ `make_rc=` の行を読んで区別した。
 
 残課題は無い (全項目を却下で決着)。
