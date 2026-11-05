@@ -21,11 +21,10 @@
 
 ## `src/` の Go を書くとき
 
-- **新しい関数 (helper・値を組み立てる関数・テストの helper) を書く前に `dupscan index` で既にあるものを引き、commit の前に `dupscan gate` を回す** (skill dupscan の 1・3 節)。
+- **新しい関数 (helper・値を組み立てる関数・テストの helper) を書く前に `dupscan index` で既にあるものを引き、commit の前に `make test-dupscan-gate` を回す** (skill dupscan の 1・3 節)。
   dotfiles の `src` には module をまたいだ写しが多い (issue 900 の較正)。同じ gate は `make test` (`test-src` の `test-dupscan-gate`。base は upstream との merge-base、detached の worktree では origin/HEAD) と
   CI (`.github/workflows/dupscan-gate.yml`。base は master で最後に成功した run の commit なので、赤の後に push を重ねても、その間に入った写しを数え続ける) でも走り、module をまたいだ写しも落とす。
-  make と CI の gate は節の下限を 12 に下げて回す (`Makefile` の `DUPSCAN_GATE_MIN_NODES`。素の `dupscan gate` の既定 20 では、書かれた時点の写しの多くを通す。issue 1034)。
-  手元で同じ判定を見るなら `make test-dupscan-gate` を打つ
+  make と CI の gate は節の下限を 12 に下げて回す (`Makefile` の `DUPSCAN_GATE_MIN_NODES`)。素の `dupscan gate` は既定の下限 20 で、書かれた時点の小さい写しを通す (issue 1034)
   `src/` の `.go` を Write / Edit すると hook (`_claude/hooks/suggest-dupscan-for-go-edit.sh`) が session に 1 回案内する
 
 ## 何をどこに書くか
