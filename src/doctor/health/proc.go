@@ -161,7 +161,7 @@ func memGrowth(snap *psSnapshot) Check {
 func topRSS(ps []proc) Check {
 	sorted := slices.Clone(ps)
 	slices.SortFunc(sorted, func(a, b proc) int { return int(b.RSSKB - a.RSSKB) })
-	var parts []string
+	parts := make([]string, 0, min(5, len(sorted)))
 	for _, p := range sorted[:min(5, len(sorted))] {
 		parts = append(parts, fmt.Sprintf("%s %s", p.Name(), fmtMB(p.RSSKB)))
 	}
@@ -296,7 +296,7 @@ func diagKind(path string) string {
 	if err != nil {
 		return "種類不明"
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // 読むだけなので、閉じる失敗で判定は変わらない
 	buf := make([]byte, 4096)
 	n, _ := f.Read(buf)
 	for line := range strings.SplitSeq(string(buf[:n]), "\n") {

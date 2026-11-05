@@ -23,7 +23,8 @@ const (
 )
 
 func (s *scanner) hw(ctx context.Context) []Check {
-	cs := []Check{s.model(ctx), s.osVersion(ctx), s.uptime(ctx)}
+	cs := make([]Check, 0, 16)
+	cs = append(cs, s.model(ctx), s.osVersion(ctx), s.uptime(ctx))
 	cs = append(cs, s.battery(ctx)...)
 	cs = append(cs, s.ssd(ctx)...)
 	cs = append(cs, s.thermal(ctx), s.panics(), s.crashes())

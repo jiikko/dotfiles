@@ -1,6 +1,7 @@
 package health
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -105,7 +106,7 @@ func tmuxPanes(out string) Check {
 			dead++
 		}
 	}
-	c.Value = fmt.Sprintf("%d 個 / スクロールバック計 %d 行 (history-limit %s)", panes, lines, orDash(limit))
+	c.Value = fmt.Sprintf("%d 個 / スクロールバック計 %d 行 (history-limit %s)", panes, lines, cmp.Or(limit, "-"))
 	c.Status = StatusOK
 	if dead > 0 {
 		c.Status = StatusWarn
@@ -312,7 +313,7 @@ func chromeChecks(ps []proc, installed, installedNote string) []Check {
 	ver := Check{ID: "chrome.version", Label: "Chrome の版 (動いている / 入っている)"}
 	switch {
 	case main == nil:
-		ver.Value, ver.Status = "動いていない (入っている版 "+orDash(installed)+")", StatusInfo
+		ver.Value, ver.Status = "動いていない (入っている版 "+cmp.Or(installed, "-")+")", StatusInfo
 	case installed == "":
 		ver = unknown(ver.ID, ver.Label, "入っている版が読めない: "+installedNote)
 	case len(running) == 0:

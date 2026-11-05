@@ -37,8 +37,8 @@ func fakeRun(t *testing.T, m map[string]fakeOut) func(ctx context.Context, name 
 }
 
 // psLine は ps の 1 行を組む (comm は空白を含んでよい)。
-func psLine(pid, ppid int, stat string, cpu float64, rssKB int64, etime, tty, comm string) string {
-	return strings.Join([]string{itoa(pid), itoa(ppid), stat, ftoa(cpu), itoa(int(rssKB)), etime, tty, comm}, "  ")
+func psLine(pid, ppid int, stat string, cpu float64, rssKB int64, etime, comm string) string {
+	return strings.Join([]string{itoa(pid), itoa(ppid), stat, ftoa(cpu), itoa(int(rssKB)), etime, "??", comm}, "  ")
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -57,9 +57,9 @@ func findCheck(t *testing.T, cs []Check, id string) Check {
 }
 
 func TestParsePSKeepsSpacesInCommAndCountsBadLines(t *testing.T) {
-	out := psLine(10, 1, "Ss", 1.5, 2048, "01:02:03", "??", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") + "\n" +
+	out := psLine(10, 1, "Ss", 1.5, 2048, "01:02:03", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") + "\n" +
 		"garbage line\n" +
-		psLine(11, 10, "Z", 0, 0, "25-22:22:16", "??", "<defunct>") + "\n"
+		psLine(11, 10, "Z", 0, 0, "25-22:22:16", "<defunct>") + "\n"
 	ps, bad := parsePS(out)
 	if bad != 1 || len(ps) != 2 {
 		t.Fatalf("ps=%d bad=%d; want 2, 1", len(ps), bad)
@@ -393,7 +393,7 @@ func assertNoOK(t *testing.T, run func(context.Context, string, ...string) (stri
 func TestScanHealthyMachine(t *testing.T) {
 	home := t.TempDir()
 	diag := t.TempDir()
-	ps := psLine(1, 0, "Ss", 0.5, 20000, "25-22:24:23", "??", "/sbin/launchd") + "\n"
+	ps := psLine(1, 0, "Ss", 0.5, 20000, "25-22:24:23", "/sbin/launchd") + "\n"
 	run := fakeRun(t, map[string]fakeOut{
 		"ps":              {out: ps},
 		"memory_pressure": {out: "x\nSystem-wide memory free percentage: 71%\n"},
@@ -484,14 +484,14 @@ func TestNetFallbacks(t *testing.T) {
 
 func TestTmuxDeadSocketIsNotRunning(t *testing.T) {
 	s := &scanner{o: Options{
-		Run:   fakeRun(t, map[string]fakeOut{"ps": {out: psLine(1, 0, "Ss", 0, 1, "01:00", "??", "/sbin/launchd") + "\n"}, "tmux": {rc: 1, err: "error connecting to /private/tmp/tmux-501/default (No such file or directory)\n"}}),
+		Run:   fakeRun(t, map[string]fakeOut{"ps": {out: psLine(1, 0, "Ss", 0, 1, "01:00", "/sbin/launchd") + "\n"}, "tmux": {rc: 1, err: "error connecting to /private/tmp/tmux-501/default (No such file or directory)\n"}}),
 		Sleep: func(context.Context, time.Duration) error { return nil },
 	}}
 	if c := findCheck(t, s.tmux(context.Background()), "tmux.panes"); c.Status != StatusInfo || c.Value != "サーバが動いていない" {
 		t.Errorf("socket が無いのはサーバが無いのと同じ: %+v", c)
 	}
 	denied := &scanner{o: Options{
-		Run:   fakeRun(t, map[string]fakeOut{"ps": {out: psLine(1, 0, "Ss", 0, 1, "01:00", "??", "/sbin/launchd") + "\n"}, "tmux": {rc: 1, err: "error connecting to /private/tmp/tmux-501/default (Permission denied)\n"}}),
+		Run:   fakeRun(t, map[string]fakeOut{"ps": {out: psLine(1, 0, "Ss", 0, 1, "01:00", "/sbin/launchd") + "\n"}, "tmux": {rc: 1, err: "error connecting to /private/tmp/tmux-501/default (Permission denied)\n"}}),
 		Sleep: func(context.Context, time.Duration) error { return nil },
 	}}
 	if c := findCheck(t, denied.tmux(context.Background()), "tmux.panes"); c.Status != StatusUnknown {

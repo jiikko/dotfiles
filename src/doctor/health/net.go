@@ -1,6 +1,7 @@
 package health
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -79,15 +80,8 @@ func (s *scanner) defaultRoute(ctx context.Context) routeResult {
 		r.check = unknown(id, label, "route の出力に interface の行が無い")
 		return r
 	}
-	r.check = Check{ID: id, Label: label, Value: fmt.Sprintf("%s 経由 (gateway %s)", r.iface, orDash(r.gateway)), Status: StatusOK}
+	r.check = Check{ID: id, Label: label, Value: fmt.Sprintf("%s 経由 (gateway %s)", r.iface, cmp.Or(r.gateway, "-")), Status: StatusOK}
 	return r
-}
-
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }
 
 func (s *scanner) ping(ctx context.Context, id, label, host string) Check {
@@ -210,7 +204,7 @@ func (s *scanner) listen(ctx context.Context) Check {
 // 🚨 lsof の rc は成否を表さない: 1 件も無いときも、見つけて出力したときも rc=1 を返すことがある
 // (`lsof -Fn +d <dir>` が出力ありで rc=1・stderr 空を返した。2026-11-06 macOS 27.0.1)。stderr に何か出た rc≠0 だけを失敗とする。
 func lsofFailed(rc int, err error, stderr string) bool {
-	return err != nil || (rc != 0 && !(rc == 1 && strings.TrimSpace(stderr) == ""))
+	return err != nil || (rc != 0 && (rc != 1 || strings.TrimSpace(stderr) != ""))
 }
 
 // parseWildcardListen は lsof の出力から * / [::] / 0.0.0.0 で待ち受けている "プロセス名 ポート" を集める。
