@@ -41,6 +41,7 @@
 | [1021](done/1021-ux-dupscan-sweep-fold-same-owner-closure-groups.md) | sweep の節 2 で、1 つの単位の中のクロージャだけの組 (設定の表の行など) を単位ごとの 1 行に畳む (`-v` で畳まない。節 20 以上の組と `_` の変数は畳まない)。treefiler の節 2 は 8 組 → 3 組。done |
 | [1025](done/1025-research-dupscan-audit-2026-11-04.md) | 22 観点の監査 (直接実行、2 回目)。typed の alias の受け手の鍵・markOuter の重複・README の sweep の実測を直した。Swift の文法の版上げは生成物の無い main の commit なので候補が無いと分かり、984 の観測を閉じた。done |
 | [994](done/994-bug-dupscan-swift-decl-roles-setter-and-local-names.md) | Swift の setter の引数を局所の名前に・宣言を作る節の表を nameRole と 1 つに。局所の関数名を宣言にする案は、組への影響が無く採らない |
+| [1036](done/1036-bug-dupscan-inject-stamps-pile-up-in-tmpdir.md) | 書く前の候補の注入 (A1) の hook が、重複を防ぐ印を `$TMPDIR` に名前ごとの空ファイルで作り、消していなかった。`~/.cache/claude-dupscan-inject.seen` の 1 ファイルの行に移し、64KB で古い半分を捨てる。done |
 
 ## 完了した子issue
 
