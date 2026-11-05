@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
+	"proctree"
 	"safefs"
 )
 
@@ -64,7 +64,7 @@ func collectSwiftProcs(ctx context.Context, d deps, now time.Time) ([]swiftProc,
 		}
 		lines++
 		et, cmd, _ := strings.Cut(rest, " ")
-		el, ok := parseEtime(et)
+		el, ok := proctree.ParseEtime(et)
 		if !ok {
 			return nil, stopf("ps の etime を読めない: %q", line)
 		}
@@ -81,31 +81,6 @@ func collectSwiftProcs(ctx context.Context, d deps, now time.Time) ([]swiftProc,
 
 func isSwiftTool(cmd string) bool {
 	return swiftToolCommand.MatchString(cmd) && !notSwiftTool.MatchString(cmd)
-}
-
-// parseEtime は ps の etime ([[dd-]hh:]mm:ss) を時間にする。
-func parseEtime(s string) (time.Duration, bool) {
-	days := 0
-	if d, rest, ok := strings.Cut(s, "-"); ok {
-		n, err := strconv.Atoi(d)
-		if err != nil || n < 0 {
-			return 0, false
-		}
-		days, s = n, rest
-	}
-	parts := strings.Split(s, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return 0, false
-	}
-	var secs int
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 || p == "" || strings.ContainsAny(p, "+-") {
-			return 0, false
-		}
-		secs = secs*60 + n
-	}
-	return time.Duration(days)*24*time.Hour + time.Duration(secs)*time.Second, true
 }
 
 type sweepResult struct {

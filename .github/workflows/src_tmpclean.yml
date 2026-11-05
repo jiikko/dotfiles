@@ -9,6 +9,8 @@ on:
     paths:
       - 'src/tmpclean/**'
       - 'src/safefs/**'       # replace で取り込む共有 module (ゴミ箱への移動)
+      - 'src/proctree/**'     # replace で取り込む共有 module (ps の etime の読み取り)
+      - 'src/testwait/**'     # proctree のテストの依存 (replace は依存先から引き継がれないので tmpclean にも要る)
       - 'src/subproc/**'      # replace で取り込む共有 module (WaitDelay 付きの起動)
       - .github/workflows/src_tmpclean.yml
       - .github/workflows/_go-project.yml
@@ -22,6 +24,8 @@ on:
     paths:
       - 'src/tmpclean/**'
       - 'src/safefs/**'       # replace で取り込む共有 module (ゴミ箱への移動)
+      - 'src/proctree/**'     # replace で取り込む共有 module (ps の etime の読み取り)
+      - 'src/testwait/**'     # proctree のテストの依存 (replace は依存先から引き継がれないので tmpclean にも要る)
       - 'src/subproc/**'      # replace で取り込む共有 module (WaitDelay 付きの起動)
       - .github/workflows/src_tmpclean.yml
       - .github/workflows/_go-project.yml

@@ -22,6 +22,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	howett.net/plist v1.0.1 // indirect
+	proctree v0.0.0 // indirect
 	userdirs v0.0.0 // indirect
 )
 
