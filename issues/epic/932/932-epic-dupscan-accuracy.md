@@ -6,7 +6,7 @@
 
 ## 現在の状態（2026-11-04）
 
-子issue63件中54件完了、6件open、3件pending (`ls` で数えた。2026-10-29 は44件中35件完了・8件open・1件pending)。928は共通能力診断/表示専用案内を限定採用し、環境検証を補完して完了。一般的な効率改善と未実施比較は948で継続する。他担当の941〜944/946/948の内容・claimは保持する。
+子issue63件中55件完了、5件open、3件pending (2026-11-05 に `ls` で数えた。11-04 は54件完了・6件open。2026-10-29 は44件中35件完了・8件open・1件pending)。928は共通能力診断/表示専用案内を限定採用し、環境検証を補完して完了。一般的な効率改善と未実施比較は948で継続する。他担当の941〜944/946/948の内容・claimは保持する。
 
 ## 使われやすさと context 消費（2026-10-28 追加）
 
@@ -14,7 +14,7 @@
 
 | issue | 内容 |
 |---|---|
-| [941](941-ux-dupscan-nudge-definition-search-gaps.md) | hook が Go の定義検索の典型形（`func.*Name`・receiver付き・名前のalternation）で無音。言語の手掛かりがない検索でGoの名前にSwift用 `def` を勧める |
+| [941](done/941-ux-dupscan-nudge-definition-search-gaps.md) | hook が Go の定義検索の典型形（`func.*Name`・receiver付き・名前のalternation）で無音。言語の手掛かりがない検索でGoの名前にSwift用 `def` を勧める |
 | [942](done/942-perf-dupscan-fixed-notice-overhead.md) | 毎回出る注意書き（root 実行で index 471 B / callers 427 B）が狭い検索の過半。0件・空の全文は保つ。hit 側の通知を弱めるなら926の24ケースを改定する |
 | [943](943-perf-dupscan-result-row-shape.md) | 結果行は rg の1.6倍（173 B 対 111 B）で、docが44〜48%。index/callers の行に終端行が無く Read の範囲を決められない（search は範囲つき read_argv を既に出す）。打ち切り時の件数ヘッダと rg の提示も含む |
 | [944](pending/944-feat-dupscan-go-def.md)（保留） | Go の `def`。943の後も全体 Read が多いときに再開 |

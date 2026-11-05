@@ -1,6 +1,5 @@
 # 943 (perf): index / callers の結果行の形 — doc 先頭の長さと終端行
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-05〜）
 
 > **再開の条件**: `scripts/dupscan_usage_report.py` の非開発セッションで、`index` の直後 3 手以内の `Read` が 10 回を超えたら測り直す。今ある残りは利用データでしか測れない項目だけ (下の「測り直し (2026-11-05)」)。
 
@@ -89,7 +88,7 @@
 
 ## 効果測定 (2026-10-28)
 
-[941](941-ux-dupscan-nudge-definition-search-gaps.md) の「効果測定」に、道具 (`scripts/dupscan_usage_report.py`)・直近 14 日の基準 (識別子 grep 930 回に対し dupscan の探索 0 回)・案内が届く範囲を書いた。
+[941](done/941-ux-dupscan-nudge-definition-search-gaps.md) の「効果測定」に、道具 (`scripts/dupscan_usage_report.py`)・直近 14 日の基準 (識別子 grep 930 回に対し dupscan の探索 0 回)・案内が届く範囲を書いた。
 本 issue に関わる値は **`index` の直後の `Read` が範囲指定 (offset / limit) か**。`dupscan index` 自体が非開発セッションで 0 回なので、**未測定** (標本が無い)。
 測り直しは `--split 2026-10-28T12:28:36+09:00` で、`index` の直後 3 手以内の `Read` を数える。
 
@@ -97,7 +96,7 @@
 
 - 実装は上のとおりで、残りは利用データでしか測れない 3 項目 (`index` の直後の `Read` が範囲指定か・927 の `append` で件数ヘッダから絞り込みへ進めるか・944 の再開条件)。
 - 2026-10-28 の時点で、非開発セッションの `dupscan index` は 0 回 (`scripts/dupscan_usage_report.py --days 3 --split 2026-10-28T12:28:36+09:00`)。標本が無いので測れない。
-- [941](941-ux-dupscan-nudge-definition-search-gaps.md) で、Go の案内の大半が名前の無い確認の文に落ちていたのを直した。`index` が呼ばれない一因はこれで、修正の後から標本が溜まる見込み。測り直しは 941 と同じ日に回す (claim は外し、冒頭に再開の条件を書いた)。
+- [941](done/941-ux-dupscan-nudge-definition-search-gaps.md) で、Go の案内の大半が名前の無い確認の文に落ちていたのを直した。`index` が呼ばれない一因はこれで、修正の後から標本が溜まる見込み。測り直しは 941 と同じ日に回す (claim は外し、冒頭に再開の条件を書いた)。
 
 ## 現状の確認 (2026-10-29)
 

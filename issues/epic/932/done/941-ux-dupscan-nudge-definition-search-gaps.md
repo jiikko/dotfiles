@@ -1,7 +1,5 @@
 # 941 (ux): grep から dupscan への案内が、定義検索の典型形で出ない・言語を取り違える
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-05〜）
-
 > **再開の条件**: 2026-11-04 以降、`scripts/dupscan_usage_report.py --days 14 --split 2026-10-29T00:10:00+09:00` の after で、識別子 grep が 100 回を超えたら測り直す。今ある残りは測り直しだけ (下の「引き継ぎ後の対応」)。split の時刻は commit `fix(hooks): Go の dupscan 案内を、no-build が確かめられないときも名前つきで出す (issue 941)` (2026-10-28 23:58) が `~/dotfiles` に入った後に丸めた値。
 
 起票日: 2026-10-28
@@ -27,13 +25,13 @@ Claude に「メソッド定義を探すときは grep でなく dupscan を使�
 | Bash `grep -rn "ListProfiles\|fallbackProfiles" src --include="*.go"` (同日このセッションで実際に打った形) | **無音** |
 
 - Swift 用の案内に従って `dupscan def ReadCookies` を打つと `dupscan def: go のファイル 1258 個は def / refs の対象外` と返り、1 往復を無駄にする。dotfiles が `.swift` を 1 個追跡しているために Swift 扱いになった。Go だけの repo では言語の手掛かりがない検索は無音になるはずだが、これはコードの読みで、**未実測**。
-- 無音の形のうち alternation と「dir の中身から言語を推測しない」は hook 冒頭の「検出しない形」に書かれた設計どおりの挙動で、[939](done/939-ux-dupscan-go-grep-nudge.md) の判断である。ここでは設計の誤りとは書かず、**Go の定義検索でよく打たれる形を落とす費用が大きいか**を問い直す。
+- 無音の形のうち alternation と「dir の中身から言語を推測しない」は hook 冒頭の「検出しない形」に書かれた設計どおりの挙動で、[939](939-ux-dupscan-go-grep-nudge.md) の判断である。ここでは設計の誤りとは書かず、**Go の定義検索でよく打たれる形を落とす費用が大きいか**を問い直す。
 
 ## 方針 (候補。測ってから採る)
 
 1. **Go の定義検索の形を識別する**: `func (recv) Name` / `type Name` は Go 専用の形なので、末尾の識別子を取り出して Go 用の案内 (`index -name` / `callers`) を返す。`func Name` と `func.*Name` は Swift の宣言語でもある (hook の `DECL` に含まれる) ため言語の手掛かりにならず、**方針 3 で言語を決めた後**に適用する。
 2. **識別子だけの alternation** (`A\|B` / `A|B`) は、全部が識別子で 3 つ以内なら先頭の名前で案内し、他の名前も同様に引けると添える。案内文の 1024 byte 上限は守る。
-3. **言語の手掛かりがないとき**の決め方: 検索対象の path を `git ls-files -- <path>` で 1 回問う (dir の走査ではなく index への照会)。939 は「dir の内容を走査して言語を推測しない」と決めたが、**理由は 939 に書かれていない**。hook は現状でも `git ls-files -- "*.$language"` を 1 回打っており、追加の照会がそれに何を足すかを書いた上で、遅延を測って採否を決める。参考: [928](done/928-feat-dupscan-agent-onboarding.md) は準備済みの Go 案内で hook が約 21 ms 増える (86.25→107.54 ms) 実測を持つ。採らないなら、複数言語を追跡する repo では Swift 用の `def` を勧めず、言語を問わず使える `dupscan index -name <名前>` だけを案内する。
+3. **言語の手掛かりがないとき**の決め方: 検索対象の path を `git ls-files -- <path>` で 1 回問う (dir の走査ではなく index への照会)。939 は「dir の内容を走査して言語を推測しない」と決めたが、**理由は 939 に書かれていない**。hook は現状でも `git ls-files -- "*.$language"` を 1 回打っており、追加の照会がそれに何を足すかを書いた上で、遅延を測って採否を決める。参考: [928](928-feat-dupscan-agent-onboarding.md) は準備済みの Go 案内で hook が約 21 ms 増える (86.25→107.54 ms) 実測を持つ。採らないなら、複数言語を追跡する repo では Swift 用の `def` を勧めず、言語を問わず使える `dupscan index -name <名前>` だけを案内する。
 4. **常時ロードへの追記 (ユーザー指示 2026-10-28 で実施済み)**: `_claude/CLAUDE.md` に「シンボル検索の使い分け」を足した。「grep の前に必ず dupscan」ではなく、広い名前・不確かな表記・似た関数探しは dupscan、狙い撃ちと文字列は grep という使い分けにした (942 / 943 の実測が根拠)。Swift / Go 以外の repo でも毎セッション載る費用は残る。hook が届かない形への保険で、効果は 921 の測り直しで見る。
 
 ## 守ること
@@ -72,7 +70,7 @@ Claude に「メソッド定義を探すときは grep でなく dupscan を使�
 - 抽出 2,038 件 (重複除去)。cwd が残っていて比較できたのは 1,776 件。同一 1,680・新たに案内 75・案内が消えた 7・文面だけ変化 14。cwd が既に無いもの 262 件は除く。この中にはこのセッション自身の作業のコマンドが数件含まれる。
 - **消えた 7 件はすべて dotfiles (Go 優位) の Go の名前への Swift 向けの案内**で、誤案内が無くなった分。
 - 新たに案内の 75 件から 30 件を等間隔で抜いて見た。30 件とも Swift の識別子を含む grep で、追加した alternation の対象そのもの (obaket 中心)。うち数件は `elapsed`・`lease` のような小文字の一般語を含む交互で、単独パターンのときから出る規則 (`.swift` を対象にしていれば小文字でも通す) と同じ。分類はパターンの見た目で、意図の確認ではない。
-- hook 1 回の遅延 (通知が出るときだけ。既定で 900 秒に 1 回、中央値・15 回): Swift だけの repo 56→67 ms・Swift 優位 59→75 ms・拮抗 62→90 ms。増分は追加の `git ls-files` と、拮抗のときの能力照会 ([928](done/928-feat-dupscan-agent-onboarding.md) の約 21 ms と同程度)。
+- hook 1 回の遅延 (通知が出るときだけ。既定で 900 秒に 1 回、中央値・15 回): Swift だけの repo 56→67 ms・Swift 優位 59→75 ms・拮抗 62→90 ms。増分は追加の `git ls-files` と、拮抗のときの能力照会 ([928](928-feat-dupscan-agent-onboarding.md) の約 21 ms と同程度)。
 
 ### 検証
 
@@ -91,7 +89,7 @@ Claude に「メソッド定義を探すときは grep でなく dupscan を使�
 
 ## 効果測定 (2026-10-28)
 
-道具: [`scripts/dupscan_usage_report.py`](../../../scripts/dupscan_usage_report.py) (`--days N` `--split ISO8601` `--by-day` `--json`)。集計の定義は 921 に合わせ、言語別・案内の直後 3 手以内の探索・`index` の直後の `Read` の範囲指定を足した。dupscan 自身を開発しているセッションは除く。既知の入力で既知の数が出る canary のテスト (`tests/scripts/test_dupscan_usage_report.sh`) があり、数え方を変えると赤くなる。
+道具: [`scripts/dupscan_usage_report.py`](../../../../scripts/dupscan_usage_report.py) (`--days N` `--split ISO8601` `--by-day` `--json`)。集計の定義は 921 に合わせ、言語別・案内の直後 3 手以内の探索・`index` の直後の `Read` の範囲指定を足した。dupscan 自身を開発しているセッションは除く。既知の入力で既知の数が出る canary のテスト (`tests/scripts/test_dupscan_usage_report.sh`) があり、数え方を変えると赤くなる。
 
 ### 結論: 効果はまだ測れない
 
