@@ -160,6 +160,15 @@ func (m *Model) tileLinks(t *tile, upto int) []link {
 	return out
 }
 
+// forgetLinks はリンクの解決を捨てる (フォルダを読み直して、ファイルが増えた・消えたかもしれないとき)。解決は 2 段で覚えている:
+// 字面ごとの m.linkCache と、タイルが行ごとに覚えた t.links。片方だけ捨てると、もう片方が無かった頃・在った頃の解決を出し続ける
+func (m *Model) forgetLinks() {
+	clear(m.linkCache)
+	for _, t := range m.tiles {
+		t.links = nil
+	}
+}
+
 func (m *Model) frontTile() *tile {
 	if len(m.tiles) == 0 {
 		return nil

@@ -189,9 +189,9 @@ func (m *Model) Refresh() {
 	m.root.reload()
 	m.dropGoneRecs(m.root.path())
 	m.cur = m.liveAncestor(m.cur)
-	m.repoTop = nil    // .git を足した・消したフォルダを数え直す
-	clear(m.linkCache) // 無かったファイル (負のキャッシュ) が作られているかもしれない
-	m.startGit(true)   // 読み直した木の開いているフォルダで取る (読み直す前の木だと、消えたフォルダを含み、現れたものを落とす)
+	m.repoTop = nil  // .git を足した・消したフォルダを数え直す
+	m.forgetLinks()  // 無かったファイル (負のキャッシュ) が作られているかもしれない
+	m.startGit(true) // 読み直した木の開いているフォルダで取る (読み直す前の木だと、消えたフォルダを含み、現れたものを落とす)
 	m.moving = true
 }
 

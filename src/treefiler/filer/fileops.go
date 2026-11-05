@@ -225,6 +225,6 @@ func (m *Model) reloadDir(n *node) {
 	n.reload()
 	m.walker.forget(n.abs, false)
 	m.dropGoneRecs(n.abs) // 消えた・名前の変わったフォルダの走査の結果を手放す (issue 727)
-	clear(m.linkCache)    // 増えた・消えたファイルでリンクの解決が変わる
+	m.forgetLinks()       // 増えた・消えたファイルでリンクの解決が変わる
 	m.moving = true
 }

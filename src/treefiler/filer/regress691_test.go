@@ -368,3 +368,28 @@ func TestLinesClippedToViewport(t *testing.T) {
 		}
 	}
 }
+
+// 開いているタイルの本文のリンクも、ライブ更新・ファイル操作で読み直したフォルダの増減に追いつく
+// (m.linkCache だけを捨てると、タイルが行ごとに覚えた解決 t.links が無かった頃のまま残る)。
+func TestTileLinksFollowReloadedDir(t *testing.T) {
+	m := newTest(t)
+	mustWrite(t, filepath.Join(m.root.abs, "note.txt"), "see later.txt\n")
+	m.Refresh()
+	settle(m)
+	cdTo(t, m, "note.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	if tl == nil {
+		t.Fatal("タイルが開かない (テストの前提の破れ)")
+	}
+	m.HandleKey("tab")
+	if tl.jump {
+		t.Fatal("前提: まだ無い later.txt でジャンプに入った")
+	}
+	mustWrite(t, filepath.Join(m.root.abs, "later.txt"), "x\n")
+	m.reloadDir(m.root) // ライブ更新の 1 件と同じ
+	m.HandleKey("tab")
+	if !tl.jump {
+		t.Fatal("later.txt を作って読み直した後も、タイルのリンクが無かった頃の解決のまま")
+	}
+}
