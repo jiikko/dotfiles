@@ -19,6 +19,7 @@ import (
 const (
 	sniffBytes = 8192    // 先頭のこの範囲に NUL があればバイナリ (treebeard の head と同じ。spec §5.5)
 	chunkBytes = 1 << 16 // 1 回に読む量
+	sigBytes   = 64      // 追記かを見分けるのに、開いたときと比べる先頭と、読んだ所の直前のバイト数 (followAppend)
 )
 
 // audioExt は開かずに断る音声 (spec §0.4。treebeard の対応形式)。
@@ -70,9 +71,13 @@ type textSource struct {
 	cont    []int  // maxLineBytes で切った続きの行の添字 (昇順)。行番号を数えない
 	eof     bool
 	size    int64
-	mtime   time.Time // 開いたときの更新時刻 (rereadTiles が、大きさと合わせて変わっていないファイルを開き直さない)
-	limit   int64     // 0 でなければ、先頭からここまでで読むのを止める (Markdown は整形のため全体を持つので上限を付ける)
-	readErr bool      // 末尾の前で読めなくなった (タイルに「途中で読めなくなりました」と出す。末尾と見分ける)
+	mtime   time.Time   // 開いたときの更新時刻 (rereadTiles が、大きさと合わせて変わっていないファイルを開き直さない)
+	limit   int64       // 0 でなければ、先頭からここまでで読むのを止める (Markdown は整形のため全体を持つので上限を付ける)
+	readErr bool        // 末尾の前で読めなくなった (タイルに「途中で読めなくなりました」と出す。末尾と見分ける)
+	info    os.FileInfo // 開いたときの Stat (followAppend が同じファイルか = inode を見る)
+	head    []byte      // 先頭の sigBytes バイト
+	tail    []byte      // 読んだ所 (off) の直前の sigBytes バイト
+	held    []byte      // finish が改行の無い末尾を行として確定させたときの、その行の生のバイト (追記で続きが来たら partial へ戻す)
 }
 
 // unchanged は path のファイルが開いたときから変わっていないか (大きさと更新時刻)。読めない・途中で読めなくなった src は false
@@ -117,7 +122,8 @@ func openText(path string) (*textSource, error) {
 	if bytes.IndexByte(head, 0) >= 0 {
 		return nil, errBinary
 	}
-	s := &textSource{path: path, size: st.Size(), mtime: st.ModTime(), off: int64(n)}
+	s := &textSource{path: path, size: st.Size(), mtime: st.ModTime(), off: int64(n), info: st}
+	s.head = bytes.Clone(head[:min(n, sigBytes)])
 	s.feed(head)
 	if n < sniffBytes {
 		s.finish()
@@ -128,6 +134,8 @@ func openText(path string) (*textSource, error) {
 // feed は読んだバイト列を行に割る。表示前に termsafe を通し、タブを 4 桁に展開する
 // (生のタブを端末へ出すとカーソルが飛んで行の右側が崩れる。モックで実測)。
 func (s *textSource) feed(b []byte) {
+	s.tail = append(s.tail, b[max(0, len(b)-sigBytes):]...)
+	s.tail = s.tail[max(0, len(s.tail)-sigBytes):]
 	s.partial = append(s.partial, b...)
 	for {
 		i := bytes.IndexByte(s.partial, '\n')
@@ -177,9 +185,51 @@ func (s *textSource) estLines() int {
 func (s *textSource) finish() {
 	if len(s.partial) > 0 {
 		s.lines = append(s.lines, cleanLine(string(s.partial)))
-		s.partial = nil
+		s.held, s.partial = s.partial, nil
 	}
 	s.eof = true
+}
+
+// followAppend は、開いた後の変化が末尾への追記だけなら、読んだ所を保ったまま続きを読めるようにして true を返す
+// (書き込みの続くログで、変わるたびに読んだ所まで (G 1 回で 2 万行) を開き直さない)。改行の無い末尾を最後の行として確定させていたら、
+// その行を取り下げて続きと繋ぐ。追記と見るのは、同じファイル (inode) で、大きさが減っておらず、先頭と読んだ所の直前の sigBytes バイトが
+// 開いたときと同じとき。
+// 🚨 その間の書き換え (同じ inode・大きさを減らさずに途中だけを変える保存) は見分けない: 見分けるには、読んだ所までを変わるたびに
+// 読み直すことになり、追記を読み足しで済ませる意味が無くなる。名前を変えて置き換える保存 (inode が変わる) と、切り詰めは見分ける。
+func (s *textSource) followAppend() bool {
+	if s.readErr {
+		return false
+	}
+	st, err := os.Stat(s.path)
+	if err != nil || !os.SameFile(st, s.info) || st.Size() < s.size {
+		return false
+	}
+	f, err := os.Open(s.path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	got := make([]byte, len(s.head)+len(s.tail))
+	if _, err := f.ReadAt(got[:len(s.head)], 0); err != nil && len(s.head) > 0 {
+		return false
+	}
+	if _, err := f.ReadAt(got[len(s.head):], s.off-int64(len(s.tail))); err != nil && len(s.tail) > 0 {
+		return false
+	}
+	if !bytes.Equal(got[:len(s.head)], s.head) || !bytes.Equal(got[len(s.head):], s.tail) {
+		return false
+	}
+	// 更新時刻は開いたときのまま残す: 進めると unchanged が真になり、追記と取り違えた書き換えを ExecDone の開き直し (rereadTiles) でも
+	// 拾えなくなる。残すと変わるたびにここへ来るが、比べるのは先頭と読んだ所の直前の sigBytes バイトだけ
+	s.size = st.Size()
+	if s.eof {
+		if s.held != nil {
+			s.lines = s.lines[:len(s.lines)-1]
+			s.partial, s.held = s.held, nil
+		}
+		s.eof = false
+	}
+	return true
 }
 
 // utf8Boundary は n 以下で、UTF-8 の文字の途中にならない切れ目。

@@ -467,6 +467,7 @@ func (m *Model) applyChange(c dirChange) {
 		return
 	}
 	m.reloadDir(n)
+	m.liveTiles(c.dir, slices.Concat(c.changed, c.removed))
 	if slices.Contains(c.changed, ".git") || slices.Contains(c.removed, ".git") {
 		m.repoTop = nil // このフォルダで git init した・repo を消した (repo の根の数え直し)
 	}

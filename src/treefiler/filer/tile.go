@@ -38,6 +38,11 @@ type tile struct {
 	sel     int
 	links   map[int][]link // 表示の行ごとのリンク (計算済みの行だけ)
 	stale   bool           // ジャンプ中にリンクの解決が古くなった (forgetLinks)。ジャンプを抜けたら links を捨てる
+	reread  bool           // ジャンプ中にライブ更新でファイルが書き換わった (liveTiles)。ジャンプを抜けたら開き直す
+	failed  string         // ライブ更新で開き直せなかった理由 (同じ理由を変わるたびに出し直さない)
+	dated   bool           // diff を出している間にライブ更新で本文が変わった。d で本体へ戻すときに開き直す
+	lost    bool           // tileLinks が作り直した並びで、選んでいたリンクを見失った (tileKey が次の打鍵を捨てる)
+	pick    *linkPick      // 表示の行を作り直す前に選んでいたリンク (dropLinks)。tileLinks が作り直した並びで同じものに合わせる
 
 	mode   tileMode            // 本体か diff か (d で切り替え)
 	diff   *diffJob            // diff の取得 (一度取ったら使い回す)
@@ -143,6 +148,39 @@ func resolveLink(tok, root, base string, cache map[string]string) string {
 	return found
 }
 
+// linkPick はジャンプで選んでいるリンクを、表示の行の作り直しをまたいで指すもの。行と桁は折り返しで変わるので使わず、
+// パスと字面と、同じパス・字面のリンクの中で何番目か (並びの順は作り直しで変わらない) で指す。
+type linkPick struct {
+	path, text string
+	nth        int
+}
+
+// dropLinks は表示の行を作り直すときにリンクを捨てる。ジャンプ中なら、選んでいるリンクを控えておき、tileLinks が作り直した並びで
+// 同じものに合わせ直す: 添字のまま残すと、折り返しの変わった並び (端末の幅を変えた・diff の行が届いた) で別のパスを指し、
+// 知らせなしに選択が移る (次の enter / e が別のファイルを開く)。
+func (t *tile) dropLinks() {
+	if t.jump && t.pick == nil {
+		var old []link
+		for ln := 0; ; ln++ { // links は 0 行目から続けて計算してある (tileLinks)
+			ls, ok := t.links[ln]
+			if !ok {
+				break
+			}
+			old = append(old, ls...)
+		}
+		if t.sel < len(old) {
+			p := linkPick{path: old[t.sel].path, text: old[t.sel].text}
+			for _, l := range old[:t.sel] {
+				if l.path == p.path && l.text == p.text {
+					p.nth++
+				}
+			}
+			t.pick = &p
+		}
+	}
+	t.links = nil
+}
+
 // tileLinks は読めている行のうち lines 番目までのリンク (計算済みは使い回す)。
 func (m *Model) tileLinks(t *tile, upto int) []link {
 	vl := m.view(t) // 先に作る (作り直すと t.links を捨てる)
@@ -151,6 +189,11 @@ func (m *Model) tileLinks(t *tile, upto int) []link {
 	}
 	if t.links == nil {
 		t.links = map[int][]link{}
+	}
+	pick := t.pick
+	t.pick = nil
+	if pick != nil && t.jump {
+		upto = len(vl) // 選んでいたリンクが作り直した並びのどこにあるかは、全部を見ないと分からない
 	}
 	var out []link
 	base := filepath.Dir(t.n.path())
@@ -161,6 +204,30 @@ func (m *Model) tileLinks(t *tile, upto int) []link {
 			t.links[ln] = ls
 		}
 		out = append(out, ls...)
+	}
+	if pick != nil && t.jump {
+		t.sel = -1
+		for i, l := range out {
+			if l.path == pick.path && l.text == pick.text {
+				if pick.nth == 0 {
+					t.sel = i
+					break
+				}
+				pick.nth--
+			}
+		}
+		switch {
+		case len(out) == 0:
+			t.sel, t.jump, t.lost = 0, false, true
+			m.fail("表示の作り直しで選べるパスがなくなりました")
+		case t.sel < 0:
+			t.sel, t.lost = 0, true
+			m.fail("選んでいたパスが表示の作り直しで見つからないので、先頭のパスを選びました")
+		}
+		if t.jump {
+			// 選んだリンクが見えるようにスクロールする (作り直しで行が動いた・先頭へ寄せた先が画面の外。jumpKey と同じ)
+			t.scroll = listnav.WindowOffset(t.scroll, out[t.sel].line, len(vl), m.tileRows(t))
+		}
 	}
 	return out
 }
@@ -262,35 +329,79 @@ func (m *Model) restoreTile(tp TilePlace) {
 
 // rereadTiles は開いているタイルの本文を開き直す (エディタ・シェル・! から戻ったとき = ExecDone)。textSource は読んだ所から先を
 // 読み足すだけで書き換えを見ないので、開き直さないと古い本文が残り、先へ送ると新しいファイルを古い読み位置から読んで行が崩れる。
-// 本体のスクロールは保ち、diff は取り直す。開けなくなったファイルは古い本文のまま残して理由を知らせる (黙って古いまま見せない)。
+// ライブ更新で追記として読み足したタイルは、更新時刻を開いたときのまま残す (followAppend) ので、ここで毎回開き直す: 追記と取り違えた
+// 書き換えを拾える唯一の所で、その分、書き込みの続くログを深く送ったタイルは戻るたびに読んだ所まで読み直す。
 func (m *Model) rereadTiles() {
 	for _, t := range m.tiles {
 		if t.closing {
 			continue
 		}
-		if t.mode == modeDiff {
-			// diff は本文が同じでも変わる (git add / commit は作業ツリーのファイルを触らない) ので必ず取り直す。本文 (src) は要らない:
-			// 消したファイルの diff (全行の削除) も取れる。位置は先頭へ戻す (取り直した行が届くまで上限が分からず、元の位置で切れない)
-			if src, msg := openFor(t.n.path(), t.n.raw, t.n.name); msg == "" {
-				t.useSource(src) // d で本体へ戻したときに古い本文を出さない
-			}
-			t.setMode(modeDiff)
-			continue
-		}
-		if t.src.unchanged() {
+		if t.mode == modeFile && t.src.unchanged() {
 			continue // 変わっていないファイルを開き直すと、深く送ったタイルで読んだ所まで (G 1 回で 2 万行) を毎回読み直す
 		}
-		src, msg := openFor(t.n.path(), t.n.raw, t.n.name)
-		if msg != "" {
-			m.fail(msg)
+		m.reopenTile(t, false)
+	}
+}
+
+// liveTiles は、ライブ更新でフォルダ dir の項目 names が変わったとき、そのファイルを出しているタイルを追いつかせる
+// 末尾に足されただけなら読み足しで済ませ (書き込みの続くログ)、書き換わったら開き直す。
+// ジャンプ中は開き直さずに印だけ付け、抜けた後 (tileKey) に開き直す: 開き直すとリンクの並びとジャンプが捨てられ、選択が知らせなしに消える。
+// 名前で絞る: フォルダの他の項目が変わるたびに、消えたタイルのファイルの「開けません」を出し直さない。
+func (m *Model) liveTiles(dir string, names []string) {
+	for _, t := range m.tiles {
+		p := t.n.path()
+		if t.closing || filepath.Dir(p) != dir || !slices.Contains(names, filepath.Base(p)) || t.src.unchanged() {
 			continue
 		}
-		t.useSource(src)
-		t.src.ensure(t.scroll + 2*m.tileRows(t))
-		t.scroll = min(t.scroll, m.maxScroll(t))
-		t.sy.step(float64(t.scroll), scrollDur, 0) // 縮んだファイルで、古い位置 (本文の外) を描いてから巻き戻さない
-		t.sy.snap()
+		if t.mode == modeDiff {
+			// diff は取り直さない: 書き込みの続くファイルで、変わるたびに先頭へ戻して取り直すと読めず、取得が変化の間隔より長いと終わらない。
+			// 本文も今は読まない (diff の表示は本文を使わない)。d で本体へ戻すときに開き直す。diff は ExecDone と d で取り直す
+			t.dated = true
+			continue
+		}
+		before := len(t.src.lines)
+		if t.src.followAppend() {
+			if len(t.src.lines) < before {
+				t.vlines = nil // 確定させていた末尾の行を取り下げた。足すだけの作り方 (view の grow) と、行の数で見る Markdown では消えないので作り直させる
+			}
+			t.failed = "" // 読めるようになった。次にまた読めなくなったら知らせる
+			continue
+		}
+		if t.jump {
+			t.reread = true
+			continue
+		}
+		m.reopenTile(t, true)
 	}
+}
+
+// reopenTile はタイルの本文を開き直す。本体のスクロールは保ち、diff は取り直す。開けなくなったファイルは古い本文のまま残して
+// 理由を知らせる (黙って古いまま見せない)。live (ライブ更新) では、同じ理由を続けて知らせない: 読めなくなった後も書き手が書き続ける
+// ファイルは変わるたびにここへ来る。
+func (m *Model) reopenTile(t *tile, live bool) {
+	t.reread = false
+	if t.mode == modeDiff {
+		// diff は本文が同じでも変わる (git add / commit は作業ツリーのファイルを触らない) ので必ず取り直す。本文 (src) は要らない:
+		// 消したファイルの diff (全行の削除) も取れる。位置は先頭へ戻す (取り直した行が届くまで上限が分からず、元の位置で切れない)
+		if src, msg := openFor(t.n.path(), t.n.raw, t.n.name); msg == "" {
+			t.useSource(src) // d で本体へ戻したときに古い本文を出さない
+		}
+		t.setMode(modeDiff)
+		return
+	}
+	src, msg := openFor(t.n.path(), t.n.raw, t.n.name)
+	if msg != "" {
+		if !live || msg != t.failed {
+			m.fail(msg)
+		}
+		t.failed = msg
+		return
+	}
+	t.useSource(src)
+	t.src.ensure(t.scroll + 2*m.tileRows(t))
+	t.scroll = min(t.scroll, m.maxScroll(t))
+	t.sy.step(float64(t.scroll), scrollDur, 0) // 縮んだファイルで、古い位置 (本文の外) を描いてから巻き戻さない
+	t.sy.snap()
 }
 
 func (m *Model) tileRows(t *tile) int { return max(slotRect(t.slot, m.w, m.canvasH()).h-2, 1) }
@@ -321,6 +432,18 @@ func (m *Model) nextFile(n *node, delta int) *node {
 func (m *Model) tileKey(k string) {
 	t := m.frontTile()
 	rows := m.tileRows(t)
+	defer func() {
+		if t.reread && !t.jump && !t.closing {
+			m.reopenTile(t, true) // ジャンプ中に書き換わったファイル (liveTiles)
+		}
+	}()
+	if t.lost {
+		// 選んでいたリンクを見失った (知らせは出した) 後の最初の打鍵は捨てる: 効かせると enter / e が知らせを見る前に別のパスを開き、
+		// ジャンプを抜けていればタイルのキー (enter / q で閉じる・e / o で本体を開く) に化ける。見失うのは描画 (drawTile が tileLinks を呼ぶ)
+		// が先のことが多い (bubbletea は大きさの変更の後に描く) ので、jumpKey の中だけで見ると素通りする
+		t.lost = false
+		return
+	}
 	if t.jump {
 		if m.jumpKey(t, k, rows) {
 			return
@@ -389,6 +512,10 @@ func (m *Model) tileKey(k string) {
 func (m *Model) jumpKey(t *tile, k string, rows int) bool {
 	total := len(m.view(t))
 	ls := m.tileLinks(t, total)
+	if t.lost {
+		t.lost = false
+		return true // この打鍵の手前で見失った (tileKey の lost の注記)
+	}
 	if len(ls) == 0 {
 		t.jump = false
 		return false
@@ -564,6 +691,9 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 func (m *Model) toggleDiff(t *tile) {
 	if t.mode == modeDiff {
 		t.setMode(modeFile)
+		if t.dated {
+			m.reopenTile(t, false) // diff を出している間にライブ更新で本文が変わった (liveTiles)。利用者の操作なので開けなければ毎回知らせる
+		}
 		return
 	}
 	if !m.diffable(t.n) {

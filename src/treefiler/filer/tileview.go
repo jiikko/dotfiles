@@ -74,7 +74,7 @@ func (t *tile) setSource(n *node, src *textSource) {
 // (同じファイルを開き直したとき = rereadTiles は、読んでいた位置を保つ)。
 func (t *tile) useSource(src *textSource) {
 	t.src = src
-	t.links, t.jump, t.sel = nil, false, 0
+	t.links, t.jump, t.sel, t.pick, t.reread, t.failed, t.dated = nil, false, 0, nil, false, "", false
 	t.vlines, t.vkey, t.vsrc = nil, viewKey{}, 0
 	t.hl = nil
 	if isMarkdown(t.n.raw) {
@@ -118,7 +118,8 @@ func (m *Model) view(t *tile) []viewLine {
 			for i, l := range lines {
 				t.vlines[i] = viewLine{styled: styled[i], plain: l}
 			}
-			t.vkey, t.links = k, nil
+			t.vkey = k
+			t.dropLinks()
 		}
 		return t.vlines
 	}
@@ -134,7 +135,8 @@ func (m *Model) view(t *tile) []viewLine {
 	// 幅・折り返し・モードが同じで行が増えただけなら、増えた行だけを足す (先へ読み進めるたびに全部を色付けし直さない)
 	grow := !md && t.vlines != nil && k.w == t.vkey.w && k.wrap == t.vkey.wrap && t.vkey.mode == modeFile
 	if !grow {
-		t.vlines, t.vsrc, t.links = t.vlines[:0], 0, nil
+		t.vlines, t.vsrc = t.vlines[:0], 0
+		t.dropLinks()
 	}
 	if md {
 		out, nums := markdown.Render(strings.Join(t.src.lines, "\n"), w, true)

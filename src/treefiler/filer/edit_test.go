@@ -94,14 +94,7 @@ func TestTileRereadsFileAfterEditor(t *testing.T) {
 	clearEditorEnv(t)
 	m := newTest(t)
 	p := filepath.Join(m.root.path(), "long.txt")
-	body := func(prefix string, n int) string {
-		var b strings.Builder
-		for i := range n {
-			fmt.Fprintf(&b, "%s %d\n", prefix, i)
-		}
-		return b.String()
-	}
-	mkfile(t, p, body("old", 2000))
+	mkfile(t, p, numbered("old", 2000))
 	m.Refresh()
 	settle(m)
 	cdTo(t, m, "long.txt")
@@ -112,7 +105,7 @@ func TestTileRereadsFileAfterEditor(t *testing.T) {
 	}
 	m.HandleKey("j")
 	takeEdit(t, m, "e")
-	mkfile(t, p, body("new", 1500))
+	mkfile(t, p, numbered("new", 1500))
 	m.ExecDone(nil)
 	if tl.scroll != 1 || int(tl.sy.v) != 1 {
 		t.Fatalf("開き直した後の scroll = %d・sy = %v (読んでいた位置 1 を保つはず)", tl.scroll, tl.sy.v)
