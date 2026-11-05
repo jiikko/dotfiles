@@ -240,6 +240,29 @@ func (m *Model) restoreTile(tp TilePlace) {
 	m.tiles = append(m.tiles, t)
 }
 
+// rereadTiles は開いているタイルの本文を開き直す (エディタ・シェル・! から戻ったとき = ExecDone)。textSource は読んだ所から先を
+// 読み足すだけで書き換えを見ないので、開き直さないと古い本文が残り、先へ送ると新しいファイルを古い読み位置から読んで行が崩れる。
+// 本体のスクロールは保ち、diff は取り直す。開けなくなったファイルは古い本文のまま残して理由を知らせる (黙って古いまま見せない)。
+func (m *Model) rereadTiles() {
+	for _, t := range m.tiles {
+		if t.closing {
+			continue
+		}
+		src, msg := openFor(t.n.path(), t.n.raw, t.n.name)
+		if msg != "" {
+			m.fail(msg)
+			continue
+		}
+		t.useSource(src)
+		if t.mode == modeDiff {
+			t.setMode(modeDiff)
+			continue
+		}
+		t.src.ensure(t.scroll + 2*m.tileRows(t))
+		t.scroll = min(t.scroll, m.maxScroll(t))
+	}
+}
+
 func (m *Model) tileRows(t *tile) int { return max(slotRect(t.slot, m.w, m.canvasH()).h-2, 1) }
 
 // maxScroll はタイルのスクロールの上限 (末尾まで読めていなければ、読めている所まで)。

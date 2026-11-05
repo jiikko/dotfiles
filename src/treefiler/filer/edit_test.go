@@ -1,8 +1,11 @@
 package filer
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -81,5 +84,73 @@ func TestJumpEEditsSelectedLink(t *testing.T) {
 	}
 	if m.frontTile().jump {
 		t.Fatal("e の後もジャンプモードのまま")
+	}
+}
+
+// タイルの e から戻ったら、タイルも読み直す (spec §0.1 の e「戻ったら読み直す」)。読み直さないと、書き換えた後も古い本文が
+// 残り、先へ送ると新しいファイルを古い読み位置から読み足して、行の重複・欠け・行の途中からの表示が混ざる。
+func TestTileRereadsFileAfterEditor(t *testing.T) {
+	clearEditorEnv(t)
+	m := newTest(t)
+	p := filepath.Join(m.root.path(), "long.txt")
+	body := func(prefix string, n int) string {
+		var b strings.Builder
+		for i := range n {
+			fmt.Fprintf(&b, "%s %d\n", prefix, i)
+		}
+		return b.String()
+	}
+	mkfile(t, p, body("old", 2000))
+	m.Refresh()
+	settle(m)
+	cdTo(t, m, "long.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	if tl == nil {
+		t.Fatal("タイルが開かない (テストの前提の破れ)")
+	}
+	m.HandleKey("j")
+	takeEdit(t, m, "e")
+	mkfile(t, p, body("new", 1500))
+	m.ExecDone(nil)
+	m.HandleKey("G")
+	vl := m.view(tl)
+	if len(vl) == 0 || vl[0].plain != "new 0" {
+		t.Fatalf("エディタから戻った後のタイルの 1 行目 = %q (書き換えた本文 new 0 のはず)", firstPlain(vl))
+	}
+	for i, l := range vl {
+		if want := fmt.Sprintf("new %d", i); l.plain != want {
+			t.Fatalf("%d 行目 = %q, want %q (古い読み位置から読み足した)", i, l.plain, want)
+		}
+	}
+}
+
+func firstPlain(vl []viewLine) string {
+	if len(vl) == 0 {
+		return ""
+	}
+	return vl[0].plain
+}
+
+// エディタの中で消したファイルのタイルは、古い本文を残して理由を知らせる (黙って古いまま見せない・タイルを勝手に閉じない)。
+func TestTileKeepsOldTextAndTellsWhenFileGoneAfterEditor(t *testing.T) {
+	clearEditorEnv(t)
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	before := firstPlain(m.view(tl))
+	takeEdit(t, m, "e")
+	if err := os.Remove(filepath.Join(m.root.path(), "a", "one.txt")); err != nil {
+		t.Fatal(err)
+	}
+	m.TakeNotices()
+	m.ExecDone(nil)
+	if got := firstPlain(m.view(tl)); got != before {
+		t.Fatalf("消えたファイルのタイルの 1 行目 = %q, want 古い本文 %q", got, before)
+	}
+	ns := m.TakeNotices()
+	if len(ns) == 0 || !strings.Contains(ns[0].Text, "one.txt") {
+		t.Fatalf("消えたファイルの知らせ = %+v (one.txt を開けない理由を出すはず)", ns)
 	}
 }

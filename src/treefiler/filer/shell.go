@@ -96,6 +96,7 @@ func (m *Model) execEnv() []string { return append(os.Environ(), "f="+m.cur.path
 // (シェルは最後のコマンドの終了コードで抜けるのが普通。glogx の editorClosedMsg と同じ判断)。
 func (m *Model) ExecDone(err error) (warning string) {
 	m.Refresh()
+	m.rereadTiles()
 	var exitErr interface{ ExitCode() int } // *exec.ExitError (os/exec は import しない。exec_boundary_test)
 	if err == nil || errors.As(err, &exitErr) {
 		return ""

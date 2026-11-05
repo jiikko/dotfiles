@@ -63,18 +63,26 @@ func isMarkdown(name string) bool {
 
 // setSource はタイルの中身を n に差し替え、表示の状態を初めに戻す (開いたとき・J K で隣へ送ったとき)。
 func (t *tile) setSource(n *node, src *textSource) {
-	t.n, t.src = n, src
-	t.links, t.scroll, t.sy, t.jump, t.sel = nil, 0, tween{}, false, 0
+	t.n = n
+	t.scroll, t.sy = 0, tween{}
 	t.stopDiff()
 	t.mode, t.diff = modeFile, nil
+	t.useSource(src)
+}
+
+// useSource は本文を src に差し替え、本文から作ったもの (表示の行・リンク・ジャンプ・色付け) を捨てる。スクロールとモードは触らない
+// (同じファイルを開き直したとき = rereadTiles は、読んでいた位置を保つ)。
+func (t *tile) useSource(src *textSource) {
+	t.src = src
+	t.links, t.jump, t.sel = nil, false, 0
 	t.vlines, t.vkey, t.vsrc = nil, viewKey{}, 0
 	t.hl = nil
-	if isMarkdown(n.raw) {
+	if isMarkdown(t.n.raw) {
 		// G などで先へ読んでも、ここを超えて読まない (超えるたびに全体を整形し直すことになる)。
 		// 🚨 描く前のキーでも読み進めるので、中身を決めたここで付ける
 		src.limit = markdownCap
 	} else {
-		t.hl = highlight.ForPath(n.raw, src.firstLine())
+		t.hl = highlight.ForPath(t.n.raw, src.firstLine())
 	}
 }
 
