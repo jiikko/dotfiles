@@ -32,8 +32,10 @@ func (m *browseModel) activeFullScreen() FullScreenID {
 // fullScreenActive は全画面ビューアが 1 枚でも出ているか。
 func (m *browseModel) fullScreenActive() bool { return m.activeFullScreen() != FullScreenNone }
 
-// crossTo は画面が返した横断キーの行き先を開く。行き先が git log 一覧 (H) なら開くものは無く、横断元は閉じ済みなので
-// 閉じる演出の tick だけ回す (openFullScreen(FullScreenNone) は nil を返し、演出が止まる)。
+// crossTo は画面が返した横断キーの行き先を開く。行き先が git log 一覧 (H) なら開くものは無い。
+// H の後の maybeTick はテストで固定しない: 横断元は閉じ済みで閉じる演出が無く (H の直後の spinnerActive はどの画面でも偽)、
+// 一覧の取得中などで spinnerActive が真なら、全画面を出している間から tick のチェーンが張られている。
+// 消しても見た目は変わらないが、他の route の末尾と同じく張っておく。H で閉じる演出を足したら、その画面だけ tickPending を固定する。
 func (m *browseModel) crossTo(key string) tea.Cmd {
 	if id := crossScreen(key); id != FullScreenNone {
 		return m.openFullScreen(id)

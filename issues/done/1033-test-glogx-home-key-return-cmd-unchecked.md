@@ -53,6 +53,26 @@
 
 ## 進捗
 
-- [ ] 退行を当てて、どの画面の何が止まるかを確かめる
-- [ ] 止まる画面に tick の予約を見る assert を足す
-- [ ] 変異で red を確認する
+- [x] 退行を当てて、どの画面の何が止まるかを確かめる → **どの画面でも何も止まらない**
+- [x] 止まる画面に tick の予約を見る assert を足す → 該当なし (足さない)
+- [x] 変異で red を確認する → 足すテストが無いので対象外。今のテストが変異で緑のままなことは確認した
+
+## 決着 (2026-11-05)
+
+使い捨てのテストで、全 6 画面を開き `clearTick(m)` してから H を押し、直後の `tickPending` / `spinnerActive` / `tickInterval` を出した
+(origin/master `c37b66b13` の worktree。テストは消した)。
+
+| 行き先へ戻った元 | HEAD の pending | 変異後の pending | H の直後の spinnerActive |
+|---|---|---|---|
+| issues | true | true | true (閉じるスライド。`crossTo` を通らない) |
+| status | true | true | false |
+| ratelimit / doctor / filer / lan | true | **false** | **false** |
+
+- 変異 (`crossTo` を `return m.openFullScreen(crossScreen(key))` に戻す) で、`crossTo` を通る 4 画面の予約が消える。
+  `TestHomeKeyReturnsToGitLogFromEveryFullScreen` は緑のまま (概要の主張どおり)
+- ただし 4 画面とも H の直後の `spinnerActive` は偽。`onTick` は `spinnerActive` が偽なら何も進めずにチェーンを終えるので、
+  予約が無くても見た目は変わらない。`spinnerActive` が真になる要因 (一覧の取得中など) は全画面を出している間も同じ式で見られ、
+  そのあいだチェーンは張られ続けているので、H の時点で予約が無く要因だけがある状態にはならない
+- よって tick を固定するテストは書かない (対応方針の「tick が要ると分かった画面だけ」に該当する画面が無い)。
+  `crossTo` のコメントが「無いと閉じる演出が止まる」と書いていたのは実態と違うので、上の理由と再評価の条件
+  (H で閉じる演出を足したら、その画面だけ `tickPending` を固定する) に書き直した
