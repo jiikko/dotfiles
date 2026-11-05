@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -76,4 +77,86 @@ func TestHelpColumnsSplitKeepsOrderAndBalances(t *testing.T) {
 			t.Fatalf("%d 節目で割る方が低い (%d < %d)", k, max(len(a), len(b)), best)
 		}
 	}
+}
+
+// 木のキー (treeKeys。Binds も同じ表を読む) は全部、? のキー一覧と README の「キー (木)」の表に載っている。
+// キーを足して一覧か README を直し忘れると、押せば効くのに案内のどこにも無いキーができる (p が README に無いまま残った)。
+func TestEveryTreeKeyIsListedInHelpAndReadme(t *testing.T) {
+	readme, err := os.ReadFile("../README.md")
+	if err != nil {
+		t.Fatalf("README が読めない: %v", err)
+	}
+	_, table, ok := strings.Cut(string(readme), "## キー (木)")
+	if !ok {
+		t.Fatal("README に「## キー (木)」の節が無い")
+	}
+	table, _, _ = strings.Cut(table, "\n## ")
+	readmeKeys := map[string]bool{}
+	for _, line := range strings.Split(table, "\n") {
+		if col, _, ok := strings.Cut(strings.TrimPrefix(line, "|"), "|"); ok && strings.HasPrefix(line, "|") {
+			for _, f := range strings.Split(col, "`") {
+				readmeKeys[f] = true
+			}
+		}
+	}
+	helpKeys := map[string]bool{}
+	for _, s := range helpSections {
+		if s.title == "タイルの中" {
+			continue // タイルのキーは treeKeys ではない (tile.go の tileKey)
+		}
+		for _, kv := range s.keys {
+			for _, f := range strings.Fields(kv[0]) {
+				helpKeys[f] = true
+			}
+		}
+	}
+	if len(readmeKeys) == 0 || len(helpKeys) == 0 {
+		t.Fatalf("キーを 1 つも拾えない (README %d・一覧 %d)", len(readmeKeys), len(helpKeys))
+	}
+	checked := 0
+	for k := range treeKeys {
+		if k == " " {
+			continue // space の別名 (bubbletea が " " で渡すことがある)
+		}
+		checked++
+		if h := helpSpelling(k); !helpKeys[h] {
+			t.Errorf("キー %q (一覧の表記 %q) が ? のキー一覧に無い", k, h)
+		}
+		if r := readmeSpelling(k); !readmeKeys[r] {
+			t.Errorf("キー %q (README の表記 %q) が README の「キー (木)」の表に無い", k, r)
+		}
+	}
+	if checked < 30 {
+		t.Fatalf("treeKeys のキーが %d 個しか無い (表の読み方が壊れた)", checked)
+	}
+}
+
+// helpSpelling は bubbletea のキー名を ? の一覧の表記にする (^X・矢印。他はそのまま)。
+func helpSpelling(k string) string {
+	if c, ok := strings.CutPrefix(k, "ctrl+"); ok {
+		return "^" + strings.ToUpper(c)
+	}
+	switch k {
+	case "left":
+		return "←"
+	case "right":
+		return "→"
+	}
+	return k
+}
+
+// readmeSpelling は bubbletea のキー名を README の表記にする (Ctrl-X・名前のあるキーは頭を大文字・矢印)。
+func readmeSpelling(k string) string {
+	if c, ok := strings.CutPrefix(k, "ctrl+"); ok {
+		return "Ctrl-" + strings.ToUpper(c)
+	}
+	switch k {
+	case "left":
+		return "←"
+	case "right":
+		return "→"
+	case "esc", "enter", "space", "tab", "backspace":
+		return strings.ToUpper(k[:1]) + k[1:]
+	}
+	return k
 }
