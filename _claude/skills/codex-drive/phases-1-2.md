@@ -64,6 +64,17 @@
   固定文で入れる** (sandbox で走るかは repo ごとに最初のマイルストーンで確かめてから固定する。issue 369 1-2)。
   この環境では未実行の理由が sandbox 由来なので、`[3.8]` の実行ループも最初から Claude のハーネスで当てる
   (変異 patch の生成だけ codex read-only に作らせる。codex に回しても typecheck だけで「成功」と書く: 650 M1)
+  - **`swiftc -parse` が通しても型検査と lint の build plugin が止める形は、`[2]` のプロンプトに固定文で書く**。
+    書かないと、Claude の gate で 1 形につき 1 往復以上かかる (obaket 1371 では M4 の検証が 5 回止まり、M3 の変異 1 本が判定不能になった)。
+    Swift 6 + SwiftLint の repo では次の 4 つ:
+    - MainActor の型・suite の中で作った closure を、actor を持たない async 関数へ渡さない。
+      region isolation の `sending value of non-Sendable type` で止まる。closure は `nonisolated` の helper の中で作って呼ぶ。
+      `#expect(throws:)` を `do` / `catch` に替えるだけでは直らない (closure を作る場所が MainActor のまま)
+    - closure を三項演算子の両側に置かない。片側の `{ [] }` が `@Sendable` と推論され、もう片側の変換で止まる。型を明示した `if` / `else` にする
+    - doc comment (`///`) と宣言の間に、別の宣言や `//` のコメント (`// retention:` などの注記) を挟まない (`orphaned_doc_comment`)。
+      注記は宣言の行末に置く
+    - closure の引数を使わなくしたら `_` にする (`unused_closure_parameter` は build plugin が error にする)。
+      `[3.8]` で呼び出しを消す変異も同じ理由で build が落ちて判定不能になるので、`_ = <引数>` の形で当てる
 - **sandbox の有無に関係なく `[2]` のプロンプトに書くこと / `[3]` で見ること**:
   **`project.pbxproj` は触らない (xcodegen が `project.yml` から生成する)** — 書かないと codex が新規テストファイルを
   pbxproj に手で登録する (obaket 686, 2026-09-01。再生成で上書きされるので実害は無いが diff がノイズになる)。
