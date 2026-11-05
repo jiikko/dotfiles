@@ -97,16 +97,18 @@ window を切り替えると、current 島が **切替直前の表示色 → 暗
 
 - 仕組み: hook (`after-select-window[1]` / `client-session-changed`) が **fire 時に直前の表示色を
   展開して引数で渡し**、`scripts/tmux_ignite_current.sh` が 256色 cube 座標の線形補間で一時 option
-  `@ignite` を最大 8 フレーム駆動 + `refresh-client -S`。描画は `@cur-live` (アニメ中=@ignite /
+  `@ignite` を最大 12 フレーム駆動 + `refresh-client -S`。描画は `@cur-live` (アニメ中=@ignite /
   平常時=@cur-accent) を参照するので、**テーマの色変更は従来どおり `@cur-accent` だけ触ればよい**
   (@cur-live は仕組み側。終点は @cur-accent を読むので色を変えても補間は自動追従)
-- 調整ノブ: 速度 = スクリプト内 sleep 値 (現 35ms) / 形 = 沈むフレーム数 D・点火フレーム数 A (現 4/4 =
-  256色 cube の量子化上限。これ以上は中間色が存在しない)。連打時は世代トークンで最後の切替だけ完走。
+- 調整ノブ: 速度 = スクリプト内 sleep 値 (現 60ms、全体で約 0.7 秒) / 形 = 沈むフレーム数 D・点火フレーム数 A (現 4/4 =
+  256色 cube の量子化上限。これ以上は中間色が存在しない)・燃え上がりの途中点の数 F (現 1)。点火の後に
+  `@ignite-flare` (_tmux.conf。現 colour226 の黄) まで燃え上がって @cur-accent へ戻る。空にすると点火で終える。
+  0.3 秒では、window 一覧がスクロールでずれた直後に current を目で探す前に終わっていた。連打時は世代トークンで最後の切替だけ完走。
 - popup の session (scratch / claude-fork。`scripts/lib/tmux_popup_sessions.sh`) では点火しない。popup は中身が変わるたびに全体を
   描き直すので、1 フレームごとに入れ子の画面全体が端末へ送り直される (1 回の切替が約 570KB → 約 30KB。issue 567)
   算術は `TT_IGNITE_DRYRUN=1 scripts/tmux_ignite_current.sh colour201` で決定的に確認できる
 - CPU: 各フレームは「世代一致なら set+refresh」を `tmux if -F` でサーバ側原子実行 (1 フレーム 1 fork)。
-  実測 = 最長 8 フレームの 1 回で user+sys ~60ms。切替イベント時のみで常時負荷ゼロ
+  実測 = 最長 8 フレームだった版の 1 回で user+sys ~60ms (12 フレームの現行は未実測。フレーム数に比例するなら ~90ms の見込み)。切替イベント時のみで常時負荷ゼロ
   (毎秒の status 再描画が常設で回っている構成なので、この瞬間バーストは誤差の範囲)
 - 文字単位のスイープ (一文字ずつ色が変わる) は不可: format に部分文字列×スタイル分割の手段が無く、
   幅可変の reveal 方式は「セル幅が変わると列がずれる」で却下済み (チップ案と同根)

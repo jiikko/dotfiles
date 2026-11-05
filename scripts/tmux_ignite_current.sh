@@ -64,36 +64,46 @@ set -- $(cube_of "$end_colour"); r1=$1 g1=$2 b1=$3
 # 開始 == 終了 (current 色の window を再選択した等) はアニメ不要
 [ "$r0 $g0 $b0" = "$r1 $g1 $b1" ] && exit 0
 
-# --- 経路の構築: 沈む D フレーム (前の色→暗) + 点火 A フレーム (暗→@cur-accent) ---
-# 速度 = 下の sleep 値 / 形 = D・A。調整ノブは docs/theme-colors.md 参照。
+# --- 経路の構築: 沈む D フレーム (前の色→暗) + 点火 A フレーム (暗→@cur-accent)
+#     + 燃え上がり (@cur-accent → @ignite-flare → @cur-accent) ---
+# 速度 = 下の sleep 値 / 形 = D・A・F。調整ノブは docs/theme-colors.md 参照。
 # D=A=4 は 256色 cube の量子化上限 (これ以上増やしても中間色が存在せず dedup で消える)。
-# 滑らかさはフレーム数と等間隔ペーシングで稼ぐ (hot 起点で最大 8 フレーム × 35ms ≈ 0.28 秒)。
+# 長さは等間隔ペーシングで稼ぐ (hot 起点で最大 12 フレーム × 60ms ≈ 0.7 秒)。0.3 秒では、一覧が
+# スクロールでずれた直後に current を目で探す前に終わっていた
 D=4
 A=4
+F=1
 frames=""
 last=""
 add() { [ "$1" = "$last" ] && return 0; frames="$frames $1"; last="$1"; }
 
-# 沈む工程: 起点が既に暗い (座標和<=2: 消灯16 / 52 / 53 等) ならスキップして点火だけにする
-if [ $((r0 + g0 + b0)) -gt 2 ]; then
-  j=1
-  while [ "$j" -le "$D" ]; do
-    r=$(((r0 * (D + 1 - j) + (D + 1) / 2) / (D + 1)))
-    g=$(((g0 * (D + 1 - j) + (D + 1) / 2) / (D + 1)))
-    b=$(((b0 * (D + 1 - j) + (D + 1) / 2) / (D + 1)))
+# cube 座標 (ra ga ba) → (rb gb bb) の途中の点を n 個 add する (両端は含めない)
+ramp() {
+  ra=$1 ga=$2 ba=$3 rb=$4 gb=$5 bb=$6 n=$7
+  k=1
+  while [ "$k" -le "$n" ]; do
+    r=$(((ra * (n + 1 - k) + rb * k + (n + 1) / 2) / (n + 1)))
+    g=$(((ga * (n + 1 - k) + gb * k + (n + 1) / 2) / (n + 1)))
+    b=$(((ba * (n + 1 - k) + bb * k + (n + 1) / 2) / (n + 1)))
     add "colour$((16 + 36 * r + 6 * g + b))"
-    j=$((j + 1))
+    k=$((k + 1))
   done
-fi
+}
+
+# 沈む工程: 起点が既に暗い (座標和<=2: 消灯16 / 52 / 53 等) ならスキップして点火だけにする
+[ $((r0 + g0 + b0)) -gt 2 ] && ramp "$r0" "$g0" "$b0" 0 0 0 "$D"
 # 点火工程: 暗 (0,0,0) → @cur-accent の途中点
-i=1
-while [ "$i" -le "$A" ]; do
-  r=$(((r1 * i + (A + 1) / 2) / (A + 1)))
-  g=$(((g1 * i + (A + 1) / 2) / (A + 1)))
-  b=$(((b1 * i + (A + 1) / 2) / (A + 1)))
-  add "colour$((16 + 36 * r + 6 * g + b))"
-  i=$((i + 1))
-done
+ramp 0 0 0 "$r1" "$g1" "$b1" "$A"
+# 燃え上がり: @ignite-flare が cube 内の色のときだけ。空 / cube 外なら点火で終える
+flare=$(tmux show -gqv @ignite-flare 2>/dev/null)
+# shellcheck disable=SC2046
+set -- $(cube_of "$flare"); r2=$1 g2=$2 b2=$3
+if [ "$r2 $g2 $b2" != "0 0 0" ] && [ "$r2 $g2 $b2" != "$r1 $g1 $b1" ]; then
+  add "colour$((16 + 36 * r1 + 6 * g1 + b1))"
+  ramp "$r1" "$g1" "$b1" "$r2" "$g2" "$b2" "$F"
+  add "colour$((16 + 36 * r2 + 6 * g2 + b2))"
+  ramp "$r2" "$g2" "$b2" "$r1" "$g1" "$b1" "$F"
+fi
 
 if [ -n "${TT_IGNITE_DRYRUN:-}" ]; then
   for c in $frames; do echo "$c"; done
@@ -112,9 +122,9 @@ trap cleanup EXIT INT TERM HUP
 # フレーム = 「世代一致なら set+refresh」を tmux if -F でサーバ側原子実行 (1 フレーム 1 fork)。
 # show(世代確認)+set+refresh の 3 fork/フレームにしない = フレームを倍にしても
 # 総 fork は減る。preempt された古いアニメは残りフレームが no-op になるだけで無害
-# (最大 ~0.3 秒 sleep して trap の条件付き後始末で終わる)。
+# (最大 ~0.7 秒 sleep して trap の条件付き後始末で終わる)。
 for c in $frames; do
   tmux if -F "#{==:#{@ignite-gen},$gen}" "set -g @ignite $c ; refresh-client -S" 2>/dev/null
-  sleep 0.035
+  sleep 0.06
 done
 # 最終フレーム (@ignite unset = 本来の @cur-accent へ) は trap cleanup が担う
