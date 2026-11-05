@@ -111,6 +111,9 @@ func CrossTarget(key string) (FullScreenID, bool) {
 		return FullScreenFiler, true // treefiler (filer_view.go。docs/treefiler-spec.md §0.3)
 	case "L":
 		return FullScreenLan, true // mac-lan-manager (lan_view.go。issue 747)
+	case "H":
+		// git log 一覧へ戻る (h = 1 段閉じる の強い版。docs/glogx-ui-guide.md §2)。開く全画面は無く、押された画面が閉じるだけ
+		return FullScreenNone, true
 	}
 	return FullScreenNone, false
 }

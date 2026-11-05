@@ -2730,7 +2730,7 @@ func (v *IssuesView) Hint(width int) string {
 	// 🚨 "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
 	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。
-	// "i: 一覧へ" は出さない (戻り方は --help と README が正本。足すなら優先度を付けて並べる)。
+	// 一覧へ戻る手段は "H: git log" を最下位の優先度で出す (幅が足りないと真っ先に落ちる。i の toggle も同じ動作で、案内は 1 つにする)。
 	// 確保は 1 回に抑える (append で伸ばさない容量で作る)。hint は毎フレーム組むので、確保が 1 回増えると
 	// frame_alloc_test の予算を越える
 	items := append(make([]term.HintItem, 0, 10), []term.HintItem{
@@ -2751,6 +2751,7 @@ func (v *IssuesView) Hint(width int) string {
 	return term.FitHintItems(width, append(items,
 		term.HintItem{Text: "n: next", Prio: 4},
 		term.HintItem{Text: next, Prio: 5},
+		term.HintItem{Text: "H: git log", Prio: 6},
 		term.HintItem{Text: "q: 終了", Prio: 1},
 	))
 }

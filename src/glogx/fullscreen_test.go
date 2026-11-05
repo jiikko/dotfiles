@@ -348,6 +348,39 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 	}
 }
 
+// H はどの全画面からも git log 一覧へ戻る (h = 1 段閉じる の強い版。docs/glogx-ui-guide.md §2)。
+// 開いたキー (i / F …) を覚えていなくても一覧へ戻れること。q / Esc は glogx ごと終了なので、戻る手段は今まで開いたキーだけだった。
+func TestHomeKeyReturnsToGitLogFromEveryFullScreen(t *testing.T) {
+	openKey := map[FullScreenID]string{
+		FullScreenIssues: "i", FullScreenStatus: "s", FullScreenRatelimit: "R", FullScreenDoctor: "D",
+		FullScreenFiler: "F", FullScreenLan: "L",
+	}
+	if len(openKey) != int(FullScreenCount)-1 {
+		t.Fatalf("全画面の ID が増えた (%d 枚): openKey に開くキーを足すこと", int(FullScreenCount)-1)
+	}
+	for from, fromKey := range openKey {
+		m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+		m.width, m.height = 100, 30
+		m.doctorOv.SetDeps(doctorview.Deps(doctortest.FakeDeps(t))) // 実ディスクを走査しない
+		m.handleKey(fromKey)
+		m.issuesOv.Fixture().FinishAnim()
+		if got := m.activeFullScreen(); got != from {
+			t.Fatalf("前提が崩れた: %s で %v が開かない (active=%v)", fromKey, from, got)
+		}
+		releaseKey(m)
+		_, _ = m.handleKey("H")
+		if got := m.activeFullScreen(); got != FullScreenNone {
+			t.Errorf("%v で H を押した: active=%v, want git log 一覧 (none)", from, got)
+		}
+		if n := visibleFullScreens(m); n != 0 {
+			t.Errorf("%v で H を押した: 全画面が %d 枚残っている", from, n)
+		}
+		if m.done || m.zoom.closing() {
+			t.Errorf("%v で H を押した: glogx が終了に入った (q / Esc と取り違えている)", from)
+		}
+	}
+}
+
 // visibleFullScreens は開いている全画面の枚数 (同時に 1 枚の前提が守られているかを見る)。
 func visibleFullScreens(m *browseModel) int {
 	n := 0

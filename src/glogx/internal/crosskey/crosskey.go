@@ -6,7 +6,7 @@ package crosskey
 // Is は key が横断キーか。main の CrossTarget のキーと同じ集合 (TestCrossKeysMatchCrossTarget が見る)。
 func Is(key string) bool {
 	switch key {
-	case "i", "s", "R", "D", "F", "L":
+	case "i", "s", "R", "D", "F", "L", "H":
 		return true
 	}
 	return false

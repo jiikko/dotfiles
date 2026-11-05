@@ -32,6 +32,15 @@ func (m *browseModel) activeFullScreen() FullScreenID {
 // fullScreenActive は全画面ビューアが 1 枚でも出ているか。
 func (m *browseModel) fullScreenActive() bool { return m.activeFullScreen() != FullScreenNone }
 
+// crossTo は画面が返した横断キーの行き先を開く。行き先が git log 一覧 (H) なら開くものは無く、横断元は閉じ済みなので
+// 閉じる演出の tick だけ回す (openFullScreen(FullScreenNone) は nil を返し、演出が止まる)。
+func (m *browseModel) crossTo(key string) tea.Cmd {
+	if id := crossScreen(key); id != FullScreenNone {
+		return m.openFullScreen(id)
+	}
+	return m.maybeTick()
+}
+
 // openFullScreen は全画面ビューア id を開く (一覧からの起動と、横断の着地の両方の唯一の口)。
 // 🚨 呼ぶ時点で他の全画面が閉じていること (全画面は同時に 1 枚。toggle が「開く」でなく
 // 「閉じる」に化ける)。横断元は閉じてから (演出のあるものは finishClose まで済ませてから) 呼ぶ。

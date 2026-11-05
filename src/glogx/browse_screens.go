@@ -199,7 +199,7 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.doctorOv.TakeDeleteCmd(), m.maybeTick())
 	case doctorview.DoctorCross:
 		// 横断 (i / s / R)。doctor は handleKey が閉じ済み (演出なし) なので、そのまま開いてよい
-		return m, m.openFullScreen(crossScreen(m.doctorOv.TakeWantCross()))
+		return m, m.crossTo(m.doctorOv.TakeWantCross())
 	case doctorview.DoctorSwallow:
 	}
 	return m, m.maybeTick()
@@ -229,7 +229,7 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 	// パネルを開いたまま R → i が無音の no-op になる (禁じた形)。
 	// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
 	case ratelimitview.RlDashCross:
-		return m, m.openFullScreen(crossScreen(m.rlDash.TakeWantCross()))
+		return m, m.crossTo(m.rlDash.TakeWantCross())
 	case ratelimitview.RlDashSwallow:
 		// 閉じる / 更新 / 横断以外は握り潰す (下の return へ落ちる)
 	}
@@ -384,7 +384,7 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 		m.filerV.Hide()
 		return mm, cmd
 	case filerview.FilerCross:
-		return m, m.openFullScreen(crossScreen(m.filerV.TakeWantCross()))
+		return m, m.crossTo(m.filerV.TakeWantCross())
 	case filerview.FilerExec:
 		if cmd := m.filerV.TakeExecCmd(); cmd != nil {
 			return m, cmd
@@ -417,7 +417,7 @@ func (m *browseModel) routeKeyToLan(key string) (tea.Model, tea.Cmd) {
 	m.lanV.DrainNotices(m.deliverNotice)
 	switch act {
 	case lanview.LanCross:
-		return m, m.openFullScreen(crossScreen(m.lanV.TakeWantCross()))
+		return m, m.crossTo(m.lanV.TakeWantCross())
 	case lanview.LanExec:
 		if cmd := m.lanV.TakeExecCmd(); cmd != nil {
 			return m, cmd

@@ -329,7 +329,7 @@ issue を選ぶと本文が**画面の右外から飛び出して左へ滑り込
 ### 閉じるときは板が 1 枚まるごと右へ抜ける
 
 `i` で開くときは行ごとに `issuesAnimStagger` だけ開始をずらしながら 175ms かけて流し込む。
-`i` で閉じて一覧へ戻るときは**全行同時・等速**で右へ抜け、所要は `issuesCloseDuration` (450ms)。
+`i` (または横断キー `H`。docs/glogx-ui-guide.md §2) で閉じて一覧へ戻るときは**全行同時・等速**で右へ抜け、所要は `issuesCloseDuration` (450ms)。
 (`q`/`Esc` は viewer を閉じず glogx ごと終了する — ユーザー選定 2026-08-06。`s` の status viewer への
 横断も閉じ演出を待たず即着地する)
 
