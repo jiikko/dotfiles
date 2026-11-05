@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -422,6 +423,12 @@ func (m *Model) replaceTile(t *tile, delta int) {
 	if t.n.parent == nil {
 		// ジャンプで開いた root の外のファイル。隣を辿る木が無い
 		m.fail("このファイルは木の外にあるので隣へ送れません")
+		return
+	}
+	if !slices.Contains(m.kids(t.n.parent), t.n) {
+		// 開いた後に外で消した・名前を変えた (ライブ更新が kids から外した)。起点が無いまま nextFile に渡すと先頭から数え、
+		// K で「これが最初のファイルです」と嘘を言い、J は 2 番目へ飛ぶ
+		m.fail("このファイルは木から外れたので隣へ送れません")
 		return
 	}
 	n := m.nextFile(t.n, delta)

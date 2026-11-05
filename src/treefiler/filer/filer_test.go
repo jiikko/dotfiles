@@ -600,3 +600,28 @@ func TestDirsAreMarked(t *testing.T) {
 		}
 	}
 }
+
+// タイルのファイルが木から外れたら (外で消した・名前を変えた。ライブ更新が kids から外す)、J / K は隣を推測せず理由を知らせる。
+// 起点が見つからないまま先頭から数えると、K で「これが最初のファイルです」と嘘を言い、J は 2 番目のファイルへ飛ぶ。
+func TestTileJKRefusesWhenFileLeftTree(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/three.md")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	dir := tl.n.parent
+	if err := os.Remove(tl.n.path()); err != nil {
+		t.Fatal(err)
+	}
+	m.reloadDir(dir) // ライブ更新の 1 件と同じ
+	for _, k := range []string{"J", "K"} {
+		m.TakeNotices()
+		m.HandleKey(k)
+		if tl.n.raw != "three.md" {
+			t.Fatalf("%s: 木から外れたファイルのタイルが %q へ送られた", k, tl.n.raw)
+		}
+		ns := m.TakeNotices()
+		if len(ns) != 1 || !strings.Contains(ns[0].Text, "木から外れた") {
+			t.Fatalf("%s: 知らせ = %+v (木から外れたので隣へ送れない、のはず)", k, ns)
+		}
+	}
+}
