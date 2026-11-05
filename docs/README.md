@@ -16,6 +16,7 @@ dotfiles が入れる道具の使い方。root の README からはここへ案�
 | [`tools/serial-run.md`](tools/serial-run.md) | serial-run を他のプロジェクトに組み込むガイド (hook で自動で並ぶもの・Makefile の入口を包む・Makefile の無い repo・確かめ方・注意) |
 | [`../src/serialrun/README.md`](../src/serialrun/README.md) | `serial-run`: 重いコマンド (make test / go test / xcodebuild / mutate-verify) を 1 本ずつ流す (既定は repo ごと、`SERIAL_RUN_SCOPE=machine` でマシン全体)。Claude Code の hook が自動で差し込む。rc=125 は道具の失敗 (待ちの上限など。テストの失敗ではない)。止め方は Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1` |
 | [`tools/macos.md`](tools/macos.md) | Karabiner-Elements の設定の扱い / `kernel-alloc-watch` / Finder Quick Actions |
+| `bin/check-cdpath-capture --help` | `check-cdpath-capture`: どの repo でも、`$(cd …)` でパスを取る前に `unset CDPATH` していない shell script を落とす (git の知っているファイルを全部見る。他人のコードは `--exclude`)。my-products の各 repo の `make lint` が呼ぶ。dotfiles 自身は `make test-cdpath-capture` (lint の発見規約で対象を探して同じ判定に渡す) |
 | [`../keyboards/kinesis-360/README.md`](../keyboards/kinesis-360/README.md) | Kinesis Advantage360 の設定ファイルの写しと、v-Drive (ドライブモード) の開き方・設定の入れ方 |
 
 ## 触る前に読むもの (制約が書かれている)
