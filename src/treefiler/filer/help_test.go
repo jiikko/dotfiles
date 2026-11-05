@@ -81,6 +81,8 @@ func TestHelpColumnsSplitKeepsOrderAndBalances(t *testing.T) {
 
 // 木のキー (treeKeys。Binds も同じ表を読む) は全部、? のキー一覧と README の「キー (木)」の表に載っている。
 // キーを足して一覧か README を直し忘れると、押せば効くのに案内のどこにも無いキーができる (p が README に無いまま残った)。
+// 検出しない形: 移動のキー (listnav.MotionOf が受ける j k f b など) と ctrl+c (HandleInput の入口) は treeKeys に無いので見ない /
+// 同じキーが別の意味の行にも載っていると、片方の行を消しても通る (esc は「終了」と「> を止める」の 2 行) / 説明が動作と食い違うもの
 func TestEveryTreeKeyIsListedInHelpAndReadme(t *testing.T) {
 	readme, err := os.ReadFile("../README.md")
 	if err != nil {
@@ -100,15 +102,24 @@ func TestEveryTreeKeyIsListedInHelpAndReadme(t *testing.T) {
 		}
 	}
 	helpKeys := map[string]bool{}
+	sawTile := false
 	for _, s := range helpSections {
 		if s.title == "タイルの中" {
-			continue // タイルのキーは treeKeys ではない (tile.go の tileKey)
+			sawTile = true
+			continue // タイルのキーは treeKeys ではない (tile.go の tileKey)。混ぜると、木の d を消してもタイルの d で通る
 		}
 		for _, kv := range s.keys {
-			for _, f := range strings.Fields(kv[0]) {
+			fs := strings.Fields(kv[0])
+			for _, f := range fs {
+				if f == "/" && len(fs) > 1 {
+					continue // "J K / ^D ^U" の区切り。キーの / (検索) と取り違えると、検索の行を消しても通る
+				}
 				helpKeys[f] = true
 			}
 		}
+	}
+	if !sawTile {
+		t.Fatal("一覧に「タイルの中」の節が無い (題を変えたならここも直す。外さないとタイルのキーが木のキーの照合に混ざる)")
 	}
 	if len(readmeKeys) == 0 || len(helpKeys) == 0 {
 		t.Fatalf("キーを 1 つも拾えない (README %d・一覧 %d)", len(readmeKeys), len(helpKeys))
