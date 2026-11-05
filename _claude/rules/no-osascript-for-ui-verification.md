@@ -37,6 +37,9 @@ paths:
 | 2 | Unit Test | ロジックの正しさ |
 | 3 | XCUITest (`xcodebuild test`) | UI 要素の存在・操作後の状態変化 |
 | 4 | スクリーンショット成果物 (XCUITest attachment / `xcrun simctl io screenshot`) | 見た目 (人間のレビュー用に残す) |
+
+- 🚨 **人が使っているアプリ・画面を撮る前に、何が写るかを決める**。隔離した起動 (別の bundle id・別の HOME・別のデータ) で撮るか、写す対象のウィンドウだけを
+  名指しして撮る。全体やメインのウィンドウを「確かめるために」撮らない (人の私的なファイル名・サムネイルが写る。撮りたいものが別のウィンドウやシートに出ていることもある)
 | 5 | osascript | 起動・終了・activate 等の軽い補助のみ |
 
 > **iOS の場合**: 優先度3の `xcodebuild test`（XCUITest）はシミュレータを使うため [`no-ios-simulator-verification.md`](no-ios-simulator-verification.md) が優先し、その**実行はユーザーに委ねる**（osascript も使わない）。iOS で自発的にやってよい範囲・macOS の扱いは同ルールを一次情報とする。
