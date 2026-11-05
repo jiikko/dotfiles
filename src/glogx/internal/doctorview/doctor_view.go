@@ -688,7 +688,7 @@ func (v *DoctorView) HandleKey(key string, page int) doctorAction {
 	if act, taken := v.handleDeleteKey(key); taken {
 		return act
 	}
-	// 横断キー (i / s / R。判定は crosskey.Is、行き先は main の CrossTarget)。D は自分自身なので下の「閉じる」に任せる。
+	// 横断キー (集合は crosskey.Is、行き先は main の CrossTarget)。D は自分自身なので下の「閉じる」に任せる。
 	// 削除の確認・実行中は上で飲まれるのでここまで届かない
 	if crosskey.Is(key) && key != "D" {
 		v.close()

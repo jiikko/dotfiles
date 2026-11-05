@@ -304,7 +304,7 @@ func TestFullScreenDrawingGoesThroughTheRegistry(t *testing.T) {
 }
 
 // 横断キー (CrossTarget の表) は、どの全画面からも同じ板へ飛ぶ (docs/glogx-ui-guide.md §2)。
-// 全画面 4 枚 × 横断キー 4 本を、一覧から開いた状態で押して確かめる。自分自身のキーは閉じる (toggle)。
+// 全画面 × 横断キーの全組を、一覧から開いた状態で押して確かめる。自分自身のキーは閉じる (toggle)。
 // 🚨 画面ごとに手書きで列挙すると、D はどの viewer からも、i / s / R は doctor から
 // 無言で捨てられる。
 func TestCrossKeysReachEveryFullScreen(t *testing.T) {

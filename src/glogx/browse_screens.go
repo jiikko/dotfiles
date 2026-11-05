@@ -198,7 +198,7 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 		// 削除 (と、その下見) は doctorview.DoctorView が組んだ Cmd をそのまま走らせる
 		return m, tea.Batch(m.doctorOv.TakeDeleteCmd(), m.maybeTick())
 	case doctorview.DoctorCross:
-		// 横断 (i / s / R)。doctor は handleKey が閉じ済み (演出なし) なので、そのまま開いてよい
+		// 横断 (キーの集合は crosskey.Is)。doctor は handleKey が閉じ済み (演出なし) なので、そのまま開いてよい
 		return m, m.crossTo(m.doctorOv.TakeWantCross())
 	case doctorview.DoctorSwallow:
 	}
