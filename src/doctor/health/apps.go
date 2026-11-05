@@ -83,7 +83,7 @@ func tmuxServers(ps []proc) Check {
 	}
 	if len(big) > 0 {
 		c.Status = StatusWarn
-		c.Note = "サーバの常駐量が大きい。スクロールバックは history-limit を下げても既存の pane には効かない"
+		c.Note = strings.TrimSpace(c.Note + " サーバの常駐量が大きい。スクロールバックは history-limit を下げても既存の pane には効かない")
 		c.Fix = "全 pane のスクロールバックを解放する (dotfiles の _tmux.conf では prefix M-c。確認が出る) か、要らない pane だけ clear-history -t <pane> で捨てる"
 	}
 	return c
@@ -238,25 +238,42 @@ func (s *scanner) nvimSwap(ctx context.Context) Check {
 
 // openFilesIn は dir の直下で、どれかのプロセスが開いているファイルの名前。自分のユーザーのプロセスしか見えないが、
 // nvim の swap は自分の nvim しか開かないので足りる。
-// 出力が 0 行なら、開いているものが無いのか lsof に見えていないのかを区別できないので失敗として返す (swap の判定は、誤ると
-// 人の編集を失う側に倒れる)。nvim が 1 つも swap を開いていないときも案内は出なくなるが、それは安全側。
+// 0 行の出力は「開いているものが無い」と「lsof に見えていない」を区別できない (swap の判定は、誤ると人の編集を失う側に倒れる)。
+// そこで自分も dir を読み取りで開いておき (canary)、自分の pid が出力に出たときだけ、見えている前提で読む。出なければ失敗として返す。
+// swapfile を無効にした nvim では、開いている swap が 0 個なのが普通なので、canary が無いと案内を一度も出せない。
 func (s *scanner) openFilesIn(ctx context.Context, dir string) (map[string]bool, error) {
-	out, stderr, rc, err := s.cmd(ctx, 20*time.Second, "/usr/sbin/lsof", "-Fn", "+d", dir)
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil, fmt.Errorf("canary に dir を開けない: %w", err)
+	}
+	defer func() { _ = f.Close() }() // 読むだけの fd なので、閉じる失敗で判定は変わらない
+	out, stderr, rc, err := s.cmd(ctx, 20*time.Second, "/usr/sbin/lsof", "-Fpn", "+d", dir)
 	if lsofFailed(rc, err, stderr) {
 		return nil, errors.New(cmdNote("lsof", rc, err, stderr))
 	}
-	if !strings.Contains(out, "\nn") && !strings.HasPrefix(out, "n") {
-		return nil, errors.New("lsof が 1 件も返さない (開いているものが無いのか、見えていないのかを区別できない)")
-	}
 	m := map[string]bool{}
+	self := "p" + strconv.Itoa(selfPID())
+	sawSelf, pid := false, ""
 	for line := range strings.SplitSeq(out, "\n") {
-		// +d で範囲は dir の直下に絞られている。lsof は symlink を解いた実体のパスを返すので、dir と文字列で比べず名前だけで照合する
-		if name, ok := strings.CutPrefix(line, "n"); ok {
+		if strings.HasPrefix(line, "p") {
+			pid = line
+			sawSelf = sawSelf || line == self
+			continue
+		}
+		// +d で範囲は dir の直下に絞られている。lsof は symlink を解いた実体のパスを返すので、dir と文字列で比べず名前だけで照合する。
+		// 自分が開いた canary (dir 自身) は数えない
+		if name, ok := strings.CutPrefix(line, "n"); ok && pid != self {
 			m[filepath.Base(name)] = true
 		}
 	}
+	if !sawSelf {
+		return nil, errors.New("lsof に自分が開いた canary が見えない (開いているものを見落としているかもしれない)")
+	}
 	return m, nil
 }
+
+// selfPID は canary を開いたプロセスの pid。テストは差し替える。
+var selfPID = os.Getpid
 
 // tildePath は home の下のパスを ~ で始まる形にする (レポートにユーザー名を出さない)。
 func tildePath(home, p string) string {

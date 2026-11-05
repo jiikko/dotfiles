@@ -244,9 +244,16 @@ Apple Silicon での開発環境の定番 (Homebrew の置き場所・Brewfile�
 | プロセスの一覧 | `ps -axww -o pid=,ppid=,stat=,pcpu=,rss=,etime=,tty=,comm=` を 5 秒あけて 2 回 | 張り付き = 2 回とも 90% 以上・起動から 10 分以上、ゾンビ = `Z` を親ごと、増え方 = 200MB 以上かつ 10% 以上 | 約 1,450 行。🚨 `comm` の中身は **argv[0]** (普段は実行ファイルのフルパス。最長 220 文字を確認。空白を含むので最後の列に置く)。`exec -a` や `process.title` で何でも書けて、トークンが載りうる (`exec -a "/tmp/fake --token=…" sleep` で実測) ので**表示に使わない**。表示する名前は `ps -axww -o pid=,ucomm=` (実行ファイルの名前。最長 16 文字で切れる。例 `Google Chrome He`) を別に読んで pid で付ける。macOS の ps に `etimes` は無い。引数 (`args`) は取らない |
 | ゾンビの親 (実例) | 上の 2 回目 | — | 2026-11-06: Screen Sharing.app の下に 7 個、Google Chrome の下に 2 個 (どれも 25 日前から) |
 | tmux (`tmux.*`) | ps の PPID=1 の `tmux` (サーバ)、`tmux list-panes -a -F '#{history_size}\t#{history_limit}\t#{pane_dead}'`、`list-clients` | サーバ 1GB 以上・終了した pane = 注意 | 76 pane / スクロールバック計 52 万行で、サーバ 約 600MB。サーバが無いと stderr に `no server running` |
-| nvim (`nvim.*`) | ps の `nvim` (端末あり = 画面、`??` = `--embed` の本体)、`~/.local/state/nvim/swap` と `lsof -Fn +d <swap の dir>` | 端末が無く PPID=1 の nvim・PPID=1 の言語サーバ (ネイティブのもの) = 注意。Neovide などが起こした `--embed` は親が生きているので数えない。node・ruby で動く言語サーバは ucomm が `node` / `ruby` で見分けられない。開いている swap は古くても数えない | 実例: 14 日前のテストが残した `nvim --clean --headless` が PPID=1 で残っていた |
+| nvim (`nvim.*`) | ps の `nvim` (端末あり = 画面、`??` = `--embed` の本体)、`~/.local/state/nvim/swap` と `lsof -Fn +d <swap の dir>` | 端末が無く PPID=1 の nvim・PPID=1 の言語サーバ (ネイティブのもの) = 注意。Neovide などが起こした `--embed` は親が生きているので数えない。node・ruby で動く言語サーバは ucomm が `node` / `ruby` で見分けられない。開いている swap は古くても数えない。lsof に見えているかは、自分で開いた dir (canary) が出力に出るかで確かめる (swapfile を無効にした nvim では、開いている swap が 0 個なのが普通) | 実例: 14 日前のテストが残した `nvim --clean --headless` が PPID=1 で残っていた |
 | Chrome (`chrome.*`) | Helper の実行ファイルのパスの `/Versions/<版>/` と `defaults read "/Applications/Google Chrome.app/Contents/Info" CFBundleShortVersionString` | 食い違い = 注意 (再起動待ち) | 実例: 動いている 154.0.8037.98 / 入っている 156.0.8078.81。プロセス 110 個・合計 34.9GB |
 | 上書きされたアプリ (`apps.overwritten`) | DiagnosticReports の `ExcUserFault_<アプリ>-*.ips` (直近 7 日) | あれば注意 | 1 節の「`ExcUserFault_<アプリ>`」と同じ記録 |
+
+既知の誤検出 (直していない。外れたときに読む):
+
+- **ICMP を塞いだネットワーク**: 外部 (1.1.1.1) への到達を ping だけで見るので、ICMP を塞いだネットワーク (社内網など) では
+  ゲートウェイと外部の両方が「届かない」の異常になる。直すなら、外部は TCP の接続 (443) でも確かめ、どちらかが届けば ok にする
+- **テストがわざと落とすクラッシュ**: `hw.crash` は 1 節の `bash-*.ips` などを数えるので、dotfiles のテストを回すマシンでは毎回注意になる。
+  直すなら、`.ips` の本体の寿命 (`procLaunch` と `captureTime` の差) と親プロセスで、数 ms で落ちたテストの子を分ける
 
 ## `D` (doctor) との境界
 

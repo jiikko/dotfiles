@@ -509,7 +509,9 @@ func TestNvimSwapSkipsOpenAndHidesHome(t *testing.T) {
 	touch(t, dir, "%a%c.swp", 30*24*time.Hour) // 落ちたセッションの残り
 	touch(t, dir, "%a%d.swp", time.Hour)       // 新しい
 	// lsof は symlink を解いた実体のパスを返す (渡した dir と文字列が一致しない)
-	lsofOut := "p123\nfcwd\nn/private/real/state/nvim/swap/%a%b.swp\n"
+	// canary = 自分が開いた dir (自分の pid の行)。lsof が見えていることの印で、数えない
+	canary := "p" + strconv.Itoa(os.Getpid()) + "\nf3\nn" + dir + "\n"
+	lsofOut := canary + "p123\nfcwd\nn/private/real/state/nvim/swap/%a%b.swp\n"
 	s := &scanner{o: Options{Home: home, Now: func() time.Time { return now }, Run: fakeRun(t, map[string]fakeOut{"lsof": {out: lsofOut}})}}
 	c := s.nvimSwap(context.Background())
 	if !strings.Contains(c.Value, "開かれていないもの 1 個") || c.Fix == "" {
@@ -522,6 +524,16 @@ func TestNvimSwapSkipsOpenAndHidesHome(t *testing.T) {
 	rcOne := &scanner{o: Options{Home: home, Now: func() time.Time { return now }, Run: fakeRun(t, map[string]fakeOut{"lsof": {out: lsofOut, rc: 1}})}}
 	if c := rcOne.nvimSwap(context.Background()); !strings.Contains(c.Value, "開かれていないもの 1 個") {
 		t.Errorf("rc=1 で出力のある lsof を失敗と読んだ: %+v", c)
+	}
+	// swapfile を無効にした nvim では、開いている swap が無いのが普通。canary が見えれば、全部を開かれていないものとして数える
+	onlyCanary := &scanner{o: Options{Home: home, Now: func() time.Time { return now }, Run: fakeRun(t, map[string]fakeOut{"lsof": {out: canary}})}}
+	if c := onlyCanary.nvimSwap(context.Background()); !strings.Contains(c.Value, "開かれていないもの 2 個") || c.Fix == "" {
+		t.Errorf("canary だけが見える (誰も swap を開いていない) ときも案内を出す: %+v", c)
+	}
+	// canary の見えない出力は、0 行でも他のプロセスの行があっても信用しない
+	noCanary := &scanner{o: Options{Home: home, Now: func() time.Time { return now }, Run: fakeRun(t, map[string]fakeOut{"lsof": {out: "p123\nn" + dir + "/%a%b.swp\n"}})}}
+	if c := noCanary.nvimSwap(context.Background()); c.Fix != "" {
+		t.Errorf("canary が見えないのに移す案内を出した: %+v", c)
 	}
 	// 0 行は「開いていない」と「見えていない」を区別できない (-w で警告を消した lsof がこの形を返す)
 	empty := &scanner{o: Options{Home: home, Now: func() time.Time { return now }, Run: fakeRun(t, map[string]fakeOut{"lsof": {rc: 1}})}}
@@ -592,5 +604,25 @@ func TestLsofNeverSilencesWarnings(t *testing.T) {
 		if slices.Contains(a, "-w") {
 			t.Errorf("lsof に -w を渡した: %v", a)
 		}
+	}
+}
+
+func TestNetQualityMissingKeysIsUnknown(t *testing.T) {
+	for out, want := range map[string]Status{
+		`{"dl_throughput": 500000000, "ul_throughput": 50000000, "responsiveness": 1200}`: StatusInfo,
+		`{"download": 1, "upload": 2}`: StatusUnknown,
+	} {
+		s := &scanner{o: Options{Explicit: true, Run: fakeRun(t, map[string]fakeOut{"networkQuality": {out: out}})}}
+		if c := s.netQuality(context.Background()); c.Status != want {
+			t.Errorf("%s: %+v; want %s", out, c, want)
+		}
+	}
+}
+
+func TestTmuxServersKeepsBothNotes(t *testing.T) {
+	ps := []proc{{PID: 1, PPID: 1, RSSKB: 2 << 20, UName: "tmux"}, {PID: 2, PPID: 1, UName: "tmux"}}
+	c := tmuxServers(ps)
+	if c.Status != StatusWarn || !strings.Contains(c.Note, "複数") || !strings.Contains(c.Note, "常駐量が大きい") {
+		t.Errorf("複数と大きいの両方を残す: %+v", c)
 	}
 }

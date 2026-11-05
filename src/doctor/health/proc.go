@@ -278,7 +278,7 @@ func (s *scanner) resourceDiag() Check {
 	}
 	c.Value, c.Status = joinCounts(counts), StatusWarn
 	c.Note = "OS 自身が張り付きに気づいて書く記録。同じ張り付きが続いても毎回は書かれない"
-	c.Fix = "中身 (~/Library/Logs/DiagnosticReports/ と /Library/Logs/DiagnosticReports/) の CPU: の行を見る。アプリなら再起動・更新"
+	c.Fix = "中身 (~/Library/Logs/DiagnosticReports/ と /Library/Logs/DiagnosticReports/) の Event: (cpu usage / disk writes など) と、その下の超過の行を見る。アプリなら再起動・更新"
 	return c
 }
 

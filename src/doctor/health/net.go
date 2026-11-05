@@ -324,6 +324,10 @@ func (s *scanner) netQuality(ctx context.Context) Check {
 	if err := json.Unmarshal([]byte(out), &d); err != nil {
 		return unknown(id, label, "networkQuality の JSON が読めない: "+err.Error())
 	}
+	// 鍵の名前が変わると Unmarshal は黙って 0 を残す。0 Mbps を値として出さない (鍵名はバイナリの文字列で確かめただけで、出力は未実測)
+	if d.DL == 0 && d.UL == 0 {
+		return unknown(id, label, "networkQuality の JSON に dl_throughput / ul_throughput が無い")
+	}
 	c := Check{ID: id, Label: label, Status: StatusInfo,
 		Value: fmt.Sprintf("下り %.0f Mbps / 上り %.0f Mbps / 応答 %.0f RPM", d.DL/1e6, d.UL/1e6, d.RPM)}
 	if d.RPM > 0 && d.RPM < 200 {
