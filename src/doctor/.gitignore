@@ -1,5 +1,6 @@
-# go_autobuild が cmd/<name>/ に置く成果物と作業ファイル (bin/svcdoctor / bin/diskdoctor)
+# go_autobuild が cmd/<name>/ に置く成果物と作業ファイル (bin/svcdoctor / bin/diskdoctor / bin/mac-healthcheck)
 /cmd/svcdoctor/svcdoctor
 /cmd/diskdoctor/diskdoctor
+/cmd/mac-healthcheck/mac-healthcheck
 /cmd/*/.autobuild.*
 /*.test

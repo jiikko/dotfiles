@@ -69,3 +69,5 @@ replace userdirs => ../userdirs
 replace tmpclean => ../tmpclean
 
 replace github.com/jiikko/dotfiles/src/testwait => ../testwait
+
+replace proctree => ../proctree

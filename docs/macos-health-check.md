@@ -6,6 +6,9 @@ glogx にヘルスチェックの結果を一覧する画面 (以下「ヘルス
 何を見るか・どのコマンドで取るか・どう判定するか・出力がどの stream に出るかを、実装より先に固定する。
 画面の仕様 (レイアウト・キー) はまだ決めていない (末尾「未決」)。
 
+**CLI と skill は実装済み**: `bin/mac-healthcheck` (本体 `src/doctor/health/`) がこの文書の 1〜3 節の一部と下の 9 節を読み取りだけで診断し、
+skill `mac-healthcheck` が観点の選択・レポート・直すかの確認を受け持つ。どの項目を実装したかの正本は `health/` の各ファイル (Check の ID)。
+
 ## 何を「健康」と呼ぶか
 
 次の問いに答えられれば健康とする。番号は下の「項目」の節の番号と同じ。
@@ -97,7 +100,7 @@ SSD の状態のように、何気なく開いた画面で毎回調べるので�
 |---|---|---|---|
 | カーネルのメモリリーク | `zprint` の `data.kalloc.1024` の行の 7 列目 (inuse) | 1,500 万以上 = 異常 (再起動を促す)。時間あたり数万個のペースで増え続ける = 注意 | rc=0 / stdout 約 400 行 / 0.1 秒。sudo なしだと size の列は 0K になるが、**inuse の個数は読める**。平常は数千 (起動 4 時間で 2,346) |
 | メモリの逼迫 | `memory_pressure` の最終行 `System-wide memory free percentage: N%` | 閾値は未決 | rc=0 / stdout 28 行 / 0.02 秒 |
-| OS の資源超過の記録 | DiagnosticReports の `<プロセス名>_<日時>_<マシン名>.cpu_resource.diag` (同じ形で `diskwrites_resource` / `wakeups_resource` もある) と、応答が止まったアプリの `.hang` / `.spin` | 直近に 1 件でもある = 注意 (プロセス名ごとにまとめて出す) | **OS 自身が張り付きに気づいて書く記録**。中身はテキストで、`CPU:` の行に基準と実績が出る (実測: `90 seconds cpu time over 90 seconds (100% cpu average), exceeding limit of 50% cpu over 180 seconds`)。`Action taken: none` = 記録するだけで止めない。🚨 **同じプロセスの張り付きが続いても、何度も書かれるわけではない**: 下の `CursorUIViewService` は 20:05 から張り付いていたのに、記録は 23:58 の 1 件だけだった (間引きの規則は未確認)。記録が無いことを「張り付いていない」と読まず、下の `ps` の検査と併せて見る。🚨 ファイル名にマシン名が入るので、画面に出すときは落とす |
+| OS の資源超過の記録 | DiagnosticReports の `<プロセス名>_<日時>_<マシン名>.cpu_resource.diag` と、応答が止まったアプリの `.hang` / `.spin`。🚨 macOS 27.0.1 では名前が素の `<プロセス名>_<日時>_<マシン名>.diag` の記録もある (2026-11-06 に 11 件)。種類は中身の `Event:` の行 (`cpu usage` / `disk writes`) にしか無いので、`.diag` は全部読んで `Event:` で分ける | 直近に 1 件でもある = 注意 (プロセス名ごとにまとめて出す) | **OS 自身が張り付きに気づいて書く記録**。中身はテキストで、`CPU:` の行に基準と実績が出る (実測: `90 seconds cpu time over 90 seconds (100% cpu average), exceeding limit of 50% cpu over 180 seconds`)。`Action taken: none` = 記録するだけで止めない。🚨 **同じプロセスの張り付きが続いても、何度も書かれるわけではない**: 下の `CursorUIViewService` は 20:05 から張り付いていたのに、記録は 23:58 の 1 件だけだった (間引きの規則は未確認)。記録が無いことを「張り付いていない」と読まず、下の `ps` の検査と併せて見る。🚨 ファイル名にマシン名が入るので、画面に出すときは落とす |
 | CPU を張り付かせ続ける常駐 | `ps -Ao pid,%cpu,etime,comm` で、`/System/` 配下の実体が %CPU 90 以上かつ起動から 10 分以上 | 当たる = 注意 (閾値は仮) | 🚨 `ps` の %CPU は直近の平均なので、1 回の読み取りで判定せず、数秒あけて 2 回読んで両方で高いものだけにする。実例 (2026-09-28): `CursorUIViewService` (入力ソースの「あ / A」などカーソルの横の表示を受け持つ XPC サービス) が起動直後から 4 時間半 99.9%。`sample` で見ると時間の大半が Auto Layout の計算で、自身のログの `view count=` が 2,000 を超えて増え続けていた (表示の部品を溜め込んでいる)。接続していたのは Slack (30 分で 23 回。入力欄にフォーカスが移るたびに部品を作って接続する) と Terminal と Messages。**Slack を終了すると、サービスを止めずに CPU 0% / `view count` 45 に戻った** = 溜まっていた部品は Slack の接続にひも付いていて、Slack が動いている間は片付けられていなかった。Slack とサービスのどちら側の不具合かは未確認。調べ方: 張り付いているプロセスを `sample <pid> 3` で見て、自身のログ (`log show --predicate 'process == "<名前>"'`) で何が増えているかと、どのプロセスが接続しているか (`activating connection ... name=<サービス名>` を出しているプロセス) を数える |
 | スワップ | `sysctl -n vm.swapusage` の `used` | 0 でない = 表示 (単独では判定しない) | rc=0 / stdout 1 行 |
 | ディスクの空き | `df -k /System/Volumes/Data` | 閾値は未決 (内訳は `D` の doctor が持つ) | 🚨 `/` ではなく **Data ボリューム**を見る (`/` はシステムの封印されたボリュームで、実測では 926G 中 13G しか使っていなかった) |
@@ -226,6 +229,24 @@ Apple Silicon での開発環境の定番 (Homebrew の置き場所・Brewfile�
 - 絞り込まない `log show --last 30m` は数十万行になる (実測 20 万〜34 万行)。
   predicate で名指しすれば速い: `--last 1h --predicate 'process == "kernel" AND eventMessage CONTAINS "zone map"'` は 2 秒 (該当 0 件)
 - 使いどき: パニックの前兆 (issue 500 では、パニックの 3 時間前から zone map の枯渇を理由に jetsam がアイドルのプロセスを殺し始めていた)
+
+### 9. ネットワーク・プロセス・よく使うソフト (`bin/mac-healthcheck` で足した項目)
+
+時点: **2026-11-06、macOS 27.0.1 (26A434)** で実測。どれも sudo なし。判定の閾値は `health/` の定数が正本。
+
+| 項目 (ID) | 取得 | 判定 | 出力の契約 (実測) |
+|---|---|---|---|
+| 既定の経路 (`net.route`) | `route -n get default` の `gateway` / `interface` | 経路が無い = 異常 | rc=0 / stdout 8 行 |
+| 往復 (`net.gateway` / `net.external`) | `ping -n -q -c 3 -t 5 <相手>` の統計の行 | 100% 損失 = 異常、一部損失 = 注意 | 全部失われても統計の行は出る (rc=2)。統計の行が無い (名前が引けない) = 判定不能 |
+| 名前解決 (`net.dns`) | `dscacheutil -q host -a name www.apple.com` の所要 | 住所が無い = 異常、1 秒超 = 注意 | rc=0 / stdout 9 行 / 43ms。OS の名前解決 (mDNSResponder) を通る |
+| LAN に開いた待ち受け (`net.listen`) | `lsof +c 0 -nP -iTCP -sTCP:LISTEN` の NAME が `*` / `[::]` / `0.0.0.0` | あれば注意。無くても ok にせず情報 | rc=0 / stdout 20 行。🚨 `+c 0` が無いと COMMAND が 9 文字で切れる (`com.docke`)。1 件も無いと rc=1。🚨 **一般ユーザーの lsof は他のユーザーのプロセスを返さない**: 画面共有 (5900)・kerberos (88) は LAN から届くのに出なかった。全ユーザーを見る `netstat -anv -p tcp` は Claude Code の sandbox の中では 0 行を返す |
+| Wi-Fi (`net.wifi`) | `system_profiler -json SPAirPortDataType` の `spairport_signal_noise` | 信号 -75 dBm 未満か SNR 20 dB 未満 = 注意 | `"-36 dBm / -86 dBm"` の文字列。数秒かかる |
+| プロセスの一覧 | `ps -axww -o pid=,ppid=,stat=,pcpu=,rss=,etime=,tty=,comm=` を 5 秒あけて 2 回 | 張り付き = 2 回とも 90% 以上・起動から 10 分以上、ゾンビ = `Z` を親ごと、増え方 = 200MB 以上かつ 10% 以上 | 約 1,450 行。🚨 `comm` の中身は **argv[0]** (普段は実行ファイルのフルパス。最長 220 文字を確認。空白を含むので最後の列に置く)。`exec -a` や `process.title` で何でも書けて、トークンが載りうる (`exec -a "/tmp/fake --token=…" sleep` で実測) ので**表示に使わない**。表示する名前は `ps -axww -o pid=,ucomm=` (実行ファイルの名前。最長 16 文字で切れる。例 `Google Chrome He`) を別に読んで pid で付ける。macOS の ps に `etimes` は無い。引数 (`args`) は取らない |
+| ゾンビの親 (実例) | 上の 2 回目 | — | 2026-11-06: Screen Sharing.app の下に 7 個、Google Chrome の下に 2 個 (どれも 25 日前から) |
+| tmux (`tmux.*`) | ps の PPID=1 の `tmux` (サーバ)、`tmux list-panes -a -F '#{history_size}\t#{history_limit}\t#{pane_dead}'`、`list-clients` | サーバ 1GB 以上・終了した pane = 注意 | 76 pane / スクロールバック計 52 万行で、サーバ 約 600MB。サーバが無いと stderr に `no server running` |
+| nvim (`nvim.*`) | ps の `nvim` (端末あり = 画面、`??` = `--embed` の本体)、`~/.local/state/nvim/swap` と `lsof -Fn +d <swap の dir>` | 端末が無く PPID=1 の nvim・PPID=1 の言語サーバ (ネイティブのもの) = 注意。Neovide などが起こした `--embed` は親が生きているので数えない。node・ruby で動く言語サーバは ucomm が `node` / `ruby` で見分けられない。開いている swap は古くても数えない | 実例: 14 日前のテストが残した `nvim --clean --headless` が PPID=1 で残っていた |
+| Chrome (`chrome.*`) | Helper の実行ファイルのパスの `/Versions/<版>/` と `defaults read "/Applications/Google Chrome.app/Contents/Info" CFBundleShortVersionString` | 食い違い = 注意 (再起動待ち) | 実例: 動いている 154.0.8037.98 / 入っている 156.0.8078.81。プロセス 110 個・合計 34.9GB |
+| 上書きされたアプリ (`apps.overwritten`) | DiagnosticReports の `ExcUserFault_<アプリ>-*.ips` (直近 7 日) | あれば注意 | 1 節の「`ExcUserFault_<アプリ>`」と同じ記録 |
 
 ## `D` (doctor) との境界
 

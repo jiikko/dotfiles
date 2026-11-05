@@ -1,0 +1,9 @@
+#!/usr/bin/env zsh
+# mac-healthcheck — macOS 全体 (ネットワーク・プロセス・ディスク・ハードウェアと寿命・tmux / nvim / Chrome) を読み取りだけで診断し、
+# Markdown か JSON で出す。止める・消す・設定を変えることはしない (直し方は提示するだけ)。
+# Go implementation at: ~/dotfiles/src/doctor/ (cmd/mac-healthcheck が main。判定本体は health/)
+# 手順 (観点を選ぶ → レポート → 直すかを聞く) は skill mac-healthcheck。
+# 再ビルドは同期: 診断結果を読んで人が手を動かす道具なので、旧版の判定を出さない。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --pkg cmd/mac-healthcheck "${0:A:h}/../src/doctor" mac-healthcheck -- "$@"

@@ -35,3 +35,5 @@ replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 replace safefs => ../safefs
 
 replace github.com/jiikko/dotfiles/src/testwait => ../testwait
+
+replace proctree => ../proctree

@@ -56,3 +56,5 @@ replace (
 replace userdirs => ../userdirs
 
 replace github.com/jiikko/dotfiles/src/testwait => ../testwait
+
+replace proctree => ../proctree

@@ -30,6 +30,7 @@ ZSH_SYNTAX_FILES := \
   bin/issue-claim \
   bin/lib/go_autobuild.zsh \
   bin/lockman \
+  bin/mac-healthcheck \
   bin/mac-lan-manager \
   bin/mp4-effective-size \
   bin/pro-con \
