@@ -7,7 +7,7 @@
 `/all-audit-on-diy treefiler`。対象は src/treefiler (`git ls-files src/treefiler` で 103 ファイル・22,222 行、`bfa26dc34` 時点)。
 前回 ([1019](done/1019-research-treefiler-audit-2026-11-04.md)) の範囲の終わり `f47ecf97e` 以降の差分と、1019 が「読んでいない」と書いたファイルを重点にする。
 直したのは 4 点 (README のキー表の `p`・`e` / `s` / `!` から戻ってもタイルの本文が古いまま・タイル側のリンクの解決が古いまま・木から外れたファイルの `J` / `K`)、
-起票は 1 本 ([1037](1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md))。後ろの 3 点は、記録への反証レビューが見落としとして出した。
+起票は 1 本 ([1037](done/1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md))。後ろの 3 点は、記録への反証レビューが見落としとして出した。
 
 ## 走査した母集合
 
@@ -46,7 +46,7 @@
 | lint-from-done | 0 | 今回の README のずれは lint ではなくテストで止めた (上の ux) |
 | general | 0 | 上に含めた |
 
-全数: 直した 4 (ux 1・broken-code 2・encapsulation 1)、起票 1 ([1037](1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md)。変更前からの 2 件)、記録のみ 2 (ux の一覧に無いキー・`parseBulkRecord` の確かめの範囲)。
+全数: 直した 4 (ux 1・broken-code 2・encapsulation 1)、起票 1 ([1037](done/1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md)。変更前からの 2 件)、記録のみ 2 (ux の一覧に無いキー・`parseBulkRecord` の確かめの範囲)。
 
 ## タイルの「状態 × 出来事」の表 (修正の決め方)
 
@@ -55,7 +55,7 @@
 | 出来事 \ タイル | 本体・変わっていない | 本体・変わった | 本体・途中で読めなくなった | diff | ジャンプ中 |
 |---|---|---|---|---|---|
 | `ExecDone` (`e` / `s` / `!` から戻る) | 開き直さない (大きさと mtime) | 開き直す。scroll・sy を保って上限で切る | 開き直す (chmod は大きさも mtime も変えない) | 本文を開けなくても必ず取り直す (git add は本文を変えない)。先頭へ戻る | 起きない (`e` はジャンプを抜けてから起こす) |
-| `reloadDir` (ライブ更新・ファイル操作) | `linkCache` はいつも捨てる (項目の増減で絞らない: 同じ名前のまま種類が変わる)。ジャンプしていないタイルの `links` を捨てる | 同左 (本文は読み直さない = 1037) | 同左 | 同左 | `links` を据え置いて古い印 (`stale`) を付け、抜けた後の `tileLinks` で捨てる (選択を黙って移さない・次の enter / e の意味を変えない) |
+| `reloadDir` (ライブ更新・ファイル操作) | `linkCache` はいつも捨てる (項目の増減で絞らない: 同じ名前のまま種類が変わる)。ジャンプしていないタイルの `links` を捨てる | 同左 (ライブ更新でタイルのファイル自体が変わったときの行は 1037 の表) | 同左 | 同左 | `links` を据え置いて古い印 (`stale`) を付け、抜けた後の `tileLinks` で捨てる (選択を黙って移さない・次の enter / e の意味を変えない) |
 
 ## 対応 (どれも回帰テストで赤を見てから直し、変異で赤を確かめた。変異の中身は各 commit の message)
 
@@ -83,3 +83,4 @@
 - 2026-11-05: 監査・対応
 - 2026-11-06: 反証・敵対的レビュー 4 周の対応・1037 の起票
 - 2026-11-06: tfprobe で計測し、1039 を起票
+- 2026-11-06: 1037 で解消 (ライブ更新でのタイルの本文の読み直しと、表示の作り直しをまたぐジャンプの選択。表の行を 1037 に足した)
