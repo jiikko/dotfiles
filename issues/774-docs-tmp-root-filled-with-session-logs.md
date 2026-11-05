@@ -188,3 +188,21 @@
   (`test-runner.md` の `thumbnailthumb-test.log`・perf-analysis の `perf.log`) だけ。dotfiles の作業でこの形を書かせている指示文は見つからなかった
 - `tmp/*/.skill-tmpdir` は 5 個 (skill-tmpdir は使われている)
 - **判定**: 規約 (A) だけでは止まらない。冒頭の判定のとおり、改善案 B (Stop hook で知らせる・clean-tmp で直下のログの寿命を短くする) を検討する段に進む
+
+## 進捗 (2026-11-06): B を「書く前に止める」形で入れた
+
+- [x] PreToolUse の hook `_claude/hooks/deny-tmp-root-write.sh` (Bash と Write) を足した。git の作業ツリーの root の `tmp/` の直下へ書く
+  リダイレクト・コマンドの位置の tee・Write を deny し、`tmp/<作業名>-<日付>/` へ案内する
+  (hooks: repo の tmp/ の直下へ書くリダイレクト・tee・Write を止める deny-tmp-root-write を足す)
+  - 改善案 B1 (Stop hook) は並行セッションの分と区別できないので採らなかった。書くコマンドを出したセッション自身を、書く前に止める
+  - 改善案 B2 (clean-tmp で直下のログの寿命を短くする) は見送った。削除の規則を変えると敵対的レビューを何周も要し、hook で発生源が止まれば要らない。
+    **再開の trigger**: hook を入れた後も直下にファイルが増え続けるとき (`find tmp -maxdepth 1 -type f -newermt 2026-11-06` で数える)。
+    その場合は、増えたファイルの名前から hook が検出しない形 (変数を含むパス・`-o` で書く引数など。hook の冒頭の一覧) のどれかを先に特定する
+  - 入口: `_claude/CLAUDE.md`「一時ファイルの配置」に 1 行
+- テスト `tests/claude/test_deny_tmp_root_write.sh` 83 件。make test rc=0。変異 21 本がすべて red
+- 敵対的レビュー (opus) 4 周。直した P2: 先頭の `cd <repo> &&`、`$PWD` / `$(pwd)` / `$(git rev-parse --show-toplevel)`、まだ無い tmp/、grep のパターン・
+  commit message の中の例の誤検知、コメントの don't の ' で引用符の判定が反転する、先頭以外の cd の誤検知、行継続の後の cd、cd 先の展開。
+  受け入れた形 (検出しない・偽陽性になりうる) は hook の冒頭に記録した。4 周目は P1 なしで、その修正は機械的な差分なので 5 周目は回していない
+- [ ] 効果の観測: hook が反映されたセッションで、直下への書き込みが止まるか。2 週間ほど後 (目安 2026-11-20) に
+  `find tmp -maxdepth 1 -type f -newermt '2026-11-06 01:00'` で数える。0〜数件なら done。増えていれば上の B2 の trigger
+- 今ある直下のファイル (154 件) の片付けは改善案 C のまま (ユーザーの判断)
