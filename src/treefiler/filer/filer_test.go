@@ -612,7 +612,7 @@ func TestTileJKRefusesWhenFileLeftTree(t *testing.T) {
 	if err := os.Remove(tl.n.path()); err != nil {
 		t.Fatal(err)
 	}
-	m.reloadDir(dir, true) // ライブ更新の 1 件と同じ (項目が消えた)
+	m.reloadDir(dir) // ライブ更新の 1 件と同じ
 	for _, k := range []string{"J", "K"} {
 		m.TakeNotices()
 		m.HandleKey(k)

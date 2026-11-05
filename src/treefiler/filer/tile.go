@@ -37,6 +37,7 @@ type tile struct {
 	jump    bool
 	sel     int
 	links   map[int][]link // 表示の行ごとのリンク (計算済みの行だけ)
+	stale   bool           // ジャンプ中にリンクの解決が古くなった (forgetLinks)。ジャンプを抜けたら links を捨てる
 
 	mode   tileMode            // 本体か diff か (d で切り替え)
 	diff   *diffJob            // diff の取得 (一度取ったら使い回す)
@@ -145,6 +146,9 @@ func resolveLink(tok, root, base string, cache map[string]string) string {
 // tileLinks は読めている行のうち lines 番目までのリンク (計算済みは使い回す)。
 func (m *Model) tileLinks(t *tile, upto int) []link {
 	vl := m.view(t) // 先に作る (作り直すと t.links を捨てる)
+	if t.stale && !t.jump {
+		t.links, t.stale = nil, false
+	}
 	if t.links == nil {
 		t.links = map[int][]link{}
 	}
@@ -163,11 +167,16 @@ func (m *Model) tileLinks(t *tile, upto int) []link {
 
 // forgetLinks はリンクの解決を捨てる (フォルダを読み直して、ファイルが増えた・消えたかもしれないとき)。解決は 2 段で覚えている:
 // 字面ごとの m.linkCache と、タイルが行ごとに覚えた t.links。片方だけ捨てると、もう片方が無かった頃・在った頃の解決を出し続ける
-// ジャンプ中のタイルは抜ける: 選んでいる添字を残すと、作り直したリンクの並びで別のパスを指し、知らせなしに選択が移る。
+// ジャンプ中のタイルの links は抜けるまで据え置く (古い印だけ付ける): 捨てると、選んでいる添字が作り直した並びで別のパスを指して
+// 知らせなしに選択が移る。抜けさせると、次の enter / e / j が選んだリンクではなくタイルのキーとして効く (vim の .swp でも起きる)。
 func (m *Model) forgetLinks() {
 	clear(m.linkCache)
 	for _, t := range m.tiles {
-		t.links, t.jump = nil, false
+		if t.jump {
+			t.stale = true
+			continue
+		}
+		t.links = nil
 	}
 }
 
@@ -256,8 +265,9 @@ func (m *Model) restoreTile(tp TilePlace) {
 // 本体のスクロールは保ち、diff は取り直す。開けなくなったファイルは古い本文のまま残して理由を知らせる (黙って古いまま見せない)。
 func (m *Model) rereadTiles() {
 	for _, t := range m.tiles {
-		if t.closing || t.src.unchanged() {
-			continue // 変わっていないファイルを開き直すと、深く送ったタイルで読んだ所まで (G 1 回で 2 万行) を毎回読み直す
+		if t.closing || (t.mode == modeFile && t.src.unchanged()) {
+			continue // 変わっていないファイルを開き直すと、深く送ったタイルで読んだ所まで (G 1 回で 2 万行) を毎回読み直す。diff は本文が同じでも
+			// 変わる (git add / commit は作業ツリーのファイルを触らない) ので必ず取り直す
 		}
 		src, msg := openFor(t.n.path(), t.n.raw, t.n.name)
 		if msg != "" {

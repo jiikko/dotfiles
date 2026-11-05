@@ -75,8 +75,12 @@ type textSource struct {
 	readErr bool      // 末尾の前で読めなくなった (タイルに「途中で読めなくなりました」と出す。末尾と見分ける)
 }
 
-// unchanged は path のファイルが開いたときから変わっていないか (大きさと更新時刻)。読めなければ false (開き直して理由を出す)。
+// unchanged は path のファイルが開いたときから変わっていないか (大きさと更新時刻)。読めない・途中で読めなくなった src は false
+// (開き直して理由を出す。chmod で権限を戻しても大きさと更新時刻は変わらない)。inode は見ない: 大きさと ns の更新時刻を保った差し替えは、うっかりでは起きない。
 func (s *textSource) unchanged() bool {
+	if s.readErr {
+		return false
+	}
 	st, err := os.Stat(s.path)
 	return err == nil && st.Size() == s.size && st.ModTime().Equal(s.mtime)
 }

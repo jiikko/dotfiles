@@ -371,9 +371,10 @@ func TestLinesClippedToViewport(t *testing.T) {
 
 // 開いているタイルの本文のリンクも、ライブ更新・ファイル操作で読み直したフォルダの増減に追いつく
 // (m.linkCache だけを捨てると、タイルが行ごとに覚えた解決 t.links が無かった頃のまま残る)。
+// ジャンプ中は抜けるまで据え置く: 選んだリンクが別のパスへ移らず、enter / e がタイルのキーに化けない。
 func TestTileLinksFollowReloadedDir(t *testing.T) {
 	m := newTest(t)
-	mustWrite(t, filepath.Join(m.root.abs, "note.txt"), "see later.txt\n")
+	mustWrite(t, filepath.Join(m.root.abs, "note.txt"), "see first.txt\nsee later.txt\n")
 	m.Refresh()
 	settle(m)
 	cdTo(t, m, "note.txt")
@@ -387,19 +388,60 @@ func TestTileLinksFollowReloadedDir(t *testing.T) {
 		t.Fatal("前提: まだ無い later.txt でジャンプに入った")
 	}
 	mustWrite(t, filepath.Join(m.root.abs, "later.txt"), "x\n")
-	m.reloadDir(m.root, true) // ライブ更新の 1 件と同じ (項目が増えた)
+	m.reloadDir(m.root) // ライブ更新の 1 件と同じ
 	m.HandleKey("tab")
 	if !tl.jump {
 		t.Fatal("later.txt を作って読み直した後も、タイルのリンクが無かった頃の解決のまま")
 	}
-	// 中身だけの変化 (書き込みの続くログ) ではジャンプを抜けない。項目が増えたら抜ける (選んだ添字が別のパスを指さないように)
-	m.reloadDir(m.root, false)
-	if !tl.jump || tl.links == nil {
-		t.Fatal("中身だけの変化でジャンプを抜けた・リンクを捨てた")
+	selected := func() string {
+		ls := m.tileLinks(tl, len(m.view(tl)))
+		return filepath.Base(ls[max(0, min(tl.sel, len(ls)-1))].path)
 	}
-	mustWrite(t, filepath.Join(m.root.abs, "other.txt"), "x\n")
-	m.reloadDir(m.root, true)
+	if got := selected(); got != "later.txt" {
+		t.Fatalf("前提: 選んでいるリンク = %q", got)
+	}
+	// ジャンプ中に、選んでいるリンクより上の行が指すファイルが現れる (別のペインのビルド・vim の .swp と同じ形の増減)
+	mustWrite(t, filepath.Join(m.root.abs, "first.txt"), "x\n")
+	m.reloadDir(m.root)
+	if !tl.jump {
+		t.Fatal("ジャンプ中に項目が増えたら、ジャンプを抜けた (次の enter がタイルを閉じるキーに化ける)")
+	}
+	if got := selected(); got != "later.txt" {
+		t.Fatalf("ジャンプ中に項目が増えたら、選んでいるリンクが %q へ移った", got)
+	}
+	m.HandleKey("esc")
+	m.HandleKey("tab")
+	if got := selected(); !tl.jump || got != "first.txt" {
+		t.Fatalf("ジャンプを抜けて入り直した後の先頭のリンク = %q (読み直した後の解決 first.txt のはず)", got)
+	}
+}
+
+// 同じ名前のまま種類が変わった (ファイル → フォルダ) ときも、リンクの解決を捨てる (項目の増減だけで絞らない)。
+func TestTileLinksForgetWhenKindChanges(t *testing.T) {
+	m := newTest(t)
+	mustWrite(t, filepath.Join(m.root.abs, "note.txt"), "see out.txt\n")
+	out := filepath.Join(m.root.abs, "out.txt")
+	mustWrite(t, out, "x\n")
+	m.Refresh()
+	settle(m)
+	cdTo(t, m, "note.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	m.HandleKey("tab")
+	if !tl.jump {
+		t.Fatal("前提: out.txt のリンクでジャンプに入らない")
+	}
+	m.HandleKey("esc")
+	if err := os.Remove(out); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.applyChange(dirChange{dir: m.root.abs, changed: []string{"out.txt"}}) // 名前は同じ = listing は立たない
+	m.TakeNotices()
+	m.HandleKey("tab")
 	if tl.jump {
-		t.Fatal("項目が増えて読み直したのに、ジャンプの選択を古い添字のまま残した")
+		t.Fatal("out.txt がフォルダになった後も、ファイルだった頃の解決でリンクにした")
 	}
 }

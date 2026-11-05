@@ -196,3 +196,26 @@ func TestTileRereadSkipsUnchangedAndClampsShrunkFile(t *testing.T) {
 		t.Fatalf("1 行に縮んだファイルの scroll = %d・sy = %v (どちらも 0 のはず)", tl.scroll, tl.sy.v)
 	}
 }
+
+// 差分のタイルは、本文が変わっていなくても取り直す (git add / commit は作業ツリーのファイルの大きさも更新時刻も変えない)。
+// 途中で読めなくなったタイルも開き直す (chmod で権限を戻しても大きさと更新時刻は変わらない)。
+func TestTileRereadRetakesDiffAndRetriesReadError(t *testing.T) {
+	clearEditorEnv(t)
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	tl.setMode(modeDiff)
+	job := tl.diff
+	m.ExecDone(nil)
+	if tl.mode != modeDiff || tl.diff == job {
+		t.Fatalf("本文の変わっていない差分のタイルを取り直さない (mode=%v・同じ取得=%v)", tl.mode, tl.diff == job)
+	}
+	tl.setMode(modeFile)
+	tl.src.readErr = true // 途中で読めなくなった (ensure の Open が失敗した) のと同じ
+	src := tl.src
+	m.ExecDone(nil)
+	if tl.src == src || tl.src.readErr {
+		t.Fatal("途中で読めなくなったタイルを、読めるようになった後も開き直さない")
+	}
+}
