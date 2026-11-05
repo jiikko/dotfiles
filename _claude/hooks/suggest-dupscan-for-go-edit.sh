@@ -52,5 +52,5 @@ stamp="${TMPDIR:-/tmp}/claude-dupscan-go-edit-${session//[^A-Za-z0-9_-]/_}"
 # 書けない TMPDIR でも stderr に漏らさない (`> f 2>/dev/null` の順だと、リダイレクトの失敗は stderr に出る)
 { : > "$stamp"; } 2>/dev/null || true
 
-msg="src の Go を書いている: 新しい関数 (helper・値を組み立てる関数・テストの helper) を書く前に、\`dupscan index -name <語>\` / \`-returns <型>\` / \`-param-type <型>\` で同じものが既にないかを引く。commit の前に \`dupscan gate\` で、この変更で増えた写しが無いかを見る (skill dupscan の 1・3 節。Go の def / refs は無いので gopls で引く)"
+msg="src の Go を書いている: 新しい関数 (helper・値を組み立てる関数・テストの helper) を書く前に、\`dupscan index -name <語>\` / \`-returns <型>\` / \`-param-type <型>\` で同じものが既にないかを引く。commit の前に \`make test-dupscan-gate\` (make と CI と同じ下限 12 節の \`dupscan gate\`。素の \`dupscan gate\` は既定の下限 20 で、小さい写しを通す) で、この変更で増えた写しが無いかを見る (skill dupscan の 1・3 節。Go の def / refs は無いので gopls で引く)"
 jq -n --arg c "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $c}}'

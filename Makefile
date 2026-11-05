@@ -703,7 +703,11 @@ test-src:
 # 手元の実行は結果を 1 行の JSON で追記する (gate が止めた回数を数えるため)。CI は CI が立つので記録しない。
 # 数え方: jq -s '[.[] | select(.failed)] | length' ~/.cache/dupscan-gate.jsonl (同じ変更の再実行も 1 回と数えるので「止まった実行の数」)。
 DUPSCAN_GATE_RECORD ?= $(if $(CI),,$(HOME)/.cache/dupscan-gate.jsonl)
+# 下限 12 節: 既定の 20 節では、946 で寄せた写し 12 組のうち書かれた時点で止められたのは 3 組 (12 節なら 9 組)。直近 130 commit で
+# 雑音だけで止まった commit は 0。dupscan 自身の既定は Swift (DualNoteApp・obaket) で較正したので変えず、ここだけで下げる。
+# DUPSCAN_GATE_FLAGS に入れない (CI が -base を渡すために上書きする)
+DUPSCAN_GATE_MIN_NODES := -min-nodes 12 -min-closure-nodes 12
 
 test-dupscan-gate:
-	@$(if $(DUPSCAN_GATE_RECORD),mkdir -p $(dir $(DUPSCAN_GATE_RECORD)) &&) bin/dupscan gate $(if $(DUPSCAN_GATE_RECORD),-record $(DUPSCAN_GATE_RECORD)) $(DUPSCAN_GATE_FLAGS) src
+	@$(if $(DUPSCAN_GATE_RECORD),mkdir -p $(dir $(DUPSCAN_GATE_RECORD)) &&) bin/dupscan gate $(if $(DUPSCAN_GATE_RECORD),-record $(DUPSCAN_GATE_RECORD)) $(DUPSCAN_GATE_MIN_NODES) $(DUPSCAN_GATE_FLAGS) src
 

@@ -47,7 +47,7 @@ run() { # $1=tool $2=file_path [$3=PATH] → stdout
 
 expect_nudge() { # $1=説明 $2=stdout
   case "$2" in HOOK-FAILED*) echo "✗ hook が rc≠0 か stderr を出した: $1: $2"; fail=$((fail+1)); return ;; esac
-  if ! printf '%s' "$2" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan index") and contains("dupscan gate")' >/dev/null 2>&1; then
+  if ! printf '%s' "$2" | jq -e '.hookSpecificOutput.additionalContext | contains("dupscan index") and contains("make test-dupscan-gate")' >/dev/null 2>&1; then
     echo "✗ 案内が出ない / JSON が壊れている: $1"; printf '%s\n' "$2" | head -3; fail=$((fail+1)); return
   fi
   # 🚨 止めない: permissionDecision を返したら書き込みが止まる

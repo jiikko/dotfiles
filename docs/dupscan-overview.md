@@ -52,7 +52,7 @@ dupscan を止める側で自動に走らせるのは導入先の検査 (`make t
 | `suggest-dupscan-for-go-edit.sh` | dotfiles の `src/` の `.go` を Write / Edit したとき | 書く前の `index` と commit 前の `gate` の案内。session に 1 回 |
 
 どれも `additionalContext` を返すだけで、編集も grep も止めない。使われたかは `scripts/dupscan_usage_report.py` で transcript から数える (948)。
-以下は `make test` に組み込んだ場合の例。obaket は lint-gates / pre-push / GHA に組み込んでいる。dotfiles の `src` (Go) は `make test-dupscan-gate` (`make test` の `test-src` から) と GHA の `dupscan-gate.yml` に組み込んでいる (issue 900)。Swift のシンボル探索には `def` / `refs` / `callers` も使える。
+以下は `make test` に組み込んだ場合の例。obaket は lint-gates / pre-push / GHA に組み込んでいる。dotfiles の `src` (Go) は `make test-dupscan-gate` (`make test` の `test-src` から) と GHA の `dupscan-gate.yml` に組み込んでいる (issue 900)。dotfiles の gate は節の下限を 12 に下げて回す (既定の 20 では、946 で寄せた写し 12 組のうち書かれた時点で止められたのは 3 組。12 なら 9 組。issue 1034)。Swift のシンボル探索には `def` / `refs` / `callers` も使える。
 
 ```
 タスクを受ける
