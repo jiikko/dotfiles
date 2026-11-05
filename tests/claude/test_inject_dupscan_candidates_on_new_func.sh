@@ -191,7 +191,51 @@ next_session; expect_lacks "Swift: 本体の無い protocol の要件では、�
 
 next_session; expect_has "戻り型の問い合わせが時間切れでも、名前の照合で見つけた候補は出す (例外で全体を黙らせない)" "$(run Write "$REPO/src/foo/slow.go" $'package foo\n\nfunc slowWidget(x int) Widget {\n\treturn Widget{}\n}\n')" "slowWidget(x int) Widget"
 
-n=$(grep -c . "$TMP_ROOT/cache/claude-dupscan-inject.log" || true)
+left=$(find "$TMP_ROOT" -maxdepth 1 -name 'claude-dupscan-inject-*' | wc -l | tr -d ' ')
+if [ "$left" -eq 0 ]; then
+  echo "✓ 注入の印を \$TMPDIR に名前ごとのファイルとして作らない"; ok=$((ok+1))
+else
+  echo "✗ \$TMPDIR に印のファイルが $left 件残った"; fail=$((fail+1))
+fi
+
+# 印のファイルは上限 (64KB) を超えたら古い半分を捨てる。直前の session の印は残り、2 回目を出さない
+SEEN="$TMP_ROOT/cache/claude-dupscan-inject.seen"
+awk 'BEGIN { for (i = 0; i < 3000; i++) printf "old%04d\tname\tfillerFunctionName%04d\n", i, i }' >> "$SEEN"
+next_session; run Edit "$F" $'func readCookies() {}\n' >/dev/null
+size=$(wc -c < "$SEEN" | tr -d ' ')
+T=$'\t'
+if [ "$size" -le 65536 ] && ! grep -q "^old0000$T" "$SEEN" && grep -q "^old1800$T" "$SEEN" && grep -q "^old2999$T" "$SEEN" && grep -q "^s$session${T}name${T}readCookies\$" "$SEEN"; then
+  echo "✓ 印のファイルは上限を超えたら古い行から捨て、新しい行は残す ($size bytes)"; ok=$((ok+1))
+else
+  echo "✗ 印のファイルの詰め直しが想定と違う ($size bytes)"; fail=$((fail+1))
+fi
+expect_silent "詰め直しの後も、同じ session × 名前の 2 回目は出さない" "$(run Edit "$F" $'func readCookies() {}\n')"
+
+# 途中で切れた行 (改行の無い末尾) に次の印が連結されると、その印は読めず 2 回目も出る
+printf 'brokenLineWithoutNewline' >> "$SEEN"
+next_session; run Edit "$F" $'func readCookies() {}\n' >/dev/null
+expect_silent "改行の無い行の後に書いた印も読めて、2 回目は出さない" "$(run Edit "$F" $'func readCookies() {}\n')"
+
+# 詰め直せないと印のファイルが上限なく伸びるので、黙らずに warn を出す (stderr と計測ログ)。rc は 0 のまま、注入も止めない。
+# run は stderr があると stdout を捨てるので、ここは直接起こして stdout / stderr を分けて見る
+mkdir "$SEEN.tmp"
+awk 'BEGIN { for (i = 0; i < 3000; i++) printf "old%04d\tname\tfillerFunctionName%04d\n", i, i }' >> "$SEEN"
+next_session
+jq -n --arg f "$F" --arg s "s$session" '{tool_name: "Edit", session_id: $s, tool_input: {file_path: $f, new_string: "func readCookies(x int) int { return x }\n", old_string: ""}}' |
+  PATH="$WITH_DUPSCAN" "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err"
+rc=$?
+rmdir "$SEEN.tmp"
+if [ "$rc" -eq 0 ] && grep -q '詰め直せない' "$TMP_ROOT/err" \
+  && jq -e '.hookSpecificOutput.additionalContext | contains("Workspace.ReadCookies")' "$TMP_ROOT/out" >/dev/null 2>&1 \
+  && grep -q "^s$session${T}name${T}readCookies\$" "$SEEN" \
+  && grep -q "${T}warn${T}印のファイルに書けない・詰め直せない" "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
+  echo "✓ 詰め直せないときは rc=0 のまま注入を出し、印は追記し、warn を stderr と計測ログに出す"; ok=$((ok+1))
+else
+  echo "✗ 詰め直せないときの出力が想定と違う: rc=$rc stderr=$(head -c 200 "$TMP_ROOT/err") stdout=$(head -c 120 "$TMP_ROOT/out")"; fail=$((fail+1))
+fi
+
+# 数えるのは注入の行 (5 列目が name / returns) だけ。warn 行が混ざっても注入の行の欠けを埋めない
+n=$(grep -c -E $'\t(name|returns)$' "$TMP_ROOT/cache/claude-dupscan-inject.log" || true)
 if [ "$n" -ge 5 ] && grep -q $'\treadCookies\t1\tname$' "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
   echo "✓ 注入の計測ログに「session 名前 候補数 引き方」が残る"; ok=$((ok+1))
 else

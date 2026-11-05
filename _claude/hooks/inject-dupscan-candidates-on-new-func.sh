@@ -6,6 +6,8 @@
 #
 # 🚨 止めない (additionalContext だけ)。permissionDecision を返さない。どんな失敗も無音で rc=0 (fail-open)。
 # 🚨 出しすぎない: session × 名前で 1 回。候補が無ければ何も出さない。名前の一致だけを出す (部分一致の雑音は出さない)。
+#    引いた印は ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-inject.seen の 1 ファイルに「session 種類 名前」の行で持ち、SEEN_MAX を超えたら古い半分を捨てる。
+#    名前ごとの空ファイルを $TMPDIR に作らない (消す者が居らず、注入のたびに 1 件ずつ溜まる)。捨てた行の session × 名前は、もう 1 回注入されうる
 #    戻り型が取れたら、名前と戻り型の組み合わせ (index -name 名前 -returns 型) で先に引く。名前だけだと、同じ名前で別の型を返す定義が上位を埋めて
 #    上限の外へ落ちる。名前の照合の後に残りの予算で引く。汎用の型 (error・string・bool・数値・Self など。GENERIC_RETURNS) では型で引かない。引数型では引かない (string や context が多く雑音になる)
 # 🚨 遅延: 名前 1 つにつき dupscan index を最大 4 回 (名前・語の前方 2 つ・戻り型。全体で 6 秒の予算。超えたら残りは引かず、時間切れの問い合わせは空として続ける)。
@@ -31,7 +33,7 @@
 #   Swift のメソッドと Go の関数の区別 (Swift は字下げのある func も新しい関数として扱う)・Go の `type (` の中の型・
 #   引数付きの属性 (`@available(…)`) の付いた Swift の型・typealias
 # 計測: 注入のたびに ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-inject.log へ「時刻 session 名前 候補数 引き方 (name / returns)」を 1 行足す
-#   (scripts/dupscan_usage_report.py が数える)
+#   (scripts/dupscan_usage_report.py が数える)。印のファイルを読み書きできないときは「時刻 warn 理由」の 3 列の行も足す
 
 set -uo pipefail
 unset CDPATH
@@ -44,9 +46,10 @@ command -v dupscan >/dev/null 2>&1 || exit 0
 
 # shellcheck disable=SC2016 # python のソースを単引用符で渡す (シェルの展開は要らない)
 exec python3 -I -c '
-import json, os, re, subprocess, sys, time
+import fcntl, json, os, re, subprocess, sys, time
 
 BUDGET = 6.0
+SEEN_MAX = 64 * 1024
 SKIP_NAMES = {"init", "main", "string", "error", "close", "body", "description", "hash", "isequal", "equal", "less", "len", "swap", "reset", "unwrap"}
 SKIP_PREFIX = ("test", "benchmark", "fuzz", "example")
 FUNC_GO = re.compile(r"^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*[\[(]", re.M)
@@ -207,6 +210,46 @@ def return_type(src, start, swift):
         return None
     return t
 
+def warn(cache, msg):
+    """想定外の失敗を stderr と計測ログ (3 列の warn 行。scripts/dupscan_usage_report.py は 4〜5 列の行だけを数える) へ出す。
+    rc=0 の hook の stderr はモデルにも画面にも出ないので、stderr だけにしない。"""
+    print("dupscan-inject: " + msg, file=sys.stderr)
+    try:
+        with open(os.path.join(cache, "claude-dupscan-inject.log"), "a") as f:
+            f.write("%s\twarn\t%s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), re.sub(r"[\t\n]", " ", msg)))
+    except OSError:
+        pass
+
+def load_seen(path, session):
+    """session が引いた「種類\t名前」の集合。読めなければ空 (もう 1 回引くだけで、止めない)。"""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return {l.rstrip("\n").split("\t", 1)[1] for l in f if l.startswith(session + "\t")}
+    except FileNotFoundError:
+        return set()
+    except OSError as e:
+        warn(os.path.dirname(path), "印のファイルを読めない (%s): %s" % (path, e))
+        return set()
+
+def mark_seen(path, session, key):
+    """印の行を足す。SEEN_MAX を超えたら古い半分を捨てる。並行する session と同じファイルを書くので、追記と詰め直しを同じ lock の中で行う
+    (lock の外で詰め直すと、その間の他の追記を置き換えで失う)。行の頭にも改行を付ける: 途中で切れた行 (書き込みの失敗・手で書いた行) に
+    次の印が連結されて読めなくなるのを防ぐ (空行は load_seen が読み飛ばし、詰め直しで消える)。詰め直せないと上限なく伸びるので、失敗は warn に出す。"""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".lock", "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n%s\t%s\n" % (session, key))
+            if os.path.getsize(path) > SEEN_MAX:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    lines = [l for l in f if l.strip()]
+                with open(path + ".tmp", "w", encoding="utf-8") as f:
+                    f.writelines(lines[len(lines) // 2:])
+                os.replace(path + ".tmp", path)
+    except OSError as e:
+        warn(os.path.dirname(path), "印のファイルに書けない・詰め直せない (%s): %s" % (path, e))
+
 def main():
     try:
         d = json.load(sys.stdin)
@@ -264,32 +307,26 @@ def main():
             return
         scope = os.path.join(root, "src") if ext == ".go" and os.path.isdir(os.path.join(root, "src")) else root
         session = re.sub(r"[^A-Za-z0-9_-]", "_", str(d.get("session_id") or "unknown"))
-        tmp = os.environ.get("TMPDIR") or "/tmp"
+        cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+        seen_path = os.path.join(cache, "claude-dupscan-inject.seen")
+        seen = load_seen(seen_path, session)
         start = time.monotonic()
         out, logged, type_out = [], [], []
         rel = os.path.relpath(real, root)
         for t in types[:3]:
-            stamp = os.path.join(tmp, "claude-dupscan-inject-%s-type-%s" % (session, t))
             left = BUDGET - (time.monotonic() - start)
-            if os.path.exists(stamp) or left <= 0.5:
+            if "type\t" + t in seen or left <= 0.5:
                 continue
-            try:
-                open(stamp, "w").close()
-            except OSError:
-                pass
+            mark_seen(seen_path, session, "type\t" + t)
             pat = (GREP_GO if ext == ".go" else GREP_SWIFT) + t
             r = subprocess.run(["git", "-C", root, "grep", "-n", "-I", "-E", "-w", "--untracked", "-e", pat, "--", "*" + ext], capture_output=True, text=True, timeout=left)
             hits = [h for h in r.stdout.splitlines() if not h.startswith(rel + ":")]
             if hits:
                 type_out.append("`%s` と同じ名前の型の宣言が既にある:\n%s" % (t, "\n".join("  " + h.strip() for h in hits[:3])))
         for n in names[:3]:
-            stamp = os.path.join(tmp, "claude-dupscan-inject-%s-%s" % (session, n))
-            if os.path.exists(stamp):
+            if "name\t" + n in seen:
                 continue
-            try:
-                open(stamp, "w").close()
-            except OSError:
-                pass
+            mark_seen(seen_path, session, "name\t" + n)
             left = BUDGET - (time.monotonic() - start)
             if left <= 0.5:
                 break
@@ -326,7 +363,6 @@ def main():
             if hits:
                 out.append("`%s` に近い既存の定義:\n%s" % (n, "\n".join("  " + h for h in hits[:3])))
         if logged:
-            cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
             try:
                 os.makedirs(cache, exist_ok=True)
                 with open(os.path.join(cache, "claude-dupscan-inject.log"), "a") as f:

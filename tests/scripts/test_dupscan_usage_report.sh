@@ -76,9 +76,10 @@ now_iso=$(date '+%Y-%m-%dT%H:%M:%S%z')
   printf '%s\ts2\tquux\t0\treturns\n' "$now_iso"
   printf '2000-01-01T00:00:00+0900\ts9\told\t3\n'
   printf 'broken line\n'
+  printf '%s\twarn\t印のファイルに書けない・詰め直せない (x): [Errno 21] Is a directory\n' "$now_iso"
 } > "$TMP_ROOT/inject.log"
 OUT=$(python3 "$REPORT" --projects-dir "$PROJECTS" --days 3 --inject-log "$TMP_ROOT/inject.log" --json)
-check "注入ログ: 窓の中の 5 回・候補あり 3 回 (うち戻り型で引いた 1 回)・session 2 本 (古い行と壊れた行は数えない。4 列と 5 列の両方を数える)" '.inject == {"injections":5,"with_candidates":3,"with_candidates_by_returns":1,"sessions":2}'
+check "注入ログ: 窓の中の 5 回・候補あり 3 回 (うち戻り型で引いた 1 回)・session 2 本 (古い行・壊れた行・hook の warn 行は数えない。4 列と 5 列の両方を数える)" '.inject == {"injections":5,"with_candidates":3,"with_candidates_by_returns":1,"sessions":2}'
 OUT=$(python3 "$REPORT" --projects-dir "$PROJECTS" --days 3 --inject-log "$TMP_ROOT/none.log" --json)
 check "注入ログが無ければ null" '.inject == null'
 
