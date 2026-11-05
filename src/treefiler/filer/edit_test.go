@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // takeEdit は e で頼まれたエディタの起動を取り出す ($VISUAL / $EDITOR を空にして既定の nvim に固定する)。
@@ -217,5 +218,54 @@ func TestTileRereadRetakesDiffAndRetriesReadError(t *testing.T) {
 	m.ExecDone(nil)
 	if tl.src == src || tl.src.readErr {
 		t.Fatal("途中で読めなくなったタイルを、読めるようになった後も開き直さない")
+	}
+}
+
+// 消したファイルの差分のタイルも取り直す (差分は本文を要さない。開けない理由を出して古い差分を残さない)。
+func TestTileRereadRetakesDiffOfRemovedFile(t *testing.T) {
+	clearEditorEnv(t)
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	tl.setMode(modeDiff)
+	job := tl.diff
+	if err := os.Remove(tl.n.path()); err != nil {
+		t.Fatal(err)
+	}
+	m.TakeNotices()
+	m.ExecDone(nil)
+	if tl.diff == job {
+		t.Fatal("消したファイルの差分のタイルを取り直さない")
+	}
+	if ns := m.TakeNotices(); len(ns) != 0 {
+		t.Fatalf("差分のタイルで本文を開けない知らせが出た: %+v", ns)
+	}
+}
+
+// 大きさを変えずに書き換えたファイル (1 文字の打ち直し) も開き直す (大きさだけで変わっていないと見なさない)。
+func TestTileRereadsSameSizeEdit(t *testing.T) {
+	clearEditorEnv(t)
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	p := tl.n.path()
+	before, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := strings.Replace(string(before), "1", "9", 1)
+	if len(after) != len(before) || after == string(before) {
+		t.Fatal("前提: 同じ大きさで中身だけ変える")
+	}
+	mkfile(t, p, after)
+	future := time.Now().Add(time.Hour) // 同じ時刻の打ち直しで更新時刻が揃わないように、はっきり進める
+	if err := os.Chtimes(p, future, future); err != nil {
+		t.Fatal(err)
+	}
+	m.ExecDone(nil)
+	if got := firstPlain(m.view(tl)); got != "9" {
+		t.Fatalf("同じ大きさで書き換えた後の 1 行目 = %q (9 のはず)", got)
 	}
 }

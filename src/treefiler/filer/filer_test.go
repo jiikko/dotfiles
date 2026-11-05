@@ -650,3 +650,23 @@ func TestTileJKFromHiddenFileMovesToVisibleNeighbour(t *testing.T) {
 		t.Fatalf("J の送り先 = %q (並びで .env の次 = 見えている先頭のファイル one.txt のはず。見えている先頭は %q)", tl.n.raw, want)
 	}
 }
+
+// タイルのファイルの親ごと外れた (外で mv a b) ときも、J / K は隣を推測せず理由を知らせる (外れた親の kids には残っている)。
+func TestTileJKRefusesWhenParentLeftTree(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	if err := os.Rename(filepath.Join(m.root.abs, "a"), filepath.Join(m.root.abs, "a-moved")); err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh()
+	m.TakeNotices()
+	m.HandleKey("J")
+	if tl.n.raw != "one.txt" {
+		t.Fatalf("親ごと外れたファイルのタイルが %q へ送られた", tl.n.raw)
+	}
+	if ns := m.TakeNotices(); len(ns) != 1 || !strings.Contains(ns[0].Text, "木から外れた") {
+		t.Fatalf("知らせ = %+v (木から外れたので隣へ送れない、のはず)", ns)
+	}
+}

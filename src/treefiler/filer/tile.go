@@ -265,9 +265,20 @@ func (m *Model) restoreTile(tp TilePlace) {
 // 本体のスクロールは保ち、diff は取り直す。開けなくなったファイルは古い本文のまま残して理由を知らせる (黙って古いまま見せない)。
 func (m *Model) rereadTiles() {
 	for _, t := range m.tiles {
-		if t.closing || (t.mode == modeFile && t.src.unchanged()) {
-			continue // 変わっていないファイルを開き直すと、深く送ったタイルで読んだ所まで (G 1 回で 2 万行) を毎回読み直す。diff は本文が同じでも
-			// 変わる (git add / commit は作業ツリーのファイルを触らない) ので必ず取り直す
+		if t.closing {
+			continue
+		}
+		if t.mode == modeDiff {
+			// diff は本文が同じでも変わる (git add / commit は作業ツリーのファイルを触らない) ので必ず取り直す。本文 (src) は要らない:
+			// 消したファイルの diff (全行の削除) も取れる。位置は先頭へ戻す (取り直した行が届くまで上限が分からず、元の位置で切れない)
+			if src, msg := openFor(t.n.path(), t.n.raw, t.n.name); msg == "" {
+				t.useSource(src) // d で本体へ戻したときに古い本文を出さない
+			}
+			t.setMode(modeDiff)
+			continue
+		}
+		if t.src.unchanged() {
+			continue // 変わっていないファイルを開き直すと、深く送ったタイルで読んだ所まで (G 1 回で 2 万行) を毎回読み直す
 		}
 		src, msg := openFor(t.n.path(), t.n.raw, t.n.name)
 		if msg != "" {
@@ -275,10 +286,6 @@ func (m *Model) rereadTiles() {
 			continue
 		}
 		t.useSource(src)
-		if t.mode == modeDiff {
-			t.setMode(modeDiff)
-			continue
-		}
 		t.src.ensure(t.scroll + 2*m.tileRows(t))
 		t.scroll = min(t.scroll, m.maxScroll(t))
 		t.sy.step(float64(t.scroll), scrollDur, 0) // 縮んだファイルで、古い位置 (本文の外) を描いてから巻き戻さない
@@ -438,7 +445,7 @@ func (m *Model) replaceTile(t *tile, delta int) {
 		m.fail("このファイルは木の外にあるので隣へ送れません")
 		return
 	}
-	if !slices.Contains(t.n.parent.kids, t.n) { // 隠したファイルは見せる子 (m.kids) に居ないが、木には在る
+	if !m.inTree(t.n) { // 見せる子 (m.kids) では見ない: 隠したファイルは居ないが木には在る。親ごと外れた (mv a b) のは親の kids では分からない
 		// 開いた後に外で消した・名前を変えた (ライブ更新が kids から外した)。起点が無いまま nextFile に渡すと先頭から数え、
 		// K で「これが最初のファイルです」と嘘を言い、J は 2 番目へ飛ぶ
 		m.fail("このファイルは木から外れたので隣へ送れません")
