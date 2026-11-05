@@ -112,3 +112,15 @@ P2 4 件を採用して直した: runtime.Caller に頼るテスト 2 本が実�
 - [ ] **観測 (waiting)**: 2026-10-24 ごろ (入れてから 1 週間、並行セッションの worktree が何本も作られた後) に `du -sh $(go env GOCACHE)` を見る。
   入れる前は 54 GB (2026-10-17 の 742 の実測。今日 15 GB・昨日 23 GB の項目)。数 GB に留まっていれば効いている。
   大きければ、項目の中の worktree のパスの有無を見て、-trimpath を通らない入口 (GOFLAGS を上書きする経路・GOENV=off) が無いかを探す
+
+## 観測の結果 (2026-11-05 23:20 に測った。予定の 10-24 から遅れた)
+
+- `GOFLAGS='' go env GOFLAGS` = `-trimpath` (入ったまま)。`du -sh $(go env GOCACHE)` = **21 GB** (入れる前は 54 GB)
+- 「数 GB」には留まっていないので、冒頭の判定どおり内訳を見た:
+  - 更新日ごと (`find -mtime -N` の合計): 1 日以内 14.8 GB / 2 日以内 19.2 / 3 日 20.3 / 5 日 22.3 / 30 日 22.7 GB。大半はこの 1〜2 日に書かれた
+  - worktree のパス (`/dotfiles-wt…/`・`/wt-…/`) を含む項目は **400 件・0.44 GB**。どれも出力の項目 (`-d`。テストの結果など、テストが開いたパスを含むもの) で、
+    コンパイル済みの package には worktree のパスが入っていない
+  - -trimpath を外す入口: `scripts/go_packages_index.sh` (`GOENV=off GOFLAGS=''`)・`scripts/go_module_graph.sh` (`GOFLAGS=-mod=readonly`) はどちらも `go list` で、
+    ビルドしないのでキャッシュの大きさには効かない
+- **判定**: worktree ごとの重複は 0.44 GB まで減っており、-trimpath は効いている。21 GB の大きさを決めているのは worktree の数ではなく、直近 1〜2 日のビルドの量
+  (Go は 5 日使われなかった項目を自動で消す)。観測の項目は満たしたとみなせる
