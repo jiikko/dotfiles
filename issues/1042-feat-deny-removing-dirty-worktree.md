@@ -1,5 +1,7 @@
 # 1042 (feat): 未コミットの変更がある worktree の削除を PreToolUse の hook で止める
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-06〜）
+
 起票日: 2026-11-06
 
 ## 概要
