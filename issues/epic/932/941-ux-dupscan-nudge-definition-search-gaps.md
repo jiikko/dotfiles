@@ -1,5 +1,7 @@
 # 941 (ux): grep から dupscan への案内が、定義検索の典型形で出ない・言語を取り違える
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-05〜）
+
 > **再開の条件**: 2026-11-04 以降、`scripts/dupscan_usage_report.py --days 14 --split 2026-10-29T00:10:00+09:00` の after で、識別子 grep が 100 回を超えたら測り直す。今ある残りは測り直しだけ (下の「引き継ぎ後の対応」)。split の時刻は commit `fix(hooks): Go の dupscan 案内を、no-build が確かめられないときも名前つきで出す (issue 941)` (2026-10-28 23:58) が `~/dotfiles` に入った後に丸めた値。
 
 起票日: 2026-10-28
