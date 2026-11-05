@@ -68,7 +68,8 @@
   - **skill / agent が自分で書く成果物は `skill-tmpdir <skill名>` (dotfiles の `bin/skill-tmpdir`) が返す `<本体 checkout>/tmp/<skill名>/<session-id>/` に置く**。
     worktree の中から打っても本体 checkout を返す。skill を新しく書く・直すときもこの形にする
   - 🚨 **直下に散らさず、作業ごとに新しい `tmp/<issue番号か作業名>-<日付>/` に入れる**。同じ dir を使い回すと、中に新しいファイルがある限り
-    `make clean-tmp` が dir ごと残す
+    `make clean-tmp` が dir ごと残す。git の root の `tmp/` 直下へのリダイレクト・`tee`・Write は PreToolUse の hook (`_claude/hooks/deny-tmp-root-write.sh`) が止める
+    (字面の判定。変数を含むパス・`curl -o` などは素通りする。検出しない形は hook の冒頭)
   - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない
   - 🚨 **リダイレクト先を `..` で repo の外へ出さない** (`<worktree>/../push.log` / `../../../../out`)。後で消す worktree の中で
     走らせる出力も本体 checkout の `tmp/<作業名>-<日付>/` に絶対パスで書く。親ディレクトリは誰の `tmp/` でもなく、
