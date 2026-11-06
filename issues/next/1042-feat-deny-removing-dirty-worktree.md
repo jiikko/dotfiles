@@ -1,1 +1,0 @@
-../1042-feat-deny-removing-dirty-worktree.md
