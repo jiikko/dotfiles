@@ -103,6 +103,11 @@
             "type": "command"
           },
           {
+            "command": "~/dotfiles/_claude/hooks/deny-force-worktree-remove.sh",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
             "command": "~/dotfiles/_claude/hooks/deny-tmp-area-rm.sh",
             "timeout": 10,
             "type": "command"

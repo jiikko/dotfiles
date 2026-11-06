@@ -78,7 +78,7 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
   **その間に他マシン / 他セッションが同じファイルへ入れた変更を黙って消す**。
   **`cp` を選ばせる根本は「worktree で commit して
   いないこと」**なので、統合の直前に必ず commit する (WIP の commit でよい。後で潰せる)
-- 終わったら `git worktree remove --force` + `git branch -D`（CLAUDE.md「worktree を残さない」）
+- 終わったら `git worktree remove` (`--force` は hook が止める。汚れていれば git が拒否する) + `git branch -D`（CLAUDE.md「worktree を残さない」）
 
 共有ファイル（テストヘルパー、生成物、設定 YAML）が衝突しうるなら、**先に 1 体で共有部分を
 確定させて commit し、その上で並行させる**と衝突が構造的に減る。

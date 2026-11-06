@@ -248,7 +248,7 @@ YYYY-MM-DD HH:MM	<audit-type-id>	<mode>	<output-files>
 ```sh
 root="$(git rev-parse --show-toplevel)"
 for i in 1 2 3; do git worktree add --detach "$root/../wt-audit-$i" HEAD; done
-# 各体へ「作業場所は <path>」と明示し、完了後に git worktree remove --force
+# 各体へ「作業場所は <path>」と明示し、成果を移した後に git worktree remove (--force は付けない。汚れていれば git が拒否する)
 ```
 
 判断基準: **1 体なら worktree を作らない**（分離コストは 2 体目から）。**read-only の

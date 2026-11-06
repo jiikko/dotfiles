@@ -266,12 +266,22 @@ git apply --check "$patch" && git apply "$patch"   # --check が落ちたら適�
 ```
 
 - **worktree とブランチは勝敗が決まった時点で必ず消す**。両 worktree は dirty なので通常の `remove` は拒否される。
-  `git worktree remove --force` を使い、**`-b` で作ったブランチは別途 `git branch -D` する**
-  (`worktree remove` はブランチを消さない)。放置しない (CLAUDE.md「並行作業者がいるときの worktree 退避」)。
-  **削除は patch の適用と内容確認が済んでから**行う (`--force` は未移送の成果物ごと消す)。
+  **patch の適用と内容確認が済んでから**、捨てる操作を明示 (`reset --hard` + `clean -fd`) してから `git worktree remove` で消す。
+  `--force` は使わない (未移送の成果物ごと黙って消すので、PreToolUse の hook `deny-force-worktree-remove.sh` が止める)。
+  **`-b` で作ったブランチは別途 `git branch -D` する** (`worktree remove` はブランチを消さない)。放置しない (CLAUDE.md「並行作業者がいるときの worktree 退避」)。
 
 ```bash
-git worktree remove --force "/<A の絶対パス>"; git worktree remove --force "/<B の絶対パス>"
+main=$(git worktree list --porcelain | sed -n '1s/^worktree //p')   # 本体 (一覧の先頭。submodule・--separate-git-dir でも本体を指す)
+for wt in "/<A の絶対パス>" "/<B の絶対パス>"; do
+  # 本体や登録されていない dir を指したら reset が本体の未コミットの変更を消すので、本体以外の worktree だと確かめてから捨てる。
+  # 実パスで比べる (git の一覧は実パスで出る。macOS の /var → /private/var のような symlink で文字列が食い違う)
+  wt=$(cd "$wt" 2>/dev/null && /bin/pwd -P) || { echo "✗ worktree の dir が無い" >&2; continue; }
+  if [ "$wt" != "$main" ] && git worktree list --porcelain | grep -qxF "worktree $wt"; then
+    git -C "$wt" reset -q --hard && git -C "$wt" clean -fdq && git worktree remove "$wt"
+  else
+    echo "✗ $wt は本体以外の worktree ではないので消さない" >&2
+  fi
+done
 git branch -D "codex-drive/<literal-stamp>-a" "codex-drive/<literal-stamp>-b"
 git worktree list   # 消えたことを確認する
 ```

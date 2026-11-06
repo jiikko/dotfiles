@@ -9,7 +9,7 @@
 - **統合は `git push origin HEAD:master`**。worktree で commit してから push する
   (`cp` でファイルを戻さない。`git pull --rebase` は他セッションの未コミット変更で止まる)
 - **push して `~/dotfiles` へ pull するまでが担当範囲** (下節)。worktree は push の成功を確かめてから消す
-  (`git worktree remove --force`)。残さない
+  (`git worktree remove`。`--force` は付けない: 未コミットの変更ごと消すので hook `deny-force-worktree-remove.sh` が止める。汚れていれば git が拒否する)。残さない
 - **レビュー・CI を待つ間も、worktree の変更を未コミットのまま置かない** (WIP の commit でよい)。他のセッションが worktree を片付けると、
   未コミットの変更は object にも残らず戻せない (commit 済みなら hash から戻せる。retro 876: 反証レビューを待つ間に worktree ごと消えた)
 - **issue 番号は採番したら即 push する**。番号は複数セッションが同じ列から取るので、
