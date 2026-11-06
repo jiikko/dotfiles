@@ -727,3 +727,148 @@ func TestUnknownCaskDirectivesAndHandmadeReceipt(t *testing.T) {
 		}
 	}
 }
+
+// 実行時に呼ぶだけのスクリプト・hook・設定は lsof にも ps にも出ない。断らずに、計画に「使われているかもしれない」と出す。
+func TestFormulaUsedByScriptsIsFlaggedNotBlocked(t *testing.T) {
+	w := newWorld(t)
+	prefix := filepath.Dir(w.cellar)
+	for name, bin := range map[string]string{"jq": "jq", "ripgrep": "rg", "idle": "idle", "direnv": "direnv"} {
+		real := filepath.Join(w.cellar, name, "1.0", "bin", bin)
+		write(t, real, "bin")
+		mkdir(t, filepath.Join(prefix, "bin"))
+		if err := os.Symlink(real, filepath.Join(prefix, "bin", bin)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.leaves = []string{"jq", "ripgrep", "idle", "direnv"}
+	hook := filepath.Join(w.home, "dotfiles", "hooks", "x.sh")
+	write(t, hook, "#!/bin/sh\nin=$(cat); echo \"$in\" | jq -r .tool\n")
+	write(t, filepath.Join(w.home, ".claude", "settings.json"), `{"hooks":{"Stop":[{"command":"~/dotfiles/hooks/x.sh"}]}}`)
+	write(t, filepath.Join(w.home, ".config", "tool", "conf"), "grep = rg --hidden\nnot-idle-like = 1\n")
+	// .zshrc が source する先の $(direnv ...) は、設定から使われる formula として守る
+	write(t, filepath.Join(w.home, ".zshrc"), `source "$HOME/lib/env.zsh"`+"\n")
+	write(t, filepath.Join(w.home, "lib", "env.zsh"), `eval "$(direnv hook zsh)"`+"\n")
+	ctx := context.Background()
+	for f, where := range map[string]string{"jq": "~/dotfiles/hooks/x.sh", "ripgrep": "~/.config/tool/conf"} {
+		p, err := BuildPlan(ctx, w.opts(), Selection{Formulae: []string{f}})
+		if err != nil {
+			t.Fatalf("%s: 断らずに計画を作る: %v", f, err)
+		}
+		if !strings.Contains(p.Items[0].Note, where) {
+			t.Errorf("%s: 使っている場所を計画に出さない: %+v", f, p.Items[0])
+		}
+	}
+	p, err := BuildPlan(ctx, w.opts(), Selection{Formulae: []string{"idle"}})
+	if err != nil || p.Items[0].Note != "" {
+		t.Errorf("別の語 (not-idle-like) に当てた: %v %+v", err, p.Items)
+	}
+	if _, err := BuildPlan(ctx, w.opts(), Selection{Formulae: []string{"direnv"}}); err == nil {
+		t.Errorf("source の先で呼ばれる formula を消す計画を作った")
+	}
+}
+
+// 見落としやすい使われ方: 大きな設定・symlink の先の設定・${VAR:-x} と末尾の . ・hook の 2 段目・拡張子の無いスクリプト・bin の無い formula・tmux の run-shell。
+func TestUsageCorpusFollowsWhatTheReviewFound(t *testing.T) {
+	w := newWorld(t)
+	prefix := filepath.Dir(w.cellar)
+	cmds := map[string]string{"shfmt": "shfmt", "jq": "jq", "neovim": "nvim", "ripgrep": "rg", "gnu-sed": "gsed", "zsh-syntax-highlighting": "", "zsh-autosuggestions": "", "tmuxfmt": "tmuxfmt"}
+	for name, bin := range cmds {
+		dir := filepath.Join(w.cellar, name, "1.0")
+		mkdir(t, dir)
+		if bin != "" {
+			write(t, filepath.Join(dir, "bin", bin), "bin")
+		}
+		w.leaves = append(w.leaves, name)
+	}
+	pad := strings.Repeat("# padding\n", 8000) // 64KB を超える設定
+	write(t, filepath.Join(w.home, ".zshrc"), pad+"source "+prefix+"/share/zsh-syntax-highlighting/x.zsh\nexport J=${JQ:-jq}\nalias v=nvim.\n")
+	dots := filepath.Join(w.home, "dotfiles")
+	write(t, filepath.Join(dots, "nvim", "init.lua"), pad+`formatters = { sh = { "shfmt" } }`+"\n")
+	mkdir(t, filepath.Join(w.home, ".config"))
+	if err := os.Symlink(filepath.Join(dots, "nvim"), filepath.Join(w.home, ".config", "nvim")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(w.home, ".config", "zsh", "plugins.zsh"), "source "+prefix+"/share/zsh-autosuggestions/zsh-autosuggestions.zsh\n")
+	write(t, filepath.Join(dots, "hooks", "a.sh"), "#!/bin/sh\n. \"$(dirname \"$0\")/lib/l.sh\"\n")
+	write(t, filepath.Join(dots, "hooks", "lib", "l.sh"), "rg -n foo\n")
+	write(t, filepath.Join(w.home, "bin", "statusline"), "#!/bin/sh\ngsed -n 1p\n")
+	write(t, filepath.Join(w.home, ".claude", "settings.json"), `{"hooks":{"Stop":[{"command":"~/dotfiles/hooks/a.sh input"}]},"statusLine":{"command":"~/bin/statusline"}}`)
+	write(t, filepath.Join(w.home, ".tmux.conf"), `run-shell "${DOTFILES_DIR:-$HOME/dotfiles}/scripts/t.sh"`+"\n")
+	write(t, filepath.Join(dots, "scripts", "t.sh"), "tmuxfmt --check\n")
+
+	inv := List(context.Background(), w.opts())
+	got := map[string]Formula{}
+	for _, f := range inv.Formulae {
+		got[f.Name] = f
+	}
+	if got["zsh-syntax-highlighting"].Protected == "" {
+		t.Errorf("64KB を超える .zshrc から source する formula を守らない (退行): %+v", got["zsh-syntax-highlighting"])
+	}
+	for _, name := range []string{"shfmt", "jq", "neovim", "ripgrep", "gnu-sed", "zsh-autosuggestions", "tmuxfmt"} {
+		if f := got[name]; f.Protected == "" && len(f.UsedBy) == 0 {
+			t.Errorf("%s: 使っている場所を見落とした: %+v", name, f)
+		}
+	}
+}
+
+// 絶対パスで書いた source と hook は辿り、履歴と ~/Library は辿らない・
+// 汎用の dir の名前 (/go/) をパスの一致に数えない。
+func TestUsageFollowsAbsoluteButNotHistory(t *testing.T) {
+	w := newWorld(t)
+	for name, bin := range map[string]string{"gum": "gum", "pstree": "pstree", "vhs": "vhs", "go": "gofmt"} {
+		write(t, filepath.Join(w.cellar, name, "1.0", "bin", bin), "bin")
+		w.leaves = append(w.leaves, name)
+	}
+	lib := filepath.Join(w.root, "abs", "lib", "a.zsh")
+	write(t, lib, "x=$(gum choose)\n")
+	hook := filepath.Join(w.root, "abs", "hooks", "x.sh")
+	write(t, hook, "pstree -p $$\ntail -1 ~/.zsh_history >/dev/null\nls ~/Library/Keychains/login.keychain-db\n") // スクリプトの本文の ~ は辿るが、履歴と ~/Library は読まない
+	hist := filepath.Join(w.home, ".zsh_history")
+	write(t, hist, "vhs demo.tape\ncat ~/Library/Keychains/login.keychain-db\n")
+	write(t, filepath.Join(w.home, "Library", "Keychains", "login.keychain-db"), "vhs secret\n")
+	write(t, filepath.Join(w.home, ".zshrc"), "source "+lib+"\nHISTFILE=$HOME/.zsh_history\nexport GOPATH=$HOME/go/\n")
+	write(t, filepath.Join(w.home, ".claude", "settings.json"), `{"hooks":{"Stop":[{"command":"`+hook+` input"}]}}`)
+
+	inv := List(context.Background(), w.opts())
+	got := map[string]Formula{}
+	for _, f := range inv.Formulae {
+		got[f.Name] = f
+	}
+	if f := got["gum"]; f.Protected == "" && len(f.UsedBy) == 0 {
+		t.Errorf("絶対パスで source した先の $(gum) を見落とした: %+v", f)
+	}
+	if f := got["pstree"]; len(f.UsedBy) == 0 {
+		t.Errorf("絶対パスで書いた hook の中の pstree を見落とした: %+v", f)
+	}
+	if f := got["vhs"]; f.Protected != "" || len(f.UsedBy) != 0 {
+		t.Errorf("履歴とキーチェーンを読んで vhs に印を付けた: %+v", f)
+	}
+	if f := got["go"]; f.Protected != "" {
+		t.Errorf("$HOME/go/ を go の formula を消せない理由と読んだ: %+v", f)
+	}
+}
+
+func TestCorpusReadsSameFileOnceAndStopsAtBudget(t *testing.T) {
+	w := newWorld(t)
+	real := filepath.Join(w.home, "big", "real.txt")
+	write(t, real, strings.Repeat("x\n", 1000))
+	var b strings.Builder
+	for i := range 30 {
+		link := filepath.Join(w.home, "big", fmt.Sprintf("l%d.txt", i))
+		if err := os.Symlink(real, link); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&b, "source %s\n", link)
+	}
+	write(t, filepath.Join(w.home, ".zshrc"), b.String())
+	u := buildUsage(w.home)
+	n := 0
+	for _, f := range u.files {
+		if strings.Contains(f.text, "x\nx\n") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("同じ実体を %d 回読んだ (1 回のはず)", n)
+	}
+}

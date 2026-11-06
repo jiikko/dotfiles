@@ -17,6 +17,7 @@
 - `src/doctor/exitcode` (`doctor/exitcode`) — Package exitcode は 2 本の CLI (diskdoctor / svcdoctor) で共通の終了コード語彙。
 - `src/doctor/health` (`doctor/health`) — Package health は macOS 全体の健康診断 (ネットワーク・プロセス・ディスク・ハードウェアと寿命・常用アプリ) の 材料を集めて判定する。
 - `src/doctor/internal/displaycheck` (`doctor/internal/displaycheck`) — Package displaycheck は「表示用の構造体へ新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体。 (internal)
+- `src/doctor/internal/homepath` (`doctor/internal/homepath`) — Package homepath はホームの下のパスを ~ で始まる形にする (レポート・表示にユーザー名を出さない)。 (internal)
 - `src/doctor/runner` (`doctor/runner`) — Package runner は外部コマンドの実行口。
 - `src/doctor/ssd` (`doctor/ssd`) — Package ssd は内蔵 SSD の健康状態を読む。
 - `src/doctor/svc` (`doctor/svc`) — Package svc は svcdoctor: 壊れた launchd 登録の検出。

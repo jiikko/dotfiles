@@ -67,6 +67,8 @@ type Formula struct {
 	Path        string    `json:"path"` // Cellar/<name>
 	// Protected は消してはいけない理由 (ログインシェル・/etc/shells に載ったシェル)。空でなければ計画を作らない
 	Protected string `json:"protected,omitempty"`
+	// UsedBy はコマンドの名前が出てくるスクリプト・設定 (最大 3 つ)。断らずに計画へ理由として出し、人に確かめさせる
+	UsedBy []string `json:"used_by,omitempty"`
 }
 
 // Inventory は候補の一覧。
@@ -182,7 +184,10 @@ func List(ctx context.Context, o Options) Inventory {
 		}
 	}
 	slices.SortFunc(inv.Apps, func(a, b App) int { return strings.Compare(a.Name, b.Name) })
-	fs, err := formulae(ctx, o, exes, args, protectedShells(ctx, o.Run, o.Home), shellConfig(o.Home))
+	fs, truncated, err := formulae(ctx, o, exes, args, protectedShells(ctx, o.Run, o.Home))
+	if truncated {
+		inv.Notes = append(inv.Notes, "formula を使っている場所を探す範囲が大きすぎて、途中までしか読めなかった (32MB)。「使われているかもしれない」は欠けうる")
+	}
 	if err != nil {
 		inv.Notes = append(inv.Notes, "formula の一覧が取れない: "+err.Error())
 	}
@@ -495,21 +500,6 @@ func brewRefs(text, prefix string) []string {
 	return real
 }
 
-// shellConfigFiles はシェルと tmux の設定ファイル。formula の中のファイルを source しているかを見る。
-var shellConfigFiles = []string{".zshrc", ".zshenv", ".zprofile", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".tmux.conf", ".config/tmux/tmux.conf"}
-
-// shellConfig は設定ファイルの中身をつないだもの (読めないものは飛ばす)。
-func shellConfig(home string) string {
-	var b strings.Builder
-	for _, f := range shellConfigFiles {
-		if data, err := os.ReadFile(filepath.Join(home, f)); err == nil {
-			b.Write(data)
-			b.WriteByte('\n')
-		}
-	}
-	return b.String()
-}
-
 // protectedShells はログインシェルと /etc/shells に載ったシェルの実体のパス (symlink を解いたもの)。
 func protectedShells(ctx context.Context, run runner.Runner, home string) []string {
 	var shells []string
@@ -586,24 +576,26 @@ func lastUsed(ctx context.Context, run runner.Runner, path string) time.Time {
 }
 
 // formulae は brew leaves (他から依存されていない formula) を、入れた日時と大きさつきで返す。
-func formulae(ctx context.Context, o Options, exes, args, shells []string, shellRC string) ([]Formula, error) {
+func formulae(ctx context.Context, o Options, exes, args, shells []string) ([]Formula, bool, error) {
 	if o.Cellar == "" {
-		return nil, errors.New("brew --cellar が取れない")
+		return nil, false, errors.New("brew --cellar が取れない")
 	}
 	out, stderr, rc, err := runner.WithTimeout(ctx, o.Run, 60*time.Second, "brew", "leaves")
 	if err != nil || rc != 0 {
-		return nil, cmdErr("brew leaves", rc, err, stderr)
+		return nil, false, cmdErr("brew leaves", rc, err, stderr)
 	}
 	leaves := strings.Fields(out)
 	infoOut, stderr, rc, err := runner.WithTimeout(ctx, o.Run, 120*time.Second, "brew", "info", "--json=v2", "--installed")
 	if err != nil || rc != 0 {
-		return nil, cmdErr("brew info", rc, err, stderr)
+		return nil, false, cmdErr("brew info", rc, err, stderr)
 	}
 	meta, err := parseFormulae(infoOut)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	prefix := filepath.Dir(o.Cellar)
+	use := buildUsage(o.Home)
+	shellRC := use.shellText
 	rcRefs, argRefs := brewRefs(shellRC, prefix), brewRefs(strings.Join(args, "\n"), prefix)
 	fs := make([]Formula, 0, len(leaves))
 	for _, name := range leaves {
@@ -620,13 +612,14 @@ func formulae(ctx context.Context, o Options, exes, args, shells []string, shell
 		switch {
 		case slices.ContainsFunc(shells, under):
 			f.Protected = "ログインシェルか /etc/shells に載ったシェル"
-		case slices.ContainsFunc(rcRefs, under) || strings.Contains(shellRC, "/"+base+"/") || strings.Contains(shellRC, "/"+base+"\""):
+		case slices.ContainsFunc(rcRefs, under) || brewPathMentions(shellRC, base):
 			// シェル・tmux の設定が formula の中のファイルを source するか、コマンドとして呼んでいる (lsof にも ps にも出ない使われ方)
 			f.Protected = "シェルか tmux の設定から使われている (" + base + ")"
 		}
+		f.UsedBy = usedBy(o.Home, name, use.files, formulaCommands(f.Path))
 		fs = append(fs, f)
 	}
-	return fs, nil
+	return fs, use.truncated, nil
 }
 
 func parseFormulae(out string) (map[string]Formula, error) {

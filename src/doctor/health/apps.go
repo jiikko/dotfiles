@@ -3,6 +3,7 @@ package health
 import (
 	"cmp"
 	"context"
+	"doctor/internal/homepath"
 	"errors"
 	"fmt"
 	"os"
@@ -202,7 +203,7 @@ func orphanLSP(ps []proc) Check {
 func (s *scanner) nvimSwap(ctx context.Context) Check {
 	const id, label = "nvim.swap", "nvim の古い swap ファイル"
 	dir := filepath.Join(s.o.Home, ".local/state/nvim/swap")
-	shown := tildePath(s.o.Home, dir)
+	shown := homepath.Tilde(s.o.Home, dir)
 	ents, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return Check{ID: id, Label: label, Value: "置き場が無い", Status: StatusInfo}
@@ -274,16 +275,6 @@ func (s *scanner) openFilesIn(ctx context.Context, dir string) (map[string]bool,
 
 // selfPID は canary を開いたプロセスの pid。テストは差し替える。
 var selfPID = os.Getpid
-
-// tildePath は home の下のパスを ~ で始まる形にする (レポートにユーザー名を出さない)。
-func tildePath(home, p string) string {
-	if home != "" {
-		if rest, ok := strings.CutPrefix(p, home+"/"); ok {
-			return "~/" + rest
-		}
-	}
-	return p
-}
 
 func (s *scanner) chrome(ctx context.Context) []Check {
 	snap, err := s.snapshot(ctx)

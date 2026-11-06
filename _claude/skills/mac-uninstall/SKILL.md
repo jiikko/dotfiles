@@ -33,9 +33,14 @@ brew の管理下 (cask・formula) は `brew uninstall`、それ以外 (App Stor
    (読み取りだけ。数十秒)。rc=2 は一覧の一部が取れなかったもの (Notes) があるだけで、取れた分は使える。
    チャットには、最後に使った日が古いアプリ (上位 10) と、大きいアプリ、formula の数を短く出し、`<D>/list.md` の絶対パスを示す。
    🚨 **「最後に使った日」が不明 = 使っていない、ではない** (cask の更新で消える・`/Applications` の外では記録されない)。不明のものは不明と書く
-3. **選ばせる**: AskUserQuestion (`multiSelect: true`) で、アプリの候補を 4 つずつ聞く (1 回に 4 問まで)。各選択肢の説明に
+3. **選ばせる**: 片付けられない候補は選択肢に出さない: アプリは `manual` か `running` が立っているもの、formula は `protected` か
+   `running` が立っているもの (どれも計画が断る)。それらは `<D>/list.md` の「片付けられない理由」の欄で見せるだけにする。
+   AskUserQuestion (`multiSelect: true`) で、アプリの候補を 4 つずつ聞く (1 回に 4 問まで)。各選択肢の説明に
    入り方・大きさ・最後に使った日を書く。formula は数が多いので、人に名前で挙げてもらうか、「自分で入れた」(`on_request`) で入れた日が古いものを
    候補にして聞く。🚨 formula の「使っていない」は判定する手がかりが無い (入れた日と、他から依存されていないことしか分からない) と添える。
+   🚨 `used_by` が付いた formula (コマンドの名前がスクリプト・hook・設定に出てくる。例: dotfiles の hook が呼ぶ jq) は、選ばれたら
+   その場所を見せて、本当に消してよいかを 1 つずつ別に聞く。消すとそのスクリプトが壊れる。名前が一般的な語 (git・go) だと
+   関係の無い一致もあるので、場所の中身を grep して見せる
    続けて、選んだアプリごとに「設定とデータも消すか」を聞く (既定は残す)。説明に、消すと失うもの (ログイン状態・設定・アプリの中のデータ) を書く
 4. **計画を作る**: `mac-uninstall plan -out <D> -app <bundle ID,...> -data <bundle ID,...> -formula <名前,...> > <D>/plan.md 2> <D>/plan.err; echo $?`
    (何も動かさない)。`plan.err` の `plan:` と `id:` の行に計画のパスと ID が出る。rc=2 なら `plan.err` の理由 (動いている・見つからない) を伝え、
@@ -46,6 +51,7 @@ brew の管理下 (cask・formula) は `brew uninstall`、それ以外 (App Stor
    - 戻し方: ゴミ箱へ移したものは Finder から戻せる (容量はゴミ箱を空にするまで減らない)。brew が消したものは `brew install` で入れ直す
      (cask の設定とデータを残していれば元の状態に戻る)
    - 残るもの: 「手で確かめる」の行 (Group Containers・LaunchAgents・pkg のアプリ) と、その理由
+   - 🚨 メモに「使われているかもしれない」が付いた formula: その場所と、消すと壊れうること (手順 3 で確かめた答えも添える)
    回答が無い・「実行しない」なら何もせずに終える。選び直したいと言われたら手順 3 からやり直す (計画のファイルを手で書き換えない)
 6. **実行する**: `mac-uninstall apply -plan <計画のパス> -approve <ID> -json > <D>/apply.json 2> <D>/apply.err; echo $? > <D>/apply.rc`。
    計画は作ってから 1 時間で使えなくなる (rc=2 で「計画が古い」なら手順 4 から作り直し、新しい ID で承認を取り直す)。
@@ -63,6 +69,13 @@ brew の管理下 (cask・formula) は `brew uninstall`、それ以外 (App Stor
   そのときは `failed` に出る。システム設定 > プライバシーとセキュリティ > フルディスクアクセス で端末に許可するか、Finder で手で消す
 - **名前で一致した Application Support** (`by_name`): bundle ID ではなくアプリの名前の dir。動かさずに見せるだけなので、同名の別物でないかを中身で確かめ、
   要らなければ人が Finder で消す
+- **formula の「使われているかもしれない」の範囲**: 入口は 3 つ。①シェル・tmux の設定から `source` / `.` / `source-file` / `run-shell` の
+  引数に出たパスを 2 段まで (絶対パスと `${VAR:-既定}` の既定も辿る)、②`~/.claude/settings.json` の `command` と、そこから呼ぶスクリプトの
+  本文に出る `~` / `$HOME` / 自分の置き場 (`$(dirname "$0")` など) からのパスを 2 段まで、③`~/.config` の下 (直下の symlink の dir も辿る。
+  道具ごとに 3 段目・300 ファイル・1 ファイル 1MB まで)。`~/Library`・履歴 (`*_history`)・補完のキャッシュ・バイナリは読まない。
+  読む量は合計 32MB まで (超えたら一覧の判定不能に出る)。当たり方はコマンドの名前 (`bin` の中身) が語として出るか、
+  `Cellar/` `opt/` `share/` `plugins/` の直後に formula の名前が出るか。それ以外 (cron・repo の Makefile やスクリプト・nvim が runtimepath
+  から読む Lua・`libexec/bin` のコマンド・`$ZDOTDIR` などの変数で指す先・`$here/lib` のような変数経由の自分の置き場) から呼ぶものは見ていない
 - **formula の「動いている」は広い**: ライブラリ (openssl・icu4c など) を使うプロセスがあれば当たる。`brew leaves` に出るのは他の formula から依存されていない
   ものだけで、それでもアプリやスクリプトが直接使っていることがある
 - **同じ bundle ID のコピー**: 開発中のビルドや Docker の更新の途中のコピーがあると、計画を作らずにそのパスを出す。消してよいコピーなら人が片付けてから

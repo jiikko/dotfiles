@@ -27,9 +27,9 @@ var sanitizeExempt = map[string]string{
 	"Result.PlanID": "計画の ID (hex。ReadPlan が中身の hash と照合済み)",
 }
 
-// 内訳: Inventory(Notes) + App(Name BundleID Version Path CaskToken PkgID Manual) + Formula(Name Version Path Protected)
+// 内訳: Inventory(Notes) + App(Name BundleID Version Path CaskToken PkgID Manual) + Formula(Name Version Path Protected UsedBy)
 // + Item(Owner Path Token Note) + Result(Trash) + Done(Owner Path To) + Skip(Owner Path Reason)
-const wantChecked = 23
+const wantChecked = 24
 
 func TestSanitizeCoversEveryStringField(t *testing.T) {
 	displaycheck.Run(t, displaycheck.Spec{

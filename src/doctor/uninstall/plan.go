@@ -177,7 +177,11 @@ func itemsFor(ctx context.Context, o Options, inv Inventory, sel Selection) ([]I
 		if f.Protected != "" {
 			return nil, fmt.Errorf("formula %s は消さない: %s", name, f.Protected)
 		}
-		items = append(items, Item{Owner: name, Tier: TierApp, Action: ActionBrewFormula, Path: f.Path, Token: name, SizeKB: f.SizeKB})
+		it := Item{Owner: name, Tier: TierApp, Action: ActionBrewFormula, Path: f.Path, Token: name, SizeKB: f.SizeKB}
+		if len(f.UsedBy) > 0 {
+			it.Note = "🚨 使われているかもしれない (コマンドの名前が出てくる): " + strings.Join(f.UsedBy, ", ")
+		}
+		items = append(items, it)
 	}
 	return items, nil
 }

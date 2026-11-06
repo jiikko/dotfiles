@@ -29,6 +29,7 @@ func SanitizeInventory(inv Inventory) Inventory {
 		f.Version = termsafe.PlainLine(f.Version)
 		f.Path = termsafe.PlainLine(f.Path)
 		f.Protected = termsafe.PlainLine(f.Protected)
+		f.UsedBy = termsafe.PlainLines(f.UsedBy)
 		out.Formulae[i] = f
 	}
 	out.Notes = termsafe.PlainLines(inv.Notes)
@@ -94,7 +95,11 @@ func FormatInventory(inv Inventory, now time.Time) string {
 		if !f.InstalledAt.IsZero() {
 			day = f.InstalledAt.Format("2006-01-02")
 		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n", cell(f.Name), day, yes(f.OnRequest), kb(f.SizeKB), yes(f.Running), cell(f.Protected))
+		why := f.Protected
+		if why == "" && len(f.UsedBy) > 0 {
+			why = "使われているかもしれない: " + strings.Join(f.UsedBy, ", ")
+		}
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n", cell(f.Name), day, yes(f.OnRequest), kb(f.SizeKB), yes(f.Running), cell(why))
 	}
 	if inv.RunningUnknown {
 		b.WriteString("\n- 🚨 動いているかを確かめられないので、計画を作れない (下の判定不能を見る)")
