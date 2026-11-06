@@ -43,8 +43,8 @@ expect "[/bin/echo --]" "make -k は包む (実行はする)" "-k" SERIAL_RUN_BI
 expect "[/bin/echo --]" "コマンドラインの変数の n を -n と読まない" "VAR=n" SERIAL_RUN_BIN=/bin/echo
 expect "[$td/home/dotfiles/bin/serial-run --]" "既定は本体 checkout の serial-run (worktree の版ではない)" ""
 
-# root の Makefile の入口 test が前置きを通っている (本体は test-all)
-if grep -q '\$(serial_run) \$(MAKE) --no-print-directory test-all' <<< "$(awk '/^test:/{f=1;next} f&&/^\t/{print;exit}' "$ROOT_DIR/Makefile")"; then
+# root の Makefile の入口 test が前置きを通っている (本体は test-guarded。その中で test-all の前後の作業ツリーを比べる)
+if grep -q '\$(serial_run) \$(MAKE) --no-print-directory test-guarded' <<< "$(awk '/^test:/{f=1;next} f&&/^\t/{print;exit}' "$ROOT_DIR/Makefile")"; then
   echo "✓ Makefile の test が serial-run の前置きを通る"
   PASS=$((PASS + 1))
 else

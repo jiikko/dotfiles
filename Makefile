@@ -74,7 +74,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-all test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-instruction-budget test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-dupscan-gate test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-guarded test-all test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-instruction-budget test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-dupscan-gate test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ。中に新しい更新があるフォルダは残す。
 # skill の dir (bin/skill-tmpdir の印 .skill-tmpdir がある tmp/<skill名>/) は中の session ごとの dir を単位にする)。
@@ -120,8 +120,17 @@ pull:
 #   全部走らせてから失敗をまとめて返す (所要時間より「その日の全ての赤が 1 回で見える」を採る)。
 #   lint だけ先に見たいときは `make test-lint`。
 # 入口の test は serial-run の順番待ちに入る (make/serial-run.mk)。本体は test-all
+# 待ちの後・本体の前後で作業ツリーの指紋 (scripts/tree_fingerprint.sh) を比べ、走っている間に変わったら赤にする
+# (どの時点の木も検査していない結果を緑として読ませない)。指紋を取れず比べられないときも赤にする (確かめていないものを緑にしない)。
+# 指紋を待ちの前に取らない: 待っている間の編集は検査に混ざらない
 test:
-	@+$(serial_run) $(MAKE) --no-print-directory test-all
+	@+$(serial_run) $(MAKE) --no-print-directory test-guarded
+
+test-guarded:
+	@+before=$$(./scripts/tree_fingerprint.sh print) || before=""; \
+	rc=0; $(MAKE) --no-print-directory test-all || rc=$$?; \
+	./scripts/tree_fingerprint.sh check "$$before" || rc=1; \
+	exit $$rc
 
 test-all:
 	@+$(call run_all_targets,test-lint test-runtime test-src)
