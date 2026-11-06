@@ -179,7 +179,8 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `~/.claude/skills/issue-writeback/SKILL.md` (本文の追記漏れ。done 移動は issue-sync) |
 | dupscan, 重複したメソッド, 既にあるヘルパー, 書く前に探す, セルフレビューで写し, 呼び出し元 (Swift / Go) | `~/.claude/skills/dupscan/SKILL.md` (Swift と Go。def / refs は Swift だけ) |
 | start-issues-ops, issue運用を始める, issuesディレクトリを作る | `~/.claude/skills/start-issues-ops/SKILL.md` |
-| mac-healthcheck, Mac の健康診断, macOS のヘルスチェック, 暴走プロセス, ゾンビ, メモリリーク, 買い替えの判断 | `~/.claude/skills/mac-healthcheck/SKILL.md` (読み取りだけで診断し、レポートの後に直すかを項目ごとに聞く。本体は `bin/mac-healthcheck`) |
+| mac-healthcheck, Mac の健康診断, 暴走プロセス, メモリリーク, 買い替えの判断 | `~/.claude/skills/mac-healthcheck/SKILL.md` |
+| mac-uninstall, アンインストール, 使っていないアプリ・formula を消す | `~/.claude/skills/mac-uninstall/SKILL.md` |
 | cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている | `~/.claude/skills/cleanup-tmp-dir/SKILL.md` (消す前に承認を取る。dotfiles の tmp/ は `make clean-tmp`) |
 | claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `~/.claude/skills/claude-md-refresh/SKILL.md` (引数で対象ディレクトリを指定。issues/ は対象外) |
 | claude-md-compact, CLAUDE.md を圧縮, rules を縮める, 常時読み込みを減らす, instruction files の上限 | `~/.claude/skills/claude-md-compact/SKILL.md` (規範を残して実例・重複を外へ移す。ずれを直すのは claude-md-refresh) |

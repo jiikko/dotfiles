@@ -23,6 +23,14 @@
 迷ったら「**容量が知りたいなら diskdoctor、常駐が知りたいなら svcdoctor**」。両者は対象が
 重ならないので、片方の結果からもう片方を推測できない。
 
+### 4 本目: `bin/mac-uninstall` (アプリと formula の片付け)
+
+`uninstall/` パッケージの CLI。`list` (候補を最後に使った日の古い順に) と `plan` (消える物をパスと大きさで並べた計画を書く) は何も動かさず、
+`apply -plan <file> -approve <ID>` が承認された計画だけを、cask / formula は `brew uninstall`、それ以外はゴミ箱への移動 (`safefs.TrashMove`) で片付ける。
+apply は候補を作り直して計画との交わりのうち実体 (dev, ino) が変わっていないものだけを動かすので、計画を書き換えても動かすものは増やせない。
+設定とデータ (Application Support・Preferences・Containers) は `-data` で選んだアプリだけ。動いているもの・pkg で入れたアプリ・Group Containers・LaunchAgents は動かさない。
+手順は skill `mac-uninstall`。
+
 ### 3 本目: `bin/mac-healthcheck` (Mac 全体の健康診断)
 
 `health/` パッケージの CLI。ハードウェアと寿命 (SSD は `ssd/` をそのまま呼ぶ)・プロセスとメモリ・ネットワーク・ディスクの空き・

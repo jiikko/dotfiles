@@ -32,6 +32,7 @@ ZSH_SYNTAX_FILES := \
   bin/lockman \
   bin/mac-healthcheck \
   bin/mac-lan-manager \
+  bin/mac-uninstall \
   bin/mp4-effective-size \
   bin/pro-con \
   bin/ratelimit \

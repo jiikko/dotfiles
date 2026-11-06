@@ -12,7 +12,7 @@
 | [`pro-con`](pro-con/README.md) | PM と PG を分けて Claude Code を並列に回すカンバンの TUI |
 | [`schedkeys`](schedkeys/README.md) | 「いつ・何を pane へ打つか」を決める予約入力の popup の UI |
 | [`ratelimit`](ratelimit/README.md) | Claude / codex の利用枠 (5h / weekly) を取って整形する module と `bin/ratelimit` |
-| [`doctor`](doctor/README.md) | 消してよさそうなもの・壊れて残っている常駐を見つけるライブラリと `diskdoctor` / `svcdoctor`、Mac 全体の健康診断 `mac-healthcheck` (skill `mac-healthcheck` の本体) |
+| [`doctor`](doctor/README.md) | 消してよさそうなもの・壊れて残っている常駐を見つけるライブラリと `diskdoctor` / `svcdoctor`、Mac 全体の健康診断 `mac-healthcheck`・アプリと formula の片付け `mac-uninstall` (それぞれ同名の skill の本体) |
 | [`lockman`](lockman/README.md) | ディレクトリ単位の排他を取る CLI (SMB 越しも) |
 | [`runtimeout`](runtimeout/README.md) | 時間の上限付きで実行し、子孫ごと止める CLI (`timeout` の代わり) |
 | [`serialrun`](serialrun/README.md) | 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにする CLI `bin/serial-run` と、Claude Code の hook の本体 |

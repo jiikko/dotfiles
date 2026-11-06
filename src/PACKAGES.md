@@ -10,6 +10,7 @@
 - `src/doctor/cachedir` (`doctor/cachedir`) — Package cachedir は glogx 系ツールのキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
 - `src/doctor/cmd/diskdoctor` (`doctor/cmd/diskdoctor`) — Command diskdoctor は既知のディスク掃除候補を検出して表示する CLI。 (main)
 - `src/doctor/cmd/mac-healthcheck` (`doctor/cmd/mac-healthcheck`) — Command mac-healthcheck は macOS 全体の健康診断 (ネットワーク・プロセス・ディスク・ハードウェアと寿命・常用アプリ) を 読み取りだけで行い、Markdown か JSON で出す。 (main)
+- `src/doctor/cmd/mac-uninstall` (`doctor/cmd/mac-uninstall`) — Command mac-uninstall は使っていないアプリと brew の formula を、残骸ごと片付ける。 (main)
 - `src/doctor/cmd/svcdoctor` (`doctor/cmd/svcdoctor`) — Command svcdoctor は壊れた launchd 登録を検出して表示する CLI。 (main)
 - `src/doctor/disk` (`doctor/disk`) — Package disk は diskdoctor: 既知の掃除候補をリスク付きで一覧する。
 - `src/doctor/docker` (`doctor/docker`) — Package docker は Docker Desktop が抱えている「使っていない資源」を数える。
@@ -20,6 +21,7 @@
 - `src/doctor/ssd` (`doctor/ssd`) — Package ssd は内蔵 SSD の健康状態を読む。
 - `src/doctor/svc` (`doctor/svc`) — Package svc は svcdoctor: 壊れた launchd 登録の検出。
 - `src/doctor/testtmp` (`doctor/testtmp`) — Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための 共通ヘルパー。
+- `src/doctor/uninstall` (`doctor/uninstall`) — Package uninstall は Mac のアプリと Homebrew の formula を、残骸ごと安全に片付ける。
 - `src/dupscan` (`dupscan`) — Command dupscan は、repo の中で本体が同じ形のメソッド (関数・初期化子・クロージャ) を構文木で見つけて組にする。 (main)
 - `src/dupscan/internal/exclude` (`dupscan/internal/exclude`) — Package exclude は repo の root の .dupscan.json に書いた除外 (誤検知・意図して分けている写し) を読み、report と gate に同じ規則で効かせる。 (internal)
 - `src/dupscan/internal/gate` (`dupscan/internal/gate`) — Package gate は、base から head までに新しく増えた重複を決める (make test・CI で回す dupscan gate の判定)。 (internal)

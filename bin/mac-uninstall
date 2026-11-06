@@ -1,0 +1,9 @@
+#!/usr/bin/env zsh
+# mac-uninstall — 使っていないアプリと brew の formula を残骸ごと片付ける。list / plan は何も動かさず、apply は承認された計画 (ID) の
+# 範囲だけを brew uninstall かゴミ箱への移動で片付ける (rm はしない)。
+# Go implementation at: ~/dotfiles/src/doctor/ (cmd/mac-uninstall が main。判定本体は uninstall/)
+# 手順 (候補 → 選ぶ → 計画 → 承認 → 実行) は skill mac-uninstall。
+# 再ビルドは同期: 消す道具なので、旧版の判定で動かさない。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --pkg cmd/mac-uninstall "${0:A:h}/../src/doctor" mac-uninstall -- "$@"

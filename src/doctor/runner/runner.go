@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -73,6 +74,14 @@ func WithTimeout(ctx context.Context, run Runner, timeout time.Duration, name st
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return run(ctx, name, args...)
+}
+
+// FirstLine は出力 (stderr など) の先頭の 1 行。理由の文に添える。
+//
+// dupscan:allow intentional pro-con/live の firstLine と同じ 3 行。pro-con は別の module で、並行の作業中のため寄せていない
+func FirstLine(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	return line
 }
 
 // LookPath は $PATH から実行ファイルを探す (exec.LookPath そのもの)。

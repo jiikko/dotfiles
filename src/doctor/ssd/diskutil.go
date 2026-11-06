@@ -29,7 +29,7 @@ func readDiskutil(ctx context.Context, run runner.Runner) diskutilInfo {
 		return out
 	case rc != 0:
 		out.check.Value = "読めません"
-		out.check.Note = "diskutil info " + Device + ": rc=" + strconv.Itoa(rc) + " " + firstLine(stderr)
+		out.check.Note = "diskutil info " + Device + ": rc=" + strconv.Itoa(rc) + " " + runner.FirstLine(stderr)
 		return out
 	}
 	fields := parseDiskutil(stdout)
@@ -63,9 +63,4 @@ func parseDiskutil(s string) map[string]string {
 		m[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
 	return m
-}
-
-func firstLine(s string) string {
-	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
-	return line
 }

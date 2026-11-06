@@ -68,7 +68,7 @@ func readSmartctl(ctx context.Context, run runner.Runner, path string) ([]Check,
 	var j smartJSON
 	if jerr := json.Unmarshal([]byte(stdout), &j); jerr != nil {
 		checks := []Check{unknownCheck("smartctl", "出力を読めません",
-			fmt.Sprintf("rc=%d %s", rc, firstLine(stderr)))}
+			fmt.Sprintf("rc=%d %s", rc, runner.FirstLine(stderr)))}
 		// 出力が読めなくても、プロセスの rc が故障を申告していれば落とさない
 		if rc >= 0 && rc&exitFailing != 0 {
 			checks = append(checks, failingCheck())
