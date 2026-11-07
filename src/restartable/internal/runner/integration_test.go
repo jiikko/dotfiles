@@ -117,6 +117,7 @@ func TestRunnerHelper(t *testing.T) {
 	}
 	code, err := Run(Config{
 		BuildCommand:        os.Getenv("RESTARTABLE_TEST_BUILD"),
+		PullCommand:         os.Getenv("RESTARTABLE_TEST_PULL"),
 		RunArgs:             []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_TEST_RUN")},
 		StopCommand:         os.Getenv("RESTARTABLE_TEST_STOP"),
 		StopCommandTimeout:  runnertest.EnvDuration("RESTARTABLE_TEST_STOP_TIMEOUT", 250*time.Millisecond),
@@ -2511,5 +2512,128 @@ func TestHeadlessBuildFailureStopsBuildLeftovers(t *testing.T) {
 	// 強制停止は終わるまで runner の終了を止めるので、r.done の時点で消えている
 	if processAlive(pid) {
 		t.Fatalf("background process %d left by the failed build survived the headless exit", pid)
+	}
+}
+
+// restartWithKeys は確認のキーを順に送り、再起動が済んで次の子が動くまで待つ。
+func restartWithKeys(t *testing.T, r *testRunner, keyPath, statePath string, previous *int, keys ...string) {
+	t.Helper()
+	for _, key := range keys {
+		sendKeyAndWaitRender(t, keyPath, statePath, key)
+	}
+	testwait.Until(t, "new child after "+strings.Join(keys, " "), func() bool {
+		status, err := r.status()
+		return err == nil && status.State == string(Running) && status.PID != nil && *status.PID != *previous
+	}, testwait.Within(5*time.Second))
+	status := r.waitStatus(t, string(Running))
+	*previous = *status.PID
+}
+
+func TestPullKeyRunsPullBeforeBuildOnlyWhenChosen(t *testing.T) {
+	dir := runnertest.ShortTempDir(t, "rpull-")
+	keyPath := filepath.Join(dir, "keys.sock")
+	statePath := filepath.Join(dir, "presenter.json")
+	logPath := filepath.Join(dir, "steps")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD":           "echo build >> " + runnertest.ShellQuote(logPath),
+		"RESTARTABLE_TEST_PULL":            "echo pull >> " + runnertest.ShellQuote(logPath),
+		"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+	})
+	status := r.waitStatus(t, string(Running))
+	pid := *status.PID
+
+	restartWithKeys(t, r, keyPath, statePath, &pid, "R", "p")
+	restartWithKeys(t, r, keyPath, statePath, &pid, "R", "y")
+
+	if got, want := readFile(logPath), "build\npull\nbuild\nbuild\n"; got != want {
+		t.Fatalf("steps = %q, want %q", got, want)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestFailedPullSkipsBuildAndNextRestartDoesNotPull(t *testing.T) {
+	dir := runnertest.ShortTempDir(t, "rpullf-")
+	keyPath := filepath.Join(dir, "keys.sock")
+	statePath := filepath.Join(dir, "presenter.json")
+	logPath := filepath.Join(dir, "steps")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD":           "echo build >> " + runnertest.ShellQuote(logPath),
+		"RESTARTABLE_TEST_PULL":            fmt.Sprintf("echo pull >> %s; exit 3", runnertest.ShellQuote(logPath)),
+		"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_INTERACTIVE":     "1",
+		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+	})
+	r.waitStatus(t, string(Running))
+
+	sendKeyAndWaitRender(t, keyPath, statePath, "R")
+	sendIntegrationKey(t, keyPath, "p")
+	r.waitStatus(t, string(BuildFailed))
+	if got, want := readFile(logPath), "build\npull\n"; got != want {
+		t.Fatalf("steps after failed pull = %q, want %q", got, want)
+	}
+
+	sendIntegrationKey(t, keyPath, "R")
+	r.waitStatus(t, string(Running))
+	if got, want := readFile(logPath), "build\npull\nbuild\n"; got != want {
+		t.Fatalf("steps after R = %q, want %q", got, want)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+// アプリが残したプロセスの片付けでビルドが後回しになっても、pull の要求は失わない。
+func TestPullSurvivesLeftoverCleanupBeforeBuild(t *testing.T) {
+	dir := runnertest.ShortTempDir(t, "rpulll-")
+	keyPath := filepath.Join(dir, "keys.sock")
+	statePath := filepath.Join(dir, "presenter.json")
+	logPath := filepath.Join(dir, "steps")
+	pidPath := filepath.Join(dir, "pid")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD":           "echo build >> " + runnertest.ShellQuote(logPath),
+		"RESTARTABLE_TEST_PULL":            "echo pull >> " + runnertest.ShellQuote(logPath),
+		"RESTARTABLE_TEST_RUN":             fmt.Sprintf("echo $$ > %s; /bin/sleep 30 & wait", runnertest.ShellQuote(pidPath)),
+		"RESTARTABLE_TEST_STOP":            fmt.Sprintf("kill -KILL $(cat %s)", runnertest.ShellQuote(pidPath)),
+		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+	})
+	status := r.waitStatus(t, string(Running))
+	pid := *status.PID
+	testwait.Until(t, "child pid file", func() bool { return readFile(pidPath) != "" }, testwait.Within(time.Second))
+
+	restartWithKeys(t, r, keyPath, statePath, &pid, "R", "p")
+
+	if got, want := readFile(logPath), "build\npull\nbuild\n"; got != want {
+		t.Fatalf("steps = %q, want %q", got, want)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestNextBuildScriptRunsPullThenBuildOnceAndStopsOnFailure(t *testing.T) {
+	shell := func(script string) (string, error) {
+		out, err := exec.CommandContext(context.Background(), "/bin/sh", "-c", script).CombinedOutput()
+		return string(out), err
+	}
+	a := &actor{cfg: Config{PullCommand: "echo pull # 行末のコメントが後ろを飲み込まない", BuildCommand: "echo build"}, pullBeforeBuild: true}
+	if got, err := shell(a.nextBuildScript()); err != nil || got != "pull\nbuild\n" {
+		t.Fatalf("got %q, err %v", got, err)
+	}
+	if got := a.nextBuildScript(); got != "echo build" {
+		t.Fatalf("要求が次のビルドにも残る: %q", got)
+	}
+
+	for _, pull := range []string{"exit 3", "set -e; false; echo after"} {
+		a = &actor{cfg: Config{PullCommand: pull, BuildCommand: "echo build"}, pullBeforeBuild: true}
+		got, err := shell(a.nextBuildScript())
+		if err == nil || strings.Contains(got, "build\n") || strings.Contains(got, "after") || !strings.Contains(got, "--pull-cmd が失敗") {
+			t.Fatalf("%q: got %q, err %v", pull, got, err)
+		}
 	}
 }

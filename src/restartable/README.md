@@ -17,7 +17,9 @@ go install github.com/jiikko/dotfiles/src/restartable@<版>
 restartable --build 'go build -o ./bin/server ./cmd/server' -- ./bin/server --foreground
 ```
 
-`--build` と `--stop-cmd` は `/bin/sh -c` で実行します。`--` の後の run コマンドは shell を介さず argv のまま起動します。
+`--pull-cmd '<command>'` を `--build` と一緒に指定すると、再起動の確認で `p` を選べます (`p` で停止した後、ビルドの前に実行します)。`y` / Enter、`restartable restart`、`build-failed` / `crashed` 中の `R` では実行しません。ビルドと同じプロセスの中で走るので、進捗板の段は「ビルド」のままで、失敗すると `build-failed` で待ちます (原因はログの行で見ます。続けて `R` を押すと pull せずに再ビルドします)。アプリを止めてから走るので、失敗するとアプリは止まったままです。ただし pull の実行中に `restartable restart` が届いていたら、ビルドの失敗のときと同じく待たずにビルドし直すので、pull せずに起動します (要求した側が再起動を望んでいるため)。
+
+`--build`・`--pull-cmd`・`--stop-cmd` は `/bin/sh -c` で実行します。`--` の後の run コマンドは shell を介さず argv のまま起動します。
 ビルドが失敗した場合は `build-failed` の表示で待ち、古い成果物は起動しません。`R` で再ビルドできます。UI の無い起動 (stdin / stdout が端末でない) では待たずに、失敗したビルドが残したプロセスを強制終了してから rc 1 で終了します。
 
 アプリが自分で終わったときは、終了コードで扱いを分けます。rc 0 (人の Cmd+Q 等) なら runner も終了します。rc≠0 やシグナルで落ちた場合、TTY の UI では `crashed` の状態で「アプリが終了しました (rc N)」を表示して待ち、`R` / `restartable restart` で再ビルド、`Q` → `y` で終了 (rc 0) できます。再ビルドの前に、落ちたアプリのプロセスグループの残り (子が起こしたプロセス) へ SIGTERM、`--term-grace` 後に SIGKILL を送ります。`Q` で終えるときは残りに触りません。UI の無い起動 (stdin / stdout が端末でない) では待たずに終了し、子の終了コードを runner の終了コードにします (子がシグナルで終わると 128+番号になり、runner 自身がシグナルで終わったときの 130 / 143 などや、runner の失敗の 1 / 2 と区別できません)。
@@ -61,6 +63,7 @@ restartable --build 'make build' --stop-cmd 'curl -fsS -X POST http://127.0.0.1:
 | `R` | 通常の running 中は再起動確認を表示。`y` / Enter で停止してビルドし直す。`build-failed` / `crashed` 中は確認なしで再ビルド。進捗板のすべての段では無視して「処理中」と表示。 |
 | `Q` | 通常の running 中と `crashed` 中は終了確認を表示。ビルド段・起動段・起動の確認段では終了確認を表示し、`y` / Enter で終了。進捗板の終了の待ち段では無視して「処理中」と表示。 |
 | `y` / `Y` / Enter | 確認中の操作を実行。 |
+| `p` / `P` | `--pull-cmd` を指定した起動の再起動の確認中だけ、pull してから再起動する。 |
 | Enter | 確認が出ていないときは、ログに空行を 1 行入れる (ログを見ながら区切りを付ける。端末は raw なので Enter は echo されない)。 |
 | `n` / `N` / Esc | 確認をキャンセル。 |
 | Esc | `--stop-cmd` 成功後、子の終了待ち中なら停止を取り消して running に戻る。 |

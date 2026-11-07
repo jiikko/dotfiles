@@ -459,3 +459,73 @@ func TestEnterWithoutConfirmMarksLogAndKeepsState(t *testing.T) {
 		t.Fatalf("enter in confirm = %+v %+v, want Stopping + BeginStopEffect", got, effects)
 	}
 }
+
+func TestPullKeyStartsRestartThatPullsBeforeBuild(t *testing.T) {
+	base := Model{State: Running, PID: 431, PullEnabled: true}
+	for _, key := range []string{"p", "P"} {
+		m, _ := apply(base, KeyEvent, "R")
+		m, effects := apply(m, KeyEvent, key)
+		if m.State != Stopping || m.Intent != IntentRestartPull || m.Confirm != ConfirmNone || !hasEffect(effects, BeginStopEffect) {
+			t.Fatalf("%s: model=%+v effects=%+v", key, m, effects)
+		}
+		m, _ = Update(m, Event{Kind: StopStartedEvent})
+		if m.Intent != IntentRestartPull {
+			t.Fatalf("stop started dropped the pull: %+v", m)
+		}
+		m, effects = Update(m, Event{Kind: ChildExitedEvent})
+		if m.State != Building || m.Intent != IntentNone || len(effects) != 1 || effects[0].Kind != StartBuildEffect || !effects[0].Pull {
+			t.Fatalf("after stop: model=%+v effects=%+v", m, effects)
+		}
+	}
+}
+
+func TestPlainRestartDoesNotPull(t *testing.T) {
+	m, _ := apply(Model{State: Running, PID: 431, PullEnabled: true}, KeyEvent, "R")
+	m, _ = apply(m, KeyEvent, "y")
+	_, effects := Update(m, Event{Kind: ChildExitedEvent})
+	if len(effects) != 1 || effects[0].Kind != StartBuildEffect || effects[0].Pull {
+		t.Fatalf("effects=%+v", effects)
+	}
+}
+
+func TestPullKeyIsIgnoredOutsideRestartConfirmWithPullCommand(t *testing.T) {
+	cases := []struct {
+		name string
+		base Model
+	}{
+		{"pull-cmd 無しの再起動の確認", Model{State: Running, PID: 1, Confirm: ConfirmRestart}},
+		{"終了の確認", Model{State: Running, PID: 1, Confirm: ConfirmQuit, PullEnabled: true}},
+		{"確認が出ていない", Model{State: Running, PID: 1, PullEnabled: true}},
+		{"build-failed", Model{State: BuildFailed, PullEnabled: true}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, effects := apply(c.base, KeyEvent, "p")
+			if m != c.base || len(effects) != 0 {
+				t.Fatalf("model=%+v effects=%+v", m, effects)
+			}
+		})
+	}
+}
+
+func TestPullIsForgottenWhenRestartDoesNotHappen(t *testing.T) {
+	stopping := func() Model {
+		m, _ := apply(Model{State: Running, PID: 431, PullEnabled: true}, KeyEvent, "R")
+		m, _ = apply(m, KeyEvent, "p")
+		return m
+	}
+	accepted, _ := Update(stopping(), Event{Kind: StopCommandOKEvent})
+	cancelled, _ := apply(accepted, KeyEvent, "esc")
+	failed, _ := Update(stopping(), Event{Kind: StopCommandFailEvent, Reason: "stop-cmd failed"})
+	for name, m := range map[string]Model{"Esc の取り消し": cancelled, "stop-cmd の失敗": failed} {
+		if m.State != Running || m.Intent != IntentNone {
+			t.Fatalf("%s: %+v", name, m)
+		}
+		m, _ = apply(m, KeyEvent, "R")
+		m, _ = apply(m, KeyEvent, "y")
+		_, effects := Update(m, Event{Kind: ChildExitedEvent})
+		if len(effects) != 1 || effects[0].Pull {
+			t.Fatalf("%s の後の普通の再起動が pull する: %+v", name, effects)
+		}
+	}
+}

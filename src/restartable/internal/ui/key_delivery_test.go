@@ -65,3 +65,11 @@ func TestKeyDeliveryPrioritizesCtrlCOverPendingKeys(t *testing.T) {
 		t.Fatalf("first delivered key after Ctrl-C = %q, want ctrl+c", got)
 	}
 }
+
+func TestPullKeyIsPreservedLikeOtherConfirmKeys(t *testing.T) {
+	for _, key := range []string{"p", "P"} {
+		if !mustPreserveKey(key) {
+			t.Errorf("%s が捨てられる", key)
+		}
+	}
+}

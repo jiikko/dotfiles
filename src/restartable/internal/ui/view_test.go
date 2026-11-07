@@ -365,6 +365,8 @@ func TestKeyPressMsgMapsToRunnerKeys(t *testing.T) {
 		{"Q", tea.KeyPressMsg{Code: 'Q', Text: "Q"}, "Q"},
 		{"y", tea.KeyPressMsg{Code: 'y', Text: "y"}, "y"},
 		{"Y", tea.KeyPressMsg{Code: 'Y', Text: "Y"}, "Y"},
+		{"p", tea.KeyPressMsg{Code: 'p', Text: "p"}, "p"},
+		{"P", tea.KeyPressMsg{Code: 'P', Text: "P"}, "P"},
 		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}, "enter"},
 		{"n", tea.KeyPressMsg{Code: 'n', Text: "n"}, "n"},
 		{"N", tea.KeyPressMsg{Code: 'N', Text: "N"}, "N"},
@@ -675,5 +677,32 @@ func TestConfirmHintIsSameDuringTransition(t *testing.T) {
 		Active: true, Kind: runner.TransitionRestart, Stage: runner.TransitionReady,
 	}}, 30, 24, 0), "\n"), confirm.FitHint(confirm.HintYesNo, 30)) {
 		t.Error("幅 30 の遷移中の板が短い案内を出していない")
+	}
+}
+
+func TestRestartConfirmOffersPullOnlyWithPullCommand(t *testing.T) {
+	state := runner.Model{State: runner.Running, PID: 1, Confirm: runner.ConfirmRestart}
+	if got := strings.Join(ViewLinesAt(state, 80, 24, 0), "\n"); strings.Contains(got, "pull") {
+		t.Fatalf("--pull-cmd が無いのに p を案内している:\n%s", got)
+	}
+	state.PullEnabled = true
+	got := strings.Join(ViewLinesAt(state, 80, 24, 0), "\n")
+	for _, want := range []string{"アプリを再起動しますか？", "p: pull してから再起動", confirm.HintYesNo} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q が板に無い:\n%s", want, got)
+		}
+	}
+	state.Confirm = runner.ConfirmQuit
+	if got := strings.Join(ViewLinesAt(state, 80, 24, 0), "\n"); strings.Contains(got, "pull") {
+		t.Fatalf("終了の確認で p を案内している:\n%s", got)
+	}
+}
+
+func TestCompactRestartConfirmShowsPullKey(t *testing.T) {
+	state := runner.Model{State: runner.Running, PID: 1, Confirm: runner.ConfirmRestart, PullEnabled: true}
+	for width, want := range map[int]string{9: "再y/p/n", 6: "Ry/p/n", 5: "y/p/n", 3: "y/n"} {
+		if got := compactConfirmLine(state, width); got != want {
+			t.Errorf("幅 %d: %q, want %q", width, got, want)
+		}
 	}
 }

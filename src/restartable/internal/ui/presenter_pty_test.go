@@ -32,6 +32,8 @@ func TestPTYRunnerHelper(t *testing.T) {
 		configuredPresenter = &recordingPresenter{Presenter: presenter, statePath: statePath}
 	}
 	code, err := runner.Run(runner.Config{
+		BuildCommand:       os.Getenv("RESTARTABLE_PTY_BUILD"),
+		PullCommand:        os.Getenv("RESTARTABLE_PTY_PULL"),
 		RunArgs:            []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_PTY_RUN")},
 		ReadyCommand:       os.Getenv("RESTARTABLE_PTY_READY"),
 		ReadyTimeout:       runnertest.EnvDuration("RESTARTABLE_PTY_READY_TIMEOUT", 120*time.Second),
@@ -190,6 +192,34 @@ func TestPTYRunnerRendersStatusAndConfirmAndUsesNullStdin(t *testing.T) {
 	if _, err := r.Master.Write([]byte("n")); err != nil {
 		t.Fatal(err)
 	}
+	if code := signalPTYRunner(t, r); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+// 統合テストの鍵は socket から runner へ直接入るので、端末のキーが ModelKey を通って届くことはここでしか確かめられない。
+func TestPTYPullKeyFromTerminalRunsPullBeforeRestart(t *testing.T) {
+	steps := filepath.Join(t.TempDir(), "steps")
+	r := startPTYRunnerWithEnv(t, "exec /bin/sleep 30",
+		"RESTARTABLE_PTY_BUILD=echo build >> "+runnertest.ShellQuote(steps),
+		"RESTARTABLE_PTY_PULL=echo pull >> "+runnertest.ShellQuote(steps),
+	)
+	waitPTYOutput(t, r, "running status line", func(output string) bool {
+		return strings.Contains(output, "running (pid ")
+	})
+	if _, err := r.Master.Write([]byte("r")); err != nil {
+		t.Fatal(err)
+	}
+	waitPTYOutput(t, r, "restart confirmation offering pull", func(output string) bool {
+		return strings.Contains(output, "p: pull してから再起動")
+	})
+	if _, err := r.Master.Write([]byte("p")); err != nil {
+		t.Fatal(err)
+	}
+	waitPTYCondition(t, r, "pull then build after p", func() bool {
+		got, err := os.ReadFile(steps)
+		return err == nil && string(got) == "build\npull\nbuild\n"
+	})
 	if code := signalPTYRunner(t, r); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}

@@ -31,7 +31,10 @@ type Intent string
 const (
 	IntentNone    Intent = ""
 	IntentRestart Intent = "restart"
-	IntentExit    Intent = "quit"
+	// IntentRestartPull は「pull してから再起動」。別の欄にしないのは、停止の取り消し・失敗で Intent を消す全部の経路で
+	// pull の要求も一緒に消すため (欄を分けると、取り消した pull が次の普通の再起動で走る)
+	IntentRestartPull Intent = "restart-pull"
+	IntentExit        Intent = "quit"
 )
 
 type TransitionKind string
@@ -92,6 +95,10 @@ const (
 
 // Event is an immutable input to Update. Key uses terminal spellings such as
 // "R", "enter", "esc", and "ctrl+c".
+func (i Intent) restarts() bool {
+	return i == IntentRestart || i == IntentRestartPull
+}
+
 type Event struct {
 	Kind        EventKind
 	Key         string
@@ -125,6 +132,8 @@ const (
 type Effect struct {
 	Kind   EffectKind
 	Reason string
+	// Pull は StartBuildEffect で、ビルドの前に --pull-cmd を走らせる
+	Pull bool
 }
 
 // Model contains only data needed to render and decide lifecycle transitions.
@@ -141,6 +150,8 @@ type Model struct {
 	Message      string
 	Transition   Transition
 	Ready        bool
+	// PullEnabled は --pull-cmd が渡された起動。再起動の確認で p を受け付ける
+	PullEnabled bool
 }
 
 func InitialModel() Model {
@@ -294,7 +305,7 @@ func Update(m Model, e Event) (Model, []Effect) {
 		kind := TransitionRestart
 		if m.Intent == IntentExit {
 			kind = TransitionQuit
-		} else {
+		} else if !m.Intent.restarts() {
 			m.Intent = IntentRestart
 		}
 		m.Transition = Transition{Active: true, Kind: kind, Stage: TransitionStop}
@@ -382,23 +393,19 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		m.Message = "処理中"
 		return m, []Effect{{Kind: MessageEffect, Reason: "処理中"}}
 	}
+	if m.Confirm == ConfirmRestart && m.PullEnabled && (key == "p" || key == "P") {
+		return confirmRestart(m, IntentRestartPull)
+	}
 	if m.Confirm != ConfirmNone {
 		// 実行のキーは tuikit の confirm.IsYes と同じ y / Y / Enter だが、寄せない: confirm は y / Enter 以外をすべて取り消すのに対し、
 		// ここは n / N / Esc だけが取り消しで、ほかのキーでは確認を開いたままにする (誤打鍵で確認を閉じない)。実行の集合だけを
 		// 寄せると 1 つの switch に 2 つの規則が混ざり、状態遷移の層 (runner) が UI の部品を import する。規則を揃えるときに一緒に見直す
 		switch key {
 		case "y", "Y", "enter":
-			confirm := m.Confirm
-			m.Confirm = ConfirmNone
-			if confirm == ConfirmRestart {
-				if m.State == Running {
-					m.State = Stopping
-					m.Intent = IntentRestart
-					m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionStop}
-					return m, []Effect{{Kind: BeginStopEffect}}
-				}
-				return m, nil
+			if m.Confirm == ConfirmRestart {
+				return confirmRestart(m, IntentRestart)
 			}
+			m.Confirm = ConfirmNone
 			m.Intent = IntentExit
 			m.Transition = Transition{Active: true, Kind: TransitionQuit, Stage: TransitionStop}
 			if m.State == Running {
@@ -441,6 +448,18 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		m.Confirm = ConfirmQuit
 	}
 	return m, nil
+}
+
+// confirmRestart は再起動の確認を確定する。確認が開いた後にアプリが落ちていたら、止める相手が無いので何もしない。
+func confirmRestart(m Model, intent Intent) (Model, []Effect) {
+	m.Confirm = ConfirmNone
+	if m.State != Running {
+		return m, nil
+	}
+	m.State = Stopping
+	m.Intent = intent
+	m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionStop}
+	return m, []Effect{{Kind: BeginStopEffect}}
 }
 
 func transitionAcceptsQuit(transition Transition) bool {
@@ -509,12 +528,13 @@ func finishStopping(m Model) (Model, []Effect) {
 	m.PID = 0
 	m.StopAccepted = false
 	m.Message = ""
-	if m.Intent == IntentRestart {
+	if m.Intent.restarts() {
+		pull := m.Intent == IntentRestartPull
 		m.State = Building
 		m.Intent = IntentNone
 		m.Ready = false
 		m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionBuild}
-		return m, []Effect{{Kind: StartBuildEffect}}
+		return m, []Effect{{Kind: StartBuildEffect, Pull: pull}}
 	}
 	m.State = Exiting
 	m.Intent = IntentNone

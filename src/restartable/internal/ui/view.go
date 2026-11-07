@@ -99,11 +99,11 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 	footer = append(footer, StatusLine(state, width))
 	if prompt := confirmPrompt(state); prompt != "" {
 		if width < layout.PanelMinWidth {
-			return append([]string{compactConfirmLine(state.Confirm, width)}, footer...)
+			return append([]string{compactConfirmLine(state, width)}, footer...)
 		}
 		// 確認は横だけ中央に寄せ、縦は footer の直上に置く。inline 表示は view の上端が戻らないので、縦に寄せると
 		// 取り消した後 (ログが流れていない間) に最下行が画面の途中に浮いたまま残る
-		return append(centerHorizontally(confirm.Dialog("", []string{prompt}, confirm.HintYesNo, width, false), width), footer...)
+		return append(centerHorizontally(confirm.Dialog("", confirmBody(state, prompt), confirm.HintYesNo, width, false), width), footer...)
 	}
 	return footer
 }
@@ -144,7 +144,7 @@ func centeredPanel(box []string, width, height int, footer ...string) []string {
 func compactTransitionLine(state runner.Model, width int) string {
 	// 確認ダイアログが開いているなら、段より確認を優先して出す (板が入らない幅でも y / n を押せると分かるように)。
 	if state.Confirm != runner.ConfirmNone {
-		return compactConfirmLine(state.Confirm, width)
+		return compactConfirmLine(state, width)
 	}
 	switch state.Transition.Stage {
 	case runner.TransitionStop:
@@ -159,9 +159,12 @@ func compactTransitionLine(state runner.Model, width int) string {
 }
 
 // compactConfirmLine は板の入らない幅 (layout.PanelMinWidth 未満) の確認の 1 行。板の間も板の外も同じ文言にする。
-func compactConfirmLine(confirmState runner.Confirm, width int) string {
+func compactConfirmLine(state runner.Model, width int) string {
 	// 4 桁あれば終了と再起動を見分けられる形を残す (Q / R は確認を開いたキー)。3 桁以下は y/n を切り詰める
-	if confirmState == runner.ConfirmRestart {
+	if state.Confirm == runner.ConfirmRestart {
+		if state.PullEnabled {
+			return fitFirst(width, "再y/p/n", "Ry/p/n", "y/p/n", "y/n")
+		}
 		return fitFirst(width, "再起動y/n", "再y/n", "Ry/n", "y/n")
 	}
 	return fitFirst(width, "終了y/n", "終y/n", "Qy/n", "y/n")
@@ -249,6 +252,15 @@ func transitionHint(state runner.Model) string {
 	default:
 		return "Ctrl-C: 強制終了"
 	}
+}
+
+// confirmBody は確認の板の本文。p の案内を HintYesNo の行に足さないのは、3 つ並べると板の幅 (confirm.MaxWidth) を超えて
+// 取り消しのキーが切れるため。
+func confirmBody(state runner.Model, prompt string) []string {
+	if state.Confirm == runner.ConfirmRestart && state.PullEnabled {
+		return []string{prompt, "p: pull してから再起動"}
+	}
+	return []string{prompt}
 }
 
 func confirmPrompt(state runner.Model) string {
@@ -358,7 +370,7 @@ func (m *teaModel) nextSpinnerTick() tea.Cmd {
 // an ordinary model key here; Bubble Tea's signal handler is disabled.
 func ModelKey(key tea.KeyPressMsg) (string, bool) {
 	switch key.String() {
-	case "r", "R", "q", "Q", "y", "Y", "enter", "n", "N", "esc", "ctrl+c":
+	case "r", "R", "q", "Q", "y", "Y", "p", "P", "enter", "n", "N", "esc", "ctrl+c":
 		return key.String(), true
 	default:
 		return "", false

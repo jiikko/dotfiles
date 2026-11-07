@@ -93,6 +93,7 @@ func runCommand(args []string) int {
 	fs := flag.NewFlagSet("restartable", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	build := fs.String("build", "", "shell command to build before running")
+	pull := fs.String("pull-cmd", "", "shell command run before the build when the restart confirmation is answered with p")
 	stop := fs.String("stop-cmd", "", "shell command that asks the child to exit")
 	stopTimeout := fs.Duration("stop-cmd-timeout", 5*time.Second, "maximum run time for --stop-cmd")
 	termGrace := fs.Duration("term-grace", 5*time.Second, "wait after SIGTERM before SIGKILL")
@@ -106,6 +107,10 @@ func runCommand(args []string) int {
 	runArgs := fs.Args()
 	if len(runArgs) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: restartable [flags] -- <run command...>")
+		return 2
+	}
+	if *pull != "" && *build == "" {
+		fmt.Fprintln(os.Stderr, "--pull-cmd requires --build")
 		return 2
 	}
 	if *stopTimeout <= 0 {
@@ -134,7 +139,7 @@ func runCommand(args []string) int {
 		}
 	}
 	cfg := withTerminals(runner.Config{
-		BuildCommand: *build, RunArgs: runArgs, StopCommand: *stop,
+		BuildCommand: *build, PullCommand: *pull, RunArgs: runArgs, StopCommand: *stop,
 		StopCommandTimeout: *stopTimeout, TermGrace: *termGrace,
 		ReadyCommand: *ready, ReadyTimeout: *readyTimeout,
 		IDEnv: *idEnv, ControlPath: resolved, Stdin: os.Stdin,

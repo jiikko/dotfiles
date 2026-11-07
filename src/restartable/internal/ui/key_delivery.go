@@ -2,7 +2,7 @@ package ui
 
 import "sync"
 
-// pendingKeyLimit は確認・取り消しのキー (y / Enter / n / Esc) を保留する上限。超えたら古いものから捨てる。
+// pendingKeyLimit は確認・取り消しのキー (y / Enter / p / n / Esc) を保留する上限。超えたら古いものから捨てる。
 //
 // 既知の制約: 送信中の先頭キーを手元に持ったまま上限超えで列の先頭を捨てるので、
 // [y (送信中), Esc, …] の Esc が捨てられ、取り消しのつもりが確認になりうる。起きるのは runner が詰まっている間に
@@ -185,7 +185,7 @@ func (d *keyDelivery) signal(ch chan struct{}) {
 
 func mustPreserveKey(key string) bool {
 	switch key {
-	case "ctrl+c", "esc", "y", "Y", "enter", "n", "N":
+	case "ctrl+c", "esc", "y", "Y", "enter", "n", "N", "p", "P":
 		return true
 	default:
 		return false

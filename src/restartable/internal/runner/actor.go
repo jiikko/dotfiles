@@ -17,7 +17,9 @@ import (
 )
 
 type Config struct {
-	BuildCommand        string
+	BuildCommand string
+	// PullCommand は再起動の確認で p を選んだときだけ、ビルドの前に走らせる。BuildCommand が要る (main が検査する)
+	PullCommand         string
 	RunArgs             []string
 	StopCommand         string
 	StopCommandTimeout  time.Duration
@@ -149,7 +151,9 @@ type actor struct {
 	leftoverChild             *process
 	leftoverCleanupRunning    bool
 	buildAfterLeftoverCleanup bool
-	forceProcs                []*process // 強制停止が撃っているグループ (2 回目の Ctrl-C で KILL する)
+	// pullBeforeBuild は StartBuildEffect の Pull を、残ったプロセスの片付けの後のビルドまで持ち越す
+	pullBeforeBuild bool
+	forceProcs      []*process // 強制停止が撃っているグループ (2 回目の Ctrl-C で KILL する)
 }
 
 // Run supervises one foreground process. It returns a process-style exit code.
@@ -236,7 +240,9 @@ func Run(cfg Config) (int, error) {
 	sink := newLogSink(cfg.Stdout, cfg.Headless, printLine)
 	sink.terminalOutput = cfg.StdoutIsTerminal
 	sink.onOutputFailure = func() { reportOutputFailure(cfg.Stderr) }
-	return (&actor{cfg: cfg, model: InitialModel(), id: id, server: server,
+	model := InitialModel()
+	model.PullEnabled = cfg.PullCommand != ""
+	return (&actor{cfg: cfg, model: model, id: id, server: server,
 		sink: sink, presenter: presenter,
 		events: make(chan actorEvent, 128), flusherDone: make(chan struct{}), actorDone: make(chan struct{}),
 		outputDrainTimeout: outputDrainTimeout(cfg.OutputDrainTimeout), signals: signals}).run()
@@ -609,7 +615,7 @@ func (a *actor) startBuild() error {
 	if a.cfg.BuildCommand == "" {
 		return a.startRun()
 	}
-	proc, err := startProcess([]string{a.cfg.BuildCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.StdinIsTerminal)
+	proc, err := startProcess([]string{a.nextBuildScript()}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.model.BuildQueued = false
 		_, effects := a.transition(Event{Kind: BuildFailedEvent, Reason: err.Error(), NoUI: a.cfg.Headless})
@@ -623,6 +629,18 @@ func (a *actor) startBuild() error {
 	go func() { a.events <- actorEvent{kind: buildDoneEvent, proc: proc, result: proc.wait()} }()
 	a.presenter.Render(a.model)
 	return nil
+}
+
+// nextBuildScript は次のビルドで走らせるスクリプト。pull は別の段にせず同じプロセスの中で走らせる: 取り消し (Q / Ctrl-C) と
+// 失敗 (build-failed で待つ・古い成果物を起動しない) の扱いをビルドと同じにするため。失敗の表示はビルドの失敗と同じなので、
+// 原因はログの行で見分ける。要求はここで消費する (失敗後の R は pull しない)。
+// `( pull ) || …` にしない: || の左では pull の中の set -e が効かず、途中の失敗を素通りしてビルドへ進む。
+func (a *actor) nextBuildScript() string {
+	if !a.pullBeforeBuild {
+		return a.cfg.BuildCommand
+	}
+	a.pullBeforeBuild = false
+	return "(\n" + a.cfg.PullCommand + "\n)\n[ $? -eq 0 ] || { echo 'restartable: --pull-cmd が失敗したのでビルドしません' >&2; exit 1; }\n" + a.cfg.BuildCommand
 }
 
 func (a *actor) startRun() error {
@@ -807,6 +825,7 @@ func (a *actor) handleEffects(effects []Effect) {
 	for _, effect := range effects {
 		switch effect.Kind {
 		case StartBuildEffect:
+			a.pullBeforeBuild = a.pullBeforeBuild || effect.Pull
 			if a.deferBuildForLeftoverCleanup() {
 				continue
 			}
@@ -928,7 +947,7 @@ func (a *actor) statusResponse() control.Response {
 		OK: true, ID: a.id, State: string(a.model.State), PID: nil,
 		Generation:     a.model.Generation,
 		Ready:          a.model.Ready,
-		RestartPending: queuedAlive || len(a.pendingRequests) > 0 || (a.model.State == Stopping && a.model.Intent == IntentRestart),
+		RestartPending: queuedAlive || len(a.pendingRequests) > 0 || (a.model.State == Stopping && a.model.Intent.restarts()),
 	}
 	if a.model.State == Running && a.model.PID > 0 {
 		pid := a.model.PID
@@ -952,7 +971,7 @@ func (a *actor) liveQueued() []*control.Request {
 func (a *actor) beginStop() {
 	a.cancelReady()
 	if a.model.PID == 0 || a.child == nil {
-		if a.model.Intent == IntentRestart {
+		if a.model.Intent.restarts() {
 			_, effects := a.transition(Event{Kind: ChildExitedEvent})
 			a.handleEffects(effects)
 		} else {

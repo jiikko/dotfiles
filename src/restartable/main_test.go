@@ -264,3 +264,9 @@ func TestWithPresenterWarnsOnlyForTTY(t *testing.T) {
 		}
 	}
 }
+
+func TestPullCommandRequiresBuild(t *testing.T) {
+	if code := runCommand([]string{"--pull-cmd", "true", "--", "/usr/bin/true"}); code != 2 {
+		t.Fatalf("rc = %d, want 2", code)
+	}
+}
