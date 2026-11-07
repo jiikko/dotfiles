@@ -19,8 +19,40 @@ type searchState struct {
 	at      int   // 今の一致の番号
 	matches []*node
 	hit     map[*node]bool // matches と同じ集合。ハイライトはこれに入る項目だけに付ける (光っているのに Tab で届かない項目を作らない)
-	histAt  int            // 履歴を辿っている位置 (len(searchHist) = 辿っていない・打ちかけの語)
-	draft   string         // 辿り始めたときの打ちかけの語 (この語で始まる履歴だけを辿り、↓ で最新を越えたら戻す。vim の / と同じ)
+	hist    histCursor
+}
+
+// histCursor は入力欄で検索の履歴 (searchHist) を辿っている位置。
+type histCursor struct {
+	at    int    // 辿っている位置 (len(履歴) = 辿っていない・打ちかけの語)
+	draft string // 辿り始めたときの打ちかけの語 (この語で始まる履歴だけを辿り、↓ で最新を越えたら戻す。vim の / と同じ)
+}
+
+// step は line の打ちかけの語で始まる履歴を、d < 0 で古い方へ・d > 0 で新しい方へ 1 つ辿り、line をその語にする。新しい方の端を越えたら
+// 打ちかけの語に戻す。当たる語が無ければ何もせず false。
+func (c *histCursor) step(h []string, line *lineedit.Line, d int) bool {
+	if c.at == len(h) {
+		c.draft = line.String()
+	}
+	next := -1
+	for i := c.at + d; i >= 0 && i < len(h); i += d {
+		if strings.HasPrefix(h[i], c.draft) {
+			next = i
+			break
+		}
+	}
+	var text string
+	switch {
+	case next >= 0:
+		c.at, text = next, h[next]
+	case d > 0 && c.at < len(h):
+		c.at, text = len(h), c.draft
+	default:
+		return false
+	}
+	line.Reset()
+	line.Insert(text)
+	return true
 }
 
 // searchHistKeep は検索の履歴を覚える件数 (ユーザー決定 2026-10-31)。
@@ -58,32 +90,11 @@ func (m *Model) rememberSearch(q string) {
 	appendHistory(searchHistoryPath(), q)
 }
 
-// stepHistory は打ちかけの語で始まる履歴を、d < 0 で古い方へ・d > 0 で新しい方へ 1 つ辿る。新しい方の端を越えたら打ちかけの語に戻す。
-// 当たる語が無ければ何もしない。辿ったら一致を引き直す。
+// stepHistory は検索の履歴を 1 つ辿り (histCursor.step)、辿ったら一致を引き直す。
 func (m *Model) stepHistory(d int) {
-	s, h := &m.search, m.searchHist
-	if s.histAt == len(h) {
-		s.draft = s.line.String()
+	if m.search.hist.step(m.searchHist, &m.search.line, d) {
+		m.refreshMatches()
 	}
-	next := -1
-	for i := s.histAt + d; i >= 0 && i < len(h); i += d {
-		if strings.HasPrefix(h[i], s.draft) {
-			next = i
-			break
-		}
-	}
-	var text string
-	switch {
-	case next >= 0:
-		s.histAt, text = next, h[next]
-	case d > 0 && s.histAt < len(h):
-		s.histAt, text = len(h), s.draft
-	default:
-		return
-	}
-	s.line.Reset()
-	s.line.Insert(text)
-	m.refreshMatches()
 }
 
 // rank の段 (小さいほど良い。spec §6.2 の fuzzy)。
@@ -241,7 +252,7 @@ func (s *searchState) setMatches(ms []*node) {
 }
 
 func (m *Model) startSearch() {
-	m.search = searchState{active: true, origin: m.cur, histAt: len(m.searchHist)}
+	m.search = searchState{active: true, origin: m.cur, hist: histCursor{at: len(m.searchHist)}}
 }
 
 // searchKey は検索中のキー。lineedit の編集キーを先に渡し、Enter / Esc / 一致の移動だけを自分で捌く。
@@ -281,7 +292,7 @@ func (m *Model) searchKey(key, text string) {
 			return
 		}
 		if s.line.String() != before { // 打ち直したら、次の ↑ はその語で始まる履歴を新しい方から辿る (カーソルを動かしただけでは辿り続ける)
-			s.histAt = len(m.searchHist)
+			s.hist.at = len(m.searchHist)
 		}
 	}
 	m.refreshMatches()
