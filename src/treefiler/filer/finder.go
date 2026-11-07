@@ -38,7 +38,8 @@ type finderState struct {
 	hits   []finderHit // tiers をつないだもの (dirty なら作り直す)
 	dirty  bool
 	sel    int
-	top    int // 一覧の窓の先頭
+	selp   *finderPath // Tab で選んだ候補 (走査中に前の段へ一致が足されても、同じ項目を選び続ける。sel はその並びの中の番号)
+	top    int         // 一覧の窓の先頭
 	capped bool
 	done   bool
 }
@@ -140,6 +141,8 @@ func (s *finderScan) publish(batch []finderPath) {
 var finderWG sync.WaitGroup
 
 // startFinder は `/`。git が無視するフォルダの判定は、開いた時点の gitSnap で決める (`>` と同じ。Git の設定が off・取得の前なら降りる)。
+// gitSnap が持つのは開いているフォルダの repo だけなので、閉じたフォルダの中の repo の node_modules などには降りる (候補が増え、上限に早く届く)。
+// 降りないようにするには、走査が repo の根 (.git を持つフォルダ) に入ったところで git に問い合わせる形が要る (repo ごとに git を起こす)。
 func (m *Model) startFinder() {
 	snap := m.gitSnap
 	root := m.root.path()
@@ -205,7 +208,7 @@ func (f *finderState) refilter() {
 	for i := range f.paths {
 		f.match(&f.paths[i])
 	}
-	f.dirty, f.sel, f.top = true, 0, 0
+	f.dirty, f.sel, f.top, f.selp = true, 0, 0, nil
 }
 
 // list は候補を良い段から並べたもの。
@@ -216,6 +219,14 @@ func (f *finderState) list() []finderHit {
 			f.hits = append(f.hits, t...)
 		}
 		f.dirty = false
+		if f.selp != nil {
+			for i, h := range f.hits {
+				if h.p == f.selp {
+					f.sel = i
+					break
+				}
+			}
+		}
 	}
 	return f.hits
 }
@@ -243,14 +254,10 @@ func (m *Model) finderKey(key, text string) {
 		m.endFinder()
 		return
 	case key == "tab" || key == "ctrl+n":
-		if n := len(f.list()); n > 0 {
-			f.sel = listnav.Cycle(f.sel, 1, n)
-		}
+		f.step(1)
 		return
 	case key == "shift+tab" || key == "ctrl+p":
-		if n := len(f.list()); n > 0 {
-			f.sel = listnav.Cycle(f.sel, -1, n)
-		}
+		f.step(-1)
 		return
 	case key == "up" || key == "down": // 検索の履歴を辿る (t と同じ履歴)
 		d := 1
@@ -277,6 +284,16 @@ func (m *Model) finderKey(key, text string) {
 	f.refilter()
 }
 
+// step は選ぶ候補を d だけ回し、選んだ項目を覚える。
+func (f *finderState) step(d int) {
+	hits := f.list()
+	if len(hits) == 0 {
+		return
+	}
+	f.sel = listnav.Cycle(f.sel, d, len(hits))
+	f.selp = hits[f.sel].p
+}
+
 // finderPaste は貼り付けた文字を語に足す。
 func (m *Model) finderPaste(text string) {
 	m.finder.line.Insert(text)
@@ -290,7 +307,7 @@ const finderPrompt = "> "
 func (m *Model) finderRect() (rect, bool) {
 	w := min(m.w-4, 100)
 	h := min(m.h-2, 24)
-	if w < 24 || h < 6 {
+	if w < finderMinW || h < 6 {
 		return rect{}, false
 	}
 	return rect{(m.w - w) / 2, max((m.h-1-h)/2, 0), w, h}, true
@@ -303,8 +320,20 @@ func (m *Model) finderField(r rect) (text string, caretX, y int) {
 	return text, x + col, r.y + 1
 }
 
-// finderStatusW は入力欄の右に出す件数と走査の様子の桁 (入力の窓から引く)。
-const finderStatusW = 26
+// finderStatusW は入力欄の右に出す件数と走査の様子の桁 (入力の窓から引く)。finderMinW はポップアップを出す最小の幅:
+// 枠と余白 (4)・"> " (2)・件数 (finderStatusW) を引いて、入力に 8 桁残る幅。これより狭いと最下行に出す (件数が入力と重なる)。
+const (
+	finderStatusW = 26
+	finderMinW    = 4 + 2 + finderStatusW + 8
+)
+
+// finderSmallPrefix は狭い画面で最下行に出すときの頭。finderSmallField は、そのときの入力の窓 (描画とキャレットが同じ値を使う)。
+const finderSmallPrefix = "/ "
+
+func (m *Model) finderSmallField() (text string, caretX int) {
+	text, col := m.finder.line.Window(max(m.w/2-widthOf(finderSmallPrefix), 1))
+	return text, widthOf(finderSmallPrefix) + col
+}
 
 func (m *Model) finderStatus() string {
 	f := &m.finder
@@ -324,15 +353,16 @@ func (m *Model) drawFinder(c *canvas) {
 	r, ok := m.finderRect()
 	f := &m.finder
 	if !ok {
-		m.bottomHint(c, "/ "+f.line.String()+"  "+m.finderStatus()+" · 画面が小さいので候補を出せません · esc 戻る")
+		text, _ := m.finderSmallField()
+		m.bottomHint(c, finderSmallPrefix+text+"  "+m.finderStatus()+" · 画面が小さいので候補を出せません · esc 戻る")
 		return
 	}
 	c.frame(r, cAccRoute)
-	c.put(r.x+2, r.y, " ファイルを探す (root 以下) ", cText, true)
+	c.put(r.x+2, r.y, termwidth.Truncate(" ファイルを探す (root 以下) ", r.w-4, "…"), cText, true)
 	text, _, y := m.finderField(r)
 	x := c.put(r.x+2, y, finderPrompt, cAccRoute, true)
 	c.put(x, y, text, cText, false)
-	st := m.finderStatus()
+	st := termwidth.Truncate(m.finderStatus(), finderStatusW, "…")
 	c.put(r.x+r.w-2-widthOf(st), y, st, cMuted, false)
 	rows := r.h - 4 // 枠の上下・入力欄・案内を除いた行
 	hits := f.list()

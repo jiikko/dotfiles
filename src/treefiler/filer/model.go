@@ -300,7 +300,8 @@ func (m *Model) CaretPos() (x, y int, ok bool) {
 			_, x, y := m.finderField(r)
 			return x, y, true
 		}
-		return 0, 0, false // 最下行に出すときは語を切って出すので、キャレットの位置は持たない
+		_, x := m.finderSmallField() // 狭い画面では最下行に出す (drawFinder)
+		return x, m.h - 1, true
 	}
 	if f, ok := m.inputField(); ok && m.h > 0 {
 		return f.caretX, m.h - 1, true
@@ -1627,7 +1628,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // spinnerFrame は 80ms ごとに進む点字のスピナー (spec §2.2)。
 func spinnerFrame(now time.Time) string { return spinner.At(now, 80*time.Millisecond) }
 
-// searchBar は検索中の最下行 (spec §3.4 の / 検索行)。
+// searchBar は検索中の最下行 (spec §3.4 の検索行。キーは t)。
 func (m *Model) searchBar(c *canvas) {
 	f, _ := m.inputField()
 	y, x := m.h-1, m.putField(c, f)

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jiikko/dotfiles/src/testwait"
@@ -255,5 +256,68 @@ func TestFinderDrawsLongPathTailWithMatchAndFallsBackWhenSmall(t *testing.T) {
 	last := m.draw().plain()[4]
 	if !strings.Contains(last, "/ target") || !strings.Contains(last, "画面が小さい") {
 		t.Fatalf("狭い画面の最下行 = %q (語と、候補を出せない理由)", last)
+	}
+}
+
+// 走査中に前の段へ一致が足されても、Tab で選んだ候補を選び続ける (番号だけを持つと、ずれた先の別の候補へ Enter で移る)。
+func TestFinderSelectionFollowsItemWhenEarlierTierGrows(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("/")
+	waitFinder(t, m)
+	typeText(m, "ile") // file10.txt・file2.txt は名前の途中の一致 (前方一致より後ろの段)
+	m.HandleKey("tab")
+	chosen := finderRels(m)[m.finder.sel]
+	if m.finder.sel != 1 {
+		t.Fatalf("前提: Tab で 2 番目を選ぶ (sel=%d)", m.finder.sel)
+	}
+	m.finder.match(&finderPath{rel: "ilex.txt", shown: "ilex.txt"}) // 取り込みで前の段 (名前の前方一致) に 1 件足されたのと同じ
+	if got := m.finder.list()[m.finder.sel].p.rel; got != chosen {
+		t.Fatalf("前の段に一致が足された後の選択 = %s, want Tab で選んだ %s", got, chosen)
+	}
+}
+
+// 止める旗を、走査の goroutine が次のフォルダへ進む前に見て止まる (閉じた後に root の配下を辿り続けない)。
+func TestFinderScanStopsWhenCanceled(t *testing.T) {
+	root := t.TempDir()
+	mkfile(t, filepath.Join(root, "a", "b", "c", "deep.txt"), "x\n")
+	ready := make(chan *finderScan, 1)
+	var once sync.Once
+	s := startFinderScan(root, 100, func(string) bool {
+		once.Do(func() { (<-ready).cancel() }) // root の直下の a を見たところで止める (2 回目からは待たない)
+		return false
+	})
+	ready <- s
+	testwait.Until(t, "止めた走査", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.done
+	})
+	found, _, _ := s.take()
+	for _, p := range found {
+		if strings.Count(p.rel, string(filepath.Separator)) > 0 {
+			t.Fatalf("止めた後も a の中まで辿った: %v", found)
+		}
+	}
+	if len(found) != 1 || found[0].rel != "a" {
+		t.Fatalf("止める前に見つけたのは root の直下の a だけのはず: %v", found)
+	}
+}
+
+// ポップアップを出す最小の幅を切ると最下行に落とし、そのときもキャレットは描いた語の末尾の直後に置く
+// (glogx は CaretPos で「入力中か」を見る。返さないと、入力中の編集キーを別の意味に取る)。
+func TestFinderNarrowFallsBackWithCaret(t *testing.T) {
+	m := newTest(t)
+	m.Resize(finderMinW+4, 20)
+	m.HandleKey("/")
+	waitFinder(t, m)
+	if _, ok := m.finderRect(); !ok {
+		t.Fatal("前提: 最小の幅ちょうどでポップアップを出す")
+	}
+	m.Resize(finderMinW+3, 20)
+	typeText(m, "ab")
+	x, y, ok := m.CaretPos()
+	last := m.draw().plain()[m.h-1]
+	if !ok || y != m.h-1 || !strings.HasPrefix(last, "/ ab") || x != 4 {
+		t.Fatalf("最下行に落ちたときのキャレット = (%d, %d, %v)、最下行 %q (/ ab の直後 = 4 のはず)", x, y, ok, last)
 	}
 }

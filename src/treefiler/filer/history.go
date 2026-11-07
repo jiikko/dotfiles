@@ -15,7 +15,7 @@ import (
 	"atomicfile"
 )
 
-// history.go は `!` のコマンドと `/` の検索の履歴をプロセスと dir をまたいで残す。保存先は設定と同じ置き場の treefiler-history と
+// history.go は `!` のコマンドと検索 (`t` と `/`) の履歴をプロセスと dir をまたいで残す。保存先は設定と同じ置き場の treefiler-history と
 // treefiler-search-history (configDir)。
 //
 // 形式は 1 行 1 コマンドで、コマンドを strconv.Quote した文字列 (改行・制御文字を含んでも 1 行に収まる)。

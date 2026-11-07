@@ -225,7 +225,7 @@ func (v *FilerView) Lines(width, page int) []string {
 }
 
 // hint は最下行の案内。抜ける手段 (F / q) を先に置き、幅で切る (glogx-ui-guide §5: 抜ける手段は必ず残す)。
-// 🚨 filer がキーを取っている間 (/ の検索・! と : の入力欄・パネル・? の一覧・確認) は F も q も filer に入るので、
+// 🚨 filer がキーを取っている間 (t の検索・/ のファイルを探すポップアップ・! と : の入力欄・パネル・? の一覧・確認) は F も q も filer に入るので、
 // 「F: 閉じる」を出すと嘘になる。そのときはその層で効くキー (filer.Model.LayerHints) を出す (lan の Hint と同じ形)
 func (v *FilerView) Hint(width int) string {
 	if f := v.live(); f != nil && f.OwnsKeys() { // 層の間はその層で効くキーだけ (glogx-ui-guide §5)

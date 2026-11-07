@@ -358,7 +358,7 @@ func (m *Model) stepMatch(d int) {
 // repeatSearch は確定した前回の検索で、開いている木の読み順で次 / 前の一致へ (n / N)。
 func (m *Model) repeatSearch(d int) {
 	if m.lastSearch == "" {
-		m.fail("前回の検索がありません (/ で検索する)")
+		m.fail("前回の検索がありません (t で検索する)")
 		return
 	}
 	col := m.openTree() // 読み順の並び。1 回だけ作る
