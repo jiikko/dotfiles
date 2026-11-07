@@ -44,6 +44,11 @@
 - 計測: tfprobe (root=`src/`、1,922 項目、2 サイクル) の `find` の段で 1 打の p95 3.2ms・フレームの最大 5.9ms、goroutine・fd・子は一定。
   上限いっぱいの照らし直しは使い捨てのベンチマーク (10 万件の作ったパス、M3 Max) で 1 打あたり `m` 10.0ms・`mo` 11.6ms・`model` (一致なし) 29.0ms・`fn` 11.9ms。
   **10 万件の root で一致の少ない語を打つと 1 打が 1 フレーム (16ms) を超える**。速くするなら、語を伸ばしたときは前の候補だけを照らす (幅優先の順を保つ印が要る)
+- 2026-11-07: push (`f0a697c12` まで)。make test の dupscan gate が `finderScan.cancel` と `explodeJob.cancel` の写しを止めたので、止める旗を `stopFlag` に寄せた。
+  root の `make test` rc=0。CI は `f0a697c12` の 10 run (Lint・dupscan gate・unused・src/doctor・src/treefiler・Issues・src/pro-con・src/glogx・Bench・Tests) が全部 success。
+  Bench (run 42337273278) は 3 job とも trusted=yes (較正器の比 0.88〜1.13) で、悪化の判定 0 件。直前の run (42336409641、`7556ea433`) と比べて glogx の
+  `render_large_patch` 0.677 → 0.735ms (×1.09)・`issues_view_frame` 0.022 → 0.024ms (×1.09)・`status_view_frame` 0.028 → 0.030ms (×1.07)、同じ run の較正器 `glogx_calib` も ×1.06。
+  glogx 側の変更はテストとコメントだけ
 - 実物 (`make debug`、root=src): `/` → `model` で閉じた木の中の `*/model.go` が浅い順に並び、Tab で選択が移る。`treefiler/filer/find` → Enter で `filer/finder.go` へ途中を開いて移る
 
 ## 敵対的レビュー (2026-11-07、opus の読み取りのみのサブエージェント 1 本)
