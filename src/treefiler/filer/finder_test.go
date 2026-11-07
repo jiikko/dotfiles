@@ -145,10 +145,7 @@ func TestFinderEscKeepsCursorAndEnterWithoutHitsStaysOpen(t *testing.T) {
 	if m.finder.active {
 		t.Fatal("Close の後もポップアップが開いている")
 	}
-	scan.mu.Lock()
-	canceled := scan.canceled
-	scan.mu.Unlock()
-	if !canceled {
+	if !scan.canceled() {
 		t.Fatal("Close で裏の走査を止めていない")
 	}
 	finderWG.Wait() // 止めた走査の goroutine が戻る (戻らなければテストの時間切れ)

@@ -17,19 +17,13 @@ const (
 )
 
 type explodeJob struct {
-	mu       sync.Mutex
-	target   string
-	dirs     []string // 開くフォルダ (幅優先の順)
-	shown    int      // 開いたフォルダの中の、木に見える項目の数 (隠す設定の dotfile を除く)
-	stopped  bool     // 上限で止めた
-	done     bool
-	canceled bool
-}
-
-func (j *explodeJob) cancel() {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.canceled = true
+	mu      sync.Mutex
+	target  string
+	dirs    []string // 開くフォルダ (幅優先の順)
+	shown   int      // 開いたフォルダの中の、木に見える項目の数 (隠す設定の dotfile を除く)
+	stopped bool     // 上限で止めた
+	done    bool
+	stopFlag
 }
 
 func (j *explodeJob) finished() bool {
@@ -53,10 +47,7 @@ func startExplode(target string, skip func(path, name string) bool, hidden func(
 		var out []string
 		stopped, shown := false, 0
 		for len(queue) > 0 {
-			j.mu.Lock()
-			canceled := j.canceled
-			j.mu.Unlock()
-			if canceled {
+			if j.canceled() {
 				break
 			}
 			if len(out) >= explodeMaxDirs || entries >= explodeMaxEntries {
@@ -114,11 +105,11 @@ func (m *Model) takeExplode() {
 	if j == nil || !j.finished() {
 		return
 	}
-	if !j.canceled && j.shown >= explodeAskAt && m.OwnsKeys() {
+	if !j.canceled() && j.shown >= explodeAskAt && m.OwnsKeys() {
 		return // 他の層 (d の確認の板・入力欄など) を開いている間は板を重ねない (上書きすると d の確認が消える)。閉じてから聞く
 	}
 	m.exploding = nil
-	if j.canceled {
+	if j.canceled() {
 		return
 	}
 	target := m.findNode(j.target)

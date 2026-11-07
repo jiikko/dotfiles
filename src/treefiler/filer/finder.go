@@ -56,17 +56,11 @@ type finderHit struct {
 
 // finderScan は裏で辿っている 1 回 (goroutine から書き、Advance が取り出す)。
 type finderScan struct {
-	mu       sync.Mutex
-	found    []finderPath // まだ取り込んでいない分
-	done     bool
-	capped   bool
-	canceled bool
-}
-
-func (s *finderScan) cancel() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.canceled = true
+	mu     sync.Mutex
+	found  []finderPath // まだ取り込んでいない分
+	done   bool
+	capped bool
+	stopFlag
 }
 
 func (s *finderScan) take() (found []finderPath, done, capped bool) {
@@ -87,10 +81,7 @@ func startFinderScan(root string, limit int, skip func(path string) bool) *finde
 		capped := false
 	walk:
 		for len(queue) > 0 {
-			s.mu.Lock()
-			canceled := s.canceled
-			s.mu.Unlock()
-			if canceled {
+			if s.canceled() {
 				break
 			}
 			d := queue[0]
