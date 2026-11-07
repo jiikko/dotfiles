@@ -71,7 +71,7 @@ func TestPasteGoesToInputOnly(t *testing.T) {
 	if m.cur != cur {
 		t.Fatal("入力していないときの貼り付けがキーとして走った")
 	}
-	m.HandleKey("/")
+	m.HandleKey("t")
 	m.Paste("file10")
 	if m.search.line.String() != "file10" || m.cur.name != "file10.txt" {
 		t.Fatalf("検索への貼り付け: %q → %s", m.search.line.String(), m.cur.name)

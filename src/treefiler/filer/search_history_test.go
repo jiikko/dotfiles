@@ -11,7 +11,7 @@ import (
 
 // confirmSearch は / で q を打って Enter で確定する。
 func confirmSearch(m *Model, q string) {
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, q)
 	m.HandleKey("enter")
 }
@@ -24,7 +24,7 @@ func TestSearchHistoryUpDownAndPersists(t *testing.T) {
 	settle(m)
 	confirmSearch(m, "file")
 	confirmSearch(m, "song")
-	m.HandleKey("/")
+	m.HandleKey("t")
 	for i, step := range []struct{ key, want string }{
 		{"up", "song"}, {"up", "file"}, {"up", "file"}, {"down", "song"}, {"down", ""},
 	} {
@@ -41,7 +41,7 @@ func TestSearchHistoryUpDownAndPersists(t *testing.T) {
 
 	m2 := newAt(t, root) // 同じ設定の置き場 (fixture の isolateConfig) から読み直す
 	m2.Resize(120, 40)
-	m2.HandleKey("/")
+	m2.HandleKey("t")
 	m2.HandleKey("up")
 	if got := m2.search.line.String(); got != "song" {
 		t.Fatalf("次の Model で履歴の最新が出ない: %q (履歴 %v)", got, m2.searchHist)
@@ -54,7 +54,7 @@ func TestSearchHistoryFiltersByTypedPrefix(t *testing.T) {
 	for _, q := range []string{"one", "two", "owl"} {
 		confirmSearch(m, q)
 	}
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "o")
 	for i, step := range []struct{ key, want string }{
 		{"up", "owl"}, {"up", "one"}, {"up", "one"}, {"down", "owl"}, {"down", "o"},
@@ -96,7 +96,7 @@ func TestSearchHistoryDedupesAndKeeps50(t *testing.T) {
 // 一致が無い語も残す (打ち直す手間を省く)。履歴が無いときの ↑ は何もしない (一致の移動もしない)
 func TestSearchHistoryKeepsNoMatchAndUpWithoutHistoryIsNoop(t *testing.T) {
 	m := newTest(t)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "file")
 	at := m.cur
 	m.HandleKey("up")

@@ -214,7 +214,7 @@ func TestFilerSearchPlacesCaret(t *testing.T) {
 	if m.View().Cursor != nil {
 		t.Fatal("入力していないのにカーソルを置いた")
 	}
-	m.handleKey("/")
+	m.handleKey("t")
 	if m.View().Cursor == nil { // View の中で描いて大きさを伝えてからカーソルを決める (実際のアプリと同じ順)
 		t.Fatal("検索欄の入力中なのにカーソルを置かない")
 	}
@@ -260,7 +260,7 @@ func TestFilerShellExecAndRefresh(t *testing.T) {
 func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	m := newFilerBrowse(t)
 	m.handleKey("F")
-	m.handleKey("/")
+	m.handleKey("t")
 	for _, k := range []string{"F", "U", "s", "s"} {
 		m.handleKey(k)
 	}
@@ -280,7 +280,7 @@ func TestFilerHintWhileTypingOffersOnlyEsc(t *testing.T) {
 	if h := m.hintLine(); !strings.Contains(h, "F: 閉じる") || !strings.Contains(h, "?: キーの一覧") {
 		t.Fatalf("ふだんの hint = %q", h)
 	}
-	m.handleKey("/")
+	m.handleKey("t")
 	if h := m.hintLine(); strings.Contains(h, "F: 閉じる") || strings.Contains(h, "q: glogx を終了") || !strings.Contains(h, "esc: やめる") || !strings.Contains(h, "enter: 確定") {
 		t.Fatalf("検索の入力中の hint = %q (F / q は入力欄に入るので案内しない。検索のキーを出す)", h)
 	}
@@ -354,7 +354,7 @@ func TestFilerPasteGoesToSearch(t *testing.T) {
 	if m.done || m.activeFullScreen() != FullScreenFiler {
 		t.Fatal("入力していないときの貼り付けがキーとして走った")
 	}
-	m.handleKey("/")
+	m.handleKey("t")
 	m.Update(tea.PasteMsg{Content: "sub"})
 	if got := m.filerV.Fixture().Model().SearchQuery(); got != "sub" {
 		t.Fatalf("検索語 = %q", got)
@@ -378,5 +378,27 @@ func TestFilerOpenFailureIsReportedAsError(t *testing.T) {
 	}
 	if !strings.Contains(m.lastWarning, "ファイラーを開けません") {
 		t.Errorf("開けなかった理由がエラーとして残っていない: lastWarning=%q toast=%q", m.lastWarning, m.toast.Text())
+	}
+}
+
+// / は root 以下のファイルを探すポップアップ。開いている間は、最下行がポップアップのキーの案内になり、キャレットを置き、
+// 横断キー・update のキーに取られない (検索の t と同じく入力の層)。
+func TestFilerFinderOwnsKeysWithHintAndCaret(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	m.zoom = appZoom{} // 起動の拡大の演出の途中はカーソルを置かない仕様なので、演出の無い状態で見る
+	m.handleKey("/")
+	if h := m.hintLine(); strings.Contains(h, "F: 閉じる") || !strings.Contains(h, "enter: 移動") || !strings.Contains(h, "esc: 戻る") {
+		t.Fatalf("ファイルを探すポップアップの hint = %q (ポップアップのキーを出す)", h)
+	}
+	if m.View().Cursor == nil {
+		t.Fatal("ポップアップの入力中なのにカーソルを置かない")
+	}
+	if m.updateKeyReachable("X") {
+		t.Fatal("ポップアップの入力中に X が codex update に取られる")
+	}
+	m.handleKey("i")
+	if m.activeFullScreen() != FullScreenFiler {
+		t.Fatal("ポップアップの入力中の i で issues へ横断した")
 	}
 }

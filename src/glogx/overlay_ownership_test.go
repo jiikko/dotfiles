@@ -187,7 +187,7 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 		m.statusOv.Fixture().SetDiscarding(true) // 破棄の y/N 確認中
 	case "filerV":
 		m.filerV.Toggle(t.TempDir())
-		m.filerV.Fixture().Model().HandleKey("/") // 検索欄の入力中
+		m.filerV.Fixture().Model().HandleKey("t") // 検索欄の入力中
 	case "lanV":
 		m.lanV.Toggle()
 		m.lanV.Fixture().Model().HandleKey("/") // 絞り込みの入力中

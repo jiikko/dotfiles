@@ -206,7 +206,7 @@ func TestRemovedFolderIsCollectedAfterSearch(t *testing.T) {
 	m.Resize(120, 40)
 	bn := openBig(t, m, big, 0)
 	now := runFrames(m, fixedNow, 60)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "f39")
 	if m.cur.parent != bn {
 		t.Fatalf("前提: big の中の一致へ移っていない (%s)", m.cur.raw)

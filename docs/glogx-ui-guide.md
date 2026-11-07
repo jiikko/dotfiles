@@ -95,7 +95,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `,` | 設定 | treefiler・mac-lan-manager (macOS の ⌘, に合わせた字)。pro-con の設定は `s` |
 | `r` | 再読込 / 再実行 | issues の再読込、job の rerun |
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |
-| `n` | next (次にやる目印) | issues の claim。**例外: treefiler では検索の次** (`N` が前。less / vim の検索の語彙) |
+| `n` | next (次にやる目印) | issues の claim。**例外: treefiler では検索 (`t`) の次** (`N` が前。less / vim の検索の語彙) |
 | `N` | 次の番号 | issues の採番コピー |
 | `i` `s` `R` `D` `F` `L` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`H` は板を開かず git log 一覧へ戻る横断キー。`h` = 1 段閉じる の強い版で、開いたキーを覚えていなくても戻れる。ユーザー選定 2026-11-05: `g` は先頭への移動、`t` は mac-lan-manager の速度測定と重なるので避けた。`H` は未実装のヘルス画面 (docs/macos-health-check.md) に予定していたが、こちらに使った。`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1。`L` = mac-lan-manager。中では `s` が ssh なので同じく status へは飛ばない)。割当は行き先の表 `CrossTarget` (`src/glogx/fullscreen_id.go`) とキーの集合 `crosskey.Is` (`src/glogx/internal/crosskey`) の 2 か所 (一致はテストが見る) で、各画面はキーの集合を引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行・mac-lan-manager の板と測定の進捗) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
 | `C` `X` | update (claude / codex) | どの画面からも。**status では `X` = 変更を捨てる**なので例外。**treefiler の中の `C` は他の枝を畳む** (木の操作が優先。README に断りがある) |

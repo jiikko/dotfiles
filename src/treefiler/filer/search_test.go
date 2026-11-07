@@ -36,7 +36,7 @@ func typeText(m *Model, s string) {
 func TestSearchJumpsCancelsAndRepeats(t *testing.T) {
 	m := newTest(t)
 	origin := m.cur
-	m.HandleKey("/")
+	m.HandleKey("t")
 	if !m.OwnsKeys() {
 		t.Fatal("検索中なのに OwnsKeys が false (glogx の横断キーに取られる)")
 	}
@@ -51,7 +51,7 @@ func TestSearchJumpsCancelsAndRepeats(t *testing.T) {
 	if m.cur != origin || m.OwnsKeys() {
 		t.Fatal("Esc で元のカーソルへ戻らない / 入力が閉じない")
 	}
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "file")
 	m.HandleKey("enter")
 	if m.cur.raw != "file2.txt" || m.OwnsKeys() {
@@ -65,7 +65,7 @@ func TestSearchJumpsCancelsAndRepeats(t *testing.T) {
 	if m.cur.raw != "file2.txt" {
 		t.Fatalf("N で前の一致へ戻らない: %q", m.cur.raw)
 	}
-	m.HandleKey("/")
+	m.HandleKey("t")
 	if m.HandleKey("ctrl+c") == Quit {
 		t.Fatal("検索中の ctrl+c で終了した (検索の取り消しのはず)")
 	}
@@ -112,7 +112,7 @@ func TestFuzzyKeepsOriginalOffsets(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.root.reload()
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "ab")
 	m.draw() // 一致を色付けする描画で落ちない
 }
@@ -121,7 +121,7 @@ func TestFuzzyKeepsOriginalOffsets(t *testing.T) {
 func TestSearchOriginRemovedStaysInTree(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "c.txt")
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "file")
 	if err := removeFile(m.root.path() + "/c.txt"); err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func searchFromRemoved(t *testing.T, rel, dir, gone string, before func(m *Model
 		t.Fatalf("前提: %s を引けない", rel)
 	}
 	m.setCur(origin)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	if before != nil {
 		before(m)
 	}
@@ -218,7 +218,7 @@ func TestSearchNoMatchAfterJumpGoesToOriginAncestor(t *testing.T) {
 func TestSearchBackToEmptyReturnsToOrigin(t *testing.T) {
 	m := newTest(t)
 	origin := m.cur
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "file")
 	if m.cur == origin {
 		t.Fatal("前提: 打つと一致へ飛ぶ")
@@ -234,7 +234,7 @@ func TestSearchBackToEmptyReturnsToOrigin(t *testing.T) {
 // 空欄の ctrl+h は backspace と同じく検索を閉じる (文字があるうちは 1 文字消す)。
 func TestSearchClosesOnEmptyCtrlH(t *testing.T) {
 	m := newTest(t)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	m.HandleInput("x", "x")
 	m.HandleInput("ctrl+h", "")
 	if !m.search.active || !m.search.line.Empty() {

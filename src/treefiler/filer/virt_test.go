@@ -401,7 +401,7 @@ func TestVirtualizedGlogxOrderReopenMatchFull(t *testing.T) {
 // 検索 (列の全部の項目が対象。layoutAll) とその飛び先、root を 1 段上げる、カーソル以外を畳む (C) も同じ。
 func TestVirtualizedSearchRerootCollapseOthersMatchFull(t *testing.T) {
 	vp := newVirtPair(t)
-	for _, k := range []string{"/", "f", "0", "5", "enter", "n", "n", "N"} {
+	for _, k := range []string{"t", "f", "0", "5", "enter", "n", "n", "N"} {
 		vp.key(k, 30)
 	}
 	vp.key("-", 60)
@@ -501,7 +501,7 @@ func TestVirtualizedSearchKeepsHistoryMatchFull(t *testing.T) {
 	vp.frames("閾値を上げた", 3)
 	vp.assertVirtualized()
 	vp.key("G", 6)
-	for _, k := range []string{"/", "f", "0", "5"} {
+	for _, k := range []string{"t", "f", "0", "5"} {
 		vp.key(k, 1)
 	}
 	vp.assertVirtualized()
@@ -730,7 +730,7 @@ func TestVirtualizedRandomOpsMatchFull(t *testing.T) {
 	if raceEnabled {
 		t.Skip("-race の計装で 7 倍遅いので、-race なしの run で回す (Makefile の test)")
 	}
-	keys := []string{"j", "k", "J", "K", "G", "g", "ctrl+d", "ctrl+u", "h", "l", "tab", ".", "r", "/", "f", "0", "esc", "C"}
+	keys := []string{"j", "k", "J", "K", "G", "g", "ctrl+d", "ctrl+u", "h", "l", "tab", ".", "r", "t", "f", "0", "esc", "C"}
 	frames := []int{1, 2, 5, 12, 45}
 	seeds := int64(12) // 手元で広げるときは TREEFILER_VIRT_SEEDS=300 などで回す (CI は 12 本)
 	if n, err := strconv.Atoi(os.Getenv("TREEFILER_VIRT_SEEDS")); err == nil && n > 0 {

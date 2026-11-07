@@ -275,7 +275,7 @@ func TestTileReadErrorMidRead(t *testing.T) {
 // 検索中にライブ更新で消えた一致は、Tab で移る先から外す。
 func TestSearchSkipsVanishedMatch(t *testing.T) {
 	m := newTest(t)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	for _, r := range "file" {
 		m.HandleInput(string(r), string(r))
 	}

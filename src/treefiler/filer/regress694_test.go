@@ -110,7 +110,7 @@ func TestChoiceSettingsHaveTables(t *testing.T) {
 // 入力欄のキャレットは、描いた入力の末尾の直後にある (描画と CaretPos が別々に幅を計算するとずれる)。
 // 窓より長い入力 (横に流れる) と短い入力、検索と `!` の両方で、画面の文字列から位置を測る。
 func TestCaretFollowsDrawnInput(t *testing.T) {
-	for _, open := range []string{"/", "!"} {
+	for _, open := range []string{"t", "!"} {
 		for _, n := range []int{3, 300} {
 			m := newTest(t)
 			m.HandleKey(open)
@@ -160,7 +160,7 @@ func TestBindsMatchesTreeKeys(t *testing.T) {
 	if unbound < 20 {
 		t.Fatalf("Binds が false のキーが %d 個しかない (走査が壊れている)", unbound)
 	}
-	for _, open := range []string{"?", "/", "!", ","} { // キー一覧・検索・! の入力・設定の板
+	for _, open := range []string{"?", "/", "t", "!", ","} { // キー一覧・ファイルを探す・検索・! の入力・設定の板
 		m := newTest(t)
 		m.HandleKey(open)
 		for _, k := range []string{"F", "i", "R", "D", "U", "X"} {

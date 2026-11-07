@@ -18,7 +18,8 @@ func TestEveryInputLayerOwnsKeys(t *testing.T) {
 	}{
 		"help":   {func(m *Model) { m.HandleKey("?") }, true, "どのキーでも"},
 		"panel":  {func(m *Model) { m.HandleKey(",") }, true, "esc/,/q"},
-		"search": {func(m *Model) { m.HandleKey("/") }, false, "esc"},
+		"search": {func(m *Model) { m.HandleKey("t") }, false, "esc"},
+		"finder": {func(m *Model) { m.HandleKey("/") }, false, "esc"},
 		"prompt": {func(m *Model) { m.HandleKey("!") }, false, "esc"},
 		"ask":    {func(m *Model) { m.HandleKey("d") }, false, "その他"},
 	}

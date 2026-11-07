@@ -101,7 +101,7 @@ func BenchmarkMoveHugeFolder(b *testing.B) {
 // 空欄へ戻す打鍵は列を作らないので、比べる前後で同じ数の引き直しになるよう空欄を通らない)。
 func BenchmarkSearchKeyHugeFolder(b *testing.B) {
 	eachHugeSize(b, func(b *testing.B, m *Model) {
-		m.HandleKey("/")
+		m.HandleKey("t")
 		m.HandleKey("9")
 		m.HandleKey("9")
 		for range b.N {
@@ -114,7 +114,7 @@ func BenchmarkSearchKeyHugeFolder(b *testing.B) {
 // BenchmarkSearchStepHugeFolder は検索中の tab (次の一致へ)。
 func BenchmarkSearchStepHugeFolder(b *testing.B) {
 	eachHugeSize(b, func(b *testing.B, m *Model) {
-		m.HandleKey("/")
+		m.HandleKey("t")
 		m.HandleKey("9")
 		for range b.N {
 			m.HandleKey("tab")

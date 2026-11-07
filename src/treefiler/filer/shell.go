@@ -193,5 +193,7 @@ func (m *Model) Paste(text string) {
 		m.refreshMatches()
 	case m.prompt.active:
 		m.prompt.line.Insert(text)
+	case m.finder.active:
+		m.finderPaste(text)
 	}
 }

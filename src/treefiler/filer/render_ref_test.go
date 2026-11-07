@@ -91,7 +91,7 @@ func TestLinesMatchesReference(t *testing.T) {
 // 本物の画面 (開閉・移動・タイル・検索・設定の板を混ぜた操作の各フレーム) でも前と同じ文字列を出し、reset は新しい格子と同じ中身に戻す。
 func TestViewMatchesReferenceOnRealFrames(t *testing.T) {
 	m := newTest(t)
-	keys := []string{"l", "j", "j", "space", "l", "k", "enter", "q", "/", "f", "esc", ",", "j", "esc", ".", "C", "h", "?", "x"}
+	keys := []string{"l", "j", "j", "space", "l", "k", "enter", "q", "t", "f", "esc", ",", "j", "esc", ".", "C", "h", "?", "x"}
 	for i, k := range keys {
 		m.HandleKey(k)
 		settle(m)

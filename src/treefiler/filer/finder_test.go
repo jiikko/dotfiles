@@ -1,0 +1,259 @@
+package filer
+
+import (
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/jiikko/dotfiles/src/testwait"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+)
+
+// waitFinder は / の走査を取り込み終えるまで Advance を回す。
+func waitFinder(t *testing.T, m *Model) {
+	t.Helper()
+	testwait.Until(t, "ファイルを探す", func() bool {
+		m.Advance(fixedNow)
+		return m.finder.done
+	})
+}
+
+func finderRels(m *Model) []string {
+	var out []string
+	for _, h := range m.finder.list() {
+		out = append(out, h.p.rel)
+	}
+	return out
+}
+
+// 開いていないフォルダの中のファイルも候補に出て、Enter で途中のフォルダを開いてカーソルが移る。
+func TestFinderFindsFilesInClosedFoldersAndRevealsThem(t *testing.T) {
+	m := newTest(t)
+	b := m.findNode(filepath.Join(m.root.path(), "b"))
+	if b == nil || b.expanded {
+		t.Fatal("前提: b は閉じている")
+	}
+	m.HandleKey("/")
+	if !m.OwnsKeys() {
+		t.Fatal("/ でポップアップを開いていない (OwnsKeys が偽)")
+	}
+	waitFinder(t, m)
+	typeText(m, "x.txt")
+	if got := finderRels(m); len(got) == 0 || got[0] != filepath.Join("b", "deep", "x.txt") {
+		t.Fatalf("x.txt の候補 = %v (閉じた b の中の b/deep/x.txt が先頭のはず)", got)
+	}
+	m.HandleKey("enter")
+	if want := filepath.Join(m.root.path(), "b", "deep", "x.txt"); m.cur.path() != want {
+		t.Fatalf("Enter の後のカーソル = %s, want %s", m.cur.path(), want)
+	}
+	if !b.expanded || !m.cur.parent.expanded {
+		t.Fatal("Enter で途中のフォルダ (b・b/deep) を開いていない")
+	}
+	if m.finder.active || m.OwnsKeys() {
+		t.Fatal("Enter で移った後もポップアップが開いている")
+	}
+}
+
+// 隠したフォルダの中は探し、.git の中と git が無視するフォルダの中には降りない (フォルダ自身は候補に出る)。
+func TestFinderSearchesHiddenButNotGitOrIgnoredFolders(t *testing.T) {
+	m := newTest(t)
+	root := m.root.path()
+	mkfile(t, filepath.Join(root, ".config", "app", "settings.toml"), "x\n")
+	mkfile(t, filepath.Join(root, ".git", "objects", "packed"), "x\n")
+	setGit(m, "!! b/\x00")
+	m.HandleKey("/")
+	waitFinder(t, m)
+	rels := finderRels(m)
+	for _, want := range []string{filepath.Join(".config", "app", "settings.toml"), ".hidden", ".git", "b"} {
+		if !slices.Contains(rels, want) {
+			t.Errorf("候補に %s が無い (隠したものも探す・降りないフォルダ自身は出す)", want)
+		}
+	}
+	for _, not := range []string{filepath.Join(".git", "objects"), filepath.Join("b", "deep"), filepath.Join("b", "deep", "x.txt")} {
+		if slices.Contains(rels, not) {
+			t.Errorf("候補に %s がある (.git と git が無視する b の中には降りない)", not)
+		}
+	}
+}
+
+// 並びは、名前 (最後の要素) に一致したもの → パスの途中にしか一致しないもの。同じ段の中は浅い順。
+func TestFinderRanksNameMatchesFirstThenShallow(t *testing.T) {
+	m := newTest(t)
+	root := m.root.path()
+	mkfile(t, filepath.Join(root, "deep1", "match.txt"), "x\n")
+	mkfile(t, filepath.Join(root, "matchdir", "zzz.txt"), "x\n")
+	m.HandleKey("/")
+	waitFinder(t, m)
+	typeText(m, "match")
+	want := []string{"matchdir", filepath.Join("deep1", "match.txt"), filepath.Join("matchdir", "zzz.txt")}
+	if got := finderRels(m); !slices.Equal(got, want) {
+		t.Fatalf("match の並び = %v, want %v", got, want)
+	}
+}
+
+// 語を打ち替えると先頭の候補を選び直す。Tab / Shift-Tab で選ぶ候補を回し、Enter はその候補へ移る。
+func TestFinderTabSelectsAndEnterMovesToSelected(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("/")
+	waitFinder(t, m)
+	typeText(m, "file")
+	rels := finderRels(m)
+	if len(rels) < 2 {
+		t.Fatalf("前提: file の候補が 2 つ以上 (%v)", rels)
+	}
+	m.HandleKey("tab")
+	m.HandleKey("tab")
+	m.HandleKey("shift+tab")
+	if m.finder.sel != 1 {
+		t.Fatalf("tab tab shift+tab の後の選択 = %d, want 1", m.finder.sel)
+	}
+	m.HandleKey("enter")
+	if want := filepath.Join(m.root.path(), rels[1]); m.cur.path() != want {
+		t.Fatalf("Enter の後のカーソル = %s, want 2 番目の候補 %s", m.cur.path(), want)
+	}
+}
+
+// Esc はカーソルを動かさずに閉じ、裏の走査を止める。候補の無い Enter は閉じない (打ち直せる)。
+func TestFinderEscKeepsCursorAndEnterWithoutHitsStaysOpen(t *testing.T) {
+	m := newTest(t)
+	cur := m.cur
+	m.HandleKey("/")
+	waitFinder(t, m)
+	typeText(m, "qqqzzz")
+	if len(m.finder.list()) != 0 {
+		t.Fatal("前提: qqqzzz に一致する候補は無い")
+	}
+	m.HandleKey("enter")
+	if !m.finder.active {
+		t.Fatal("候補の無い Enter でポップアップを閉じた")
+	}
+	m.HandleKey("esc")
+	if m.finder.active || m.cur != cur {
+		t.Fatalf("Esc の後: 開いている=%v・カーソル %s (動かないはず)", m.finder.active, m.cur.path())
+	}
+	m.HandleKey("/")
+	scan := m.finder.scan
+	m.Close() // glogx で F を閉じたとき
+	if m.finder.active {
+		t.Fatal("Close の後もポップアップが開いている")
+	}
+	scan.mu.Lock()
+	canceled := scan.canceled
+	scan.mu.Unlock()
+	if !canceled {
+		t.Fatal("Close で裏の走査を止めていない")
+	}
+	finderWG.Wait() // 止めた走査の goroutine が戻る (戻らなければテストの時間切れ)
+}
+
+// 辿る項目の数に上限を置き、超えたら止めて知らせる。走っている間は Busy (呼び出し側が Advance を回す)。
+func TestFinderStopsAtLimitAndIsBusyWhileScanning(t *testing.T) {
+	orig := finderMax
+	finderMax = 3
+	t.Cleanup(func() { finderMax = orig })
+	m := newTest(t)
+	m.set.Git = false // キーのたびの git の取得で Busy が立たないように (ポップアップの走査の分だけを見る)
+	settleBackground(t, m)
+	if m.Busy() {
+		t.Fatal("前提: 開く前は裏の処理が無い")
+	}
+	m.HandleKey("/")
+	if !m.Busy() {
+		t.Fatal("辿っている間に Busy が偽 (呼び出し側が取り込みの Advance を回さない)")
+	}
+	waitFinder(t, m)
+	if !m.finder.capped || len(m.finder.paths) != 3 {
+		t.Fatalf("上限 3 で: 止めた=%v・取り込んだ %d 件", m.finder.capped, len(m.finder.paths))
+	}
+	if st := m.finderStatus(); !strings.Contains(st, "上限で止めた") {
+		t.Fatalf("上限で止めたことを出していない: %q", st)
+	}
+	if m.finderScanning() {
+		t.Fatal("取り込み終えた後も辿っている扱い")
+	}
+}
+
+// 貼り付けは語に入り、↑ は t の検索と同じ履歴を辿る。
+func TestFinderPasteAndHistory(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("t")
+	typeText(m, "file10")
+	m.HandleKey("enter")
+	m.HandleKey("/")
+	waitFinder(t, m)
+	m.HandleKey("up")
+	if got := m.finder.line.String(); got != "file10" {
+		t.Fatalf("↑ の語 = %q (t の検索の履歴 file10 のはず)", got)
+	}
+	if rels := finderRels(m); len(rels) == 0 || rels[0] != "file10.txt" {
+		t.Fatalf("履歴の語で引き直していない: %v", rels)
+	}
+	m.HandleKey("esc")
+	m.HandleKey("/")
+	waitFinder(t, m)
+	m.Paste("two")
+	if got := m.finder.line.String(); got != "two" || len(finderRels(m)) == 0 || finderRels(m)[0] != filepath.Join("a", "two.go") {
+		t.Fatalf("貼り付け: 語 %q・候補 %v", got, finderRels(m))
+	}
+}
+
+// 入力欄のキャレットは、ポップアップに描いた語の末尾の直後にある (描画と CaretPos が同じ幾何を使う)。
+func TestFinderCaretFollowsDrawnInput(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("/")
+	waitFinder(t, m)
+	typeText(m, "日本END")
+	x, y, ok := m.CaretPos()
+	if !ok {
+		t.Fatal("ポップアップの入力欄にキャレットが無い")
+	}
+	row := m.draw().plain()[y]
+	i := strings.Index(row, "END")
+	if i < 0 {
+		t.Fatalf("キャレットの行に入力が描かれていない: %q", row)
+	}
+	if want := termwidth.Of(row[:i]) + 3; x != want {
+		t.Fatalf("キャレットの桁 = %d, want %d (描いた END の直後): %q", x, want, row)
+	}
+}
+
+// 長いパスは頭を切って名前を残し、一致した文字に一致の地の色を付ける。狭すぎる画面では最下行に語と件数を出す。
+func TestFinderDrawsLongPathTailWithMatchAndFallsBackWhenSmall(t *testing.T) {
+	m := newTest(t)
+	long := filepath.Join(strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40), "target.txt")
+	mkfile(t, filepath.Join(m.root.path(), long), "x\n")
+	m.HandleKey("/")
+	waitFinder(t, m)
+	typeText(m, "target")
+	c := m.draw()
+	rows := c.plain()
+	found := false
+	for y, row := range rows {
+		i := strings.Index(row, "target.txt")
+		if i < 0 {
+			continue
+		}
+		found = true
+		if !strings.Contains(row, "▶ …") {
+			t.Fatalf("長いパスの頭を … で切っていない・選択の印が無い: %q", row)
+		}
+		x := termwidth.Of(row[:i])
+		for k := range len("target") {
+			if p := c.at(x+k, y); p == nil || p.bg != cMatchBg {
+				t.Fatalf("一致した %d 文字目に一致の地の色が無い: %q", k, row)
+			}
+		}
+		if p := c.at(x+len("target"), y); p == nil || p.bg == cMatchBg {
+			t.Fatalf("一致していない . に一致の地の色が付いた: %q", row)
+		}
+	}
+	if !found {
+		t.Fatalf("候補の行に target.txt が無い:\n%s", strings.Join(rows, "\n"))
+	}
+	m.Resize(30, 5)
+	last := m.draw().plain()[4]
+	if !strings.Contains(last, "/ target") || !strings.Contains(last, "画面が小さい") {
+		t.Fatalf("狭い画面の最下行 = %q (語と、候補を出せない理由)", last)
+	}
+}

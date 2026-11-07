@@ -11,7 +11,7 @@ type DebugState struct {
 	Cursor    string `json:"cursor"`     // root からのカーソルの相対パス ("." = root)
 	CursorDir bool   `json:"cursor_dir"` // カーソルがフォルダ
 	Depth     int    `json:"depth"`      // カーソルの深さ (root = 0)
-	Layer     string `json:"layer"`      // 全部のキーを取っている層 (help / panel / ask / search / prompt。無ければ "")
+	Layer     string `json:"layer"`      // 全部のキーを取っている層 (help / panel / ask / search / prompt / finder。無ければ "")
 	Tiles     int    `json:"tiles"`      // 開いているタイルの枚数
 	Animating bool   `json:"animating"`
 	Busy      bool   `json:"busy"`
@@ -63,6 +63,8 @@ func (m *Model) debugLayer() string {
 		return "panel"
 	case m.ask != nil:
 		return "ask"
+	case m.finder.active:
+		return "finder"
 	case m.search.active:
 		return "search"
 	case m.prompt.active:

@@ -30,7 +30,7 @@ func TestSearchReachesMatchInOpenedFolderOfAnotherColumn(t *testing.T) {
 	if m.cur != a || !a.expanded {
 		t.Fatalf("前提: a の上に居て a が開いている (cur=%s expanded=%v)", m.cur.raw, a.expanded)
 	}
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "three")
 	if m.cur.raw != "three.md" {
 		t.Fatalf("開いたフォルダの中の一致へ飛ばない: cur=%s", m.cur.raw)
@@ -56,7 +56,7 @@ func TestSearchSkipsInsideClosedFolders(t *testing.T) {
 		t.Fatalf("前提: b は閉じていて、子は読み込み済み (expanded=%v kids=%d)", b.expanded, len(b.kids))
 	}
 	origin := m.cur
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "deep")
 	if m.cur != origin || b.expanded || len(m.search.matches) != 0 {
 		t.Fatalf("閉じたフォルダの中に一致した: cur=%s b.expanded=%v matches=%s", m.cur.raw, b.expanded, names(m.search.matches))
@@ -68,7 +68,7 @@ func TestSearchSameRankStartsFromOrigin(t *testing.T) {
 	m := newTest(t)
 	f10 := child(t, m, m.root, "file10.txt")
 	m.setCur(f10)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "file")
 	if m.cur != f10 {
 		t.Fatalf("同じ段 (前方一致) の起点に留まらない: cur=%s matches=%s", m.cur.raw, names(m.search.matches))
@@ -91,7 +91,7 @@ func TestSearchHighlightsOnlyReachableMatches(t *testing.T) {
 	settle(m)
 	m.setCur(child(t, m, m.root, "zz.txt"))
 	settle(m)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "al")
 	settle(m)
 	lit := func(raw string) bool {
@@ -149,7 +149,7 @@ func TestStepMatchDropsHiddenMatchFromHighlight(t *testing.T) {
 	m.HandleKey("l")
 	m.HandleKey("h")
 	settle(m)
-	m.HandleKey("/")
+	m.HandleKey("t")
 	typeText(m, "o") // a/one.txt・a/two.go と、root の直下の項目にも一致する
 	one := child(t, m, a, "one.txt")
 	if !m.search.hit[one] {

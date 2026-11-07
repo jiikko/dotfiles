@@ -122,6 +122,7 @@ type Model struct {
 	holding      bool        // 押しっぱなしの最中 (離したら光を出す)
 	pane         paneState   // 右のプレビューの欄 (pane.go)
 	search       searchState `layer:"search"`
+	finder       finderState `layer:"finder"` // / の root 以下のファイルを探すポップアップ (finder.go)
 	lastSearch   string
 	searchHist   []string // 確定した検索語 (古い順、重複なし、searchHistKeep 件まで。search.go)
 	exploding    *explodeJob
@@ -221,6 +222,7 @@ func (m *Model) Changed() <-chan struct{} {
 
 // Close はライブ更新のポーリングを止める (glogx でファイラーを閉じたとき)。
 func (m *Model) Close() {
+	m.endFinder()    // 裏で辿るのを止める (開き直したときに前の root の候補を出さない)
 	m.loadCont = nil // 開き直したときに古い打鍵の続きで潜らない (読み込み中の記録は残し、開き直した後の Advance で取り込む)
 	m.watch.close()
 	m.savePlace()
@@ -243,7 +245,7 @@ func (m *Model) Resize(w, h int) {
 // Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
 // 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ)。
 func (m *Model) Busy() bool {
-	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy() || m.paneLoading() || len(m.loads) > 0
+	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy() || m.paneLoading() || len(m.loads) > 0 || m.finderScanning()
 }
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
@@ -253,7 +255,7 @@ func (m *Model) Animating() bool { return m.moving || m.loadsHot() }
 // OwnsKeys は入力欄 (検索・!)・設定の板・キー一覧のどれかを開いているか。その間は全部のキーを filer が持つ
 // (glogx は横断キーも F も渡す。spec §0.3。キー一覧は ? 以外のキーで閉じるだけなので、閉じたキーで glogx が動くと食い違う)。
 func (m *Model) OwnsKeys() bool {
-	return m.search.active || m.prompt.active || m.panel.open || m.help || m.ask != nil
+	return m.search.active || m.prompt.active || m.panel.open || m.help || m.ask != nil || m.finder.active
 }
 
 // Hint は呼び出し側の最下行に出す案内の 1 つ (Prio は小さいほど残す。1 = 抜ける手段。tuikit/hintfit の尺度)。
@@ -263,7 +265,7 @@ type Hint struct {
 }
 
 // LayerHints は開いている層 (OwnsKeys の層) で効くキー。層が開いていなければ nil。glogx は層の間、自分の最下行をこれにする
-// (glogx-ui-guide §5: 板の間はその板のキーだけ)。並びは HandleInput がキーを渡す順と同じ (キー一覧 → 設定 → 確認 → 検索 → 入力欄)
+// (glogx-ui-guide §5: 板の間はその板のキーだけ)。並びは HandleInput がキーを渡す順と同じ (キー一覧 → 設定 → 確認 → ファイルを探す → 検索 → 入力欄)
 func (m *Model) LayerHints() []Hint {
 	switch {
 	case m.help:
@@ -272,6 +274,8 @@ func (m *Model) LayerHints() []Hint {
 		return []Hint{{"j/k", "項目", 2}, {"h/l", "選ぶ", 3}, {"r", "既定に戻す", 4}, {"esc/,/q", "閉じる", 1}}
 	case m.ask != nil:
 		return []Hint{{m.ask.yesKeys(), m.ask.verb, 2}, {"その他", "キャンセル", 1}}
+	case m.finder.active:
+		return []Hint{{"enter", "移動", 2}, {"tab/⇧tab", "選ぶ", 3}, {"↑↓", "履歴", 4}, {"esc", "戻る", 1}}
 	case m.search.active:
 		return []Hint{{"enter", "確定", 2}, {"tab/ctrl+n", "次", 3}, {"shift+tab/ctrl+p", "前", 4}, {"esc", "やめる", 1}}
 	case m.prompt.active:
@@ -291,6 +295,13 @@ func (m *Model) SearchQuery() string {
 // CaretPos は入力欄のキャレットの位置 (画面の桁と行)。入力欄が無ければ ok=false。
 // 呼び出し側は端末のカーソルをここに置く (IME の変換中の文字が入力欄に出るように。glogx-ui-guide §7 の caret)。
 func (m *Model) CaretPos() (x, y int, ok bool) {
+	if m.finder.active && m.h > 0 {
+		if r, ok := m.finderRect(); ok {
+			_, x, y := m.finderField(r)
+			return x, y, true
+		}
+		return 0, 0, false // 最下行に出すときは語を切って出すので、キャレットの位置は持たない
+	}
 	if f, ok := m.inputField(); ok && m.h > 0 {
 		return f.caretX, m.h - 1, true
 	}
@@ -372,6 +383,7 @@ func (m *Model) Advance(now time.Time) bool {
 	m.takeBackground()
 	m.takeExplode()
 	m.takeLoads()
+	m.takeFinder()
 	m.moving = m.step(dt)
 	return m.Animating()
 }
@@ -924,7 +936,7 @@ func (m *Model) HandleInput(k, text string) Result {
 	m.snapAll()
 	defer func() { m.moving = true }() // 目標が変わったので次の Advance で動き出す
 	m.startGit(false)                  // 前回から 3 秒以上たっていれば取り直す (周期のタイマーは張らない)
-	if k == "ctrl+c" && !m.search.active && !m.prompt.active && m.ask == nil {
+	if k == "ctrl+c" && !m.search.active && !m.prompt.active && m.ask == nil && !m.finder.active {
 		return Quit // どこからでも即終了 (glogx-ui-guide §1)。検索中は検索の取り消し (spec §6.2)・入力欄と確認の板は取り消し
 	}
 	m.flushLoad() // 読み込みを待っている打鍵の残りを、このキーより先に済ませる (load.go)。ctrl+c は待たせない (q と esc は待つ: タイルや層を閉じるのにも使い、待たないと閉じた後に続きで潜る)
@@ -938,6 +950,10 @@ func (m *Model) HandleInput(k, text string) Result {
 	}
 	if m.ask != nil {
 		m.askKey(k)
+		return None
+	}
+	if m.finder.active {
+		m.finderKey(k, text)
 		return None
 	}
 	if m.search.active {
@@ -1032,7 +1048,8 @@ func init() {
 	bind(do(func(m *Model) { m.moveSibling(-10) }), "K")
 	// ctrl+h は Backspace の別名 (入力欄の tuikit/lineedit と同じ。Backspace を押さずに ctrl+h を使う人がいる)
 	bind(do((*Model).rerootUp), "-", "backspace", "ctrl+h")
-	bind(do((*Model).startSearch), "/")
+	bind(do((*Model).startFinder), "/") // root 以下の全部をポップアップで探す (finder.go)
+	bind(do((*Model).startSearch), "t") // 開いている木の中を探す (search.go)
 	bind(do(func(m *Model) { m.repeatSearch(1) }), "n")
 	bind(do(func(m *Model) { m.repeatSearch(-1) }), "N")
 	// e はフォルダでもエディタ (spec §0.1)。treebeard の e (explode) にしない: フォルダとファイルで e の意味が分かれる。explode は >
@@ -1297,6 +1314,9 @@ func (m *Model) draw() *canvas {
 	}
 	if m.ask != nil {
 		m.drawAsk(c)
+	}
+	if m.finder.active {
+		m.drawFinder(c)
 	}
 	return c
 }
