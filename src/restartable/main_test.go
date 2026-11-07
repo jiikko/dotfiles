@@ -270,3 +270,17 @@ func TestPullCommandRequiresBuild(t *testing.T) {
 		t.Fatalf("rc = %d, want 2", code)
 	}
 }
+
+// 配る先の repo は `go install github.com/jiikko/dotfiles/src/restartable@<版>` で入れる。replace があると go install は
+// 「must not contain directives」で断るので、固定した版を上げた利用者の起動が丸ごと落ちる。
+func TestGoModHasNoReplaceSoGoInstallWorks(t *testing.T) {
+	data, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.Lines(string(data)) {
+		if strings.HasPrefix(strings.TrimSpace(line), "replace") {
+			t.Fatalf("go.mod に replace がある: %s", line)
+		}
+	}
+}
