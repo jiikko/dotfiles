@@ -109,6 +109,12 @@ func TestFinderTabSelectsAndEnterMovesToSelected(t *testing.T) {
 	if m.finder.sel != 1 {
 		t.Fatalf("tab tab shift+tab の後の選択 = %d, want 1", m.finder.sel)
 	}
+	typeText(m, "1") // 打ち替えたら、前に選んでいた項目が残っていても先頭を選び直す
+	if m.finder.sel != 0 {
+		t.Fatalf("語を打ち替えた後の選択 = %d (先頭のはず)", m.finder.sel)
+	}
+	m.HandleKey("backspace")
+	m.HandleKey("tab")
 	m.HandleKey("enter")
 	if want := filepath.Join(m.root.path(), rels[1]); m.cur.path() != want {
 		t.Fatalf("Enter の後のカーソル = %s, want 2 番目の候補 %s", m.cur.path(), want)
@@ -259,7 +265,8 @@ func TestFinderDrawsLongPathTailWithMatchAndFallsBackWhenSmall(t *testing.T) {
 	}
 }
 
-// 走査中に前の段へ一致が足されても、Tab で選んだ候補を選び続ける (番号だけを持つと、ずれた先の別の候補へ Enter で移る)。
+// 走査中に前の段へ一致が足されても、選んでいる (▶ の付いた) 候補を選び続ける。Tab で選んだときも、選ばずに先頭のままのときも
+// (番号だけを持つと、ずれた先の見ていない候補へ Enter で移る)。
 func TestFinderSelectionFollowsItemWhenEarlierTierGrows(t *testing.T) {
 	m := newTest(t)
 	m.HandleKey("/")
@@ -273,6 +280,13 @@ func TestFinderSelectionFollowsItemWhenEarlierTierGrows(t *testing.T) {
 	m.finder.match(&finderPath{rel: "ilex.txt", shown: "ilex.txt"}) // 取り込みで前の段 (名前の前方一致) に 1 件足されたのと同じ
 	if got := m.finder.list()[m.finder.sel].p.rel; got != chosen {
 		t.Fatalf("前の段に一致が足された後の選択 = %s, want Tab で選んだ %s", got, chosen)
+	}
+	m.HandleKey("backspace")
+	typeText(m, "e") // 打ち替えて先頭 (Tab で選んでいない) を見ている
+	seen := finderRels(m)[m.finder.sel]
+	m.finder.match(&finderPath{rel: "ilez.txt", shown: "ilez.txt"})
+	if got := m.finder.list()[m.finder.sel].p.rel; got != seen {
+		t.Fatalf("Tab 前に前の段へ一致が足された後の選択 = %s, want 見ていた先頭の %s", got, seen)
 	}
 }
 
@@ -314,10 +328,50 @@ func TestFinderNarrowFallsBackWithCaret(t *testing.T) {
 		t.Fatal("前提: 最小の幅ちょうどでポップアップを出す")
 	}
 	m.Resize(finderMinW+3, 20)
-	typeText(m, "ab")
+	typeText(m, strings.Repeat("x", 40)+"日本END") // 窓 (幅の半分) より長い語: 頭が流れて末尾が見える
 	x, y, ok := m.CaretPos()
 	last := m.draw().plain()[m.h-1]
-	if !ok || y != m.h-1 || !strings.HasPrefix(last, "/ ab") || x != 4 {
-		t.Fatalf("最下行に落ちたときのキャレット = (%d, %d, %v)、最下行 %q (/ ab の直後 = 4 のはず)", x, y, ok, last)
+	i := strings.Index(last, "END")
+	if !ok || y != m.h-1 || !strings.HasPrefix(last, "/ ") || i < 0 || x != termwidth.Of(last[:i])+3 {
+		t.Fatalf("最下行に落ちたときのキャレット = (%d, %d, %v)、最下行 %q (描いた END の直後のはず)", x, y, ok, last)
+	}
+}
+
+// 窓より長い語でキャレットを頭へ戻しても、語は入力の窓の中で切れて、件数と右の枠を潰さない。
+func TestFinderLongQueryStaysInsideFrame(t *testing.T) {
+	m := newTest(t)
+	m.Resize(finderMinW+4, 20)
+	m.HandleKey("/")
+	waitFinder(t, m)
+	typeText(m, strings.Repeat("y", 40))
+	m.HandleKey("ctrl+a")
+	r, _ := m.finderRect()
+	row := m.draw().plain()[r.y+1]
+	if !strings.HasSuffix(strings.TrimRight(termwidth.Cut(row, r.x+r.w), " "), "│") {
+		t.Fatalf("入力欄の行の右の枠が無い (語がはみ出した): %q", row)
+	}
+	if !strings.Contains(row, "0/0") {
+		t.Fatalf("件数が語に潰された: %q", row)
+	}
+}
+
+// 語を打ち替えたら先頭を選び直す (前の語で選んでいた項目が、新しい並びの先頭でなくても残っていると、そちらを選び続けてしまう)。
+func TestFinderRetypeSelectsTopEvenIfOldChoiceRemains(t *testing.T) {
+	var f finderState
+	f.paths = []finderPath{{rel: "k_m.txt", shown: "k_m.txt"}, {rel: "m_k.txt", shown: "m_k.txt"}}
+	f.line.Insert("k")
+	f.refilter()
+	if got := f.list()[f.sel].p.rel; got != "k_m.txt" {
+		t.Fatalf("前提: k の先頭は k_m.txt (%s)", got)
+	}
+	f.line.Reset()
+	f.line.Insert("m")
+	f.refilter()
+	hits := f.list()
+	if len(hits) != 2 || hits[0].p.rel != "m_k.txt" {
+		t.Fatalf("前提: m の並びは m_k.txt が先頭で k_m.txt も残る (%v)", hits)
+	}
+	if got := hits[f.sel].p.rel; got != "m_k.txt" {
+		t.Fatalf("打ち替えた後の選択 = %s, want 新しい先頭の m_k.txt", got)
 	}
 }

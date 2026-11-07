@@ -37,9 +37,8 @@ type finderState struct {
 	tiers  [finderRankTiers][]finderHit
 	hits   []finderHit // tiers をつないだもの (dirty なら作り直す)
 	dirty  bool
-	sel    int
-	selp   *finderPath // Tab で選んだ候補 (走査中に前の段へ一致が足されても、同じ項目を選び続ける。sel はその並びの中の番号)
-	top    int         // 一覧の窓の先頭
+	sel    int // 選んでいる候補の番号 (hits の中)。並びを作り直しても同じ項目を指すように list が引き直す
+	top    int // 一覧の窓の先頭
 	capped bool
 	done   bool
 }
@@ -208,20 +207,26 @@ func (f *finderState) refilter() {
 	for i := range f.paths {
 		f.match(&f.paths[i])
 	}
-	f.dirty, f.sel, f.top, f.selp = true, 0, 0, nil
+	f.hits = f.hits[:0] // 前の語の並びの選択を引き継がない (list が引き直す項目を無くし、先頭を選ぶ)
+	f.dirty, f.sel, f.top = true, 0, 0
 }
 
-// list は候補を良い段から並べたもの。
+// list は候補を良い段から並べたもの。作り直すときは、直前の並びで選んでいた項目を選び続ける: 走査中の取り込みが前の段に一致を
+// 足しても、▶ の付いた (Enter で移る) 候補は語を打ち替えるまで変わらない (Tab で選んだかによらない。番号だけを持つと、見ていない候補へ移る)。
 func (f *finderState) list() []finderHit {
 	if f.dirty {
+		var keep *finderPath
+		if f.sel < len(f.hits) {
+			keep = f.hits[f.sel].p
+		}
 		f.hits = f.hits[:0]
 		for _, t := range f.tiers {
 			f.hits = append(f.hits, t...)
 		}
 		f.dirty = false
-		if f.selp != nil {
+		if keep != nil {
 			for i, h := range f.hits {
-				if h.p == f.selp {
+				if h.p == keep {
 					f.sel = i
 					break
 				}
@@ -284,14 +289,11 @@ func (m *Model) finderKey(key, text string) {
 	f.refilter()
 }
 
-// step は選ぶ候補を d だけ回し、選んだ項目を覚える。
+// step は選ぶ候補を d だけ回す。
 func (f *finderState) step(d int) {
-	hits := f.list()
-	if len(hits) == 0 {
-		return
+	if hits := f.list(); len(hits) > 0 {
+		f.sel = listnav.Cycle(f.sel, d, len(hits))
 	}
-	f.sel = listnav.Cycle(f.sel, d, len(hits))
-	f.selp = hits[f.sel].p
 }
 
 // finderPaste は貼り付けた文字を語に足す。
@@ -313,17 +315,18 @@ func (m *Model) finderRect() (rect, bool) {
 	return rect{(m.w - w) / 2, max((m.h-1-h)/2, 0), w, h}, true
 }
 
-// finderField は入力欄の窓 (表示する語とキャレットの桁)。
+// finderField は入力欄の窓 (表示する語とキャレットの桁)。窓の後ろは切って返す (lineedit.Window は後ろを切らない)。
 func (m *Model) finderField(r rect) (text string, caretX, y int) {
 	x := r.x + 2 + widthOf(finderPrompt)
-	text, col := m.finder.line.Window(max(r.x+r.w-2-x-finderStatusW, 1))
-	return text, x + col, r.y + 1
+	w := max(r.x+r.w-2-x-finderStatusW, 1)
+	text, col := m.finder.line.Window(w)
+	return termwidth.Truncate(text, w, ""), x + col, r.y + 1
 }
 
 // finderStatusW は入力欄の右に出す件数と走査の様子の桁 (入力の窓から引く)。finderMinW はポップアップを出す最小の幅:
 // 枠と余白 (4)・"> " (2)・件数 (finderStatusW) を引いて、入力に 8 桁残る幅。これより狭いと最下行に出す (件数が入力と重なる)。
 const (
-	finderStatusW = 26
+	finderStatusW = 28 // "100000/100000 · 上限で止めた" が切れない桁
 	finderMinW    = 4 + 2 + finderStatusW + 8
 )
 
@@ -331,8 +334,9 @@ const (
 const finderSmallPrefix = "/ "
 
 func (m *Model) finderSmallField() (text string, caretX int) {
-	text, col := m.finder.line.Window(max(m.w/2-widthOf(finderSmallPrefix), 1))
-	return text, widthOf(finderSmallPrefix) + col
+	w := max(m.w/2-widthOf(finderSmallPrefix), 1)
+	text, col := m.finder.line.Window(w)
+	return termwidth.Truncate(text, w, ""), widthOf(finderSmallPrefix) + col
 }
 
 func (m *Model) finderStatus() string {
