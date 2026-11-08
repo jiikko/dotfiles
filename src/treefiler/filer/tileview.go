@@ -110,10 +110,9 @@ func (m *Model) tileGutter(t *tile) int {
 func (m *Model) view(t *tile) []viewLine {
 	w := m.tileTextWidth(t)
 	if t.mode == modeDiff {
-		lines, done := t.diff.result()
+		lines, styled, done := t.diff.result()
 		k := viewKey{w: w, mode: modeDiff, n: len(lines), diffDone: done}
 		if k != t.vkey || t.vlines == nil {
-			styled := highlight.Diff(lines)
 			t.vlines = make([]viewLine, len(lines))
 			for i, l := range lines {
 				t.vlines[i] = viewLine{styled: styled[i], plain: l}
@@ -208,7 +207,7 @@ func (s *textSource) ensureBytes(maxBytes int64) {
 func (m *Model) diffBusy() bool {
 	for _, t := range m.tiles {
 		if t.diff != nil {
-			if _, done := t.diff.result(); !done {
+			if _, _, done := t.diff.result(); !done {
 				return true
 			}
 		}

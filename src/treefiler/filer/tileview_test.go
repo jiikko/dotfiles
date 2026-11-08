@@ -244,6 +244,30 @@ func TestDiffToggle(t *testing.T) {
 	}
 }
 
+// diff の行は取得の goroutine で色付けを済ませて届き、表示の行はその色をそのまま使う (色を外すと元の行に戻る)。
+func TestDiffLinesArriveColored(t *testing.T) {
+	fakeDiff(t, false, "diff --git a/c.go b/c.go\n--- a/c.go\n+++ b/c.go\n@@ -1 +1 @@\n-package old\n+package new\n")
+	m := newTest(t)
+	writeRel(t, m, "c.go", "package new\n")
+	markModified(t, m, "c.go")
+	tl := openTileAt(t, m, "c.go")
+	m.HandleKey("d")
+	waitDiff(t, m)
+	lines, styled, done := tl.diff.result()
+	if !done || len(styled) != len(lines) || len(lines) != 6 {
+		t.Fatalf("取得の結果: done=%v lines=%d styled=%d", done, len(lines), len(styled))
+	}
+	vl := m.view(tl)
+	for i, v := range vl {
+		if !strings.Contains(v.styled, "\x1b[") {
+			t.Errorf("%d 行目 %q に色が付いていない", i, v.plain)
+		}
+		if v.styled != styled[i] || termwidth.StripSGR(v.styled) != v.plain {
+			t.Errorf("%d 行目: 表示 %q・取得 %q・元 %q", i, v.styled, styled[i], v.plain)
+		}
+	}
+}
+
 func TestDiffRefusedWithoutChanges(t *testing.T) {
 	fakeDiff(t, false, "")
 	m := newTest(t)

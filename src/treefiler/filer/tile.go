@@ -719,7 +719,7 @@ func (m *Model) diffLoading(t *tile) bool {
 	if t.diff == nil {
 		return false
 	}
-	_, done := t.diff.result()
+	_, _, done := t.diff.result()
 	return !done
 }
 

@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	"subproc"
+
+	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 )
 
 // diff.go はタイルの `d` (git の diff と本体の切り替え。spec §8.3)。diff を出せるのは git の状態が
@@ -97,13 +99,14 @@ type diffJob struct {
 	mu     sync.Mutex
 	done   bool
 	lines  []string
+	styled []string           // lines を tuikit/highlight.Diff で色付けしたもの (lines と同じ長さ)
 	cancel context.CancelFunc // 本体へ戻る・取り直す・隣へ送るときに git を止める (d の連打で git を重ねない。issue 693)
 }
 
-func (j *diffJob) result() ([]string, bool) {
+func (j *diffJob) result() (lines, styled []string, done bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return j.lines, j.done
+	return j.lines, j.styled, j.done
 }
 
 // diffable は n の diff を出せるか。
@@ -115,9 +118,16 @@ func startDiff(path string) *diffJob {
 	go func() {
 		defer cancel()
 		lines := fetchDiff(ctx, path)
+		// 色付けもここで済ませる (glogx の gitdata・pro-con の diffview と同じ)。🚨 描画 (tileview.go の view) へ戻さない: highlight.Diff は
+		// 行ごとに chroma の lexer を回すので diff の行数に比例し、約 400 行の diff で 1 フレームが 21ms 止まった (tools/tfprobe の live-tile-diff)。
+		// 見える行だけ遅らせて付ける形 (本体のタイルの styledLine) にしない: diff は行をまたぐ状態 (どのファイルの lexer か) を持つ
+		styled := lines
+		if ctx.Err() == nil { // 止めた取得 (d の連打・本体へ戻す・隣へ送る。stopDiff) の結果は使わない。捨てる結果に最大 diffMaxLines 行の色付けを走らせない
+			styled = highlight.Diff(lines)
+		}
 		j.mu.Lock()
 		defer j.mu.Unlock()
-		j.lines, j.done = lines, true
+		j.lines, j.styled, j.done = lines, styled, true
 	}()
 	return j
 }

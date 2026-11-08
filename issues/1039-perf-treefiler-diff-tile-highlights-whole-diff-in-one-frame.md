@@ -35,3 +35,29 @@
 ## 進捗
 
 - 2026-11-06: 起票 ([1035](1035-research-treefiler-audit-2026-11-05.md) の監査の後の計測)。反証レビューは通していない (実測と、呼び出し元 3 か所の grep で確かめた範囲)
+- 2026-11-08: 対応方針の第 1 案で直した (perf(treefiler): diff のタイルの色付けを取得の goroutine へ移す)。`filer/diff.go` の `startDiff` が `highlight.Diff` まで済ませて
+  `diffJob.result()` が (lines, styled, done) を返し、`view` は届いた色を並べるだけにした。止めた取得 (`stopDiff`) は結果を使わないので色付けを飛ばす
+
+## 結果
+
+- [x] 実測 (2026-11-08。`tfprobe` を直す前 / 直した後のバイナリで交互に 2 回ずつ、root=`src/`、5 サイクル、200×50、go1.26.0、load average 約 3.5)
+
+  | `live-tile-diff` | frame_p95 | settle_ms | alloc_kb |
+  |---|---|---|---|
+  | 直す前 1 / 2 | 22.04 / 23.70ms | 103 / 105 | 12687 / 12625 |
+  | 直した後 1 / 2 | 0.41 / 0.40ms | 82 / 83 | 12664 / 12733 |
+
+  確保は goroutine へ移っただけで総量は変わらない。`tile-code` の 1 打 (p95 1.48〜1.65ms) は変わらない
+- [x] 新テスト `TestDiffLinesArriveColored` (filer/tileview_test.go): 取得の結果に色が付いて届き、表示の行がそれを使う。変異「`styled = lines` (色付けを外す)」で
+  6 行とも red を確認 (`mutate-verify`)
+- [x] `go test -race` (treefiler 全体) rc=0
+- [x] 敵対的レビュー (opus 1 体。並行性・長さの食い違い・旧実装との表示の差・テストの素通り): P1 / P2 なし。P3 の 2 件は対応しない:
+  - P3-1 新テストは「描画で色付けしない」を固定しない (描画で同じ色付けをやり直しても出力が同じなので緑)。速さだけの退行は壁時計で固定しない方針
+    (src/treefiler/CLAUDE.md の「実物で測る」) で、tfprobe の `live-tile-diff` の frame で見る。逆戻りの禁止は `startDiff` の 🚨 コメントに書いた
+  - P3-2 `ctx.Err()` で色付けを飛ばす枝を通るテストが無い。外れても失うのは捨てる結果への CPU だけで、表示は変わらない
+  - レビューの未確認: regexp2 と chroma の個別の lexer の同時実行の安全性はソースまで読んでいない (glogx・pro-con が同じ関数を UI の外で呼んでいる前例はある)
+
+## 残タスク
+
+- スコープ外: `Model.Close` は取得中の diff を止めない (前から。git は `subproc.GitOpTimeout` で終わる)。閉じた後に取得が終わると、捨てる結果に色付けが走る
+
