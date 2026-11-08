@@ -178,6 +178,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |
 | issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
 | issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `~/.claude/skills/issue-writeback/SKILL.md` (本文の追記漏れ。done 移動は issue-sync) |
+| improve-debug-api, debug API と人の操作の経路の差, debug API 専用の処理を減らす | `~/.claude/skills/improve-debug-api/SKILL.md` (repo の値は各 repo の debug API の docs の節) |
 | dupscan, 重複したメソッド, 既にあるヘルパー, 書く前に探す, セルフレビューで写し, 呼び出し元 (Swift / Go) | `~/.claude/skills/dupscan/SKILL.md` (Swift と Go。def / refs は Swift だけ) |
 | start-issues-ops, issue運用を始める, issuesディレクトリを作る | `~/.claude/skills/start-issues-ops/SKILL.md` |
 | mac-healthcheck, Mac の健康診断, 暴走プロセス, メモリリーク, 買い替えの判断 | `~/.claude/skills/mac-healthcheck/SKILL.md` |
