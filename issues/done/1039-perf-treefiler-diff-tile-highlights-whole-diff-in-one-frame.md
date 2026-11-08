@@ -1,7 +1,5 @@
 # 1039 (perf): treefiler の diff のタイルが、diff 全体を 1 フレームの中でまとめて色付けする
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-08〜）
-
 起票日: 2026-11-06
 
 ## 概要
@@ -34,7 +32,7 @@
 
 ## 進捗
 
-- 2026-11-06: 起票 ([1035](1035-research-treefiler-audit-2026-11-05.md) の監査の後の計測)。反証レビューは通していない (実測と、呼び出し元 3 か所の grep で確かめた範囲)
+- 2026-11-06: 起票 ([1035](../1035-research-treefiler-audit-2026-11-05.md) の監査の後の計測)。反証レビューは通していない (実測と、呼び出し元 3 か所の grep で確かめた範囲)
 - 2026-11-08: 対応方針の第 1 案で直した (perf(treefiler): diff のタイルの色付けを取得の goroutine へ移す)。`filer/diff.go` の `startDiff` が `highlight.Diff` まで済ませて
   `diffJob.result()` が (lines, styled, done) を返し、`view` は届いた色を並べるだけにした。止めた取得 (`stopDiff`) は結果を使わないので色付けを飛ばす
 
