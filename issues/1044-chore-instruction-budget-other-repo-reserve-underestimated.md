@@ -80,4 +80,4 @@ CI は他の repo を読めない、という前提は変えない。
 - [x] global 層をもう 1 段縮めた (2026-11-08、ユーザー指示。dotfiles `50892e62a`)。
   - 109,476 → 107,519 字。verify-execution の発動点が狭い 4 節を rules-checklists へ、コード例の節を rationale へ移した。
   - instrument-before-second-fix の表の切り出しは、反証レビューで発動点の外でも効く行が多いと分かって revert した。
-- [ ] 方針を決める (1・3・4 のどれを入れるか)。2 つを縮めた後に最も重い repo 層は vlc の 39,190 字 (umbrella 込み)。
+- [ ] 方針を決める (1・3・4 のどれを入れるか)。2 つを縮めた後に最も重い repo 層は obaket/macOS の 39,719 字 (umbrella 込み。vlc は 39,190 字)。
