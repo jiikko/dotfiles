@@ -55,7 +55,7 @@
   - 例外は「コード変更時の自律改善」が義務付ける範囲だけ (境界は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md) の「自律改善との境界」表)。範囲外の気づきは「ぼやきポイント」へ
 - **訂正のナレーションは重要なものだけ**。ユーザーの判断が変わる誤りは端的に訂正する。何も変わらない言い間違いは黙って直す (過去の誤りの列挙・自己批判はしない)
 - **自分の判断で自己再チェックの手順を足さない** (読み返しパス・確認用サブエージェント)。自発的な検証は外部事実の確認 (実コマンド・テスト・実出力・git state) に寄せる
-  - **既定のルールや明示起動した skill が定める検証・レビュー工程は省略しない** (「レビュー方針」の codex / 敵対的レビュー、forge エスカレーション、forge / cross-review / review-loop の各 Phase)。これらはユーザーが選んだ工程であり、自己再チェックではない
+  - **既定のルールや明示起動した skill が定める検証・レビュー工程は省略しない** (「レビュー方針」の codex / 敵対的レビュー、[`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md) の refactor 提案の外部レビュー、forge エスカレーション、forge / cross-review / review-loop の各 Phase)。これらはユーザーが選んだ工程であり、自己再チェックではない
 
 ## 一時ファイルの配置
 
