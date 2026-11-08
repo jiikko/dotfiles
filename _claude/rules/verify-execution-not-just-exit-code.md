@@ -91,9 +91,19 @@
 
 🚨 **発動点: CI の runner・OS・依存・toolchain の版・locale を変える / 手元と CI で版が違う / 依存を足す・上げる commit を作る。発動したら `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
 
+次の 1 行は発動点に関わらず効く: **locale (`LANG` / `LC_ALL`) も版と同じ扱い**。並び・照合・文字クラスに依存する結果 (zsh の `(o)`・`sort`・`[[:alpha:]]`) は locale で変わる。CI の locale でも 1 回回すか、結果を並べる・比べる側を `LC_ALL=C` で固定する。処理の側で locale を固定しても、テストの側の並びは別に固定が要る。
+
 ## 確認を求める外部コマンドは、非対話だと「何もせず rc=0」で返る
 
-🚨 **発動点: 確認 (`[y/N]`) を出す外部コマンドを非対話で走らせる / 対話の中で書き込み・保存の成否を判定する / 外部コマンド・アプリへ設定を書く / ツールが判定に使う値 (spec・hash・schema の版) を手で移行・修復する。発動したら `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
+🚨 **次のどれかに当たったら、`~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
+- 確認 (`[y/N]`) を出す外部コマンドを非対話で走らせる
+- 対話の中で書き込み・保存の成否を判定する
+- 外部コマンド・アプリへ設定を書く
+- ツールが判定に使う値 (spec・hash・schema の版) を手で移行・修復する
+
+次の 2 つは発動点に関わらず効く:
+- **表示・コピー用と実行用でコマンド文字列を分けない**
+- ファイルを書くツールは、渡した内容の `\uXXXX` の表記を文字そのものに変えて保存することがある。書いた直後に表記を grep し、化けるなら `\x5c` などツールが解釈しない形にする
 
 ## 起動しなかった / 取り消された run は、その commit を検証していない (path filter・concurrency)
 

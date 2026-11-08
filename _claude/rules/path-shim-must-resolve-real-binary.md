@@ -24,4 +24,4 @@
 
 ## 形
 
-インストール側で実体を確定してから PATH を汚す形と、shim 側で解決するときに自己参照を検出して落とす形のコード例は rationale にある。
+インストール側で実体を確定してから PATH を汚す形と、shim 側で解決するときに自己参照を検出して落とす形のコード例は `~/dotfiles/_claude/rules-rationale/path-shim-must-resolve-real-binary.md` の「本文から移した実例」にある。
