@@ -1,7 +1,5 @@
 # 1044 (chore): 予算検査の「repo の指示ファイルの字数」が最も重い repo を数えておらず、vlc のセッションが上限を約 13k 超えている
 
-> 🚨 **担当中: air5 (glogx)**（2026-11-08〜）
-
 起票日: 2026-11-08
 
 ## 概要
@@ -61,7 +59,7 @@ CI は他の repo を読めない、という前提は変えない。
 
 - `scripts/check_instruction_budget.sh` (冒頭のコメント・`OTHER_REPO_RESERVE`)
 - `Makefile` の `test-instruction-budget` (`make test-lint` と CI の Lint で走る)
-- [issue 414](done/414-docs-scope-global-rules-with-paths-under-150k.md) (上限の経緯と再開の trigger)
+- [issue 414](414-docs-scope-global-rules-with-paths-under-150k.md) (上限の経緯と再開の trigger)
 - my-products の `apps/vlc-multi-video-player/CLAUDE.md`
 
 ## 進捗
