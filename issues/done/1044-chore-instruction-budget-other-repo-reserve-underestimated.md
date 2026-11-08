@@ -123,7 +123,8 @@ CI は他の repo を読めない、という前提は変えない。
 
 - [x] dropbox を claude-md-compact で縮めた (2026-11-08、ユーザー指示。dropbox `8b2795bd`)。
   - dropbox のセッション: 37,571 → 33,054 字。最大は vlc の 36,348 字 (定数 39,000 まで 2,652 字)。
-  - `.claude/CLAUDE.md` と `CLAUDE.md` の重複・`--help` や `.env.example` と重なる記述を外し、i18n の規約を `.claude/rules/i18n.md` (paths: 付き) へ移した。
+  - `.claude/CLAUDE.md` と `CLAUDE.md` の重複と、`--help` や `.env.example` と重なる記述を外した。
+  - i18n の規約を `.claude/rules/i18n.md` (paths: 付き) へ移した。
     発動点は CLAUDE.md の「国際化（i18n）規約」に残した。
 
 ### 受け入れた制約 (red team で挙がったもの)
