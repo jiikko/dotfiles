@@ -4,8 +4,8 @@
 
 ## 概要
 
-`scripts/check_instruction_budget.sh` は global 層の上限を `LIMIT - OTHER_REPO_RESERVE` (150,000 − 39,000 = 111,000) で守る。
-`OTHER_REPO_RESERVE` は手で測って置いた定数で、obaket の `macOS/` で起動したセッションの repo 層は、2026-11-08 の実測でこれを 719 字上回る。
+予算検査 (`scripts/check_instruction_budget.sh`) は、global 層を 150,000 − `OTHER_REPO_RESERVE` 以内に保つ。
+`OTHER_REPO_RESERVE` の値は手で測って置いている。obaket の `macOS/` で起動したセッションの repo 層は、2026-11-08 の実測でこれを 719 字上回る。
 global 層がこの検査に通っていても、そのセッションは上限を超えうる。
 
 ## 詳細
@@ -22,7 +22,7 @@ global 層がこの検査に通っていても、そのセッションは上限�
 | 合計 | 38,673 | **39,719** |
 
 - 9 日で 1,046 字増え、定数 39,000 を超えた。
-- 同じ日の claude-md-compact の前は、global 層 110,979 + repo 層 40,752 = 151,731 字で、上限 150,000 を超えていた。
+- 同じ日の claude-md-compact の前は 151,731 字 (global 層 110,979 + repo 層 40,752) で、上限 150,000 を超えていた。
   global 層は 111,000 を下回っていたので、`make test-lint` の `test-instruction-budget` は通っていた。
 - compact の後は global 層 109,476 + 39,719 = 149,195 字で、残りは 805 字。
 
@@ -30,8 +30,8 @@ global 層がこの検査に通っていても、そのセッションは上限�
 
 - スクリプトのコメントと issue 414 は、定数にする理由を「CI からは他の repo を読めない」と書いている。
   測り直しの trigger は「他の repo で上限超えの警告が出たら」で、事後にしか効かない。
-- 他の repo の repo 層は、dotfiles の外の commit で増える。dotfiles の CI はその増加を見ないので、定数は黙って古くなる
-  (スクリプトの「検出しないもの」に既に書いてある)。
+- 他の repo の repo 層は、dotfiles の外の commit で増える。dotfiles の CI はその増加を見ない。
+  そのため定数は黙って古くなる (スクリプトの「検出しないもの」に既に書いてある)。
 
 ## 対応方針 (案)
 
