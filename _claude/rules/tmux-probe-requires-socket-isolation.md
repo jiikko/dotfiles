@@ -32,8 +32,7 @@
 
 ## 強制手段（実装済みの部分）
 
-- 🚨 **`bin/tmux` shim** が、本番サーバ (`default` と `~/.config/tmux-protected-sockets` の各行) への `kill-server` / `kill-session` を TTY の無いシェルから拒否する。PATH 先頭に居るので、スクリプト内部の bare 呼び出しも止められる唯一の層。対話 TTY と実体の絶対パス (`/opt/homebrew/bin/tmux`) は通す (本当に消すときの逃げ道)
-- **PreToolUse hook** `_claude/hooks/deny-bare-tmux-kill.sh` が、Bash ツールで直接打った bare な kill・`pkill tmux`・`-L default` / `-S <...>/default` を deny する
+- 本番サーバへの kill は `bin/tmux` shim (TTY の無いシェルから) と PreToolUse hook `_claude/hooks/deny-bare-tmux-kill.sh` (Bash ツールの bare な kill・`pkill tmux`) が止める。本当に消すときは対話 TTY か実体の絶対パス (`/opt/homebrew/bin/tmux`) で打つ。止める範囲と検出しない形は shim と hook の冒頭
 - 隔離の実証・依頼外の破壊的操作・`2>/dev/null` は hook で強制できないので、この md が正本
 - hook は引用符・コメントの外の散文も見るので、heredoc の本文 (`git commit -F -` の message) に kill の語と小文字の tmux が並ぶと偽陽性で止まる。message はファイル経由 (`git commit -F <path>`) で渡すか言い換える。パターン自体を書くテストでは、シェル変数でトークンを分割して組む
 

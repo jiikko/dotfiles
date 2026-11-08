@@ -69,3 +69,12 @@ tmux -L probe kill-server
 
 - 2026-07-30 の事故では計測は依頼どおりだったが、`kill-server` は依頼に無い自発の後片付けだった
 - 2026-07-30 の事故はこの問いを飛ばしたことが起点
+
+## 本文から移した実例 (2026-11-08。常時読み込みの字数を減らすため、本文の「強制手段」節を縮めて元の形をここに移した)
+
+### 強制手段（実装済みの部分）
+
+- 🚨 **`bin/tmux` shim** が、本番サーバ (`default` と `~/.config/tmux-protected-sockets` の各行) への `kill-server` / `kill-session` を TTY の無いシェルから拒否する。PATH 先頭に居るので、スクリプト内部の bare 呼び出しも止められる唯一の層。対話 TTY と実体の絶対パス (`/opt/homebrew/bin/tmux`) は通す (本当に消すときの逃げ道)
+- **PreToolUse hook** `_claude/hooks/deny-bare-tmux-kill.sh` が、Bash ツールで直接打った bare な kill・`pkill tmux`・`-L default` / `-S <...>/default` を deny する
+- 隔離の実証・依頼外の破壊的操作・`2>/dev/null` は hook で強制できないので、この md が正本
+- hook は引用符・コメントの外の散文も見るので、heredoc の本文 (`git commit -F -` の message) に kill の語と小文字の tmux が並ぶと偽陽性で止まる。message はファイル経由 (`git commit -F <path>`) で渡すか言い換える。パターン自体を書くテストでは、シェル変数でトークンを分割して組む
