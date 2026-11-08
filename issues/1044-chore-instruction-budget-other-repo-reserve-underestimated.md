@@ -82,4 +82,39 @@ CI は他の repo を読めない、という前提は変えない。
 - [x] global 層をもう 1 段縮めた (2026-11-08、ユーザー指示。dotfiles `50892e62a`)。
   - 109,476 → 107,519 字。verify-execution の発動点が狭い 4 節を rules-checklists へ、コード例の節を rationale へ移した。
   - instrument-before-second-fix の表の切り出しは、反証レビューで発動点の外でも効く行が多いと分かって revert した。
-- [ ] 方針を決める (1・3・4 のどれを入れるか)。2 つを縮めた後に最も重い repo 層は obaket/macOS の 39,719 字 (umbrella 込み。vlc は 39,190 字)。
+- [x] 方針を決めた: 1 と 3 を入れる (ユーザー決定 2026-11-08)。4 は入れない (CI では global 層を定数で持つことになり、問題の向きを変えるだけ)。
+  - 上の「39,719 字」は手元の umbrella の checkout (origin より古い) で数えた値だった。origin の先端では 38,190 字 (差の 1,529 字は umbrella の rule の整理の分)。
+- [x] 方針 3: `scripts/measure_repo_instruction_layers.py` を足した。予算スクリプトから手元でだけ呼ぶ。
+  - commit は 2 本。
+    - 「他の repo のセッションの指示ファイルの字数を手元で測り、定数を超えたら落とす」
+    - 「red team の指摘で、他の repo の測り方の素通りと測れない経路を塞ぐ」
+  - gh api で数える。対象は umbrella (jiikko/my-products) の `.gitmodules` の 21 本と、umbrella の外の good-chrome-extensions。
+  - 起動する場所は repo の root と、CLAUDE.md とビルドの入口 (Makefile 等) を両方持つ 1 段下。
+  - 各場所から umbrella の root までのディレクトリについて、3 種類を足す。
+    `CLAUDE.md`・`.claude/CLAUDE.md`・paths: の無い `.claude/rules`。
+  - CI では測らず、定数だけで判定したと出す。gh が使えないとき・測れないときは赤にせず ⚠ を出す。
+  - 所要は cache が温まって 2.5 秒、冷えた初回 11 秒。
+  - 較正: ローカルの wc で数えた obaket/macOS と一致した (手元の umbrella の遅れの 1,529 字を除く)。
+  - 変異 8 本で red を確かめた。
+    - 測る側: paths: の除外・umbrella の層・ビルドの入口の絞り込み・.claude/CLAUDE.md・ディレクトリの symlink・読めない .gitmodules
+    - 予算スクリプト側: 定数ちょうど・CI の分岐
+  - red team (opus) を 2 周回した。1 周目の指摘で直したものは次のとおり。
+    - `.claude/CLAUDE.md` の計上漏れ (dropbox に 2,858 字)
+    - ディレクトリの symlink で 0 字になる / 読めない `.gitmodules` の section を黙って外す
+    - cache に版が無い / gh に上限時間が無い / blob の直列取得
+    - 測定コマンドの引用符 / 既定の測定コマンドがテストを通らない
+  - 2 周目は重大な退行なし。小さい穴 4 つを直した。
+    別の section の path の読み違え・`.claude` 自体の symlink のテスト・dotfiles 側の symlink・既定の測定コマンドの静的検査。
+  - 2 周目で残したものは 2 つで、どちらも安全側に倒れる。
+    - rules の下の .md 以外の symlink でも止める (止める側)
+    - 上位のディレクトリの `.claude/CLAUDE.md` を Claude Code が読むかは未確認 (多く数える側)
+- [x] 方針 1: 測り直した (2026-11-08、origin の各先端)。
+  - 最大は obaket の macOS/ で起動したセッションの 38,190 字 (umbrella 13,459 を含む)。
+  - 2 位以下は vlc 37,908 / dropbox 37,571 / obaket の root 32,679。
+  - 定数 39,000 の内なので据え置いた。余裕は 810 字。obaket/macOS の増え方 (2026-10-30 → 11-08 で約 1k) なら、1〜2 週間で手元の検査が落ちる見込み。落ちたら、その repo を縮めるか定数を上げる。
+
+### 受け入れた制約 (red team で挙がったもの)
+
+- 測れないとき (オフライン・rate limit・tree の打ち切り) は赤にせず、stderr に ⚠ を 1 行出すだけ。手元の test-lint を外部の都合で赤くしないための選択で、並列の make の出力に埋もれうる。
+- 既定ブランチの先端だけを読む。worktree や遅れた checkout で起動したセッションの字数とはずれる (dropbox は手元が 4 commit 遅れで 6,433 字多かった)。
+- `paths:` の値が空・`[]` の rule を Claude Code が常時読み込みとして扱うかは未確認。今は条件ロードと見なして数えない (check_instruction_budget.sh と同じ)。
