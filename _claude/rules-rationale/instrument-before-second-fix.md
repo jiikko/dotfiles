@@ -134,4 +134,4 @@ nvim --headless --server "$sock" --remote-expr 'luaeval("...")'
 ## 本文から移した実例 (2026-11-08。常時読み込みの字数を減らすため、本文の括弧書きから移した)
 
 - obaket retro 1161: 止まってから既知の止まりを探し、止まりに気づくまでの待ち (約 1 時間) を丸ごと失った
-- obaket retro 1134: issue / retro に記録した対策 (ssh の設定) が、記録の後に設定ファイルごと消えていた
+- obaket retro 1134: issue / retro に記録した対策が、記録の後に設定ファイルごと消えていた
