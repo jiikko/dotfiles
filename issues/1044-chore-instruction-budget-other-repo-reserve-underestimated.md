@@ -71,5 +71,9 @@ CI は他の repo を読めない、という前提は変えない。
   - Swift 専用の rule 2 本を `paths:` にし、チェックリストを `docs/rules-checklists/` (新設) へ移した。
   - ASC の手順を `releases/README.md` へ寄せ、実例を `docs/rules-rationale/` へ移した。
   - 関門の消えた部品は、どれも移し先にある重複だった。反証レビュー (opus 1 体) では、規範が消えたものは 0 件だった。
-- [ ] dropbox-multi-video-player-electron (umbrella 込み 42,675 字、セッション 152,151 字) が上限を超えたまま残る
-- [ ] 方針を決める (1・3・4 のどれを入れるか。取り置きは vlc を縮めた後でも 42,675 = dropbox が最大)
+- [x] 方針 2 を dropbox-multi-video-player-electron にも当てた (2026-11-08、ユーザー指示。dropbox `5a406b00`)。
+  - CLAUDE.md は 27,687 → 21,314 字。
+  - セッションは 152,151 → 145,778 字 (上限まで 4,222 字)。
+  - 重複していた Entitlement の手順を `docs/PAYWALL_TESTING.md` へ寄せた。
+  - コードから導ける構成の説明を `docs/architecture/overview.md` へ移した。
+- [ ] 方針を決める (1・3・4 のどれを入れるか)。2 つを縮めた後に最も重い repo 層は vlc の 39,190 字 (umbrella 込み)。
