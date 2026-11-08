@@ -94,7 +94,7 @@ MSGEOF
 
 ## 履歴操作 (reset / amend / rebase) の前に直近コミットの所有者を確認する
 
-🚨 **`reset` / `commit --amend` / `rebase` / `cherry-pick` / squash の soft reset / reflog・refspec を打つ前に、`~/dotfiles/_claude/rules-checklists/commit-with-pathspec.md` を Read する** (起動時には読まれない。常時読み込みの指示ファイル合計が上限 150k 字を超えたため、2026-10-12 にこの節の本文を切り出した。dotfiles issue 414 の続き)。pathspec 規律は「混入」は防ぐが、履歴を書き換える操作は防げない。直近コミットが自分のものとは限らず、`reset HEAD~1` は並行セッションの commit を切り落としうる。打つ前に `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象が自分の commit かを見る (author と時刻では他セッションへの帰属は決まらない)。
+🚨 **`reset` / `commit --amend` / `rebase` / `cherry-pick` / squash の soft reset / reflog・refspec を打つ前に、`~/dotfiles/_claude/rules-checklists/commit-with-pathspec.md` を Read する** (起動時には読まれない)。pathspec 規律は「混入」は防ぐが、履歴を書き換える操作は防げない。直近コミットが自分のものとは限らず、`reset HEAD~1` は並行セッションの commit を切り落としうる。打つ前に `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象が自分の commit かを見る (author と時刻では他セッションへの帰属は決まらない)。
 
 ## 例外
 

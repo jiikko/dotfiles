@@ -20,7 +20,7 @@
 
 ## やること
 
-🚨 **発動したら、書き始める前に `~/dotfiles/_claude/rules-checklists/adversarial-review-own-safeguards.md` を Read し、§0 は書く前に、§1 以降は書いた後に通す**。各節の中身はそちらにある (常時読み込みの指示ファイル合計が上限 150k 字を超えたため、2026-10-12 に本文を切り出した。dotfiles issue 414 の続き)。節番号は他の rule・hook・テストが参照しているので振り直さない。
+🚨 **発動したら、書き始める前に `~/dotfiles/_claude/rules-checklists/adversarial-review-own-safeguards.md` を Read し、§0 は書く前に、§1 以降は書いた後に通す**。各節の中身はそちらにある。節番号は他の rule・hook・テストが参照しているので振り直さない。
 
 - 0. 機構を作る前に「作らずに済む構造」を 1 度問う
   - 0-A. 掃除機構: 「そもそも発生させない構造」はないか

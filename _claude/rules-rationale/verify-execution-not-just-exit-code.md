@@ -429,3 +429,13 @@ Python で署名し直すと 412 / 200 が得られた。
   背景の計測の最後の ⌘Q は、ユーザーが別のアプリを前面にした後で key window が無く届かず、終了待ちで止まった。
   全スロットを切り替える意味の口 (`playback/toggle-all`) と、bundle id を名指しした終了の要求に替えた
 - esa-cli retro 007 / 017: `go get golang.org/x/term@latest` が go.mod の `go 1.25.0` を `1.26.0` へ上げた (出力に 1 行出ただけで rc=0)。CI は `go-version-file: go.mod`、Homebrew も同じ go.mod で build するので、気づかなければ両方の版が変わっていた。依存グラフにある v0.44.0 を指定して避けた
+
+## 本文から移した実例 (2026-11-08。常時読み込みの字数を減らすため、本文の括弧書きから移した)
+
+- swift-smbee retro 109: 環境や profile が合わないと XCTSkip するテストは、名前も suite passed も出たまま何も検査しない
+- retro 953: dotfiles の dupscan の `sweep` の「`dupscan:allow` で静かになる」は、`sweep` が許可印を見ておらず偽だった
+- issue 1006: dotfiles の golangci-lint は、壊れた ruleguard の規則を戻した後も同じ checkout で失敗を出し続けた
+- retro 690: concat のテストに Go を要する検査を足したのに、heavy のジョブは Go を入れていなかった
+- retro 644: 手動専用の検査のために CI のジョブへ Go を足しかけた
+- retro 784 (2 回): 本体のテストは緑のまま、写した先・一覧の検査だけが赤くなった
+- retro 1029: `grep … | head` の 10 行で、古い挙動を assert するテストが出力から落ちた
