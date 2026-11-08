@@ -120,9 +120,19 @@ if [ "$RC" -eq 1 ] && grep -q 'CLAUDE.md が無い' <<<"$OUT"; then ok '_claude/
 else bad "_claude/CLAUDE.md が無くても緑になる (rc=$RC): $OUT"; fi
 
 # 既定の測定コマンド (テストでは差し替えるので通らない) が在って実行できること
-default_measurer=$(grep -oE '"\$root/scripts/[a-z_]+\.py"' "$CHECK" | head -1 | tr -d '"' | sed "s|\$root|$ROOT_DIR|")
-if [ -n "$default_measurer" ] && [ -x "$default_measurer" ] && grep -q -- '--extra jiikko/good-chrome-extensions' "$CHECK"; then ok "既定の測定コマンドが在って実行でき、umbrella の外の repo も渡している (${default_measurer#"$ROOT_DIR"/})"
-else bad "既定の測定コマンドが無い・実行できない・--extra が消えた: '$default_measurer'"; fi
+# 配列の行と、それを展開する行を字面で照合し、既定のコマンドを --help で 1 回起こす (構文の誤りも落ちる)
+default_measurer="$ROOT_DIR/scripts/measure_repo_instruction_layers.py"
+if grep -qxF '  measurer=("$root/scripts/measure_repo_instruction_layers.py" --extra jiikko/good-chrome-extensions)' "$CHECK" \
+  && grep -qF 'measured=$("${measurer[@]}" 2>&1)' "$CHECK" && "$default_measurer" --help >/dev/null 2>&1; then
+  ok "既定の測定コマンドが配列で組まれて展開され、--help で起動でき、umbrella の外の repo も渡している"
+else bad "既定の測定コマンドの配線か起動が崩れている: $default_measurer"; fi
+
+new_tree repo-rules-symlink
+mkdir -p "$T/shared"
+rm -rf "$T/.claude/rules" && ln -s ../shared "$T/.claude/rules"
+run
+if [ "$RC" -eq 1 ] && grep -q 'symlink' <<<"$OUT"; then ok 'dotfiles の .claude/rules が symlink なら repo 層を 0 字と数えずに落とす'
+else bad ".claude/rules の symlink を素通りしている (rc=$RC): $OUT"; fi
 
 new_tree dot-claude-md
 ascii 100000 > "$T/_claude/rules/big.md"

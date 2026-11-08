@@ -220,9 +220,11 @@ def submodules(umbrella, counter):
     # (黙って外すと、その repo のセッションを数えないまま緑になる)
     sections, cur = [], None
     for line in text.splitlines():
-        if re.match(r"\s*\[submodule\b", line):
-            cur = {}
-            sections.append(cur)
+        if re.match(r"\s*\[", line):
+            # submodule 以外の section の path / url を、直前の submodule のものとして読まない
+            cur = {} if re.match(r"\s*\[submodule\b", line) else None
+            if cur is not None:
+                sections.append(cur)
             continue
         m = re.match(r"\s*(path|url)\s*=\s*(\S+)\s*$", line)
         if m and cur is not None:

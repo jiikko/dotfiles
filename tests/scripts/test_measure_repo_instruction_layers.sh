@@ -84,6 +84,20 @@ run --umbrella o/umb --extra o/dirsym
 if [ "$RC" -eq 2 ] && grep -q 'ディレクトリでない' <<<"$OUT" && ! grep -q '^max' <<<"$OUT"; then ok '.claude/rules がディレクトリへの symlink なら rc=2 で止める (中身を 0 字と読まない)'
 else bad "ディレクトリの symlink で止まらない (rc=$RC): $OUT"; fi
 
+mkrepo o/dotsym CLAUDE.md=10 real/rules/a.md=10
+ln -s real "$WORK/src/o/dotsym/.claude"
+git -C "$WORK/src/o/dotsym" add -A && git -C "$WORK/src/o/dotsym" -c user.name=t -c user.email=t@example.com commit -q -m dotlink
+run --umbrella o/umb --extra o/dotsym
+if [ "$RC" -eq 2 ] && grep -q 'ディレクトリでない' <<<"$OUT"; then ok '.claude 自体が symlink でも rc=2 で止める'
+else bad ".claude の symlink で止まらない (rc=$RC): $OUT"; fi
+
+mkrepo o/othersec CLAUDE.md=10
+printf '[submodule "lib/x"]\n\tpath = lib/x\n\turl = git@github.com:o/x.git\n[foo]\n\tpath = lib/zzz\n' > "$WORK/src/o/othersec/.gitmodules"
+git -C "$WORK/src/o/othersec" add -A && git -C "$WORK/src/o/othersec" -c user.name=t -c user.email=t@example.com commit -q -m othersec
+run --umbrella o/othersec
+if [ "$RC" -eq 0 ] && grep -q $'^17\to/x:. (o/othersec の lib/x)$' <<<"$OUT"; then ok 'submodule 以外の section の path を直前の submodule のものとして読まない'
+else bad "別の section の path で submodule を上書きしている (rc=$RC): $OUT"; fi
+
 mkrepo o/badmod CLAUDE.md=10
 printf '[submodule "apps/a"]\n\tpath = apps/a\n\turl = git@github-work:o/app.git\n' > "$WORK/src/o/badmod/.gitmodules"
 git -C "$WORK/src/o/badmod" add -A && git -C "$WORK/src/o/badmod" -c user.name=t -c user.email=t@example.com commit -q -m badmod

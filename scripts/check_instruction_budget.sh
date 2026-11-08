@@ -76,6 +76,10 @@ fi
 rules_total=$layer_total
 count_layer "$root/_claude/CLAUDE.md"
 global=$((rules_total + layer_total))
+if [ -L "$root/.claude/rules" ] || [ -L "$root/.claude" ]; then
+  printf '✗ %s/.claude か .claude/rules が symlink。find が辿らず repo 層を 0 字と数える\n' "$root" >&2
+  exit 1
+fi
 # shellcheck disable=SC2046  # 同上
 count_layer "$root/CLAUDE.md" "$root/.claude/CLAUDE.md" $(rule_files "$root/.claude/rules")
 session=$((global + layer_total))
