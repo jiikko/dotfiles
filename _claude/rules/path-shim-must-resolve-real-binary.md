@@ -24,19 +24,4 @@
 
 ## 形
 
-```sh
-# インストール側: PATH を汚す前に実体を確定させる
-real_tmux="$(command -v tmux)" || { echo "tmux not found" >&2; exit 1; }
-mkdir -p "$shimdir"
-cat > "$shimdir/tmux" <<SHIM
-#!/bin/sh
-exec "$real_tmux" "\$@"     # 絶対パス。相対名にすると自分に戻る
-SHIM
-chmod +x "$shimdir/tmux"
-PATH="$shimdir:$PATH"
-
-# shim 側で解決する形を採るなら、自己参照を検出して落とす
-case "$resolved" in
-  "$shimdir"/*) echo "shim resolved to itself: $resolved" >&2; exit 70 ;;
-esac
-```
+インストール側で実体を確定してから PATH を汚す形と、shim 側で解決するときに自己参照を検出して落とす形のコード例は rationale にある。

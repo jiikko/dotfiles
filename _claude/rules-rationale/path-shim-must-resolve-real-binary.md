@@ -14,3 +14,24 @@ shim は PATH 先頭に置かれていたため自分自身に解決し、無限
 同じセッションの `tests/tmux/test_mark_seen.sh` では `command -v` で絶対パス化していた。
 つまり **1 つの変更の中で同型の間違いを片方だけ直した**形で、規律を持っていたのに
 bench 側で落とした (CLAUDE.md「同じ間違いが別の場所にもある前提で grep する」の裏面)。
+
+## 本文から移した実例 (2026-11-08。常時読み込みの字数を減らすため、本文の例の節から移した)
+
+### 形
+
+```sh
+# インストール側: PATH を汚す前に実体を確定させる
+real_tmux="$(command -v tmux)" || { echo "tmux not found" >&2; exit 1; }
+mkdir -p "$shimdir"
+cat > "$shimdir/tmux" <<SHIM
+#!/bin/sh
+exec "$real_tmux" "\$@"     # 絶対パス。相対名にすると自分に戻る
+SHIM
+chmod +x "$shimdir/tmux"
+PATH="$shimdir:$PATH"
+
+# shim 側で解決する形を採るなら、自己参照を検出して落とす
+case "$resolved" in
+  "$shimdir"/*) echo "shim resolved to itself: $resolved" >&2; exit 70 ;;
+esac
+```
