@@ -111,6 +111,10 @@ CI は他の repo を読めない、という前提は変えない。
   - 2 位以下は vlc 37,908 / dropbox 37,571 / obaket の root 32,679。
   - 定数 39,000 の内なので据え置いた。余裕は 810 字。obaket/macOS の増え方 (2026-10-30 → 11-08 で約 1k) なら、1〜2 週間で手元の検査が落ちる見込み。落ちたら、その repo を縮めるか定数を上げる。
 
+- [x] obaket を claude-md-compact で縮めた (2026-11-08、ユーザー指示。obaket `927f0d460`)。
+  - obaket/macOS のセッション: 38,190 → 35,133 字。最大は vlc の 37,949 字に移った (定数 39,000 まで 1,051 字)。
+  - SMB / SFTP / WebDAV の完了前の E2E を `.claude/rules/storage-e2e-gates.md` (paths: 付き) へ移し、発動点は CLAUDE.md の索引に残した。
+
 ### 受け入れた制約 (red team で挙がったもの)
 
 - 測れないとき (オフライン・rate limit・tree の打ち切り) は赤にせず、stderr に ⚠ を 1 行出すだけ。手元の test-lint を外部の都合で赤くしないための選択で、並列の make の出力に埋もれうる。
