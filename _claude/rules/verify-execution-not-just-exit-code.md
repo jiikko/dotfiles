@@ -89,46 +89,15 @@
 
 ## 実行環境を変えたら、変更前後の出力を全行 diff する
 
-CI の runner / OS / 依存を差し替えたら、緑どうしの比較で終わらせず、**両 run の出力を全行突き合わせる**。件数は当てにならず
-(ファイル数が同じでも中で skip に化ける)、skip はファイル単位では合格に見える。「skip しそうなガードを grep する」では
-自分が思いつく形しか見つからないので弱い。
-
-**手元と CI で toolchain の版が違うなら、push の前に CI と同じ版でも 1 回回す** (CI が go.mod の `go` 行・`.tool-versions` 等から
-版を決める repo。Go なら `GOTOOLCHAIN=go<版> go test ./...`)。その版でだけ出る不具合は、CI が赤くなるまで見えない
-(dotfiles の chromecookie: go1.25.0 でだけ `os.Root` 由来の `DirEntry.Info()` が失敗した。esa-cli issue 014)。
-**依存を足す・上げる commit では、処理系の版の要求 (go.mod の `go` / `toolchain` 行・engines・required_ruby_version) が差分に入っていないかを見る**。
-最新の版を取る指定 (`go get <依存>@latest`) は、その依存が要求する処理系へ黙って引き上げ、CI と配布先の版まで変える。既に依存グラフにある版を指定する。
-**locale (`LANG` / `LC_ALL`) も版と同じ扱い**。並び・照合・文字クラスに依存する結果 (zsh の `(o)`・`sort`・`[[:alpha:]]`) は locale で変わる。
-CI の locale でも 1 回回すか、結果を並べる・比べる側を `LC_ALL=C` で固定する。処理の側で locale を固定しても、テストの側の並びは別に固定が要る (retro 1015)。
+🚨 **発動点: CI の runner・OS・依存・toolchain の版・locale を変える / 手元と CI で版が違う / 依存を足す・上げる commit を作る。発動したら `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
 
 ## 確認を求める外部コマンドは、非対話だと「何もせず rc=0」で返る
 
-`[y/N]` を出す CLI は stdin が EOF だと中止して成功終了する (出力にはプロンプト文が出ている)。
-
-- 判定は rc でも出力の有無でもなく、**その操作の効果が観測できるか**。測れないなら非対話用のフラグでプロンプト自体を出さない
-- **対話の中で書き込み・保存の成否を例外や rc で判定するときも同じ**。確認で断られる・一部だけ書ける経路でも例外 / rc が出るかを
-  確かめ、出ないなら結果の状態 (変更が残っていないか・書いた内容) で判定する (retro 872: nvim の `pcall(vim.cmd, "wall")` は上書きの確認に
-  n と答えると例外を投げずに戻り、続く `:cquit` が編集を捨てた)
-- **外部コマンド / アプリへ設定を書いたら、同じ手順の中で読み戻して比較する** (受け側が黙って代替値へ差し替えることがある)
-  - **読み戻しは、書いた道具ではなく、アプリが実際に読む置き場所で行う**。書いた道具と同じ道具で読むと、両方が同じ別の場所を見ていても一致する
-    (screen-share-app 813: sandbox の container が残っていると `defaults` は container の plist を読み書きし、sandbox なしのアプリは `~/Library/Preferences` を読んでいた。`plutil -p <実ファイル>` で分かった)
-  - ファイルを書くツールも同じ: 渡した内容の `\uXXXX` の表記が、文字そのものに変わって保存されることがある (2026-10-06 に 2 回。Go の
-    `"\u003c"` が `"<"` になった)。書いた直後に表記を grep し、化けるなら `\x5c` などツールが解釈しない形にする (retro 642)
-  - **ツールが自分の判定に使う値 (spec・hash・fingerprint・schema の版) を手で移行・修復するときは、その値をツール自身に計算させる** (ツールの関数・subcommand を呼ぶ)。
-    計算式を写して手で出さない (呼ばれ方の違いでずれ、ずれると判定が黙って逆に働く)。書いた後は、壊さない操作 (status・dry-run) でツールが「変わっていない」と
-    答えることを確かめてから、作り直しうる操作を走らせる
-- **表示・コピー用と実行用でコマンド文字列を分けない**
+🚨 **発動点: 確認 (`[y/N]`) を出す外部コマンドを非対話で走らせる / 対話の中で書き込み・保存の成否を判定する / 外部コマンド・アプリへ設定を書く / ツールが判定に使う値 (spec・hash・schema の版) を手で移行・修復する。発動したら `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
 
 ## 起動しなかった / 取り消された run は、その commit を検証していない (path filter・concurrency)
 
-- `paths:` 付きの workflow は、対象を触らない commit では起動しない。判定は commit ではなく**範囲**で行い、
-  最後にその workflow が走った commit から HEAD までに対象を触った commit が挟まっていないかを見る
-- HEAD が対象を触っていないなら、その緑は HEAD を検証していない
-- **`make test` に lint が入っていない repo では、Go / shell を触った commit ごとに lint を別に回す**
-- **concurrency で取り消された (cancelled) run は、失敗でも成功でもない**。続けて push すると前の commit の run は取り消される。
-  その commit は、それを含む後の commit の run で確かめ、待ちもそちらに張り直す (`gh run list --commit` は完全な sha で渡す。retro 647)
-- **CI の起動経路を増やしたら (手動起動の入力など)、同じ SHA の複数 run を読み手 (verifier・集計) が区別できるか確かめ、必要な修正を同じ変更で行う** (event・ref・入力・run ID)。
-  起動の前に concurrency group と取消の条件も読み、必要な検証の run を取り消さない経路を選ぶ (swift-smbee retro 110)
+🚨 **発動点: `paths:` 付き・concurrency のある CI の緑を完了の根拠にする / CI の起動経路を増やす / `make test` に lint が入っていない repo で Go・shell を触る。発動したら `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
 
 ## 集約テストが赤いまま、その上で検証を続けない
 
@@ -155,13 +124,7 @@ CI の locale でも 1 回回すか、結果を並べる・比べる側を `LC_A
 
 ## キャッシュされた緑と path filter は、鍵に数えない入力の変化を見ない
 
-テストがキャッシュ鍵にも paths filter にも入らない入力 (module の外のファイル・生成物・環境) を読むなら、**cached の緑は証拠ではない**
-(Go の testcache は module root の外の open/stat を再チェックしない)。**キャッシュ無効で走らせ、そのテスト固有の PASS 行を grep する** +
-読む対象を workflow の paths に載せ、その配線を検査で固定する。
-
-- **キャッシュは赤も持ち越す**。入力 (設定・規則・生成物) を戻しても同じ失敗が消えないときは、コードを読み直す前に空のキャッシュ dir で 1 回回す
-- **道具の設定がパスで指すだけのファイル (規則・plugin・schema) は、その道具のキャッシュの鍵に入っているかを実験で確かめる**
-  (同じキャッシュのまま中身だけ変えて結果が変わるか)。入っていなければ、中身の hash を鍵に入る欄 (設定の値) へ写す経路を作る
+🚨 **発動点: テストがキャッシュ鍵・paths filter に入らない入力を読む / 入力を戻しても同じ失敗が消えない / 道具の設定がパスで指すファイル (規則・plugin・schema) を変える。発動したら `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
 
 ## 「有無で結果が変わらない観測」を証拠に数えない
 
