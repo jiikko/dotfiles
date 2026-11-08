@@ -14,13 +14,15 @@
 #   - global 層 + dotfiles の repo 層が LIMIT を超えた
 #   - `_claude/CLAUDE.md` が無い・数えた rule が 0 本 (数え方が空振りした)
 #
-# OTHER_REPO_RESERVE は、global 層に repo 層を足すセッションのうち最も重いものの repo 層。CI からは他の repo を読めないので定数で持つ。
-#   測り方: gh api で各 repo の CLAUDE.md と .claude/rules を取り、paths: の無いものを wc -m で数える (clone は要らない)。
-#   2026-10-30: my-products 14,089 + obaket 19,573 + obaket/macOS 5,011 = 38,673 (obaket の macOS/ で起動したセッション)。
-#   他の repo で上限超えの警告が出たら測り直して上げる。下げるのも測り直したときだけ。
+# OTHER_REPO_RESERVE は、global 層に repo 層を足すセッションのうち最も重いものの repo 層 (repo の指示ファイルの字数)。
+#   CI からは他の repo を読めないので定数で持つ。
+#   測り方: scripts/measure_repo_instruction_layers.py (gh api で umbrella と各 submodule の CLAUDE.md・.claude/rules を数える。clone は要らない)。
+#   2026-11-08: 最大は obaket の macOS/ で起動したセッションの 38,190 (umbrella 13,459 を含む)。2 位は vlc の 37,908。
+#   手元の実行 (CI でなく gh が認証済み) では、上の道具で測った最大がこの定数を超えたら落とす。超えたら、重い repo を縮めるか定数を上げる。
+#   定数を下げるのも測り直したときだけ。INSTRUCTION_BUDGET_REPOS=off で手元でも測らない (テスト用)。
 #
 # 検出しないもの:
-#   - 他の repo の repo 層の増加 (上の定数が古くなる)・auto memory (MEMORY.md)・hook が注入する文 (system-reminder)
+#   - CI では他の repo の repo 層の増加 (上の定数が古くなる)。手元では測るが、push の時点の他の repo の先端しか見ない・auto memory (MEMORY.md)・hook が注入する文 (system-reminder)
 #   - Claude Code の数え方との差 (UTF-16 で数えるなら 🚨 などの絵文字は 2 字。差は数十字の規模)
 #   - git に add していないファイルも数える (作業ツリーを見る)
 #   - CLAUDE.md の `@path` の import が展開する中身 (今は 0 件)
@@ -91,6 +93,34 @@ if [ "$session" -gt "$LIMIT" ]; then
   printf '✗ dotfiles のセッションが上限を %d 字超えている\n' "$((session - LIMIT))" >&2
   rc=1
 fi
+# 他の repo の層を測る (手元だけ)。測れないときは赤にしないが、定数だけで判定したことを出す
+repos_mode="${INSTRUCTION_BUDGET_REPOS:-auto}"
+measurer="${INSTRUCTION_BUDGET_REPO_MEASURER:-$root/scripts/measure_repo_instruction_layers.py --extra jiikko/good-chrome-extensions}"
+if [ "$repos_mode" = off ]; then
+  :
+elif [ -n "${CI:-}" ]; then
+  printf '他の repo の層: CI では測らない (gh で他の repo を読めない)。定数 %d だけで判定した\n' "$OTHER_REPO_RESERVE"
+elif [ -z "${INSTRUCTION_BUDGET_REPO_MEASURER:-}" ] && ! gh auth status >/dev/null 2>&1; then
+  printf '⚠ 他の repo の層: gh が無いか認証されていないので測らなかった。定数 %d だけで判定した\n' "$OTHER_REPO_RESERVE" >&2
+else
+  measured=$($measurer 2>&1)
+  mrc=$?
+  max_line=$(printf '%s\n' "$measured" | awk -F '\t' '$1 == "max" { print; exit }')
+  max_chars=$(printf '%s' "$max_line" | cut -f2)
+  if [ "$mrc" -ne 0 ] || ! [[ "$max_chars" =~ ^[0-9]+$ ]]; then
+    printf '⚠ 他の repo の層を測れなかった (rc=%d)。定数 %d だけで判定した:\n%s\n' "$mrc" "$OTHER_REPO_RESERVE" "$measured" >&2
+  else
+    max_label=$(printf '%s' "$max_line" | cut -f3-)
+    printf '他の repo の層: 最大 %d 字 (%s。定数 %d)\n' "$max_chars" "$max_label" "$OTHER_REPO_RESERVE"
+    if [ "$max_chars" -gt "$OTHER_REPO_RESERVE" ]; then
+      printf '✗ 他の repo の層が定数 OTHER_REPO_RESERVE を %d 字超えている。そのセッションは global 層 %d 字と合わせて %d 字になる。重い repo を縮めるか、定数を上げて global 層を縮める (issue 1044)\n' \
+        "$((max_chars - OTHER_REPO_RESERVE))" "$global" "$((global + max_chars))" >&2
+      printf '%s\n' "$measured" | awk -F '\t' '$1 != "max"' | head -5 | sed 's/^/    /' >&2
+      rc=1
+    fi
+  fi
+fi
+
 if [ "$rc" -ne 0 ]; then
   printf '  大きい順:\n' >&2
   printf '%s' "$sizes" | sort -rn | head -8 | sed 's/^/    /' >&2
