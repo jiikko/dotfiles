@@ -116,6 +116,11 @@ CI は他の repo を読めない、という前提は変えない。
   - SMB / SFTP / WebDAV の完了前の E2E を `.claude/rules/storage-e2e-gates.md` (paths: 付き) へ移した。
     発動点は CLAUDE.md の索引に残した。
 
+- [x] vlc を claude-md-compact で縮めた (2026-11-08、ユーザー指示。vlc `eec0ca7c`)。
+  - vlc のセッション: 37,949 → 36,348 字。最大は dropbox の 37,571 字に移った (定数 39,000 まで 1,429 字)。
+  - seek を keyframe に寄せる方針を `.claude/rules/seek-keyframe-tolerance.md` (paths: 付き) へ移した。
+    発動点 (seek を足す・変える・映像が止まる不具合を調べる) は CLAUDE.md の「アーキテクチャ」に残した。
+
 ### 受け入れた制約 (red team で挙がったもの)
 
 - 測れないとき (オフライン・rate limit・tree の打ち切り) は赤にせず、stderr に ⚠ を 1 行出すだけ。手元の test-lint を外部の都合で赤くしないための選択で、並列の make の出力に埋もれうる。
