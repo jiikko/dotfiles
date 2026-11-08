@@ -76,4 +76,7 @@ CI は他の repo を読めない、という前提は変えない。
   - セッションは 152,151 → 145,778 字 (上限まで 4,222 字)。
   - 重複していた Entitlement の手順を `docs/PAYWALL_TESTING.md` へ寄せた。
   - コードから導ける構成の説明を `docs/architecture/overview.md` へ移した。
+- [x] global 層をもう 1 段縮めた (2026-11-08、ユーザー指示。dotfiles `50892e62a`)。
+  - 109,476 → 107,519 字。verify-execution の発動点が狭い 4 節を rules-checklists へ、コード例の節を rationale へ移した。
+  - instrument-before-second-fix の表の切り出しは、反証レビューで発動点の外でも効く行が多いと分かって revert した。
 - [ ] 方針を決める (1・3・4 のどれを入れるか)。2 つを縮めた後に最も重い repo 層は vlc の 39,190 字 (umbrella 込み)。
