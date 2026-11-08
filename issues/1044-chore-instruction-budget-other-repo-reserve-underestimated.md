@@ -1,12 +1,12 @@
-# 1044 (chore): 予算検査の「repo 層の想定値」が最も重い repo を数えておらず、vlc のセッションが上限を約 13k 超えている
+# 1044 (chore): 予算検査の「repo の指示ファイルの字数」が最も重い repo を数えておらず、vlc のセッションが上限を約 13k 超えている
 
 起票日: 2026-11-08
 
 ## 概要
 
 予算検査 (`scripts/check_instruction_budget.sh`) は、global 層を 150,000 − `OTHER_REPO_RESERVE` 以内に保つ。
-「repo 層の想定値」は、dotfiles の CI から見えない他の repo の CLAUDE.md・rule の字数として見込む値 (`OTHER_REPO_RESERVE=39000`)。global 層の上限は 150,000 からこの値を引いて決まる。
-想定値は「repo 層が最も重いセッション」の値のはずだが、2026-10-30 の測定は obaket を最大として数えた。
+「repo の指示ファイルの字数」は、起動した repo 自身の CLAUDE.md・rule が使うと見込む字数。起動時に読み込む指示ファイルの上限 150,000 字の内訳の 1 つ (`OTHER_REPO_RESERVE=39000`)。global 層の上限は 150,000 からこの値を引いて決まる。
+この見込みは「最も重い repo」の値のはずだが、2026-10-30 の測定は obaket を最大として数えた。
 実際には vlc-multi-video-player の repo 層の方が約 14k 重い。計算上、vlc のセッションは今も上限を約 13k 超えている。
 
 ## 詳細
@@ -39,7 +39,7 @@ my-products の app は umbrella の CLAUDE.md と rule も読み込むので、
 
 CI は他の repo を読めない、という前提は変えない。
 
-1. **repo 層の想定値を実測に合わせる (今の手順どおり)**: 53,605 にすると global 層の上限は 96,395 になる。
+1. **repo の指示ファイルの字数を実測に合わせる (今の手順どおり)**: 53,605 にすると global 層の上限は 96,395 になる。
    global 層 109,476 は 13,081 超えるので、dotfiles の CI が赤くなる。
    上げるなら、どちらの層 (global 層・vlc の repo 層) を縮めるのかを先に決める。
 2. **重い repo の側を縮める**: vlc の CLAUDE.md (15,757 字) と rule を claude-md-compact で縮め、repo 層を obaket と同じ程度にする。
