@@ -4,7 +4,7 @@
 # 守るもの: umbrella の root から起動した場所までの各ディレクトリの CLAUDE.md と .claude/rules を足す / submodule には umbrella の層 (途中のディレクトリを含む) を足す /
 # frontmatter に paths: がある rule は数えない / 1 段下はビルドの入口を持つディレクトリだけを起動する場所と見なす (bin/ は数えない) /
 # 隠しディレクトリは起動する場所にしない / 全角を 1 字と数える / --extra の repo も数える / 最大の行を出す /
-# symlink の rule は測れないとして rc=2 / 既定ブランチの先端 (HEAD) を読み、作業ツリーの未 commit の変更は数えない。
+# symlink の rule・ディレクトリへの symlink・読めない .gitmodules の section は測れないとして rc=2 / .claude/CLAUDE.md も数える / 既定ブランチの先端 (HEAD) を読み、作業ツリーの未 commit の変更は数えない。
 set -uo pipefail
 unset CDPATH
 
@@ -48,7 +48,7 @@ mkrepo o/umb CLAUDE.md=100 .claude/rules/a.md=200 .claude/rules/cond.md=paths:10
 printf '[submodule "apps/app"]\n\tpath = apps/app\n\turl = git@github.com:o/app.git\n[submodule "lib/x"]\n\tpath = lib/x\n\turl = https://github.com/o/x.git\n' \
   > "$WORK/src/o/umb/.gitmodules"
 git -C "$WORK/src/o/umb" add .gitmodules && git -C "$WORK/src/o/umb" -c user.name=t -c user.email=t@example.com commit -q -m gitmodules
-mkrepo o/app CLAUDE.md=300 .claude/rules/r.md=ja:51 macOS/CLAUDE.md=40 macOS/Makefile=1 bin/CLAUDE.md=5000 .claude/CLAUDE.md=5000
+mkrepo o/app CLAUDE.md=300 .claude/rules/r.md=ja:51 macOS/CLAUDE.md=40 macOS/Makefile=1 bin/CLAUDE.md=5000 .claude/CLAUDE.md=30
 mkrepo o/x CLAUDE.md=7
 mkrepo o/ext CLAUDE.md=20
 ascii 9000 > "$WORK/src/o/app/macOS/CLAUDE.md"  # commit しない変更は数えない
@@ -57,15 +57,15 @@ run --umbrella o/umb --extra o/ext
 line() { awk -F '\t' -v l="$1" '$2 == l { print $1 }' <<<"$OUT"; }
 if [ "$RC" -eq 0 ] && [ "$(line 'o/umb:.')" = 300 ]; then ok 'umbrella の root は CLAUDE.md と paths: の無い rule だけを足す (300)'
 else bad "umbrella の root の値が違う (rc=$RC): $OUT"; fi
-if [ "$(line 'o/app:. (o/umb の apps/app)')" = 661 ]; then ok 'submodule には umbrella の root と途中の apps/ の層を足し、全角を 1 字と数える (300 + 10 + 300 + 51)'
+if [ "$(line 'o/app:. (o/umb の apps/app)')" = 691 ]; then ok 'submodule には umbrella の root と途中の apps/ の層を足し、.claude/CLAUDE.md も数え、全角を 1 字と数える (300 + 10 + 300 + 30 + 51)'
 else bad "submodule の root の値が違う: $OUT"; fi
-if [ "$(line 'o/app:macOS (o/umb の apps/app)')" = 701 ]; then ok 'ビルドの入口を持つ 1 段下 (macOS/) は起動する場所で、上の層を全部足す。未 commit の変更は数えない (701)'
+if [ "$(line 'o/app:macOS (o/umb の apps/app)')" = 731 ]; then ok 'ビルドの入口を持つ 1 段下 (macOS/) は起動する場所で、上の層を全部足す。未 commit の変更は数えない (731)'
 else bad "macOS/ のセッションの値が違う: $OUT"; fi
 if ! grep -q 'o/app:bin' <<<"$OUT" && ! grep -q 'o/app:.claude' <<<"$OUT"; then ok 'ビルドの入口の無い bin/ と隠しディレクトリは起動する場所にしない'
 else bad "bin/ か .claude/ を起動する場所として数えている: $OUT"; fi
 if [ "$(line 'o/x:. (o/umb の lib/x)')" = 307 ] && [ "$(line 'o/ext:.')" = 20 ]; then ok 'https の url の submodule と --extra の repo も数える'
 else bad "lib/x か --extra の値が違う: $OUT"; fi
-if grep -qx $'max\t701\to/app:macOS (o/umb の apps/app)' <<<"$OUT"; then ok '最後の行に最大のセッションを出す'
+if grep -qx $'max\t731\to/app:macOS (o/umb の apps/app)' <<<"$OUT"; then ok '最後の行に最大のセッションを出す'
 else bad "max の行が違う: $OUT"; fi
 
 mkrepo o/sym CLAUDE.md=10
@@ -75,6 +75,21 @@ git -C "$WORK/src/o/sym" add -A && git -C "$WORK/src/o/sym" -c user.name=t -c us
 run --umbrella o/umb --extra o/sym
 if [ "$RC" -eq 2 ] && grep -q 'symlink' <<<"$OUT" && ! grep -q '^max' <<<"$OUT"; then ok 'symlink の rule は測れないとして rc=2 で止め、max を出さない'
 else bad "symlink の rule で止まらない (rc=$RC): $OUT"; fi
+
+mkrepo o/dirsym CLAUDE.md=10 shared/a.md=10
+mkdir -p "$WORK/src/o/dirsym/.claude"
+ln -s ../shared "$WORK/src/o/dirsym/.claude/rules"
+git -C "$WORK/src/o/dirsym" add -A && git -C "$WORK/src/o/dirsym" -c user.name=t -c user.email=t@example.com commit -q -m dirlink
+run --umbrella o/umb --extra o/dirsym
+if [ "$RC" -eq 2 ] && grep -q 'ディレクトリでない' <<<"$OUT" && ! grep -q '^max' <<<"$OUT"; then ok '.claude/rules がディレクトリへの symlink なら rc=2 で止める (中身を 0 字と読まない)'
+else bad "ディレクトリの symlink で止まらない (rc=$RC): $OUT"; fi
+
+mkrepo o/badmod CLAUDE.md=10
+printf '[submodule "apps/a"]\n\tpath = apps/a\n\turl = git@github-work:o/app.git\n' > "$WORK/src/o/badmod/.gitmodules"
+git -C "$WORK/src/o/badmod" add -A && git -C "$WORK/src/o/badmod" -c user.name=t -c user.email=t@example.com commit -q -m badmod
+run --umbrella o/badmod
+if [ "$RC" -eq 2 ] && grep -q 'section を読めない' <<<"$OUT"; then ok '.gitmodules の url を owner/repo に読めない section があれば rc=2 で止める (その repo を黙って外さない)'
+else bad "読めない .gitmodules の section を黙って外している (rc=$RC): $OUT"; fi
 
 run --umbrella o/none
 if [ "$RC" -eq 2 ] && ! grep -q '^max' <<<"$OUT"; then ok '読めない repo は rc=2 で止め、max を出さない'

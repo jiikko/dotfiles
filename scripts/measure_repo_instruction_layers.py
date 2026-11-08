@@ -9,11 +9,12 @@ CI からは他の repo を読めないので、予算スクリプトは gh が�
   - --extra で渡した umbrella の外の repo
   - 起動する場所は各 repo の root と、root の 1 段下で CLAUDE.md とビルドの入口 (PROJECT_MARKERS) を両方持つディレクトリ (obaket の macOS/ など)。
     実際には起動しない場所も数えうるが、多く数えて赤に倒れるだけ
-1 つのセッションの字数 = 起動した場所から umbrella の root までの各ディレクトリの `CLAUDE.md` と `.claude/rules/**/*.md` の合計。
+1 つのセッションの字数 = 起動した場所から umbrella の root までの各ディレクトリの `CLAUDE.md`・`.claude/CLAUDE.md`・`.claude/rules/**/*.md` の合計。
   frontmatter に `paths:` がある rule は数えない (判定は check_instruction_budget.sh の has_paths_frontmatter と同じ)。
   字数は UTF-8 の文字数 (`LC_ALL=en_US.UTF-8 wc -m` と同じ数え方)。
 
-検出しないもの: CLAUDE.local.md (git に無い)・`@path` の import の中身・submodule の中の submodule・symlink の rule (リンク先を辿らないので、見つけたら測れないとして失敗にする)。
+検出しないもの: CLAUDE.local.md (git に無い)・`@path` の import の中身・submodule の中の submodule。symlink・submodule の rule とディレクトリ、読めない .gitmodules の section は、見つけたら測れないとして失敗にする (黙って 0 字にしない)。
+  既定ブランチの先端だけを読むので、worktree・遅れた checkout で起動したセッションの字数とはずれる。
 
 出力 (stdout): 1 行 1 セッション `<字数>\t<repo>:<起動したディレクトリ>` を大きい順に。最後の行は `max\t<字数>\t<ラベル>`。
 rc: 0 = 測れた / 2 = 測れない (gh の失敗・tree が途中で切れた・数えたセッションが 0)。
@@ -31,8 +32,11 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
+# cache は blob の sha をキーに (字数, paths: がある) を持つ。has_paths_frontmatter の判定を変えたら CACHE_VERSION を上げる
+# (sha が同じでも、古い判定が cache から返り続ける)
+CACHE_VERSION = 1
 CACHE_PATH = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
-                          "dotfiles", "instruction-budget-blobs.tsv")
+                          "dotfiles", f"instruction-budget-blobs.v{CACHE_VERSION}.tsv")
 
 
 class MeasureError(Exception):
@@ -40,7 +44,10 @@ class MeasureError(Exception):
 
 
 def run(cmd):
-    p = subprocess.run(cmd, capture_output=True)
+    try:
+        p = subprocess.run(cmd, capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise MeasureError(f"{' '.join(cmd)} が 60 秒で終わらない")
     if p.returncode != 0:
         raise MeasureError(f"{' '.join(cmd)} が rc={p.returncode} で失敗: {p.stderr.decode(errors='replace').strip()[:300]}")
     return p.stdout
@@ -110,6 +117,18 @@ class Counter:
         except (OSError, ValueError):
             self.cache = {}
 
+    def prefetch(self, repo, shas):
+        """cache に無い blob を並べて取る (初回は数十本になり、直列だと所要の大半を占める)"""
+        todo = sorted({s for s in shas if s not in self.cache})
+        if not todo:
+            return
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            texts = list(pool.map(lambda sha: self.source.blob(repo, sha), todo))
+        for sha, raw in zip(todo, texts):
+            text = raw.decode("utf-8")
+            self.cache[sha] = (len(text), has_paths_frontmatter(text))
+        self.dirty = True
+
     def count(self, repo, sha):
         """(字数, paths: がある) を返す。blob は sha で決まるので、cache は古くならない"""
         if sha not in self.cache:
@@ -143,14 +162,21 @@ class Repo:
         self.by_path = {path: (mode, typ, sha) for mode, typ, sha, path in self.entries}
 
     def layer_files(self, d):
-        """ディレクトリ d の CLAUDE.md と .claude/rules/**/*.md のパス"""
+        """ディレクトリ d の CLAUDE.md・.claude/CLAUDE.md・.claude/rules/**/*.md のパス。
+        .claude / .claude/rules やその下が symlink・submodule なら、中身が tree に出ず黙って 0 字になるので MeasureError"""
         prefix = f"{d}/" if d else ""
-        files = []
-        if f"{prefix}CLAUDE.md" in self.by_path:
-            files.append(f"{prefix}CLAUDE.md")
+        for p in (f"{prefix}.claude", f"{prefix}.claude/rules"):
+            if p in self.by_path and self.by_path[p][1] != "tree":
+                raise MeasureError(f"{self.name}:{p} がディレクトリでない (symlink か submodule)。中身を数える経路が無い")
+        files = [p for p in (f"{prefix}CLAUDE.md", f"{prefix}.claude/CLAUDE.md") if p in self.by_path]
         rules = f"{prefix}.claude/rules/"
-        files += sorted(p for p, (mode, typ, _) in self.by_path.items()
-                        if p.startswith(rules) and p.endswith(".md") and typ == "blob")
+        for p, (mode, typ, _) in sorted(self.by_path.items()):
+            if not p.startswith(rules):
+                continue
+            if typ == "commit" or mode == "120000":
+                raise MeasureError(f"{self.name}:{p} は symlink か submodule。中身を数える経路が無い")
+            if typ == "blob" and p.endswith(".md"):
+                files.append(p)
         return files
 
     def start_dirs(self):
@@ -165,7 +191,9 @@ class Repo:
 
 def layer_chars(repo, d, counter):
     total = 0
-    for path in repo.layer_files(d):
+    files = repo.layer_files(d)
+    counter.prefetch(repo.name, [repo.by_path[p][2] for p in files if repo.by_path[p][0] != "120000"])
+    for path in files:
         mode, _, sha = repo.by_path[path]
         if mode == "120000":
             raise MeasureError(f"{repo.name}:{path} は symlink。リンク先を数える経路が無い")
@@ -188,15 +216,25 @@ def submodules(umbrella, counter):
     if ".gitmodules" not in umbrella.by_path:
         raise MeasureError(f"{umbrella.name} に .gitmodules が無い")
     text = counter.source.blob(umbrella.name, umbrella.by_path[".gitmodules"][2]).decode("utf-8")
-    subs, path = [], None
+    # section ごとに path と url を集め、どちらかが欠ける・url が github の owner/repo に読めない section は測れないとして止める
+    # (黙って外すと、その repo のセッションを数えないまま緑になる)
+    sections, cur = [], None
     for line in text.splitlines():
-        m = re.match(r"\s*path\s*=\s*(\S+)", line)
-        if m:
-            path = m.group(1)
-        m = re.match(r"\s*url\s*=\s*\S*?github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?\s*$", line)
-        if m and path:
-            subs.append((path, m.group(1)))
-            path = None
+        if re.match(r"\s*\[submodule\b", line):
+            cur = {}
+            sections.append(cur)
+            continue
+        m = re.match(r"\s*(path|url)\s*=\s*(\S+)\s*$", line)
+        if m and cur is not None:
+            cur[m.group(1)] = m.group(2)
+    subs = []
+    for sec in sections:
+        m = re.match(r"^(?:git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+?)(?:\.git)?/?$", sec.get("url", ""))
+        if "path" not in sec or not m:
+            raise MeasureError(f"{umbrella.name} の .gitmodules の section を読めない: {sec}")
+        subs.append((sec["path"], m.group(1)))
+    if not subs:
+        raise MeasureError(f"{umbrella.name} の .gitmodules に submodule が 1 つも無い")
     return subs
 
 

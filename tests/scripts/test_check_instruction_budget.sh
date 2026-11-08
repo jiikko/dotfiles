@@ -119,6 +119,19 @@ run
 if [ "$RC" -eq 1 ] && grep -q 'CLAUDE.md が無い' <<<"$OUT"; then ok '_claude/CLAUDE.md が無ければ緑にしない'
 else bad "_claude/CLAUDE.md が無くても緑になる (rc=$RC): $OUT"; fi
 
+# 既定の測定コマンド (テストでは差し替えるので通らない) が在って実行できること
+default_measurer=$(grep -oE '"\$root/scripts/[a-z_]+\.py"' "$CHECK" | head -1 | tr -d '"' | sed "s|\$root|$ROOT_DIR|")
+if [ -n "$default_measurer" ] && [ -x "$default_measurer" ] && grep -q -- '--extra jiikko/good-chrome-extensions' "$CHECK"; then ok "既定の測定コマンドが在って実行でき、umbrella の外の repo も渡している (${default_measurer#"$ROOT_DIR"/})"
+else bad "既定の測定コマンドが無い・実行できない・--extra が消えた: '$default_measurer'"; fi
+
+new_tree dot-claude-md
+ascii 100000 > "$T/_claude/rules/big.md"
+mkdir -p "$T/.claude"
+ascii 50000 > "$T/.claude/CLAUDE.md"
+run
+if [ "$RC" -eq 1 ] && grep -q 'dotfiles のセッションが上限を 2000 字超えている' <<<"$OUT"; then ok 'repo 層の .claude/CLAUDE.md も数える'
+else bad ".claude/CLAUDE.md を数えていない (rc=$RC): $OUT"; fi
+
 new_tree repos-under
 run_repos "$(fake_measurer under 39000 0)"
 if [ "$RC" -eq 0 ] && grep -q '他の repo の層: 最大 39000 字 (o/heavy:.。定数 39000)' <<<"$OUT"; then ok '他の repo の層が定数ちょうどなら通し、最大を出す'

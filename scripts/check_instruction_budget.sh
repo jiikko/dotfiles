@@ -5,7 +5,7 @@
 #
 # 数えるもの (`LC_ALL=en_US.UTF-8 wc -m`。警告の値とほぼ一致した数え方):
 #   - global 層: `_claude/CLAUDE.md` + `_claude/rules/` の下の `*.md` (どの repo のセッションにも載る)
-#   - dotfiles の repo 層: `CLAUDE.md` + `.claude/rules/` の下の `*.md`
+#   - dotfiles の repo 層: `CLAUDE.md` + `.claude/CLAUDE.md` + `.claude/rules/` の下の `*.md`
 #   rules はサブディレクトリも数える (scripts/claude_links.sh はディレクトリごと link する。読まれないなら多く数えて赤に倒れるだけ)
 #   frontmatter (1 行目の `---` から次の `---` まで) に `paths:` の行がある rule は条件ロードなので数えない。
 #
@@ -77,7 +77,7 @@ rules_total=$layer_total
 count_layer "$root/_claude/CLAUDE.md"
 global=$((rules_total + layer_total))
 # shellcheck disable=SC2046  # 同上
-count_layer "$root/CLAUDE.md" $(rule_files "$root/.claude/rules")
+count_layer "$root/CLAUDE.md" "$root/.claude/CLAUDE.md" $(rule_files "$root/.claude/rules")
 session=$((global + layer_total))
 global_limit=$((LIMIT - OTHER_REPO_RESERVE))
 
@@ -95,7 +95,11 @@ if [ "$session" -gt "$LIMIT" ]; then
 fi
 # 他の repo の層を測る (手元だけ)。測れないときは赤にしないが、定数だけで判定したことを出す
 repos_mode="${INSTRUCTION_BUDGET_REPOS:-auto}"
-measurer="${INSTRUCTION_BUDGET_REPO_MEASURER:-$root/scripts/measure_repo_instruction_layers.py --extra jiikko/good-chrome-extensions}"
+if [ -n "${INSTRUCTION_BUDGET_REPO_MEASURER:-}" ]; then
+  read -r -a measurer <<<"$INSTRUCTION_BUDGET_REPO_MEASURER"  # テスト用の差し替え (空白を含まないパス)
+else
+  measurer=("$root/scripts/measure_repo_instruction_layers.py" --extra jiikko/good-chrome-extensions)
+fi
 if [ "$repos_mode" = off ]; then
   :
 elif [ -n "${CI:-}" ]; then
@@ -103,7 +107,7 @@ elif [ -n "${CI:-}" ]; then
 elif [ -z "${INSTRUCTION_BUDGET_REPO_MEASURER:-}" ] && ! gh auth status >/dev/null 2>&1; then
   printf '⚠ 他の repo の層: gh が無いか認証されていないので測らなかった。定数 %d だけで判定した\n' "$OTHER_REPO_RESERVE" >&2
 else
-  measured=$($measurer 2>&1)
+  measured=$("${measurer[@]}" 2>&1)
   mrc=$?
   max_line=$(printf '%s\n' "$measured" | awk -F '\t' '$1 == "max" { print; exit }')
   max_chars=$(printf '%s' "$max_line" | cut -f2)
