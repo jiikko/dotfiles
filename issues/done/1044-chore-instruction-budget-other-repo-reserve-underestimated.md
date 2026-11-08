@@ -113,7 +113,8 @@ CI は他の repo を読めない、という前提は変えない。
 
 - [x] obaket を claude-md-compact で縮めた (2026-11-08、ユーザー指示。obaket `927f0d460`)。
   - obaket/macOS のセッション: 38,190 → 35,133 字。最大は vlc の 37,949 字に移った (定数 39,000 まで 1,051 字)。
-  - SMB / SFTP / WebDAV の完了前の E2E を `.claude/rules/storage-e2e-gates.md` (paths: 付き) へ移し、発動点は CLAUDE.md の索引に残した。
+  - SMB / SFTP / WebDAV の完了前の E2E を `.claude/rules/storage-e2e-gates.md` (paths: 付き) へ移した。
+    発動点は CLAUDE.md の索引に残した。
 
 ### 受け入れた制約 (red team で挙がったもの)
 
