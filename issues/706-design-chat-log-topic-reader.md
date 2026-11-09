@@ -359,3 +359,13 @@ slack-cli のコードと突き合わせて、次を訂正した (訂正は別 c
 - 2026-10-10: ユーザー要望で「ラベル (必読 / 要対応)」と「表示層の差し替え (掲示板風 / なんJ風 / TUI)」を設計に追加
 - 2026-11-09: MVP を作ることにした (ユーザー指示)。名前を slack-bbs に決め、「狙い: スレッドで続いている話題も見逃さない」と
   「MVP (slack-bbs)」の節を追加した。外部への送信は GitHub・Notion と同じ扱いでよいとユーザーが判断した (「リスク」節)
+- 2026-11-09: 実装に着手 (slack-bbs、`src/slack-bbs/`)。分かったこと・済んだこと:
+  - slack-cli の `Message` に `reply_count` / `latest_reply` を足した (slack-cli 3cf3c5e、push 済み。brew の版には未反映)。
+    「続いているスレッド」は案 B (history の親の `latest_reply`) で取る。案 A (search) は索引の都合で黙って漏れるので採らない。
+    計算量はどちらも約 30 回の API 呼び出しで差が無く (1 日 300 発言・期間 2 日・遡る 30 日・動くスレッド 20 本の見積もり。実測ではない)、
+    slack-cli を直さないままだと期間内の全部の親に thread を呼ぶので約 200 回になる
+  - `claude -p` の実測 (claude 2.1.319、haiku、無害な入力): `--bare` は認証が ANTHROPIC_API_KEY に限られ OAuth で動かないので使わない。
+    `--setting-sources ""` を付けると入力は約 6,300 トークン、付けないと約 11 万トークン (CLAUDE.md・rules が載る)。
+    `--no-session-persistence` でセッションは残らなかった。結果は `structured_output` に入る
+  - 残り: ユーザーへの確認待ち — shell の `claude` が GUI と別のアカウントになる。GUI のセッションから回す 2 段構え (prepare / show) にするか、
+    shell の claude を同じアカウントでログインし直すか。テスト・変異検証・敵対的レビュー・slack-cli のリリースも未着手
