@@ -30,7 +30,8 @@
 - `filer/finder.go` — `/` の root 以下の全部のファイルを探すポップアップ (裏の goroutine で幅優先に辿り、Advance で取り込んで照らす。spec §0.1)
 - `filer/fileops.go` — `a` 新規作成・`m` 名前の変更・`d` ゴミ箱へ移す (issue 722)。本体は `src/safefs`。名前の入力は `!` と同じ欄 (`promptState.kind`)、確認の板は `Model.ask` (ask.go)
 - `filer/copy.go` — `y` / `Y` でカーソルの項目のパスをクリップボードへ (絶対 / root からの相対。issue 718)
-- `filer/history.go` — `!` のコマンドの履歴 (`treefiler-history` に 1 行ずつ追記。issue 721)
+- `filer/history.go` — `!` のコマンドと検索 (`t` と `/`) の履歴をプロセスと dir をまたいで残す (`treefiler-history` に 1 行ずつ追記。issue 721)
+- `filer/stop.go` — 裏の goroutine (`>` の explodeJob と `/` の finderScan) に止めてを伝える旗 `stopFlag`
 - `filer/goto.go` — `:` 入力したパスへカーソルを飛ばす (root の外なら root を上げる。issue 746)。入力は `!` と同じ欄
 - `filer/settings.go` / `filer/places.go` — 設定の板と保存、前回の場所
 - `filer/open.go` / `filer/explode.go` — `o` (外のアプリで開く)・`>` (配下を全部開く。見える項目が 100 件以上なら確認の板)
