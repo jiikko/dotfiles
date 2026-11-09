@@ -44,12 +44,13 @@ type tile struct {
 	lost    bool           // tileLinks が作り直した並びで、選んでいたリンクを見失った (tileKey が次の打鍵を捨てる)
 	pick    *linkPick      // 表示の行を作り直す前に選んでいたリンク (dropLinks)。tileLinks が作り直した並びで同じものに合わせる
 
-	mode   tileMode            // 本体か diff か (d で切り替え)
-	diff   *diffJob            // diff の取得 (一度取ったら使い回す)
-	hl     func(string) string // コードの色付け (言語が分からなければ nil)
-	vlines []viewLine          // 表示の行 (tileview.go)
-	vkey   viewKey
-	vsrc   int // vlines に取り込んだ元の行の数
+	mode     tileMode            // 本体か diff か (d で切り替え)
+	diff     *diffJob            // diff の取得 (一度取ったら使い回す)
+	diffHeld bool                // 閉じるとき (Close) に取得中の diff を止めた。開き直したとき (Refresh) に取り直す
+	hl       func(string) string // コードの色付け (言語が分からなければ nil)
+	vlines   []viewLine          // 表示の行 (tileview.go)
+	vkey     viewKey
+	vsrc     int // vlines に取り込んだ元の行の数
 }
 
 // slotRect は i 番目の置き場所 (spec §0.2)。1 枚目は中央、2〜4 枚目は中央から右下へ同じ幅ずつずらす。
@@ -707,6 +708,7 @@ func (m *Model) toggleDiff(t *tile) {
 // setMode は本体と diff を切り替え、先頭から出し直す。
 func (t *tile) setMode(mode tileMode) {
 	t.stopDiff()
+	t.diffHeld = false
 	t.mode = mode
 	if mode == modeDiff {
 		t.diff = startDiff(t.n.path()) // 切り替えるたびに取り直す (開いている間に書き換えた・git add した分を出す)
@@ -721,6 +723,20 @@ func (m *Model) diffLoading(t *tile) bool {
 	}
 	_, _, done := t.diff.result()
 	return !done
+}
+
+// holdDiff は取得中の diff を止め、開き直したときに取り直す印を付ける (Close)。🚨 止めるだけにしない: glogx は閉じた Model を
+// 開き直して使い回す (filerview の Hide と Show)。止めた取得は「diff を取れません: context canceled」で終わるので、取り直さないと開き直した
+// タイルにそれが残る。取り終えた diff は止めない (そのまま見せられる)
+func (t *tile) holdDiff() {
+	if t.mode != modeDiff || t.diff == nil {
+		return
+	}
+	if _, _, done := t.diff.result(); done {
+		return
+	}
+	t.stopDiff()
+	t.diffHeld = true
 }
 
 // stopDiff は取得中の diff の git を止める (結果は使わない)。

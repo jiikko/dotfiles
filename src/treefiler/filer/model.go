@@ -193,6 +193,11 @@ func (m *Model) Refresh() {
 	m.repoTop = nil  // .git を足した・消したフォルダを数え直す
 	m.forgetLinks()  // 無かったファイル (負のキャッシュ) が作られているかもしれない
 	m.startGit(true) // 読み直した木の開いているフォルダで取る (読み直す前の木だと、消えたフォルダを含み、現れたものを落とす)
+	for _, t := range m.tiles {
+		if t.diffHeld {
+			t.setMode(modeDiff) // 閉じるときに止めた diff を取り直す (holdDiff)
+		}
+	}
 	m.moving = true
 }
 
@@ -220,11 +225,14 @@ func (m *Model) Changed() <-chan struct{} {
 	return m.watch.start() // Live が off でもチャネルは返す (止めると、on に戻したときに待つ者がいない。watcher が読み比べを休むだけ)
 }
 
-// Close はライブ更新のポーリングを止める (glogx でファイラーを閉じたとき)。
+// Close はライブ更新のポーリングと取得中の diff を止める (glogx でファイラーを閉じたとき)。
 func (m *Model) Close() {
 	m.endFinder()    // 裏で辿るのを止める (開き直したときに前の root の候補を出さない)
 	m.loadCont = nil // 開き直したときに古い打鍵の続きで潜らない (読み込み中の記録は残し、開き直した後の Advance で取り込む)
 	m.watch.close()
+	for _, t := range m.tiles {
+		t.holdDiff() // 取得中の git と色付けを、閉じた後まで走らせない
+	}
 	m.savePlace()
 }
 

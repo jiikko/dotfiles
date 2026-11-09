@@ -122,7 +122,7 @@ func startDiff(path string) *diffJob {
 		// 行ごとに chroma の lexer を回すので diff の行数に比例し、約 400 行の diff で 1 フレームが 21ms 止まった (tools/tfprobe の live-tile-diff)。
 		// 見える行だけ遅らせて付ける形 (本体のタイルの styledLine) にしない: diff は行をまたぐ状態 (どのファイルの lexer か) を持つ
 		styled := lines
-		if ctx.Err() == nil { // 止めた取得 (d の連打・本体へ戻す・隣へ送る。stopDiff) の結果は使わない。捨てる結果に最大 diffMaxLines 行の色付けを走らせない
+		if ctx.Err() == nil { // 止めた取得 (d の連打・本体へ戻す・隣へ送る・閉じる。stopDiff) の結果は使わない。捨てる結果に最大 diffMaxLines 行の色付けを走らせない
 			styled = highlight.Diff(lines)
 		}
 		j.mu.Lock()

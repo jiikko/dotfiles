@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -464,6 +465,39 @@ func TestDiffToggleCancelsInflightFetch(t *testing.T) {
 	// hang guard (止めなかったときだけ落とす)
 	testwait.Recv(t, "本体へ戻しても取得中の git を止めない", canceled, testwait.Within(10*time.Second))
 	waitDiff(t, m) // 取得の goroutine が終わってから抜ける (差し替え点を戻す後始末と、HEAD が無いときの 2 回目の呼び出しを重ねない)
+}
+
+// 取得中に閉じると git を止め、開き直すと取り直す (glogx は閉じた Model を開き直して使い回す。止めた取得の失敗を残さない)。
+func TestDiffStopsOnCloseAndRefetchesOnRefresh(t *testing.T) {
+	started := make(chan struct{}, 4)
+	canceled := make(chan struct{}, 4)
+	var calls atomic.Int32
+	orig := gitDiffCommand
+	gitDiffCommand = func(ctx context.Context, _, _ string, _ bool) ([]byte, error) {
+		if calls.Add(1) > 1 {
+			return []byte("+added\n"), nil
+		}
+		started <- struct{}{}
+		<-ctx.Done()
+		canceled <- struct{}{}
+		return nil, ctx.Err()
+	}
+	t.Cleanup(func() { gitDiffCommand = orig })
+	m := newTest(t)
+	markModified(t, m, "c.txt")
+	tl := openTileAt(t, m, "c.txt")
+	m.HandleKey("d")
+	<-started
+	m.Close()
+	// hang guard (止めなかったときだけ落とす)
+	testwait.Recv(t, "閉じても取得中の git を止めない", canceled, testwait.Within(10*time.Second))
+	waitDiff(t, m)
+	m.Refresh()
+	waitDiff(t, m)
+	lines, _, done := tl.diff.result()
+	if tl.mode != modeDiff || !done || len(lines) != 1 || lines[0] != "+added" {
+		t.Fatalf("開き直した diff が取り直されていない: mode=%v done=%v lines=%q", tl.mode, done, lines)
+	}
 }
 
 // gitHeadExists は本物の git で、最初の commit の前は false・commit の後は true を返す。
