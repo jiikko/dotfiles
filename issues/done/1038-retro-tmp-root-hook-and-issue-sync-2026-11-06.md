@@ -34,3 +34,9 @@
 - 却下 (4): `verify-execution-not-just-exit-code.md` の「ラッパーの rc を本体の rc と読まない」の範囲 (最後のコマンドが `echo` でなく `grep -c` だっただけで、仕組みは同じ)。今回も、自分で仕込んだ `make_rc=` の行を読んで区別した。
 
 残課題は無い (全項目を却下で決着)。
+
+## 決着 (2026-11-09)
+
+- 却下 (1)〜(4) が引く規範の実在を確かめた: `rules-checklists/adversarial-review-own-safeguards.md` の「軸が構文にある」「最小の形から始め」、`rules/verify-execution-not-just-exit-code.md` の「バックグラウンドで走っている間は…編集・計測しない」「ラッパーの rc を本体の rc と読まない」、`rules-checklists/mutation-verify-new-tests.md` の「fixture と前提」の「fixture を『検査対象が壊れない形』に選んでいないか」 (いずれも grep で確認)。
+- 項目 2 は、規範だけでは止まらなかった (retro 1040 でも同じ形を踏んだ) ため、1041 で `make test` が走行中に木が変わったことを報告する仕組みとして入った (1041 は done)。
+- 残課題は無いので done へ移す。
