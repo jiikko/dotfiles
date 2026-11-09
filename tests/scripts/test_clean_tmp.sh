@@ -76,7 +76,7 @@ if [ -e "$REPO/tmp/b/wt/uncommitted" ]; then ok "3: 動かしただけの worktr
 wt_case r3c 'mv "$REPO/tmp/a" "$REPO/tmp/b" && ln -s b "$REPO/tmp/a"'
 if [ -e "$REPO/tmp/b/wt/uncommitted" ]; then ok "3: 経路を symlink に差し替えた worktree の実体を残した"; else fail "3: rc=$rc 実体を消した ($(cat "$WORK/out"))"; fi
 newrepo r3d
-"$REAL_GIT" -C "$REPO/tmp" init -q clone 2>/dev/null; echo x > "$REPO/tmp/clone/f"
+"$REAL_GIT" clone -q "$REPO" "$REPO/tmp/clone" 2>/dev/null; echo x > "$REPO/tmp/clone/f"
 find "$REPO/tmp" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
 run; rc=$?
 if [ -e "$REPO/tmp/clone/f" ]; then ok "3: tmp の中の clone を残した"; else fail "3: rc=$rc clone を消した"; fi
@@ -150,8 +150,14 @@ fi
 
 # 10. 書き込みが失敗する状況 (ディスクが一杯) でも find_git は印を見落とさない (bash 3.2 の here-string は一時ファイルに書く)
 mkdir -p "$WORK/r10" && "$REAL_GIT" clone -q --bare "$WORK/r1" "$WORK/r10/b.git" 2>/dev/null
-sed -n '/^find_git() {/,/^}/p' "$SCRIPT" > "$WORK/find_git.sh"
-out=$(/bin/bash -c "source '$WORK/find_git.sh'; ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10' 2>/dev/null )")
+# find_git と、それが呼ぶ helper を切り出す (helper が無いと command not found で「残す」に倒れ、helper の分を検査しない)
+sed -n -e '/^find_git() {/,/^}/p' -e '/^disposable_git[a-z]*() {/,/^}/p' -e '/^borrowed() {/,/^}/p' -e '/^resolve_dir() /p' -e '/^inside() /p' "$SCRIPT" > "$WORK/find_git.sh"
+grep -c '^[a-z_]*() ' "$WORK/find_git.sh" | grep -qx 6 || fail "10: find_git と helper 5 つを切り出せない ($(grep '^[a-z_]*() ' "$WORK/find_git.sh" | tr '\n' ' '))"
+fx10() { "$REAL_GIT" init -q "$1" && echo x > "$1/f" && "$REAL_GIT" -C "$1" add f && "$REAL_GIT" -C "$1" -c user.email=t@t -c user.name=t commit -q -m i; }
+mkdir -p "$WORK/r10f" && fx10 "$WORK/r10f/r"
+out=$(/bin/bash -c "source '$WORK/find_git.sh'; alts_ok=1 alts=''; ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10f' 2>/dev/null )")
+if [ -z "$out" ]; then ok "10: 書き込みが失敗しても使い捨ての repo を判定できる"; else fail "10: ulimit -f 0 の下で使い捨ての repo を印にした [$out]"; fi
+out=$(/bin/bash -c "source '$WORK/find_git.sh'; alts_ok=1 alts=''; ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10' 2>/dev/null )")
 if [ "${out##*/}" = b.git ]; then ok "10: 書き込みが失敗しても git の置き場を見つける"; else fail "10: ulimit -f 0 の下で find_git = [$out] (b.git を返すこと)"; fi
 
 # 11. skill の dir (印 .skill-tmpdir。bin/skill-tmpdir が置く) は丸ごと判定せず、中の session の dir を 1 件ずつ同じ規則で判定する
@@ -160,7 +166,7 @@ sk="$REPO/tmp/sk"
 mkdir -p "$sk/oldsess/x" "$sk/newsess" "$sk/oldlive/x" "$sk/oldgit"
 : > "$sk/.skill-tmpdir"
 echo a > "$sk/oldsess/x/f"; echo a > "$sk/newsess/f"; echo a > "$sk/oldlive/x/f"
-"$REAL_GIT" init -q "$sk/oldgit/repo" 2>/dev/null
+"$REAL_GIT" clone -q "$REPO" "$sk/oldgit/repo" 2>/dev/null # origin あり (remote の無い使い捨ての repo は 14 の規則で消える)
 find "$sk/oldsess" "$sk/oldgit" -exec touch -h -t $OLD {} +
 touch -t $OLD "$sk/oldlive/x" "$sk/oldlive" # 中の f は今日のまま
 run; rc=$?
@@ -314,6 +320,47 @@ echo a > "$REPO/tmp/x" && touch -t $OLD "$REPO/tmp/x"
 if [ -e "$WORK/other13/tmp/y" ] && [ -e "$REPO/tmp/x" ]; then ok "13: 継承した GIT_DIR では何も消さない (cwd は repo の外)"; else fail "13: rc=$rc GIT_DIR に引きずられて消した ($(cat "$WORK/out"))"; fi
 (cd "$REPO" && GIT_WORK_TREE="$WORK/other13" DAYS=30 "$SCRIPT") > "$WORK/out" 2>&1; rc=$?
 if [ -e "$WORK/other13/tmp/y" ]; then ok "13: 継承した GIT_WORK_TREE の先の tmp を消さない"; else fail "13: rc=$rc GIT_WORK_TREE の先を消した ($(cat "$WORK/out"))"; fi
+
+# 14. 作業ツリーごとエントリの中に閉じた使い捨ての repo (remote の無い `git init` の fixture) は印に数えない (issue 1046)。
+# 外から使われうる形 (外を指す worktree の登録・remote・include・core.worktree・中身が .git だけ・commondir・submodule の置き場・解決できない登録) は残す
+newrepo r14
+fx() { "$REAL_GIT" init -q "$1" && echo x > "$1/f" && "$REAL_GIT" -C "$1" add f && "$REAL_GIT" -C "$1" -c user.email=t@t -c user.name=t commit -q -m i; }
+T="$REPO/tmp"
+fx "$T/fx1/r1" && fx "$T/fx1/r2"
+fx "$T/fx2/a" && "$REAL_GIT" -C "$T/fx2/a" worktree add -q --detach "$T/fx2/w" >/dev/null 2>&1 && echo wip > "$T/fx2/w/u"
+fx "$T/fx3/r" && mkdir -p "$T/fx3/r/.git/worktrees" # 空の worktrees/
+fx "$T/k1/a" && "$REAL_GIT" -C "$T/k1/a" worktree add -q --detach "$WORK/out14wt" >/dev/null 2>&1 && echo wip > "$WORK/out14wt/u"
+fx "$T/k2/r" && "$REAL_GIT" -C "$T/k2/r" remote add origin "$REPO"
+fx "$T/k3/r" && "$REAL_GIT" -C "$T/k3/r" config include.path "$WORK/none14"
+fx "$T/k4/r" && "$REAL_GIT" -C "$T/k4/r" config 'includeIf.gitdir:/nowhere/.path' "$WORK/none14"
+fx "$T/k5/r" && "$REAL_GIT" -C "$T/k5/r" config core.worktree "$WORK/out14cw"
+mkdir -p "$T/k6" && "$REAL_GIT" init -q --separate-git-dir="$T/k6/.git" "$WORK/out14sep" && echo wip > "$WORK/out14sep/u"
+fx "$T/k7/r" && echo "$T/k1/a/.git" > "$T/k7/r/.git/commondir"
+fx "$T/k8/a" && "$REAL_GIT" -C "$T/k8/a" worktree add -q --detach "$T/k8/w" >/dev/null 2>&1 && rm -rf "$T/k8/w" # prune 待ちの登録
+fx "$WORK/sub14" && fx "$T/k9/super" && "$REAL_GIT" -C "$T/k9/super" -c protocol.file.allow=always submodule add -q "$WORK/sub14" s >/dev/null 2>&1
+fx "$T/k10/r" && mv "$T/k10/r/.git" "$T/k10/r/.GIT"
+fx "$T/k11/r" && "$REAL_GIT" -C "$T/k11/r" config extensions.worktreeConfig true && "$REAL_GIT" -C "$T/k11/r" config --worktree core.sparseCheckout true
+mkdir -p "$T/k12" && echo n > "$T/k12/notes" && "$REAL_GIT" init -q --separate-git-dir="$T/k12/.git" "$WORK/out14sep2" &&
+	echo x > "$WORK/out14sep2/f" && "$REAL_GIT" -C "$WORK/out14sep2" add f && "$REAL_GIT" -C "$WORK/out14sep2" -c user.email=t@t -c user.name=t commit -q -m i
+fx "$T/k13/r" && "$REAL_GIT" clone -q -s "$T/k13/r" "$T/y13/c"
+fx "$T/fx4/a" && "$REAL_GIT" -C "$T/fx4/a" worktree add -q --relative-paths --detach "$T/fx4/w" >/dev/null 2>&1
+case $(cat "$T/fx4/a/.git/worktrees/w/gitdir" 2>/dev/null) in /*|'') fail "14: 相対パスの worktree の登録を作れない (git $("$REAL_GIT" --version))" ;; esac
+fx "$T/fx5/r" && echo /nonexistent14/objects > "$T/fx5/r/.git/objects/info/alternates"
+find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
+fx "$T/new1/r" && touch -t $OLD "$T/new1" # 中身は今日
+[ -d "$T/k9/super/.git/modules/s" ] || fail "14: submodule の置き場を作れない"
+run; rc=$?
+[ $rc -eq 0 ] || fail "14: rc=$rc ($(cat "$WORK/out"))"
+for d in fx1 fx2 fx3 fx4 fx5; do
+	if [ ! -e "$T/$d" ]; then ok "14: 閉じた使い捨ての repo だけの $d を消した"; else fail "14: $d を残した ($(grep "$d" "$WORK/out"))"; fi
+done
+for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13; do
+	if [ -d "$T/$d" ] && grep -q "残す (中に git の作業ツリーか置き場がある: tmp/$d/" "$WORK/out"; then ok "14: 外から使われうる $d を残した"; else fail "14: $d を消した / 理由が違う ($(grep "$d" "$WORK/out"))"; fi
+done
+if [ -e "$T/new1/r/f" ] && grep -q "残す (中に 30 日以内の更新がある: tmp/new1" "$WORK/out"; then ok "14: 中が新しい fixture は残した"; else fail "14: 新しい fixture を消した ($(grep new1 "$WORK/out"))"; fi
+[ -e "$WORK/out14wt/u" ] && [ -e "$WORK/out14sep/u" ] || fail "14: 外の作業ツリーが消えた"
+"$REAL_GIT" -C "$WORK/out14sep2" log -1 >/dev/null 2>&1 || fail "14: 外の作業ツリー out14sep2 の repo が壊れた"
+"$REAL_GIT" -C "$T/y13/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 y13 の objects が壊れた"
 
 if [ "$fails" -ne 0 ]; then
 	echo "✗ clean_tmp: $fails 件失敗"

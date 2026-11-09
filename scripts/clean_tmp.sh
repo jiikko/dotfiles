@@ -12,6 +12,8 @@
 #     git の登録のパスと実体の照合は、大文字小文字 (APFS)・後から symlink に差し替えた経路・動かしただけの worktree で
 #     2 周続けて外れ、作業ごと消せた。中身の印は場所の書き方に依らない (印の種類は find_git)
 #     🚨 検出しない: 名前に改行を含む git dir・印がまったく無い作業ツリー (外に置いた GIT_DIR で作った・worktree の .git ファイルが消えた)。中身だけでは見分けられない
+#     ただし、エントリの中に作業ツリーごと閉じた使い捨ての repo (remote の無い `git init` の fixture) は印に数えない (disposable_gitdir)。
+#     数えると、レビュー・計測で fixture を 1 つ作った作業 dir が古くなっても永久に残る
 #   - 残したものは理由を出す (黙って外さない)。symlink は辿らず、link 自身を消す
 #   - 未確認 (直していない): tmp の下にマウントポイントがあると rm -rf がその先へ入りうる (これまでと同じ)
 #   - skill の dir (`bin/skill-tmpdir` が tmp/<skill名>/ に印 .skill-tmpdir を置く) は丸ごと判定しない。使われ続けて中に
@@ -56,6 +58,26 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/clean-tmp.XXXXXX") || exit 2
 trap 'rm -rf "$work"' EXIT
 
+# tmp の中の全部の alternates の指す先 (実体のパス)。disposable_gitdir が「借りられている repo」を使い捨てにしないために使う
+alts='' alts_ok=1
+if af=$(find "$tmp" -path '*/objects/info/alternates' -type f -print 2>/dev/null); then
+	IFS=$'\n'
+	set -f
+	for f in $af; do
+		# 🚨 while の後ろに || を付けて読めないことを見ない: while の rc は本体で最後に打ったコマンドの rc で、指す先の無い行の cd の失敗を拾う
+		[ -r "$f" ] || { alts_ok=0; continue; }
+		while IFS= read -r l || [ -n "$l" ]; do
+			case $l in '' | '#'*) continue ;; /*) t=$l ;; *) t="${f%/info/alternates}/$l" ;; esac
+			# 指す先が無い alternates は、どの repo も借りていない (借りた側が既に壊れている)
+			r=$(cd "$t" 2>/dev/null && /bin/pwd -P) && alts="$alts"$'\n'"${r%/objects}"
+		done < "$f"
+	done
+	set +f
+	unset IFS
+else
+	alts_ok=0
+fi
+
 # is_skill_dir は $1 が skill-tmpdir の作った skill の dir か (実体のフォルダで、印が実体のファイル)
 # 直下に git の印があるものは skill の dir にしない (find が失敗しても skill の dir にしない = 丸ごと判定に倒す)
 is_skill_dir() {
@@ -97,21 +119,103 @@ in_skilldirs() {
 # find_git は $1 の中の git の印を 1 つ出す (無ければ空)。印は 2 種: .git (worktree の印のファイル・clone のフォルダ。大文字小文字を問わない:
 # APFS では .GIT でも git が読む) と、git dir の形 (HEAD (ファイルか symlink。大文字小文字を問わない) と objects/・refs/ が並ぶフォルダ。bare や --separate-git-dir の置き場は
 # .git を持たないので、これが無いと worktree を残して commit の置き場の方を消した)。find の失敗は rc で返す
+# 使い捨ての repo (disposable_gitdir / disposable_gitfile を満たすもの) は印に数えない。
 find_git() {
-	local f d IFS
-	f=$(find "$1" \( -iname .git -o \( \( -type f -o -type l \) -iname HEAD \) \) -print) || return 1
+	local c=$1 f d IFS
+	f=$(find "$c" \( -iname .git -o \( \( -type f -o -type l \) -iname HEAD \) \) -print) || return 1
 	# 🚨 here-string (<<<) で回さない: bash 3.2 は一時ファイルに書くので、ディスクが一杯だとリダイレクトが失敗し、
 	# 印を見ないまま rc=0 (= 消す) を返した (ulimit -f 0 で再現)。変数を改行で割って回す
 	IFS=$'\n'
 	set -f
 	for d in $f; do
 		case ${d##*/} in
-		[Hh][Ee][Aa][Dd]) [ -d "${d%/*}/objects" ] && [ -d "${d%/*}/refs" ] && { set +f; printf '%s\n' "${d%/*}"; return 0; } ;;
+		[Hh][Ee][Aa][Dd])
+			# 名前がちょうど .git の dir の HEAD は、その .git 自身の印として下の .git の枝で判定する (find はその .git も出す)。
+			# 🚨 .git の中の他の git dir (submodule の modules/*) は飛ばさない: origin を持つ clone で、まだ push していない commit があり得る
+			[ "${d%/*}" != "${d%/*/*}/.git" ] || continue
+			[ -d "${d%/*}/objects" ] && [ -d "${d%/*}/refs" ] && { set +f; printf '%s\n' "${d%/*}"; return 0; }
+			;;
+		.git)
+			disposable_gitdir "$d" "$c" && continue
+			disposable_gitfile "$d" "$c" && continue
+			set +f; printf '%s\n' "$d"; return 0
+			;;
 		*) set +f; printf '%s\n' "$d"; return 0 ;;
 		esac
 	done
 	set +f
 	return 0
+}
+
+# resolve_dir は dir $1 の実体のパスを出す (解決できなければ rc≠0)。inside は $2 が $1 の中 (自身は含まない) か
+resolve_dir() { (cd "$1" 2>/dev/null && /bin/pwd -P); }
+inside() { case $2 in "$1"/*) return 0 ;; esac; return 1; }
+
+# disposable_gitdir は $1 (名前が .git の dir) が、エントリ $2 の中に作業ツリーごと閉じた使い捨ての repo (`git init` した fixture) かを返す。
+# 1 つでも確かめられなければ使い捨てとしない (= 今までどおり残す)。🚨 外から使われうる形はどれも残す:
+#   - 親に .git しか無い: 名前が .git の --separate-git-dir の置き場を、外の作業ツリーの .git ファイルが指している形と見分けられない
+#   - [remote / [include(If) の節・worktree = の行: clone (まだ push していない commit があり得る)・外の設定・外の作業ツリー (core.worktree)
+#   - commondir: 別の repo の worktree 側の git dir
+#   - config.worktree (extensions.worktreeConfig): core.worktree がそこへ移る (sparse-checkout init でも有効になる)
+#   - 親にある作業ファイルが index と食い違う (ls-files -d が出す): 親に兄弟がある --separate-git-dir の置き場で、作業ツリーは外にある
+#     (`git init --separate-git-dir=X/.git W` は X/.git/config に core.worktree を書かない。2026-11-09 に実測)
+#   - worktrees/* の作業ツリーが外 (登録済みの worktree の commit と未コミットの変更を失う)。指す先を解決できない (prune 待ち) も残す
+#   - tmp の中の別の repo が alternates (clone --shared) でこの objects を借りている (借りた側の objects が壊れる)
+# 検出しない: tmp の外の repo が alternates で借りる形・外から GIT_DIR でこの .git を直接使う形・外の作業ツリーの tracked のファイルが
+# たまたま全部親にも同名である --separate-git-dir の置き場 (中身から見えない)
+disposable_gitdir() {
+	local g=$1 c=$2 p n ws w t d rc IFS
+	[ "${g##*/}" = .git ] && [ -d "$g" ] && [ ! -L "$g" ] || return 1
+	p=${g%/*}
+	n=$(find "$p" -maxdepth 1 -mindepth 1 ! -name .git -print -quit 2>/dev/null) || return 1
+	[ -n "$n" ] || return 1
+	[ -f "$g/config" ] && [ ! -L "$g/config" ] || return 1
+	[ ! -e "$g/commondir" ] && [ ! -L "$g/commondir" ] || return 1
+	grep -Eiq '^[[:space:]]*\[[[:space:]]*(remote|include)|^[[:space:]]*worktree[[:space:]]*=' "$g/config"
+	rc=$?
+	[ "$rc" -eq 1 ] || return 1 # 0 = 当たった、2 = 読めない
+	n=$(find "$g" -maxdepth 3 -name config.worktree -print -quit 2>/dev/null) || return 1
+	[ -z "$n" ] || return 1
+	borrowed "$g" && return 1
+	# 🚨 fsmonitor は config に書いたコマンドを ls-files が起こす。fixture の config の中身を実行しないように切る
+	n=$(GIT_OPTIONAL_LOCKS=0 git --git-dir="$g" --work-tree="$p" -c core.fsmonitor=false ls-files -d 2>/dev/null) || return 1
+	[ -z "$n" ] || return 1
+	[ -e "$g/worktrees" ] || [ -L "$g/worktrees" ] || return 0
+	[ -d "$g/worktrees" ] && [ ! -L "$g/worktrees" ] || return 1
+	ws=$(find "$g/worktrees" -maxdepth 1 -mindepth 1 -print) || return 1
+	IFS=$'\n'
+	for w in $ws; do
+		[ -f "$w/gitdir" ] && [ ! -L "$w/gitdir" ] || return 1
+		t=$(head -1 "$w/gitdir") && [ -n "$t" ] || return 1
+		case $t in /*) ;; *) t="$w/$t" ;; esac # worktree.useRelativePaths は $w からの相対
+		d=$(resolve_dir "${t%/*}") || return 1
+		inside "$c" "$d" || return 1
+	done
+	return 0
+}
+
+# borrowed は tmp の中のどれかの alternates が $1 (git dir) の中を指しているか (一覧を取れなかったら借りられているとみなす)
+borrowed() {
+	local a hit=1 noglob=0 IFS=$'\n'
+	[ "$alts_ok" = 1 ] || return 0
+	case $- in *f*) noglob=1 ;; esac # 呼び出し元 (find_git) の set -f を外さない
+	set -f
+	for a in $alts; do
+		case $a in "$1" | "$1"/*) hit=0; break ;; esac
+	done
+	[ "$noglob" = 1 ] || set +f
+	return "$hit"
+}
+
+# disposable_gitfile は $1 (名前が .git のファイル) の gitdir: がエントリ $2 の中を指すかを返す。指す先の git dir は、それ自身が印として
+# find_git で判定される (使い捨ての .git dir の中なら数えず、bare の形なら残す)
+disposable_gitfile() {
+	local f=$1 c=$2 t d
+	[ -f "$f" ] && [ ! -L "$f" ] || return 1
+	t=$(sed -n '1s/^gitdir: //p' "$f") && [ -n "$t" ] || return 1
+	case $t in /*) ;; *) t="${f%/*}/$t" ;; esac
+	d=$(resolve_dir "$t") || return 1
+	inside "$c" "$d"
 }
 
 # judge は 1 件を判定し、消してよければすぐ消す (直下のエントリと skill の dir の中の session の dir で同じ規則)
