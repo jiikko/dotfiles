@@ -1,4 +1,4 @@
-// Package exitcode は 2 本の CLI (diskdoctor / svcdoctor) で共通の終了コード語彙。
+// Package exitcode は doctor の CLI (diskdoctor / svcdoctor / mac-healthcheck / mac-uninstall) で共通の終了コード語彙。
 //
 // **「検査できなかった」を緑にしない**のが設計。語彙をここ 1 箇所に置くのは、以前 2 本の
 // main.go が独立に数字を決めていて非対称になっていたため。定数を各 CLI に

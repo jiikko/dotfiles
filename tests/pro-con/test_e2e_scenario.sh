@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pro-con の e2e モードの通し (pro-con e2e scenario): 依頼 → 偽の PM が分解 → 偽の PG が質問 → 画面で回答 → テストの係 → レビュー → Q → quit。
-# PG は台本どおりの偽物 (src/pro-con/daemon/e2e.go) なので claude は起動しない。画面は置き場ごとの隔離した tmux サーバで動く。
+# PG は台本どおりの偽物 (src/pro-con/dispatcher/e2e.go) なので claude は起動しない。画面は置き場ごとの隔離した tmux サーバで動く。
 set -u
 unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

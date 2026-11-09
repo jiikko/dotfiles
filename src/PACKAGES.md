@@ -14,7 +14,7 @@
 - `src/doctor/cmd/svcdoctor` (`doctor/cmd/svcdoctor`) — Command svcdoctor は壊れた launchd 登録を検出して表示する CLI。 (main)
 - `src/doctor/disk` (`doctor/disk`) — Package disk は diskdoctor: 既知の掃除候補をリスク付きで一覧する。
 - `src/doctor/docker` (`doctor/docker`) — Package docker は Docker Desktop が抱えている「使っていない資源」を数える。
-- `src/doctor/exitcode` (`doctor/exitcode`) — Package exitcode は 2 本の CLI (diskdoctor / svcdoctor) で共通の終了コード語彙。
+- `src/doctor/exitcode` (`doctor/exitcode`) — Package exitcode は doctor の CLI (diskdoctor / svcdoctor / mac-healthcheck / mac-uninstall) で共通の終了コード語彙。
 - `src/doctor/health` (`doctor/health`) — Package health は macOS 全体の健康診断 (ネットワーク・プロセス・ディスク・ハードウェアと寿命・常用アプリ) の 材料を集めて判定する。
 - `src/doctor/internal/displaycheck` (`doctor/internal/displaycheck`) — Package displaycheck は「表示用の構造体へ新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体。 (internal)
 - `src/doctor/internal/homepath` (`doctor/internal/homepath`) — Package homepath はホームの下のパスを ~ で始まる形にする (レポート・表示にユーザー名を出さない)。 (internal)
