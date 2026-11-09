@@ -62,11 +62,11 @@ trap 'rm -rf "$work"' EXIT
 # 使い捨てにしないために使う (borrowed)。持ち主と先は 3 種:
 #   - git dir と、その objects の実体 (objects を symlink で別のエントリへ置いた形・git-new-workdir の形)
 #   - git dir と、それが alternates で借りている objects (clone -s)。🚨 alternates のファイルを探して読まない: 名前の大文字小文字 (APFS)・
-#     info / objects の symlink・引用符の行を字面で追うと抜ける (1・2 周目の敵対的レビューで 4 形を再現)。git 自身に答えさせる
+#     info / objects の symlink・引用符の行を字面で追うと抜ける。git 自身に答えさせる
 #     (count-objects -v の alternate: の行。git が解いた後のパス)
 #   - tmp の中の symlink と、その先 (.git ごとの symlink。find は symlink の下へ降りないので、HEAD の列挙では見つからない)
-#   - tmp の中の .git ファイルと、gitdir: の指す git dir (別のエントリの .git を --separate-git-dir で再初期化した形。4 周目に再現)
-# 🚨 列挙は -print0 で読む: 改行で割ると、改行を含むパスの git dir が黙って列挙から外れ、貸している側を消した (3 周目に再現)
+#   - tmp の中の .git ファイルと、gitdir: の指す git dir (別のエントリの .git を --separate-git-dir で再初期化した形)
+# 🚨 列挙は -print0 で読む: 改行で割ると、改行を含むパスの git dir が黙って列挙から外れ、貸している側を消す
 ref_owner=() ref_target=() refs_ok=1 refs_why=''
 addref() { ref_owner+=("$1"); ref_target+=("$2"); }
 # gitfile_target は .git ファイル $1 の gitdir: の指す先の実体のパスを出す (相対は $1 の dir から。解けなければ rc≠0)

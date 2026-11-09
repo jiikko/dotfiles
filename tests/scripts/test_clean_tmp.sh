@@ -152,7 +152,7 @@ fi
 mkdir -p "$WORK/r10" && "$REAL_GIT" clone -q --bare "$WORK/r1" "$WORK/r10/b.git" 2>/dev/null
 # find_git と、それが呼ぶ helper を切り出す (helper が無いと command not found で「残す」に倒れ、helper の分を検査しない)
 sed -n -e '/^find_git() {/,/^}/p' -e '/^disposable_git[a-z]*() {/,/^}/p' -e '/^borrowed() {/,/^}/p' -e '/^gitfile_target() {/,/^}/p' -e '/^resolve_dir() /p' -e '/^inside() /p' "$SCRIPT" > "$WORK/find_git.sh"
-grep -c '^[a-z_]*() ' "$WORK/find_git.sh" | grep -qx 7 || fail "10: find_git と helper 6 つを切り出せない ($(grep '^[a-z_]*() ' "$WORK/find_git.sh" | tr '\n' ' '))"
+[ "$(grep -c '^[a-z_]*() ' "$WORK/find_git.sh")" = 7 ] || fail "10: find_git と helper 6 つを切り出せない ($(grep '^[a-z_]*() ' "$WORK/find_git.sh" | tr '\n' ' '))"
 fx10() { "$REAL_GIT" init -q "$1" && echo x > "$1/f" && "$REAL_GIT" -C "$1" add f && "$REAL_GIT" -C "$1" -c user.email=t@t -c user.name=t commit -q -m i; }
 mkdir -p "$WORK/r10f" && fx10 "$WORK/r10f/r"
 out=$(/bin/bash -c "source '$WORK/find_git.sh'; refs_ok=1 ref_owner=() ref_target=(); ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10f' 2>/dev/null )")
@@ -321,7 +321,7 @@ if [ -e "$WORK/other13/tmp/y" ] && [ -e "$REPO/tmp/x" ]; then ok "13: 継承し�
 (cd "$REPO" && GIT_WORK_TREE="$WORK/other13" DAYS=30 "$SCRIPT") > "$WORK/out" 2>&1; rc=$?
 if [ -e "$WORK/other13/tmp/y" ]; then ok "13: 継承した GIT_WORK_TREE の先の tmp を消さない"; else fail "13: rc=$rc GIT_WORK_TREE の先を消した ($(cat "$WORK/out"))"; fi
 
-# 14. 作業ツリーごとエントリの中に閉じた使い捨ての repo (remote の無い `git init` の fixture) は印に数えない (issue 1046)。
+# 14. 作業ツリーごとエントリの中に閉じた使い捨ての repo (remote の無い `git init` の fixture) は印に数えない。
 # 外から使われうる形 (外を指す worktree の登録・remote・include・core.worktree・中身が .git だけ・commondir・submodule の置き場・解決できない登録) は残す
 newrepo r14
 fx() { "$REAL_GIT" init -q "$1" && echo x > "$1/f" && "$REAL_GIT" -C "$1" add f && "$REAL_GIT" -C "$1" -c user.email=t@t -c user.name=t commit -q -m i; }
@@ -346,22 +346,22 @@ fx "$T/k13/r" && "$REAL_GIT" clone -q -s "$T/k13/r" "$T/y13/c"
 fx "$T/fx4/a" && "$REAL_GIT" -C "$T/fx4/a" worktree add -q --relative-paths --detach "$T/fx4/w" >/dev/null 2>&1
 case $(cat "$T/fx4/a/.git/worktrees/w/gitdir" 2>/dev/null) in /*|'') fail "14: 相対パスの worktree の登録を作れない (git $("$REAL_GIT" --version))" ;; esac
 fx "$T/fx5/r" && echo /nonexistent14/objects > "$T/fx5/r/.git/objects/info/alternates"
-# 敵対的レビューで消せた形: config を字面で読むと抜ける書き方 (同じ行の key・BOM)・大文字の config.worktree・symlink の alternates・名前が .git の bare
+# 次も残す: config を字面で読むと抜ける書き方 (同じ行の key・BOM)・大文字の config.worktree・symlink の alternates・名前が .git の bare
 fx "$T/k14/r" && printf '[core] worktree = %s\n' "$WORK/out14k14" >> "$T/k14/r/.git/config"
 fx "$T/k15/r" && { printf '\357\273\277[remote "origin"]\n\turl = %s\n' "$REPO"; cat "$T/k15/r/.git/config"; } > "$WORK/cfg15" && mv "$WORK/cfg15" "$T/k15/r/.git/config"
-"$REAL_GIT" -C "$T/k15/r" remote | grep -qx origin || fail "14: BOM の後の remote を git が読まない (前提が崩れた)"
+[ "$("$REAL_GIT" -C "$T/k15/r" remote)" = origin ] || fail "14: BOM の後の remote を git が読まない (前提が崩れた)"
 fx "$T/k16/r" && "$REAL_GIT" -C "$T/k16/r" config extensions.worktreeConfig true && printf '[core]\n\tworktree = %s\n' "$WORK/out14k16" > "$T/k16/r/.git/CONFIG.WORKTREE"
 fx "$T/k16b/r" && printf '[core]\n\tsparseCheckout = true\n' > "$T/k16b/r/.git/CONFIG.WORKTREE"
 fx "$T/k17/r" && "$REAL_GIT" clone -q -s "$T/k17/r" "$T/y17/c" && mv "$T/y17/c/.git/objects/info/alternates" "$T/y17/alt" && ln -s ../../../../alt "$T/y17/c/.git/objects/info/alternates"
 "$REAL_GIT" -C "$T/y17/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の alternates を git が読まない (前提が崩れた)"
 mkdir -p "$T/k19/p" && "$REAL_GIT" init -q --bare "$T/k19/p/.git" && echo r > "$T/k19/p/README"
-# 2 周目で消せた形: 大文字の Alternates・info の symlink・貸す側の objects の symlink・読めない config・branch.*.remote だけの upstream
+# 次も残す: 大文字の Alternates・info の symlink・貸す側の objects の symlink・読めない config・branch.*.remote だけの upstream
 fx "$T/k20/r" && "$REAL_GIT" clone -q -s "$T/k20/r" "$T/y20/c" && mv "$T/y20/c/.git/objects/info/alternates" "$T/y20/c/.git/objects/info/Alternates"
 fx "$T/k21/r" && "$REAL_GIT" clone -q -s "$T/k21/r" "$T/y21/c" && mkdir -p "$T/z21" && mv "$T/y21/c/.git/objects/info" "$T/z21/info" && ln -s ../../../../z21/info "$T/y21/c/.git/objects/info"
 fx "$T/k22/r" && mkdir -p "$T/k22/store" && mv "$T/k22/r/.git/objects" "$T/k22/store/objects" && ln -s ../../store/objects "$T/k22/r/.git/objects" && "$REAL_GIT" clone -q -s "$T/k22/r" "$T/y22/c"
 fx "$T/k24/r" && "$REAL_GIT" -C "$T/k24/r" config branch.main.remote "$REPO"
 for y in y20 y21 y22; do "$REAL_GIT" -C "$T/$y/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: $y の借り方を git が読まない (前提が崩れた)"; done
-# 3 周目で消せた形: 借りる側の HEAD が symlink・.git ごとの symlink・git-new-workdir の形・改行を含むパスの借りる側
+# 次から使われている repo も残す: 借りる側の HEAD が symlink・.git ごとの symlink・git-new-workdir の形・改行を含むパスの借りる側
 fx "$T/k25/r" && "$REAL_GIT" clone -q -s "$T/k25/r" "$T/y25/c" && b25=$("$REAL_GIT" -C "$T/y25/c" symbolic-ref --short HEAD) &&
 	"$REAL_GIT" -C "$T/y25/c" update-ref "refs/heads/$b25" HEAD && rm "$T/y25/c/.git/HEAD" && ln -s "refs/heads/$b25" "$T/y25/c/.git/HEAD"
 fx "$T/k26/r" && mkdir -p "$T/y26/w" && ln -s ../../k26/r/.git "$T/y26/w/.git"
@@ -370,7 +370,7 @@ fx "$T/k28/r" && mkdir -p "$T/y28/x
 y" && "$REAL_GIT" clone -q -s "$T/k28/r" "$T/y28/x
 y/c"
 "$REAL_GIT" -C "$T/y25/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の HEAD を git が読まない (前提が崩れた)"
-# 4 周目で消せた形: エントリそのものを指す symlink・別のエントリの .git を指す .git ファイル (--separate-git-dir での再初期化と、手書きの相対)
+# 次から使われている repo も残す: エントリそのものを指す symlink・別のエントリの .git を指す .git ファイル (--separate-git-dir での再初期化と、手書きの相対)
 fx "$T/k29/r" && mkdir -p "$T/y29" && ln -s ../k29 "$T/y29/link"
 fx "$T/k30/r" && mkdir -p "$T/y30/w" && (cd "$T/y30/w" && "$REAL_GIT" init -q --separate-git-dir=../../k30/r/.git .)
 fx "$T/k31/r" && mkdir -p "$T/y31/w" && echo "gitdir: ../../k31/r/.git" > "$T/y31/w/.git"
