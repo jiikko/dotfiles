@@ -174,9 +174,10 @@ inside() { case $2 in "$1"/*) return 0 ;; esac; return 1; }
 #   - worktrees/* の作業ツリーが外 (登録済みの worktree の commit と未コミットの変更を失う)。指す先を解決できない (prune 待ち) も残す
 #   - tmp の中の別の repo が alternates (clone --shared) でこの objects を借りている (借りた側の objects が壊れる)
 #   - core.bare が true (名前が .git の bare。外から push される置き場で、index が無いので ls-files -d も空になる)
-# 検出しない (中身から見えない。tmp の中の普通のファイルを外から指しているのと同じ扱いで、使われている間は中身が新しくなるので
-# DAYS 日使われなかったときだけ消える): 外の dir がこの .git を path で直接使う形 (GIT_DIR・git-new-workdir の symlink・tmp の外の
-# alternates)・外の作業ツリーの tracked のファイルが、たまたま全部親にも同名である --separate-git-dir の置き場。
+# 検出しない (中身から見えない): 外の dir がこの .git を path で直接使う形 (GIT_DIR・git-new-workdir の symlink。使っている間は
+# objects・refs が書かれて中身が新しくなるので、DAYS 日使われなかったときだけ消える)・tmp の外の repo が alternates で借りる形
+# (🚨 借りる側は読むだけなので、使われている間も消える。tmp の fixture を外から clone -s で借りて使い続ける使い方を前提にしない)・
+# 外の作業ツリーの tracked のファイルが、たまたま全部親にも同名である --separate-git-dir の置き場。
 # alternates の一覧は起動時に 1 回だけ取る (実行中に clone -s で借りた側は見ない。判定から rm までの書き込みを見ないのと同じ)
 disposable_gitdir() {
 	local g=$1 c=$2 p n ws w t d rc IFS

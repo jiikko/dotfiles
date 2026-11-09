@@ -33,7 +33,8 @@ git dir の両方が dir の中に閉じていて外から使われないのに�
    core.bare が true でない (clone・外の設定・外の作業ツリー・名前が .git の bare を除く)。`commondir` も `config.worktree` (extensions.worktreeConfig。core.worktree がそこへ移る) も持たない
 3b. 親の作業ファイルが index と食い違わない (`git ls-files -d` が空。fsmonitor は切る)。`git init --separate-git-dir=X/.git W` は X/.git/config に
    core.worktree を書かない (2026-11-09 に実測) ので、X に兄弟のファイルがあると 1〜3 では外の作業ツリーの置き場と見分けられない
-3c. tmp の中のどの repo の `objects/info/alternates` もこの git dir を指していない (`clone -s` で借りた側の objects が壊れる)。一覧を読めなければ全部を残す
+3c. tmp の中のどの repo も、このエントリの中の objects を借りていない (`clone -s` で借りた側の objects が壊れる)。借りている先は tmp の中の git dir を HEAD の形で
+   列挙し、`git count-objects -v` の `alternate:` で git 自身に答えさせる。答えない repo (壊れた・読めない config) があれば、その名前を冒頭に出して使い捨ての repo も全部残す
 4. `worktrees/*` が無いか、全部の `worktrees/*/gitdir` の指す作業ツリーが、実体のパスでこのエントリの中にある (指す先を解決できなければ残す)
 5. この `.git` dir 自身の HEAD は、この repo の一部として扱う。中の別の git dir (submodule の `modules/*`。origin を持つ clone) は今までどおり残す。
    `.git` ファイルは、`gitdir:` の指す先が実体のパスでこのエントリの中にあれば数えない (指す先の git dir は、それ自身が印として判定される)
@@ -84,4 +85,14 @@ bare の形 (HEAD と objects/・refs/ が並ぶが `.git` の中に無い dir) 
   alternates の一覧を起動時に 1 回だけ取る窓 (実行中の `clone -s`) も受け入れた (判定から rm までの書き込みを見ないのと同じ種類。未再現)。
   壊せなかった観点: ls-files -d からのコマンド実行 (fsmonitor・pager・editor・sshCommand・credential・filter・hooksPath・untrackedCache ほか)・大文字小文字の違う alternates・
   `"`・空白・é を含むパス・`objects/../objects`・bash 3.2 の IFS / set -f の漏れ
+- [x] 敵対的レビュー 2 周目 (opus)。P1 3 件 + P2 2 件 + P3 を再現され、直した: alternates のファイル名の大文字小文字 (`Alternates`)・`info` の symlink・
+  貸す側の objects の symlink (git dir のパスと実体が食い違う) → **alternates も字面で探すのをやめ**、上の 3c の形にした。照合は git dir でなくエントリで行う /
+  読めない config (`git config` は警告だけで rc=1) → `-r` と stderr を見る / `branch.*.remote` だけの upstream → 残す。
+  テスト 14 の k20〜k22・k24、14c (読めない config)、変異 4 本がすべて red (照合を git dir に戻す・借りている判定を外す・branch.*.remote・決められない理由の行)。
+  読めない config の `-r` と stderr の確認は、同じ repo で count-objects も答えずに全部を残す側に倒れるので、片方を外す変異は緑のまま (二重の守り。記録)。
+  **受け入れの根拠を直した**: 1 周目に「使っている間は中身が新しくなる」と書いた理由は、tmp の外から alternates で借りる形には成り立たない
+  (借りる側は貸す側を読むだけで書かない。再現: 外で `clone -s` して 3 回 commit しても fx の中は古いままで消え、外の `HEAD~3:f` が読めなくなる)。
+  中身から検出できないことは変わらないので受け入れるが、理由は「tmp の fixture を外から `clone -s` で借りて使い続ける使い方を前提にしない
+  (2026-11-09 の `~/dotfiles/tmp` に alternates を持つ repo は 0 件)」に改める。**未確認リスク**: この使い方が出てきたら、外の repo からは見えないので fixture を消して外を壊す。
+  見送り (P3): `bare = yes` などの綴りは `--type=bool` が true にそろえるので、指摘の変異 (`!= true`) は今の実装では退行にならない
 - [ ] `make test`
