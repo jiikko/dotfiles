@@ -11,8 +11,8 @@ Workflow ツール（`Workflow({scriptPath, args})`）で起動する決定論�
    このハーネスでは `~/.claude/workflows/` に置いた自作 workflow を `Workflow({name})` で解決できない（built-in のみ。セッション中のホットリロードも不可）。実測で確実に動くのは **`Workflow({scriptPath: "$HOME/.claude/workflows/<file>.js", args})`**。`~` は `$HOME` に展開した絶対パスで渡すこと。
    - セッション再起動後に `name:` 解決が効く可能性はあるが未検証。scriptPath を正式手段とする。
 
-3. **デプロイは setup.sh が自動 symlink（手動不要）**
-   `setup.sh` が `~/dotfiles/_claude/workflows/*` を `~/.claude/workflows/` へ個別 symlink する。新しい workflow を追加したら `setup.sh` を再実行すれば反映される（手で symlink を張る必要はない）。
+3. **デプロイは自動 symlink（手動不要）**
+   `scripts/claude_links.sh apply` が `~/dotfiles/_claude/workflows/*.js` を `~/.claude/workflows/` へ個別 symlink する (`setup.sh` と SessionStart hook `claude-links-sync.sh` が呼ぶ)。新しい workflow を追加したら次のセッション起動で張られ、すぐ使いたいときは `scripts/claude_links.sh apply` を叩く（手で symlink を張る必要はない）。
 
 ## 構文チェック
 

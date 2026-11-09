@@ -70,6 +70,6 @@ agent は一部しか載っていないので、agent はここが正本。
 ## 保守
 
 - **agent を足したら / 消したらこの表も直す** ([`new-tool-requires-entrypoint-docs.md`](../rules/new-tool-requires-entrypoint-docs.md))。
-  件数はファイル数と一致させる (`ls _claude/agents/*.md | wc -l`)
+  件数は README.md を除いたファイル数と一致させる (`ls _claude/agents/*.md | grep -v README.md | wc -l`。`tests/claude/test_agents_index.sh` が検査する)
 - ⚠️ **`@../_common/...` 形式で共通文書を参照しない**。展開されずリテラルのまま届く
   (実測 2026-09-02)。共通の作法は各 agent の本文へインラインで書く
