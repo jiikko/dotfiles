@@ -1,7 +1,7 @@
 # process_supervisor — 子プロセスを 1 つ起こして見張る (ワンショットの supervisor の部品)
 
 foreman / supervisord の 1 本ぶん。**呼んだプロセスが生きている間だけ**見張る (launchd などへの常駐の登録はしない)。
-依存はゼロ (標準ライブラリのみ)。仕様と失敗モードの一次情報は `supervisor.go` の doc コメント (パッケージ名は `supervisor`。import は `supervisor "process_supervisor"` と別名を明示する)。
+本体の依存はゼロ (標準ライブラリのみ。go.mod の `src/testwait` はテストだけが使う)。仕様と失敗モードの一次情報は `supervisor.go` の doc コメント (パッケージ名は `supervisor`。import は `supervisor "process_supervisor"` と別名を明示する)。
 
 使っているところ: `src/pro-con` の supervisor (`supervise.go`。dispatcher を子に持つ。issue 506) と見張り (`monitorsup.go`。issue 475)。
 取り込むには go.mod に `require process_supervisor v0.0.0` と `replace process_supervisor => ../process_supervisor`。
