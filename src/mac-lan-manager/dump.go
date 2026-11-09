@@ -72,7 +72,7 @@ func runDump(args []string, stdout, stderr io.Writer, now func() time.Time, stop
 		}
 		return 0
 	}
-	writeDumpText(plainWriter{stdout}, rep, tm)
+	writeDumpText(termsafe.BlockWriter(stdout), rep, tm)
 	return 0
 }
 
@@ -296,14 +296,6 @@ func untilStop(stop <-chan struct{}, run func(ctx context.Context)) (stopped boo
 	}
 }
 
-// plainWriter は dump の文字の出力 (JSON でない方) を端末へ出す前に無害化する (知らせ・走査や網の失敗の文に ESC / OSC が入りうる。
+// dump の文字の出力 (JSON でない方) は termsafe.BlockWriter を通して端末へ出す (知らせ・走査や網の失敗の文に ESC / OSC が入りうる。
 // 画面は rows の入口で termsafe を通すが、dump は Report をそのまま書く)。書式の改行を残すので、値の中の改行は落とせない:
-// 1 件を 1 行で読ませたい値は、書く側で PlainLine を当てる。1 回の Write を 1 つの塊として扱う (1 つの値を 2 回の Write に割って書かない)
-type plainWriter struct{ w io.Writer }
-
-func (p plainWriter) Write(b []byte) (int, error) {
-	if _, err := io.WriteString(p.w, termsafe.PlainBlock(string(b))); err != nil {
-		return 0, err
-	}
-	return len(b), nil
-}
+// 1 件を 1 行で読ませたい値は、書く側で PlainLine を当てる。1 つの値を 2 回の Write に割って書かない (BlockWriter は Write ごとに無害化する)

@@ -11,6 +11,7 @@
 package termsafe
 
 import (
+	"io"
 	"strings"
 	"unicode/utf8"
 )
@@ -99,6 +100,23 @@ func PlainLineKeepTabs(s string) string { return sanitize(s, policy{keepTabs: tr
 // 素通りする)。「1 件 = 1 行」の場所では必ず PlainLine を使うこと。行数・長さの上限は
 // 用途ごとの関心なので、この関数ではなく呼び出し側が持つ。
 func PlainBlock(s string) string { return sanitize(s, policy{keepNewlines: true}) }
+
+// BlockWriter は、書かれた文字を PlainBlock で無害化してから w へ流す io.Writer を返す (改行は残す)。
+// 外から来た文字を含む複数行の出力 (CLI の文字の出力・子プロセスの stderr) を端末へそのまま流す場所用。
+//
+// 🚨 1 回の Write を 1 つの塊として無害化する。1 つのエスケープ列が 2 回の Write に割れて届くと、前半と後半を
+// それぞれ文字として扱うので落としきれないことがある (書く側で 1 つの値を 1 回の Write にする)。
+// Write は無害化の前のバイト数を返す (呼び出し側の io.Copy などが短い書き込みと誤らない)。
+func BlockWriter(w io.Writer) io.Writer { return blockWriter{w} }
+
+type blockWriter struct{ w io.Writer }
+
+func (p blockWriter) Write(b []byte) (int, error) {
+	if _, err := io.WriteString(p.w, PlainBlock(string(b))); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
 
 // IsPlain は s が無害化を必要としないか (制御文字・エスケープ導入子を含まず、正しい UTF-8)。
 //

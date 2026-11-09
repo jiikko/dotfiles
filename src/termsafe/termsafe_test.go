@@ -275,3 +275,16 @@ func TestClipRunes(t *testing.T) {
 		}
 	}
 }
+
+// BlockWriter は Write ごとに制御文字を落とし (改行は残す)、無害化の前のバイト数を返す。
+func TestBlockWriter(t *testing.T) {
+	var sb strings.Builder
+	in := "警告" + esc + "]0;x" + bel + "\n次の行\n"
+	n, err := BlockWriter(&sb).Write([]byte(in))
+	if err != nil || n != len(in) {
+		t.Fatalf("Write = %d, %v (want %d, nil)", n, err, len(in))
+	}
+	if got := sb.String(); got != "警告\n次の行\n" {
+		t.Errorf("流した文 = %q", got)
+	}
+}

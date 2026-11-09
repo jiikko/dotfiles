@@ -28,6 +28,7 @@
 | `ClipRunes` | — | — | — | ログ・記録に入れる文を n rune までにし、切ったら … を足す |
 | `PlainLineKeepTabs` | 落とす | 残す | 落とす | 自前でタブストップ揃えをする整形層の入口 |
 | `PlainBlock` | 落とす | スペース 4 | **残す** | 1 件が複数行の塊 (brew doctor の警告本文) |
+| `BlockWriter(w)` | 落とす | スペース 4 | **残す** | `PlainBlock` を Write ごとに当てる io.Writer。CLI の文字の出力・子プロセスの stderr を端末へ流す場所 (mac-lan-manager の dump・slack-bbs の slack-cli の stderr) |
 | `IsPlain` | — | — | — | **書き換えず落とす**判定 (同一性を持つ値: パス / ラベル) |
 
 上の表とは別に、`DropEmojiVS16` は絵文字の異体字セレクタ (U+FE0F) を除いて `⚠️` を `⚠` に倒す (層ごとに幅の解釈が割れる字を表示の入口で出さない。glogx の表示の入口が使う)。
