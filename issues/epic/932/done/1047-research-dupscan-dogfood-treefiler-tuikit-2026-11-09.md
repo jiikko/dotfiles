@@ -5,7 +5,7 @@
 ## 概要
 
 dupscan-dogfood の skill で src/treefiler と src/tuikit の重複を探して直したときの摩擦と提案。摩擦 3 件・提案 1 件。
-F1・P1・F3 はこのセッションで dupscan を直した。F2 は直していない (下の対応方針)。既存の issue との重複照合はしていない (skill の 3 節)。
+F1・P1・F3・F2 はこのセッションで dupscan を直した。既存の issue との重複照合はしていない (skill の 3 節)。
 所見の記録と、実装した提案の結果だけなので、反証レビューは省いた (skill の 5 節)。
 
 ## 開発タスクの結果
@@ -16,7 +16,7 @@ F1・P1・F3 はこのセッションで dupscan を直した。F2 は直して�
   - tuikit の foreground.SetStdin/SetStdout/SetStderr・listnav の List.Advance/Pager.Advance: 既に allow-group で「意図して分けている」と決まっている
   - treefiler の explode.finished ~ watcher.pause ほか節 3 の 13 対: lock → defer unlock → 1 文の accessor で寄せる先が無い (F2)
   - treefiler の 6 つの take: 意味が違う (gitWatch は snapshot を版で判定・walker は差分を手放す・watcher / opener は溜まった slice を空にする)
-  - glogx の doctorview と tuikit の termwidth のテストの childContext: module をまたぐ写し。寄せ先は testwait くらいで、consumer 6 つの tuikit にテストだけの依存が増える (restartable は擬似バージョンで固定)。doc で互いを指し合っている
+  - glogx の doctorview と tuikit の termwidth のテストの childContext: 起票時は「寄せ先は testwait くらいで、tuikit にテストだけの依存が増える」と書いたが誤り (確かめずに書いた)。tuikit は 2026-10-30 (e23b45849) から testwait を取り込んでいる。dotfiles-95 が testwait.ChildContext へ寄せる (2026-11-09 に申告)
   - model.go の init の o / O の closure・tfprobe の cycle / tile の closure: 1 つの呼び出しを 1 回するだけの委譲 (sweep の印のとおり)
 
 ## 摩擦
@@ -30,14 +30,17 @@ F1・P1・F3 はこのセッションで dupscan を直した。F2 は直して�
 - 種類: 使い方が分かりにくい (文言)
 - 対応: 「… 個は効かせず、その組を下の節に出している (…🚨 の行も出さない。repo の root から打てば効く…)」に直した (commit「feat(dupscan): sweep -focus …」)
 
-### F2 sweep の節 3 で、treefiler が絡む対 13 件が全部「lock → defer unlock → 1 文」の accessor どうし (直していない)
+### F2 sweep の節 3 で、treefiler が絡む対 13 件が全部「lock → defer unlock → 1 文」の accessor どうし (直した)
 - 場面: `dupscan sweep -limit 0 src` の節 3 を treefiler / tuikit で絞った
 - 実際: 13 対 (Dice 0.600〜0.618・w=42) が全部 `mu.Lock(); defer mu.Unlock(); return x.f` / `x.f = v` の形 (explode.finished・watcher.pause と、mac-lan-manager の lanmgrtest の accessor 6 個・pro-con の Stop など)。
   寄せる先は無い。残る 1 対 (pro-con の writeFile ~ treefiler の mustWrite。module をまたぐテストの helper) だけが読む価値のある候補だった
 - その後: 本体を 2 つ Read して決まった形と確かめ、見送った
 - 種類: 雑音
 - 提案: 節 2 の「印: 全員の本体が 1 つの呼び出しを 1 回するだけ」と同じく、「lock と defer unlock の後に文が 1 つ」の対に印を付けるか、畳む。
-  言語ごとに形の判定が要る (Go の sync.Mutex と Swift の lock / withLock は別の書き方) ので、このセッションでは直していない
+  - 対応: Go の adapter が本体の 3 文の形 (`X.Lock()` か `X.RLock()` → 同じ X の `defer` の unlock → 制御文でない文 1 つ) から `tree.Unit.LockedAccessor` を決め、
+    sweep の節 3 では両方がこの形の対を数だけの 1 行に畳み (`-v` で出す)、節 1・2 の組には印の行を足す (commit「feat(dupscan): sweep で lock → defer unlock → 文 1 つの accessor …」)。
+    実物 (repo root で `sweep -limit 0 -focus src/treefiler src`): 節 3 の 13 対 → 2 対 + 「畳んだ 11 対」の 1 行。変異 6 本で red。
+    Swift の lock は書き方が割れる (`withLock { }`・`os_unfair_lock` など) ので判定していない (未対応)
 
 ### F3 gate -v の大半が、変更と無関係な「効いていない除外」の同じ理由の繰り返し (直した)
 - 場面: settings.go を寄せた後、自分が生んだ組・消した組を見るため repo root で `dupscan gate -v` (skill dupscan の 3 節の案内どおり)
@@ -69,4 +72,4 @@ F1・P1・F3 はこのセッションで dupscan を直した。F2 は直して�
 - [x] F3 を直した。変異 1 本で red
 - [x] skill dupscan の 3 節に `sweep -focus` を 1 行足した。整合チェック 3 観点 (skill の中・実装と README・例を repo root から実際に打つ) と `bin/skill-eval dupscan` (PASS 2/2、$0.54)
 - [x] ルートの `make test` は rc=0 (test-dupscan-gate も走った)。dupscan の 2 commit と treefiler の commit を master に push した
-- [ ] F2 (lock の accessor の対の印) — 未着手。言語ごとの形の判定の設計から
+- [x] F2 (lock の accessor の対の印) を直した (Go だけ)。module の lint / test とルートの make test は rc=0。残課題は無いので done へ移す
