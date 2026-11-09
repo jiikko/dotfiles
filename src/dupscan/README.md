@@ -425,6 +425,7 @@ dupscan の json は `<` `>` `&` を escape しない (`->` は `-\u003e` にな
 | `internal/jsonout` | dupscan が書く JSON の形 (`<` `>` `&` を escape しない。貼った設定と grep がずれないため) |
 | `internal/gate` | gate の判定 (変わった単位・出どころ・違反になった最初の段) |
 | `internal/exclude` | `.dupscan.json` の読み込みと検査・釘・除外の効き方 (report と gate が同じ関数を呼ぶ)・効いていない除外 |
+| `internal/typed` | `callers -typed` の型での確定 (go/packages で module ごとに型を検査し、package のパス・受け手の型・名前の鍵で比べる。確定できない呼び出しは別に返す) |
 
 - 文法は `github.com/alex-pinkus/tree-sitter-swift` の `with-generated-files` branch を pseudo-version で固定する。上げたら `TestEveryKindIsClassified` (文法の全部の名前つきの種類が分類表にあるか) を通す
 - `third_party/tree-sitter-swift-teststub` は、文法の module のテストが誤った import path で参照する package の空の代わり (go.mod の replace のコメント)
