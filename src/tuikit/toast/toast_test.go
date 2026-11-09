@@ -782,3 +782,49 @@ func TestToastBoxAtEveryNarrowWidth(t *testing.T) {
 func innerText(row string) string {
 	return strings.Trim(ansi.Strip(row), "│▖▁▗▓█▒░ ─┌┐")
 }
+
+// ShowPinned の枚は入場を終えても退場タイマーを返さず、Release されるまで静止のまま残る。
+// Release は下へ押し下げられた枚にも効き、退場を始める。
+func TestToastPinnedStaysUntilReleased(t *testing.T) {
+	var to Stack
+	seq := to.ShowPinned("building", true)
+	for guard := 0; to.phase == Entering && guard < 100; guard++ {
+		if ts := to.Advance(); len(ts) > 0 {
+			t.Fatalf("留めた枚は退場タイマーを返さない: %v", ts)
+		}
+	}
+	if to.phase != Holding {
+		t.Fatalf("入場後は静止: phase=%d", to.phase)
+	}
+	to.Show("other", true) // 留めた枚は 1 段下へ
+	if to.Release(seq + 100) {
+		t.Fatal("違う seq では退場しない")
+	}
+	if !to.Release(seq) {
+		t.Fatal("Release で退場を始める")
+	}
+	if to.older[0].phase != Leaving || to.older[0].text != "building" {
+		t.Fatalf("押し下げられた枚が退場していない: %+v", to.older[0])
+	}
+	if to.Release(seq) {
+		t.Fatal("2 度目の Release は何もしない")
+	}
+}
+
+// 入場の途中で Release されたら、静止を挟まずその位置から引き返す。
+func TestToastPinnedReleasedWhileEntering(t *testing.T) {
+	var to Stack
+	seq := to.ShowPinned("building", true)
+	to.Advance()
+	if !to.Release(seq) || to.phase != Leaving {
+		t.Fatalf("入場中の Release: phase=%d", to.phase)
+	}
+	for guard := 0; to.Visible() && guard < 100; guard++ {
+		if ts := to.Advance(); len(ts) > 0 {
+			t.Fatalf("引き返す枚はタイマーを返さない: %v", ts)
+		}
+	}
+	if to.Visible() {
+		t.Fatal("引き返して消える")
+	}
+}

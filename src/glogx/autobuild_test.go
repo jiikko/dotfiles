@@ -802,3 +802,116 @@ func TestAutobuildReplaceDirsToleratesPartialAndCommentedLines(t *testing.T) {
 		t.Errorf("autobuildReplaceDirs = %v, want %v", got, want)
 	}
 }
+
+// settleToasts はトーストのアニメを止まるまで進め、静止明けのタイマーもその場で Update へ戻す。
+// Hold で引っ込む枚はこれで消え、留めた枚だけが残る。
+func settleToasts(m *browseModel) {
+	for guard := 0; guard < 500 && m.toast.Visible(); guard++ {
+		timers := m.toast.Advance()
+		for _, tm := range timers {
+			m.Update(tm.Msg)
+		}
+		if len(timers) == 0 && !m.toast.Animating() {
+			return
+		}
+	}
+}
+
+func autobuildToastShown(m *browseModel) bool {
+	for _, e := range m.toast.Entries() {
+		if strings.Contains(e.Text, "ビルド中") {
+			return true
+		}
+	}
+	return false
+}
+
+func startAutobuildForToast(t *testing.T) *browseModel {
+	t.Helper()
+	m := newTestBrowse(t, 1, map[string]gitdata.CIState{}, nil)
+	m.toast.Clear()
+	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, app.TimeNow())
+	m.Init()
+	settleToasts(m)
+	if !autobuildToastShown(m) {
+		t.Fatal("「ビルド中」トーストが Hold で引っ込んだ (再起動ダイアログまで間が空く)")
+	}
+	return m
+}
+
+// 「ビルド中」は再起動ダイアログが出るまで留まり、出たら引っ込む (ユーザー要望 2026-11-09)。
+func TestAutobuildToastStaysUntilRestartPrompt(t *testing.T) {
+	m := startAutobuildForToast(t)
+	m.Update(autobuildMsg{result: autobuildInstalled})
+	if !m.restartPromptVisible() {
+		t.Fatal("前提: ダイアログが出ていない")
+	}
+	settleToasts(m)
+	if autobuildToastShown(m) {
+		t.Error("ダイアログが出たのに「ビルド中」が残っている")
+	}
+}
+
+// 完成してもダイアログが止められている間 (claude update 中) は留め、ダイアログが出たら引っ込む。
+func TestAutobuildToastStaysWhilePromptDeferred(t *testing.T) {
+	m := startAutobuildForToast(t)
+	m.actModal.beginUpdate("claude")
+	m.Update(autobuildMsg{result: autobuildInstalled})
+	settleToasts(m)
+	if !autobuildToastShown(m) {
+		t.Fatal("ダイアログが出る前に「ビルド中」が引っ込んだ")
+	}
+	m.Update(updateMsg{target: "claude"})
+	settleToasts(m)
+	if !m.restartPromptVisible() || autobuildToastShown(m) {
+		t.Errorf("update の決着後: prompt=%v building=%v", m.restartPromptVisible(), autobuildToastShown(m))
+	}
+}
+
+// ダイアログが出ない決着 (失敗・期限切れ) でも留めたままにしない。
+func TestAutobuildToastReleasedWithoutPrompt(t *testing.T) {
+	t.Run("失敗", func(t *testing.T) {
+		m := startAutobuildForToast(t)
+		m.Update(autobuildMsg{result: autobuildFailed})
+		settleToasts(m)
+		if autobuildToastShown(m) {
+			t.Error("失敗したのに「ビルド中」が残っている")
+		}
+	})
+	t.Run("期限切れ", func(t *testing.T) {
+		m := startAutobuildForToast(t)
+		m.autobuild.until = app.TimeNow().Add(-time.Second)
+		m.Update(autobuildMsg{result: autobuildRunning})
+		settleToasts(m)
+		if autobuildToastShown(m) {
+			t.Error("監視を諦めたのに「ビルド中」が残っている")
+		}
+	})
+}
+
+// pull 中に 1 本目が完成し (ダイアログは pull の後に出る)、pull の後に 2 本目のビルドが始まったとき、
+// 2 本目の「ビルド中」は 1 本目のダイアログが出ていても、2 本目の決着まで留まる。
+func TestAutobuildToastOfSecondBuildStaysWhileFirstPromptShown(t *testing.T) {
+	testenv.Restore(t, &spawnAutobuild)
+	spawnAutobuild = func(string) bool { return true }
+	m := startAutobuildForToast(t)
+	m.actModal.pulling = true
+	m.Update(autobuildMsg{result: autobuildInstalled})
+	_, cmd := m.Update(pullMsg{})
+	deliverMsgs(m, cmd(), func(msg tea.Msg) bool {
+		_, ok := msg.(autobuildSpawnMsg)
+		return ok
+	})
+	if !m.autobuild.active || !m.restartPromptVisible() {
+		t.Fatalf("前提: 2 本目の監視とダイアログ: active=%v prompt=%v", m.autobuild.active, m.restartPromptVisible())
+	}
+	settleToasts(m)
+	if !autobuildToastShown(m) {
+		t.Fatal("2 本目のビルド中なのに「ビルド中」が引っ込んだ")
+	}
+	m.Update(autobuildMsg{result: autobuildInstalled})
+	settleToasts(m)
+	if autobuildToastShown(m) {
+		t.Error("2 本目の完成でダイアログが出ているのに「ビルド中」が残っている")
+	}
+}

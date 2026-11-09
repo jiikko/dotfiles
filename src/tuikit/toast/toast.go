@@ -69,10 +69,12 @@ const (
 // 動かすため、箱が数行でも滑らかなアニメになる。glogx は tmux の display-popup 内で動くため
 // tmux-toast (floating pane) は popup に隠れて出せず、glogx 自身の TUI 内に描く。
 type item struct {
-	text   string
-	ok     bool // true=成功 (✓緑) / false=失敗 (✗赤)。info=true のときは無視される
-	info   bool // true=進行中/中立 (シアン)。ok より優先し、完了/失敗どちらでもない状態を表す
-	seq    int  // 世代: 退場タイマーの有効性判定 + 再表示リセット
+	text string
+	ok   bool // true=成功 (✓緑) / false=失敗 (✗赤)。info=true のときは無視される
+	info bool // true=進行中/中立 (シアン)。ok より優先し、完了/失敗どちらでもない状態を表す
+	seq  int  // 世代: 退場タイマーの有効性判定 + 再表示リセット
+	// pinned は「Release されるまで静止のまま留める」印 (ShowPinned)。入場を終えても退場タイマーを予約しない
+	pinned bool
 	phase  Phase
 	shadow string // 落ち影の SGR 色 (積んだときの Stack.Shadow)
 	// frame はスライドの進捗 (入場 0→N / 退場 N→0)。見せるカラム数は描画時に easedShown(frame, 箱幅) で求める。
@@ -86,6 +88,7 @@ type item struct {
 func (t *item) reset(text string, ok, info bool, seq int, shadow string) {
 	t.seq, t.shadow = seq, shadow
 	t.text, t.ok, t.info = text, ok, info
+	t.pinned = false
 	t.phase = Entering
 	t.frame = 0
 }
@@ -106,6 +109,9 @@ func (t *item) advance() (hold *Timer) {
 		if t.frame >= SlideFrames {
 			t.frame = SlideFrames
 			t.phase = Holding
+			if t.pinned {
+				return nil // 退場は Release が始める
+			}
 			return &Timer{After: Hold, Msg: Msg{seq: t.seq}}
 		}
 	case Leaving:
@@ -316,6 +322,31 @@ func (s *Stack) Show(text string, ok bool) { s.push(text, ok, false) }
 
 // ShowInfo は進行中/中立の通知 (シアン) を積む。次の通知が来たら退く。
 func (s *Stack) ShowInfo(text string) { s.push(text, false, true) }
+
+// ShowPinned は Show と同じ通知を積むが、Hold で引っ込めず Release(seq) されるまで静止のまま留める。返す seq を
+// Release に渡す。終わりが別の出来事で決まる知らせ (裏のビルドが済んで次の板が出るまでの「ビルド中」) に使う。
+// 🚨 Release を呼ぶ経路は呼び出し側が全部持つこと。呼ばれないと、溢れて追い出されるか Clear されるまで残る
+func (s *Stack) ShowPinned(text string, ok bool) int {
+	s.push(text, ok, false)
+	s.pinned = true
+	return s.seq
+}
+
+// Release は ShowPinned で留めた枚 (seq) を退場させる。入場の途中ならその位置から引き返す。
+// 既に追い出された・別の通知で外れた枚なら何もしない。退場を始めたら true (呼び出し側は tick を回す)
+func (s *Stack) Release(seq int) bool {
+	for _, it := range s.items() {
+		if it.seq != seq || !it.pinned {
+			continue
+		}
+		it.pinned = false
+		if it.phase == Entering || it.phase == Holding {
+			it.phase = Leaving
+			return true
+		}
+	}
+	return false
+}
 
 func (s *Stack) push(text string, ok, info bool) {
 	// 🚨 ここで無害化する: 通知文は gh / git のエラー出力・claude のバージョン文字列といった

@@ -79,8 +79,7 @@ func (m *browseModel) onAutobuild(msg autobuildMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.maybeTick(), watch)
 	}
 	if notify {
-		text, ok := autobuildToast(res)
-		m.toast.Show(text, ok)
+		m.showAutobuildToast(res)
 		return m, tea.Batch(m.maybeTick(), watch) // トーストのスライドは tick で進む
 	}
 	return m, watch
@@ -95,10 +94,46 @@ func (m *browseModel) onAutobuildSpawn(msg autobuildSpawnMsg) (tea.Model, tea.Cm
 	}
 	m.autobuild = newAutobuildWatch(selfExePath(), true, app.TimeNow())
 	if res, notify, _ := m.autobuild.handle(autobuildRunning, app.TimeNow()); notify {
-		text, ok := autobuildToast(res)
-		m.toast.Show(text, ok)
+		m.showAutobuildToast(res)
 	}
 	return m, tea.Batch(m.autobuild.tickCmd(), m.maybeTick())
+}
+
+// showAutobuildToast は裏ビルドの知らせをトーストに出す。「ビルド中」だけは Hold で引っ込めず、
+// releaseAutobuildToast が解放するまで留める (ユーザー要望 2026-11-09: トーストが消えてから再起動ダイアログが
+// 出るまでに何も出ていない間が空く。ビルドは数十秒かかり、Hold の 3 秒では足りない)。
+func (m *browseModel) showAutobuildToast(res autobuildResult) {
+	text, ok := autobuildToast(res)
+	if res == autobuildStarted {
+		m.autobuildToastSeq = m.toast.ShowPinned(text, ok)
+		return
+	}
+	m.toast.Show(text, ok)
+}
+
+// releaseAutobuildToast は留めた「ビルド中」トーストを、もう伝えることが無くなったら退場させる。Update の出口で
+// 毎回見る: ダイアログが出るのを止めている条件 (claude update・push・doctor の削除) はどの Msg でも外れうるので、
+// 解放を出来事ごとに書くと外れる経路を取りこぼす。
+//
+//   - 監視が終わり、再起動ダイアログが出た: ダイアログへ引き継ぐ (ここが本来の終わり)
+//   - 監視が終わり、出すダイアログも無い: 失敗 (失敗のトーストが出る)・期限切れ・ダイアログに「後で」と答えた
+//
+// 🚨 監視中はダイアログが出ていても留める。pull 中に 1 本目が完成し、pull の後に 2 本目のビルドが始まると、
+// 1 本目のダイアログが出ている間に 2 本目の「ビルド中」を積むことになり、ダイアログで判定すると 1 フレームも描かれずに消える。
+// 🚨 完成したがダイアログが止められている間 (restartPending かつ非表示) も留める。解放すると、この間に空白が戻る
+func (m *browseModel) releaseAutobuildToast() tea.Cmd {
+	if m.autobuildToastSeq == 0 {
+		return nil
+	}
+	if m.autobuild.active || (m.restartPending && !m.restartPromptVisible()) {
+		return nil
+	}
+	released := m.toast.Release(m.autobuildToastSeq)
+	m.autobuildToastSeq = 0
+	if released {
+		return m.maybeTick()
+	}
+	return nil
 }
 
 func (m *browseModel) onUpdateBegin(msg updateBeginMsg) (tea.Model, tea.Cmd) {

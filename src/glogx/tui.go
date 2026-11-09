@@ -182,6 +182,8 @@ type browseModel struct {
 	// restartRequested は「終了後に新しいバイナリで自分を置き換える」印 (main.go が exec する)。
 	restartPending   bool
 	restartRequested bool
+	// autobuildToastSeq は留めている「ビルド中」トーストの世代 (0 = 留めていない)。解放は releaseAutobuildToast
+	autobuildToastSeq int
 	// lastKey / lastKeyAt はキーリピート (押しっぱなし) の判定用 (swallowKeyRepeat)。
 	lastKey   string
 	lastKeyAt time.Time
@@ -310,8 +312,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// 「ビルド中」はここで即出す: 完成を待つと数十秒遅れ、その間ユーザーは自分が旧版を触って
 	// いることを知らない (ユーザー要望 2026-07-31)。
 	if res, notify, _ := m.autobuild.handle(autobuildRunning, app.TimeNow()); notify {
-		text, ok := autobuildToast(res)
-		m.toast.Show(text, ok)
+		m.showAutobuildToast(res)
 	} else if autobuildStaleBinary(selfExePath()) {
 		// ビルド中でもないのに失敗記録が残っている = 旧版に固定された状態。「ビルド中」と違って
 		// 自然には解消しないので、コピー可能な警告 (w) として出す。
@@ -344,7 +345,7 @@ func (m *browseModel) Init() tea.Cmd {
 
 func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
-	return model, tea.Batch(cmd, m.releaseStartupChecks())
+	return model, tea.Batch(cmd, m.releaseStartupChecks(), m.releaseAutobuildToast())
 }
 
 func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
