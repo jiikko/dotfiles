@@ -82,42 +82,39 @@ type item struct {
 	set                       func(s *Settings, v string) bool
 }
 
+// valueItem は it に、Settings の欄 *p(s) を文字列で読み書きする get / set を付ける (整数・選択肢・真偽で同じ規則)。
+// parse が false を返した値は書かない (設定の板の入力と、保存した toml を読み直すときの両方で、範囲の外の値を捨てる)。
+func valueItem[T any](it item, p func(s *Settings) *T, format func(T) string, parse func(s *Settings, v string) (T, bool)) item {
+	it.get = func(s *Settings) string { return format(*p(s)) }
+	it.set = func(s *Settings, v string) bool {
+		x, ok := parse(s, v)
+		if ok {
+			*p(s) = x
+		}
+		return ok
+	}
+	return it
+}
+
 func intItem(section, label, key, help string, lo, hi, step int, p func(s *Settings) *int) item {
-	return item{section: section, label: label, key: key, help: help, kind: kindInt, min: lo, max: hi, step: step,
-		get: func(s *Settings) string { return strconv.Itoa(*p(s)) },
-		set: func(s *Settings, v string) bool {
+	return valueItem(item{section: section, label: label, key: key, help: help, kind: kindInt, min: lo, max: hi, step: step}, p,
+		strconv.Itoa, func(_ *Settings, v string) (int, bool) {
 			n, err := strconv.Atoi(v)
-			if err != nil || n < lo || n > hi {
-				return false
-			}
-			*p(s) = n
-			return true
-		}}
+			return n, err == nil && n >= lo && n <= hi
+		})
 }
 
 func choiceItem(section, label, key, help string, cs func(s *Settings) []string, p func(s *Settings) *string) item {
-	return item{section: section, label: label, key: key, help: help, kind: kindChoice, choices: cs,
-		get: func(s *Settings) string { return *p(s) },
-		set: func(s *Settings, v string) bool {
-			if !slices.Contains(cs(s), v) {
-				return false
-			}
-			*p(s) = v
-			return true
-		}}
+	return valueItem(item{section: section, label: label, key: key, help: help, kind: kindChoice, choices: cs}, p,
+		func(v string) string { return v }, func(s *Settings, v string) (string, bool) { return v, slices.Contains(cs(s), v) })
 }
 
 func boolItem(section, label, key, help string, p func(s *Settings) *bool) item {
-	return item{section: section, label: label, key: key, help: help, kind: kindBool,
-		get: func(s *Settings) string { return strconv.FormatBool(*p(s)) },
-		set: func(s *Settings, v string) bool {
+	return valueItem(item{section: section, label: label, key: key, help: help, kind: kindBool}, p,
+		strconv.FormatBool, func(_ *Settings, v string) (bool, bool) {
 			b, err := strconv.ParseBool(v)
-			if err != nil {
-				return false
-			}
-			*p(s) = b
-			return true
-		}}
+			return b, err == nil
+		})
 }
 
 func fixed(vs ...string) func(*Settings) []string { return func(*Settings) []string { return vs } }

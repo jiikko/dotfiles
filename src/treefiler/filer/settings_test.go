@@ -32,14 +32,20 @@ func TestSaveSettingKeepsOtherLines(t *testing.T) {
 
 func TestLoadSettingsReportsBadLines(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "treefiler.toml")
-	body := "row_spacing = 99\nnope = 1\ncolumns = \"fit\"\nground\n"
+	body := "row_spacing = 99\nnope = 1\ncolumns = \"fit\"\nground\nlegend = maybe\nlines = \"zigzag\"\n"
 	mustWrite(t, p, body)
 	s, bad := loadSettings(p)
-	if len(bad) != 3 || !strings.HasPrefix(bad[0], "line 1:") || !strings.HasPrefix(bad[1], "line 2:") || !strings.HasPrefix(bad[2], "line 4:") {
+	if len(bad) != 5 || !strings.HasPrefix(bad[0], "line 1:") || !strings.HasPrefix(bad[1], "line 2:") || !strings.HasPrefix(bad[2], "line 4:") || !strings.HasPrefix(bad[3], "line 5:") || !strings.HasPrefix(bad[4], "line 6:") {
 		t.Fatalf("悪い行の報告: %q", bad)
 	}
 	if s.RowSpacing != defaultSettings().RowSpacing { // 範囲外の値は既定のまま
 		t.Fatalf("row_spacing = %d", s.RowSpacing)
+	}
+	if s.Legend != defaultSettings().Legend { // 真偽として読めない値も既定のまま
+		t.Fatalf("legend = %v", s.Legend)
+	}
+	if s.Lines != defaultSettings().Lines { // 選択肢に無い値も既定のまま
+		t.Fatalf("lines = %q", s.Lines)
 	}
 }
 
