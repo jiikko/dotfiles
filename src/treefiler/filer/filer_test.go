@@ -651,6 +651,30 @@ func TestTileJKFromHiddenFileMovesToVisibleNeighbour(t *testing.T) {
 	}
 }
 
+// 外で消えて戻ったファイル (mv で外して戻す・別の branch から戻る) のタイルも、J / K で隣へ送れる。
+// 読み直しは戻ったファイルに新しいノードを作るので、開いたときのノードは木から外れたまま残る
+func TestTileJKAfterFileLeftAndCameBack(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	p := filepath.Join(m.root.abs, "a", "one.txt")
+	away := filepath.Join(t.TempDir(), "one.txt")
+	if err := os.Rename(p, away); err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh()
+	if err := os.Rename(away, p); err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh()
+	m.TakeNotices()
+	m.HandleKey("J")
+	if tl.n.raw == "one.txt" {
+		t.Fatalf("戻ったファイルのタイルを隣へ送らない (知らせ = %+v)", m.TakeNotices())
+	}
+}
+
 // タイルのファイルの親ごと外れた (外で mv a b) ときも、J / K は隣を推測せず理由を知らせる (外れた親の kids には残っている)。
 func TestTileJKRefusesWhenParentLeftTree(t *testing.T) {
 	m := newTest(t)

@@ -386,6 +386,8 @@ func (m *Model) reopenTile(t *tile, live bool) {
 		// 消したファイルの diff (全行の削除) も取れる。位置は先頭へ戻す (取り直した行が届くまで上限が分からず、元の位置で切れない)
 		if src, msg := openFor(t.n.path(), t.n.raw, t.n.name); msg == "" {
 			t.useSource(src) // d で本体へ戻したときに古い本文を出さない
+		} else {
+			t.dated = true // 開けない: d で本体へ戻すときに開き直して理由を知らせる (古い本文を黙って出さない。ライブ更新が見張らないときもある)
 		}
 		t.setMode(modeDiff)
 		return
@@ -567,13 +569,29 @@ func (m *Model) nodeFor(path string) *node {
 }
 
 // replaceTile は手前のタイルを開いたまま同じフォルダの隣のファイルへ差し替える。木のカーソルも一緒に動かす。
+// relinkTile はタイルのノードが今の木に繋がっているかを返し、外れていても同じパスのファイルが木に在れば付け替える。
+// 🚨 ノードの同一性だけで見ない: 読み直し (node.reload) は、前の周に居なかった名前に新しいノードを作るので、外で消えて戻った
+// ファイル (mv で外して戻す・別の branch から戻る) のタイルは、開いたときのノードのまま木から外れ続ける。見せる子 (m.kids) でも
+// 見ない: 隠したファイルは居ないが木には在る。親ごと外れた (mv a b) のは親の kids では分からないので、祖先まで辿る (inTree)
+func (m *Model) relinkTile(t *tile) bool {
+	if m.inTree(t.n) {
+		return true
+	}
+	n := m.lookup(t.n.path(), nil)
+	if n == nil || n.dir {
+		return false
+	}
+	t.n = n
+	return true
+}
+
 func (m *Model) replaceTile(t *tile, delta int) {
 	if t.n.parent == nil {
 		// ジャンプで開いた root の外のファイル。隣を辿る木が無い
 		m.fail("このファイルは木の外にあるので隣へ送れません")
 		return
 	}
-	if !m.inTree(t.n) { // 見せる子 (m.kids) では見ない: 隠したファイルは居ないが木には在る。親ごと外れた (mv a b) のは親の kids では分からない
+	if !m.relinkTile(t) {
 		// 開いた後に外で消した・名前を変えた (ライブ更新が kids から外した)。起点が無いまま nextFile に渡すと先頭から数え、
 		// K で「これが最初のファイルです」と嘘を言い、J は 2 番目へ飛ぶ
 		m.fail("このファイルは木から外れたので隣へ送れません")

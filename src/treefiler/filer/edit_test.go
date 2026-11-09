@@ -236,6 +236,26 @@ func TestTileRereadRetakesDiffOfRemovedFile(t *testing.T) {
 	}
 }
 
+// 差分のタイルで本文を開けなくなった (消した) 後に d で本体へ戻ると、古い本文を黙って出さずに理由を知らせる
+// (ライブ更新が見張らないフォルダ・Live を切っているときは、ExecDone だけがそれに気づく)
+func TestTileDiffBackToFileTellsWhenFileGone(t *testing.T) {
+	clearEditorEnv(t)
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	tl.setMode(modeDiff)
+	if err := os.Remove(tl.n.path()); err != nil {
+		t.Fatal(err)
+	}
+	m.ExecDone(nil)
+	m.TakeNotices()
+	m.HandleKey("d")
+	if ns := m.TakeNotices(); len(ns) != 1 || ns[0].OK {
+		t.Fatalf("消えたファイルの本体へ戻っても知らせが無い (知らせ = %+v)", ns)
+	}
+}
+
 // 大きさを変えずに書き換えたファイル (1 文字の打ち直し) も開き直す (大きさだけで変わっていないと見なさない)。
 func TestTileRereadsSameSizeEdit(t *testing.T) {
 	clearEditorEnv(t)
