@@ -286,6 +286,7 @@ func (d *Dispatcher) transcriptDoings(o live.Owned, procsOK bool) []card.Doing {
 	return out
 }
 
+// dupscan:allow intentional tuikit/markdown の linkText と同じ形だが、空の session 名の代わりの値で、リンクの表示文字とは意味が違う (module をまたいで寄せても依存が増えるだけ)
 func orName(s, alt string) string {
 	if strings.TrimSpace(s) == "" {
 		return alt

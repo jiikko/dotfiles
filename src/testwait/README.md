@@ -6,6 +6,7 @@ module 名をドット付きのパスにしているのは、dotfiles の外の 
 - `testwait.Until(t, what, cond, opts...)` — 上限 (既定 10 秒 = 定数 `testwait.Limit`) を超えたら落とす。option は `Within` (上限)・`Tick` (間隔)・`Step` (1 周ごとの処理)・`Diag` (呼び出し側の診断)
 - `testwait.Recv(t, what, ch, opts...)` / `RecvOK` — channel から 1 つ受け取る。上限までに届かなければ落とす (`RecvOK` は閉じていたかも返す)
 - `testwait.Poll(limit, cond, opts...)` — 成り立ったかを返すだけ (落とさない)
+- `testwait.ChildContext(t)` — テストが起こす子プロセスを、テストの deadline (`go test -timeout`) より手前で止める context (`exec.CommandContext` に渡す)。deadline ちょうどに任せると hang した子が孤児として残る
 - `testwait.Snapshot()` — このテストのプロセスの子孫と goroutine の一覧 (Poll で待って自分で落とすときに添える)。`testwait.ProcessTree(pid)` は任意の pid の子孫だけ
 
 時間切れのときは、待った時間・`Diag` の出力・子孫のプロセス (`ps` の STAT の T = 止まった、+ = 端末の前面) と goroutine の一覧を

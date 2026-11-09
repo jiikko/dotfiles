@@ -5,6 +5,7 @@
 package testwait
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -124,6 +125,27 @@ func wait(c config, cond func() bool) bool {
 		}
 		time.Sleep(c.tick) // sleep-ok: tick: 条件を見ながら刻む待ちの刻み (待ちの実体は cond)
 	}
+}
+
+// ChildContext は、テストが起こす子プロセスを、テストの deadline (`go test -timeout`) より手前で止める context を返す。
+// deadline が無ければ t.Context() をそのまま返す。
+// 🚨 deadline ちょうどに任せない: `go test -timeout` は親を panic で落とすだけで子を回収しないので、hang した子が孤児として残る。
+// 手前で止めれば子は exec.CommandContext の kill で回収され、親は失敗を報告できる (猶予は残り時間の 1/20、最低 1 秒)。
+func ChildContext(t testing.TB) context.Context {
+	t.Helper()
+	ctx := t.Context()
+	dt, ok := t.(interface{ Deadline() (time.Time, bool) })
+	if !ok {
+		return ctx
+	}
+	dl, ok := dt.Deadline()
+	if !ok {
+		return ctx
+	}
+	grace := max(time.Until(dl)/20, time.Second)
+	ctx, cancel := context.WithDeadline(ctx, dl.Add(-grace))
+	t.Cleanup(cancel)
+	return ctx
 }
 
 // Snapshot はこのテストのプロセスの子孫と goroutine の一覧を返す (時間切れの診断用)。

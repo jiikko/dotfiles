@@ -128,6 +128,7 @@ func isASCIIPunct(b byte) bool {
 }
 
 // linkText はリンクの表示テキストを決める (label が無い/dest と同じなら dest を出す)。
+// dupscan:allow intentional pro-con の orName と同じ形だが、markdown のリンクの表示の規則 (寄せると markdown の都合が pro-con へ漏れる)
 func linkText(label, dest string) string {
 	if strings.TrimSpace(label) == "" {
 		return dest

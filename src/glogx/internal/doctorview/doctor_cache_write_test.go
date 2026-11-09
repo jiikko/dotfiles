@@ -1,7 +1,6 @@
 package doctorview
 
 import (
-	"context"
 	"doctor/disk"
 	"os"
 	"os/exec"
@@ -10,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // doctor のキャッシュ書き込みで **write が失敗したとき** に temp が残らないこと。
@@ -52,7 +53,7 @@ func TestSaveDoctorCachesCleanTempOnWriteFailure(t *testing.T) {
 			// パッケージが FAIL する (実測 2026-09-04: origin/master で再現。タイミング依存なので
 			// 緑の run もある)。os.Args[0] の直接起動なら -test.testlogfile が渡らないので、
 			// 枠を落としても framework は壊れない
-			cmd := exec.CommandContext(childContext(t), os.Args[0], "-test.run", "^TestSaveDoctorCachesCleanTempOnWriteFailure$", "-test.v")
+			cmd := exec.CommandContext(testwait.ChildContext(t), os.Args[0], "-test.run", "^TestSaveDoctorCachesCleanTempOnWriteFailure$", "-test.v")
 			cmd.WaitDelay = time.Second // kill 後に孫が出力 pipe を握っていても Wait を返す
 			// 🚨 テスト名はリテラル。改名すると -test.run が何にも当たらず、子は PASS を
 			// 出さないので下の「走っていない」で落ちる (fail-closed)
@@ -68,22 +69,6 @@ func TestSaveDoctorCachesCleanTempOnWriteFailure(t *testing.T) {
 			}
 		})
 	}
-}
-
-// childContext は子プロセスをテストの deadline より手前で kill させる context を返す
-// (internal/testenv.CommandContext と同じ作法。github.com/jiikko/dotfiles/src/tuikit/termwidth のテストにも同じものがある)。
-// ⚠️ `go test -timeout` は親を panic で落とすだけで子を回収しないので、deadline ちょうどに
-// 任せると hang した子が孤児として残る。
-func childContext(t *testing.T) context.Context {
-	ctx := t.Context()
-	dl, ok := t.Deadline()
-	if !ok {
-		return ctx
-	}
-	grace := max(time.Until(dl)/20, time.Second) // 親が失敗を報告できる猶予を残す
-	ctx, cancel := context.WithDeadline(ctx, dl.Add(-grace))
-	t.Cleanup(cancel)
-	return ctx
 }
 
 // rlimitChildEnv は「この実行は枠を落とす子プロセス」の目印 (値はケース名)。

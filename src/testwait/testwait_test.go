@@ -115,3 +115,37 @@ func TestRecvOKReportsClosed(t *testing.T) {
 		t.Error("閉じたチャネルで ok=true")
 	}
 }
+
+// deadlineT は Deadline だけを差し替えた T (go test -timeout の値に依らずに deadline を決める)。
+type deadlineT struct {
+	*testing.T
+	dl time.Time
+	ok bool
+}
+
+func (d deadlineT) Deadline() (time.Time, bool) { return d.dl, d.ok }
+
+// 子を止める時刻は、テストの deadline から猶予 (残りの 1/20、最低 1 秒) を引いた時刻。deadline ちょうどにはしない。
+func TestChildContextStopsBeforeTestDeadline(t *testing.T) {
+	dl := time.Now().Add(40 * time.Second)
+	got, ok := ChildContext(deadlineT{T: t, dl: dl, ok: true}).Deadline()
+	if !ok {
+		t.Fatal("deadline のあるテストで、ChildContext に deadline が無い")
+	}
+	if lead := dl.Sub(got); lead < 1900*time.Millisecond || lead > 2100*time.Millisecond {
+		t.Fatalf("テストの deadline より %v 手前で止める。期待は 2 秒 (40 秒の 1/20)", lead)
+	}
+
+	short := time.Now().Add(5 * time.Second)
+	got, _ = ChildContext(deadlineT{T: t, dl: short, ok: true}).Deadline()
+	if lead := short.Sub(got); lead < 950*time.Millisecond || lead > 1050*time.Millisecond {
+		t.Fatalf("残りが短いときの猶予が %v。期待は最低の 1 秒", lead)
+	}
+}
+
+// deadline の無いテストでは、テストの context をそのまま返す (勝手な上限を付けない)。
+func TestChildContextWithoutDeadline(t *testing.T) {
+	if _, ok := ChildContext(deadlineT{T: t, ok: false}).Deadline(); ok {
+		t.Fatal("deadline の無いテストで ChildContext に deadline が付いた")
+	}
+}
