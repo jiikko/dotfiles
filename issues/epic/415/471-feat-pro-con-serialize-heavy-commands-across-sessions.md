@@ -79,3 +79,4 @@
 - C-011 (458) のテストの係の make test でも、`tests/zshrc/test_dotfiles_check_result_ownership.sh` の 1 件だけが落ちた (rc=2)。単独では 5/5 と 1/1 緑。負荷で揺れるテストの 2 本目
 
 - 2026-10-23: 869 は done (実装・hook・Makefile の入口・repo ごとの列まで済んだ)。計測は 889 へ切り出した
+- 2026-11-09: 889 で解消 (計測が済んだ。人の Esc もツールのプロセスグループへの TERM で、serial-run と子に直接届く)

@@ -1,12 +1,10 @@
 # 889 (test): serial-run の計測 — 2 session を並べたときの所要・重さ・中断のシグナル・待ちの負荷
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-09〜）
-
 起票日: 2026-10-23
 
 ## 概要
 
-[869](done/869-feat-serial-run-machine-wide-heavy-command-queue.md) の段階 5 (計測) を切り出したもの。serial-run の実装・hook・Makefile への組み込み・
+[869](869-feat-serial-run-machine-wide-heavy-command-queue.md) の段階 5 (計測) を切り出したもの。serial-run の実装・hook・Makefile への組み込み・
 列を repo ごとにする変更は 869 で済んでいる。効果と前提を、まだ測っていない。
 
 ## 測るもの (どれも未実測)
@@ -41,7 +39,14 @@
 - 中断のシグナル (私用の列 `probe889sig`。外側の bash・serial-run・子の bash で、受けたシグナルを記録):
   - 背景のタスクをツールで止める (TaskStop): 外側・子が同じ秒に TERM を受けた (serial-run も同じプロセスグループにいる)。子が抜け、serial-run は rc=1 を記録し、列は空いた。子の孫 (`sleep`) も残らなかった
   - 前景のコマンドが時間の上限に当たる: シグナルは届かず、背景へ移って走り続けた (列も持ったまま)。その後の停止は TaskStop と同じ形
-  - 未実測: 人が Esc で前景のコマンドを中断したとき
+  - 人が Esc で前景のコマンドを中断する (2026-11-09 測定): 外側・子が Esc と同じ秒に TERM を受けた (INT ではない)。
+    0.5 秒以内に全員が終わった。孫の `sleep` も残らず、列は空いた。session の画面には「Interrupted」が出た。
+    ツールは `zsh -c` を頭にしたプロセスグループで probe を起こし、probe・serial-run・子・孫が全員そのグループにいた。
+    TaskStop と同じく、グループ宛ての TERM と読める
+  - 🚨 serial-run の rc は TERM で終わるとは限らない。Esc の run では、子が TERM を trap して 0 で抜けた。
+    serial-run も rc=0 を返し、history.log に `rc=0` が残った (TaskStop の run は rc=1)。
+    README の「TERM / HUP は子孫ごと止めて、同じシグナルで終わる」と食い違う。
+    グループ宛ての TERM は子にも直接届く。serial-run が伝え直す前に子が終わると子の rc を返す、という競合と見ている (未確認。serial-run の側でシグナルの受け取りを記録していない)
 
 ### 測り方
 
@@ -50,11 +55,16 @@
 - 待ち手: `serial-run -l probe889 --max-wait 0 -- sleep 320` が走り出したのを `serial-run status -l probe889` の「走り出してから」で待ってから、
   `serial-run -l probe889 -- true` を起こし、その pid の `ps -o time=,rss=` を 10 秒後と 310 秒後に読んだ (serial-run の実体は exec されるので、起こした pid のまま)
 - シグナル: 4 つのシグナルを trap して記録する bash から `serial-run -l probe889sig -- bash -c '<同じ trap>; sleep 600 & wait'` を起こし、ツールで止めた
+- Esc (2026-11-09): 隔離した tmux サーバ (`tmux -L probe889esc`) で `claude --model haiku --allowedTools Bash` (Claude Code 2.1.319) を起こした。
+  始める前に、その名前の `ls` がサーバ無しを返すのを確かめた。
+  probe は上と同じ trap の形で、外側の bash から `serial-run -l probe889esc --max-wait 0 -- bash -c '<trap>; sleep 600 & wait'` を起こす。
+  これを前景の Bash ツールで走らせ、記録ファイルに孫の pid が出たのを待ってから `send-keys Escape` を送った。
+  人が押す Esc の代わりに tmux のキー入力を使ったので、入力の経路は人の手と違う (端末から届くバイトとしては同じはず。未確認)
 A を先に回したので、A の方がキャッシュは冷えている (ビルドのキャッシュは内容で引くので、新しい worktree でも大半は温まっていたはず。未確認)。
 
 ## 進捗
 
 - [x] 所要 (並べた場合 / 直列の場合) — 上の表
 - [x] 重さ — load は直列で平均 37.5 → 17.7。tmux の応答には差が出なかった
-- [ ] 中断のシグナル — ツールの停止と時間の上限は測った。人の Esc が残り
+- [x] 中断のシグナル — ツールの停止・時間の上限・人の Esc (2026-11-09)
 - [x] 待ちの負荷 — 5 分で CPU 0.02 秒・RSS 7.5 MB
