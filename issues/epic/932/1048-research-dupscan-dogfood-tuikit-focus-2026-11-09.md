@@ -4,7 +4,7 @@
 
 ## 概要
 
-dupscan-dogfood の skill で src/tuikit をもう一度掃除した (同じ日の [1047](1047-research-dupscan-dogfood-treefiler-tuikit-2026-11-09.md) は起点を tuikit に絞った sweep。今回は 1047 の P1 で入った `sweep -focus src/tuikit src` で module をまたぐ相手も見た)。
+dupscan-dogfood の skill で src/tuikit をもう一度掃除した (同じ日の [1047](done/1047-research-dupscan-dogfood-treefiler-tuikit-2026-11-09.md) は起点を tuikit に絞った sweep。今回は 1047 の P1 で入った `sweep -focus src/tuikit src` で module をまたぐ相手も見た)。
 摩擦 1 件・提案 1 件。dupscan は直していない (src/dupscan は別のセッションが 1047 の F2 を直している最中で、触るのは 1 セッションだけ)。
 既存の issue との重複照合はしていない (skill の 3 節)。所見の記録だけなので反証レビューは省いた (skill の 5 節)。
 
@@ -14,7 +14,7 @@ dupscan-dogfood の skill で src/tuikit をもう一度掃除した (同じ日�
 
 | 組 | 対応 |
 |---|---|
-| [L1] glogx の doctorview と tuikit の termwidth のテストの `childContext` (節 1・58 節) | `testwait.ChildContext` に寄せた。1047 が寄せなかった理由 (tuikit にテストだけの依存が増える) は、tuikit が 10-30 から testwait を取り込んでいて成り立たなかった (1047 の担当のセッションが本文を訂正する)。2 つのコメントが指していた `internal/testenv.CommandContext` は実在しなかった (subproc へ移った後の古い参照) |
+| [L1] glogx の doctorview と tuikit の termwidth のテストの `childContext` (節 1・58 節) | `testwait.ChildContext` に寄せた。1047 が寄せなかった理由 (tuikit にテストだけの依存が増える) は、tuikit が 10-30 から testwait を取り込んでいて成り立たなかった (1047 の担当のセッションが本文を訂正すると返事をくれた)。2 つのコメントが指していた `internal/testenv.CommandContext` は実在しなかった (subproc へ移った後の古い参照) |
 | [L1] pro-con の `orName` と tuikit/markdown の `linkText` (節 2・16 節) | 寄せない。空の session 名の代わりの値と、markdown のリンクの表示文字で意味が違い、寄せても module をまたぐ依存が増えるだけ。両方に `dupscan:allow intentional` の印を付けた |
 | [L2] dupscan/internal/report の `hidden` と tuikit/confirm の `IsYes` (節 2・13 節) | 誤検知 (`x == a \|\| x == b \|\| x == c` の形が同じだけで、文字列のリテラルが違う)。印は付けていない (src/dupscan は別のセッションが触っているため)。次に src/dupscan を触るときに `hidden` の側へ `dupscan:allow false-positive` を付ける |
 
