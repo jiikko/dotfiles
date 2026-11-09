@@ -559,6 +559,25 @@ func TestStaleExclusionLineKeepsSwiftOperators(t *testing.T) {
 	}
 }
 
+// 同じ理由で効いていない除外が並ぶとき、理由の全文は最初の 1 件だけに出し、2 件目からは番号で指す。
+func TestStaleExclusionWhyIsWrittenOnceForRepeatedReason(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/B.swift": helperB})
+	writeConfig(t, root,
+		map[string]any{"unit": "Sources/A.swift||gone1()@0", "kind": "intentional", "reason": "r1"},
+		map[string]any{"unit": "Sources/A.swift||gone2()@0", "kind": "intentional", "reason": "r2"},
+		map[string]any{"unit": "Sources/A.swift||gone3()@0", "kind": "intentional", "reason": "r3"})
+	_, out, _ := runReport(t, "-v", root)
+	if n := strings.Count(out, "効いていない除外: "); n != 3 {
+		t.Fatalf("前提: 効いていない除外が 3 件: %d (%q)", n, out)
+	}
+	if n := strings.Count(out, "理由: 指す単位が無い"); n != 1 {
+		t.Errorf("同じ理由の全文は 1 回だけ: %d 回 (%q)", n, out)
+	}
+	if n := strings.Count(out, "理由: 上の 1 件目の除外と同じ理由"); n != 2 {
+		t.Errorf("2 件目からは最初の 1 件を指す: %d 回 (%q)", n, out)
+	}
+}
+
 // 効いていない除外は、理由を 2 つに分けて出す: 単位は在るが本体が変わった (除外を外してよい) / 指す単位が無い (削除・改名)。
 // 「効いていない除外: 」の行は JSON のまま変えず、理由は次の行に出す。
 func TestStaleExclusionSaysWhyItStoppedWorking(t *testing.T) {

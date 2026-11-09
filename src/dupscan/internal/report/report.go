@@ -85,11 +85,18 @@ func (x Exclusions) note() string {
 }
 
 func (x Exclusions) write(w io.Writer) {
+	first := map[string]int{} // 理由の文 → それを最初に出した除外の番号 (1 から)
 	for i, r := range x.Stale {
 		// 「効いていない除外: 」の行は、接頭辞も行全体が JSON であることも変えない (grep や、行を JSON として読む手が頼る)。
 		// 理由は次の行に別に出す。
 		vline(w, verboseStale, "%s", ruleJSON(r))
 		if why := staleWhyText(x.staleWhy, i); why != "" {
+			// 同じ理由の全文は最初の 1 回だけ出す (変更と無関係な除外が多い repo では、数百字の同じ段落が件数だけ並んだ)
+			if n, ok := first[why]; ok {
+				why = fmt.Sprintf("上の %d 件目の除外と同じ理由", n)
+			} else {
+				first[why] = i + 1
+			}
 			if miss := r.GroupMiss(); miss != "" {
 				why += " (" + miss + ")"
 			}
