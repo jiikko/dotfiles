@@ -1,15 +1,13 @@
 # 1035 (research): src/treefiler の全観点の監査 (2026-11-05。直接実行)
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-09〜）
-
 起票日: 2026-11-05
 
 ## 概要
 
 `/all-audit-on-diy treefiler`。対象は src/treefiler (`git ls-files src/treefiler` で 103 ファイル・22,222 行、`bfa26dc34` 時点)。
-前回 ([1019](done/1019-research-treefiler-audit-2026-11-04.md)) の範囲の終わり `f47ecf97e` 以降の差分と、1019 が「読んでいない」と書いたファイルを重点にする。
+前回 ([1019](1019-research-treefiler-audit-2026-11-04.md)) の範囲の終わり `f47ecf97e` 以降の差分と、1019 が「読んでいない」と書いたファイルを重点にする。
 直したのは 4 点 (README のキー表の `p`・`e` / `s` / `!` から戻ってもタイルの本文が古いまま・タイル側のリンクの解決が古いまま・木から外れたファイルの `J` / `K`)、
-起票は 1 本 ([1037](done/1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md))。後ろの 3 点は、記録への反証レビューが見落としとして出した。
+起票は 1 本 ([1037](1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md))。後ろの 3 点は、記録への反証レビューが見落としとして出した。
 
 ## 走査した母集合
 
@@ -37,7 +35,7 @@
 | resource-leaks | 0 | `readEntriesBulk` の fd は defer で閉じ、受け皿は `sync.Pool` に戻す。tile の diff は `stopDiff` が取り消す (差し替え・モードの切り替え) |
 | error-handling | 0 | `replaceTile` は開けないファイル (バイナリ以外の読めないものも) を黙って飛ばすが、端まで行けば「これが最後のファイルです」が出る。`restoreTile` が開けないファイルを知らせずに飛ばすのは理由コメントつき (起動の直後に打っていない操作の失敗を出さない) |
 | security | 0 | shebang の 1 行は言語を選ぶだけで実行しない。リンクの解決は `os.Stat` の結果を鍵 (root・base・字面) でキャッシュし、読み直しとファイル操作で `clear` する |
-| performance | 0 → 起票 1 (監査の後の計測) | 監査の中では読むだけで、実測はしなかった: `helpColumns` は描くたびに節の割り方を総当たりするが、8 節で ? を開いている間だけ (見積もり)。監査の後に `make -C src/treefiler probe` で測った (2026-11-06、root=`src/`、プロファイルなし): diff のタイルの 1 フレームが 21.5ms (約 400 行の diff。描画の中で diff 全体を色付けする) → [1039](done/1039-perf-treefiler-diff-tile-highlights-whole-diff-in-one-frame.md) (2026-11-08 に解消: 色付けを取得の goroutine へ移し、そのフレームは 0.4ms)。ほかの段の 1 打は p95 で 4ms 以内 (1 回きりの `r` 11ms・3000 件のライブ更新のフレーム 24ms・`>` 10ms)。20 サイクルで goroutine 1・fd 6・子 0 のまま一定、ヒープは +33 オブジェクト / +18.5KB per cycle (CLAUDE.md の既知の増え方の範囲で、リークとは判定しない。20 サイクルでは頭打ちと言い切れない) |
+| performance | 0 → 起票 1 (監査の後の計測) | 監査の中では読むだけで、実測はしなかった: `helpColumns` は描くたびに節の割り方を総当たりするが、8 節で ? を開いている間だけ (見積もり)。監査の後に `make -C src/treefiler probe` で測った (2026-11-06、root=`src/`、プロファイルなし): diff のタイルの 1 フレームが 21.5ms (約 400 行の diff。描画の中で diff 全体を色付けする) → [1039](1039-perf-treefiler-diff-tile-highlights-whole-diff-in-one-frame.md) (2026-11-08 に解消: 色付けを取得の goroutine へ移し、そのフレームは 0.4ms)。ほかの段の 1 打は p95 で 4ms 以内 (1 回きりの `r` 11ms・3000 件のライブ更新のフレーム 24ms・`>` 10ms)。20 サイクルで goroutine 1・fd 6・子 0 のまま一定、ヒープは +33 オブジェクト / +18.5KB per cycle (CLAUDE.md の既知の増え方の範囲で、リークとは判定しない。20 サイクルでは頭打ちと言い切れない) |
 | false-green | 0 | 新しいテストは件数の下限 (30) と「README の節が無い」「1 つも拾えない」を落ちる側にしている。tfperf / tfprobe は合否を返さない計測 |
 | dead-code | 0 | `deadcode` / `deadcode -test` で 0 |
 | ci | 0 | `src_treefiler.yml` の paths は go.mod の replace 7 本を全部覆う。新しいテストが読む `src/treefiler/README.md` も `src/treefiler/**` に入る |
@@ -48,7 +46,7 @@
 | lint-from-done | 0 | 今回の README のずれは lint ではなくテストで止めた (上の ux) |
 | general | 0 | 上に含めた |
 
-全数: 直した 4 (ux 1・broken-code 2・encapsulation 1)、起票 1 ([1037](done/1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md)。変更前からの 2 件)、記録のみ 2 (ux の一覧に無いキー・`parseBulkRecord` の確かめの範囲)。
+全数: 直した 4 (ux 1・broken-code 2・encapsulation 1)、起票 1 ([1037](1037-bug-treefiler-tile-stale-on-live-update-and-jump-rebuild.md)。変更前からの 2 件)、記録のみ 2 (ux の一覧に無いキー・`parseBulkRecord` の確かめの範囲)。
 
 ## タイルの「状態 × 出来事」の表 (修正の決め方)
 
