@@ -51,6 +51,7 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	fs, c := newFlags("dupscan sweep", stderr)
 	threshold := fs.Float64("similar-threshold", 0.6, "部分木の類似の weighted Dice の下限 (0 より大きく 1 以下)")
 	maxUnits := fs.Int("similar-max-units", sweepMaxSimilarUnit, "部分木の類似で総当たりする単位の上限 (超えたら節ごと飛ばして、そう書く)")
+	focus := fs.String("focus", "", "起点は広いまま走査し、この dir の単位を 1 つ以上含む組・対・束だけを出す (起点の中の dir。module をまたぐ相手も見ながら、1 つの module を調べるとき)")
 	dirs, rc, ok := parseFlags(fs, args)
 	if !ok {
 		return rc
@@ -69,6 +70,12 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	sc, err := repo.Resolve(dirs)
 	if err != nil {
 		return fail(err)
+	}
+	var in func(file string) bool
+	if *focus != "" {
+		if in, err = sweepFocus(sc, *focus); err != nil {
+			return fail(err)
+		}
 	}
 	src := repo.Worktree{Scope: sc, Exts: langs.Extensions()}
 	cfg, err := loadConfig(src, *c.noExclude)
@@ -103,6 +110,20 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	clusters := sweepClusters(entries, opt)
 	inlined := sweepInlined(entries, ex.Allowed)
 	typeCopies := sweepTypeCopies(base, deep)
+	// 節ごとに、印が無ければ出た組の数との差で数える。節 2 は、印が無くても節 1 の組に覆われない組だけで比べる:
+	// 節 1 から消した組は節 2 の走査にも同じ組として入る (deep 全体の差だと 2 回数える)。また、節 1 で除外した組の部分集合が
+	// 節 2 に残ることがある (パスの除外は levels を L3 などに絞ると L1m に効かない)。それは除外が消した組ではないので引かない (引くと負になる)
+	silenced := len(baseAll) - len(base) + len(newGroups(deepAll, baseAll)) - len(newGroups(deep, baseAll))
+	// 🚨 -focus の絞り込みは silenced を数えた後: 数えた後なら、絞って外した組を「印で静かにした」に数えない
+	if in != nil {
+		base, deep = focusGroups(base, in), focusGroups(deep, in)
+		similar = keepIf(similar, func(x sweepSimilar) bool { return in(x.a.Unit.File) || in(x.b.Unit.File) })
+		clusters = keepIf(clusters, func(x sweepCluster) bool { return in(x.dir + "/") })
+		inlined = keepIf(inlined, func(x sweepInline) bool { return in(x.site.Unit.File) || in(x.helper.Unit.File) })
+		typeCopies = keepIf(typeCopies, func(x sweepTypeCopy) bool {
+			return slices.ContainsFunc(x.types, func(t sweepTypeMembers) bool { return in(t.file) })
+		})
+	}
 
 	w := &lineWriter{w: stdout}
 	attention, ignored := got.splitErrFiles()
@@ -112,11 +133,10 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	}
 	w.printf("dupscan sweep: 単位 %d・ファイル %d・読めないファイル %d%s。節ごとに順位は別 (上から先に見る価値が高い順)\n", len(entries), got.files, len(attention), testdata)
 	w.printf("意図して分けている組・誤検知は、組の全員の単位の直前に `// dupscan:allow <false-positive|intentional> <理由>` を書くと静かになる (1 人だけに書いて組ごと静かにするなら、メンバーの 1 つに `// dupscan:allow-group <人数> <種別> <理由>`)\n")
-	// 節ごとに、印が無ければ出た組の数との差で数える。節 2 は、印が無くても節 1 の組に覆われない組だけで比べる:
-	// 節 1 から消した組は節 2 の走査にも同じ組として入る (deep 全体の差だと 2 回数える)。また、節 1 で除外した組の部分集合が
-	// 節 2 に残ることがある (パスの除外は levels を L3 などに絞ると L1m に効かない)。それは除外が消した組ではないので引かない (引くと負になる)
-	silenced := len(baseAll) - len(base) + len(newGroups(deepAll, baseAll)) - len(newGroups(deep, baseAll))
 	sweepExclusionText(w, silenced, ex.Stale(), sc.Whole())
+	if in != nil {
+		w.printf("注目: %s の単位を 1 つ以上含むものだけを出す (走査と allow-group の人数は起点の全体で数える)\n", *focus)
+	}
 	w.section("1. 同じ形の組 (既定の下限 %d 節・段 %s)", opt.MinNodes, *c.levels)
 	sweepGroups(w, base, *c.limit)
 	w.section("2. 下限を %d 節に下げ、メンバー名だけ違う写し (L1m) も見て新しく出た組 (小さい単位が多く、雑音も混ざる。allow 印で静かにできる)", sweepDeepMinNodes)
@@ -145,6 +165,38 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// sweepFocus は -focus の dir を、起点と同じ repo の、起点の中の dir として解く (prefix は git に正規化させる。Scope.Contains で照合する)。
+func sweepFocus(sc repo.Scope, dir string) (func(file string) bool, error) {
+	fsc, err := repo.Resolve([]string{dir})
+	if err != nil {
+		return nil, fmt.Errorf("-focus: %w", err)
+	}
+	if fsc.Root != sc.Root {
+		return nil, fmt.Errorf("-focus %s は起点と別の repo にある", dir)
+	}
+	if !sc.Contains(fsc.Prefixes[0]) {
+		return nil, fmt.Errorf("-focus %s は起点の外 (起点の中の dir を渡す。起点を広げるなら引数の dir を変える)", dir)
+	}
+	return fsc.Contains, nil
+}
+
+// focusGroups はメンバーに in の単位を 1 つ以上含む組だけを残す。
+func focusGroups(gs []group.Group, in func(file string) bool) []group.Group {
+	return keepIf(gs, func(g group.Group) bool {
+		return slices.ContainsFunc(g.Members, func(m *group.Entry) bool { return in(m.Unit.File) })
+	})
+}
+
+func keepIf[T any](xs []T, ok func(T) bool) []T {
+	var out []T
+	for _, x := range xs {
+		if ok(x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
 // sweepExclusionText は、節 1・2 から除外 (印・設定ファイル) で消した組の数と、人数が合わずに効いていない allow-group を出す。
 // 印を足した後の「なし」だけでは、印が効いて消えたのか、組が元から無かったのかを出力から区別できない。
 // 人数の食い違いは gate では -v の一覧にしか出ず、sweep は組を黙って出し直すだけだった。
@@ -164,7 +216,7 @@ func sweepExclusionText(w *lineWriter, silenced int, stale []exclude.Rule, whole
 		}
 	}
 	if outside > 0 {
-		w.printf("人数の合わない allow-group %d 個は、起点の中の L1 の同じ本体の単位が人数より少ないので出していない (起点の外のメンバーと区別できない。repo の root から打つか、gate -v で見る)\n", outside)
+		w.printf("人数の合わない allow-group %d 個は効かせず、その組を下の節に出している (起点の中の L1 の同じ本体の単位が人数より少なく、起点の外のメンバーと区別できない。🚨 の行も出さない。repo の root から打てば効く。一覧は gate -v)\n", outside)
 	}
 }
 

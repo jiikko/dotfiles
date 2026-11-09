@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -489,14 +490,14 @@ func TestSweepNarrowScopeReportsOnlyExcessAllowGroups(t *testing.T) {
 	marked := "package a\n\n// dupscan:allow-group 2 intentional 注記\n" + pickFunc("pickA")
 	root := repoWith(t, map[string]string{"a/a.go": marked, "b/b.go": "package b\n\n" + pickFunc("pickB")})
 	_, out, _ := sweep(t, root)
-	if strings.Contains(out, "効いていない allow-group") || strings.Contains(out, "出していない") {
+	if strings.Contains(out, "効いていない allow-group") || strings.Contains(out, "個は効かせず") {
 		t.Fatalf("前提: repo 全体なら 2 人の組で印は効く: %q", out)
 	}
 	_, out, _ = sweep(t, root+"/a")
 	if strings.Contains(out, "🚨 効いていない allow-group") {
 		t.Errorf("起点の外のメンバーを、写しが減ったと読んでいる: %q", out)
 	}
-	if !strings.Contains(out, "人数の合わない allow-group 1 個は、起点の中の L1 の同じ本体の単位が人数より少ないので出していない") {
+	if !strings.Contains(out, "人数の合わない allow-group 1 個は効かせず、その組を下の節に出している (起点の中の L1 の同じ本体の単位が人数より少なく") {
 		t.Errorf("出さなかった印の数を言っていない: %q", out)
 	}
 	three := marked + "\n" + pickFunc("pickC") + "\n" + pickFunc("pickD")
@@ -540,7 +541,7 @@ func TestSweepNarrowScopeIgnoresExcessOnCoarseLevels(t *testing.T) {
 		t.Fatalf("前提: repo 全体なら L1 で 2 人に合って印は効く: %q", out)
 	}
 	_, out, _ = sweep(t, root+"/a")
-	if !strings.Contains(out, "同じ本体の単位 L1 1") && !strings.Contains(out, "出していない") {
+	if !strings.Contains(out, "同じ本体の単位 L1 1") && !strings.Contains(out, "個は効かせず") {
 		t.Fatalf("前提: 起点の中では L1 が 1 で人数に合わない: %q", out)
 	}
 	if strings.Contains(out, "🚨 効いていない allow-group") {
@@ -602,11 +603,11 @@ func TestSweepNarrowScopeAllowGroupBindsOnlyL1WhenLanguageIsOutside(t *testing.T
 	if !strings.Contains(sweepSection(t, out, 1)+sweepSection(t, out, 2), "pickE") {
 		t.Errorf("起点の外の L1 の相手を見ずに、粗い段の別の組を黙って消している: %q", out)
 	}
-	if !strings.Contains(out, "人数の合わない allow-group 1 個は、起点の中の L1 の同じ本体の単位が人数より少ないので出していない") {
+	if !strings.Contains(out, "人数の合わない allow-group 1 個は効かせず、その組を下の節に出している (起点の中の L1 の同じ本体の単位が人数より少なく") {
 		t.Errorf("効かせなかった印の数を言っていない: %q", out)
 	}
 	_, out, _ = sweep(t, root)
-	if strings.Contains(out, "効いていない allow-group") || strings.Contains(out, "出していない") {
+	if strings.Contains(out, "効いていない allow-group") || strings.Contains(out, "個は効かせず") {
 		t.Errorf("repo 全体なら L1 で 2 人に合って印は効く: %q", out)
 	}
 }
@@ -631,7 +632,7 @@ func TestSweepNarrowScopeAllowGroupBindsCoarseWhenLanguageIsInside(t *testing.T)
 	if inGroups(out) {
 		t.Errorf("Go が全部起点の中にあるのに、粗い段の組に印を効かせていない: %q", out)
 	}
-	if strings.Contains(out, "出していない") || strings.Contains(out, "効いていない allow-group") {
+	if strings.Contains(out, "個は効かせず") || strings.Contains(out, "効いていない allow-group") {
 		t.Errorf("効いている印を人数の合わない印と数えている: %q", out)
 	}
 }
@@ -725,5 +726,89 @@ func TestSweepFoldThresholdIgnoresMinClosureNodes(t *testing.T) {
 		if !strings.Contains(s, "a/table.go {closure} in table: 1 組 2 件") || !strings.Contains(s, "d/d.go:8 {closure} in reg") {
 			t.Errorf("-min-closure-nodes %s: 表は畳み、大きい写しは組ごとに出す: %q", v, s)
 		}
+	}
+}
+
+// -focus は走査の起点を広いままにして、注目する dir の単位を含む組・対・束だけを出す (module をまたぐ相手も見ながら 1 つの module を調べる)。
+func TestSweepFocusKeepsOnlyGroupsTouchingTheDir(t *testing.T) {
+	cross := strings.Replace(goNearPair[:strings.Index(goNearPair, "func sumLogged")], "package a", "package %s", 1)
+	inner := `package b
+
+func prodA(xs []int, k int) int {
+	p := 1
+	for _, x := range xs {
+		if x != 0 && p < k {
+			p *= x
+		}
+	}
+	if p > k {
+		p = k
+	}
+	return p
+}
+
+func prodB(xs []int, k int) int {
+	p := 1
+	for _, x := range xs {
+		if x != 0 && p < k {
+			p *= x
+		}
+	}
+	if p > k {
+		p = k
+	}
+	return p
+}
+`
+	root := repoWith(t, map[string]string{
+		"a/x.go": fmt.Sprintf(cross, "a"),
+		"b/y.go": strings.Replace(fmt.Sprintf(cross, "b"), "sumPositive", "sumPositiveToo", 1),
+		"b/z.go": inner,
+		"b/c.go": strings.Replace(clusterFile("is", 4), "package a", "package b", 1),
+		"b/n.go": strings.ReplaceAll(strings.Replace(goNearPair, "package a", "package b", 1), "sum", "acc"),
+	})
+	rc, out, errs := sweep(t, root)
+	if rc != 0 {
+		t.Fatalf("rc=%d %q", rc, errs)
+	}
+	if s := sweepSection(t, out, 1); !strings.Contains(s, "sumPositiveToo") || !strings.Contains(s, "prodA") {
+		t.Fatalf("前提: 絞らなければ a と b をまたぐ組と b の中の組の両方が出る: %q", s)
+	}
+	if s := sweepSection(t, out, 4); !strings.Contains(s, "isThing") {
+		t.Fatalf("前提: 絞らなければ b の名前の束が出る: %q", s)
+	}
+	pairs := func(out string) []string {
+		var ls []string
+		for _, l := range strings.Split(sweepSection(t, out, 3), "\n") {
+			if strings.HasPrefix(l, "0.") || strings.HasPrefix(l, "1.") {
+				ls = append(ls, l)
+			}
+		}
+		return ls
+	}
+	if !slices.ContainsFunc(pairs(out), func(l string) bool { return !strings.Contains(l, "a/x.go") }) {
+		t.Fatalf("前提: 絞らなければ b の中だけの似ている対が出る: %q", pairs(out))
+	}
+	rc, out, errs = sweep(t, "-focus", root+"/a", root)
+	if rc != 0 {
+		t.Fatalf("rc=%d %q", rc, errs)
+	}
+	if !strings.Contains(out, "印・除外で静かにした組 (節 1・2): 0\n") {
+		t.Errorf("絞って外した組を、印で静かにした組に数えない: %q", out)
+	}
+	if !strings.Contains(out, "注目: "+root+"/a の単位") {
+		t.Errorf("絞ったことを冒頭に書く: %q", out)
+	}
+	if s := sweepSection(t, out, 1); !strings.Contains(s, "a/x.go") || !strings.Contains(s, "sumPositiveToo") || strings.Contains(s, "prodA") {
+		t.Errorf("a を含む組 (相手の b も) だけを出す: %q", s)
+	}
+	if s := sweepSection(t, out, 4); strings.Contains(s, "isThing") {
+		t.Errorf("b の名前の束は出さない: %q", s)
+	}
+	if ps := pairs(out); len(ps) == 0 || slices.ContainsFunc(ps, func(l string) bool { return !strings.Contains(l, "a/x.go") }) {
+		t.Errorf("似ている対は a を含むものだけを出す (a を含む対は残る): %q", ps)
+	}
+	if rc, _, errs := sweep(t, "-focus", root+"/b", root+"/a"); rc == 0 || !strings.Contains(errs, "起点の外") {
+		t.Errorf("起点の外の -focus は止める: rc=%d %q", rc, errs)
 	}
 }
