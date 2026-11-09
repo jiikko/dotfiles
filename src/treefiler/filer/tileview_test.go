@@ -502,6 +502,41 @@ func TestDiffStopsOnCloseAndRefetchesOnRefresh(t *testing.T) {
 	}
 }
 
+// 閉じかけのタイル (q を押した直後) の取得も閉じるときに止め、開き直しても取り直さない (次の step で外れるタイルに git を起こさない)。
+func TestDiffOfClosingTileStopsOnCloseWithoutRefetch(t *testing.T) {
+	started := make(chan struct{}, 4)
+	canceled := make(chan struct{}, 4)
+	var calls atomic.Int32
+	orig, origHead := gitDiffCommand, gitHeadExists
+	gitDiffCommand = func(ctx context.Context, _, _ string, _ bool) ([]byte, error) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-ctx.Done()
+		canceled <- struct{}{}
+		return nil, ctx.Err()
+	}
+	gitHeadExists = func(context.Context, string) (bool, error) { return true, nil }
+	t.Cleanup(func() { gitDiffCommand, gitHeadExists = orig, origHead })
+	m := newTest(t)
+	markModified(t, m, "c.txt")
+	tl := openTileAt(t, m, "c.txt")
+	m.HandleKey("d")
+	<-started
+	m.HandleKey("q")
+	if !tl.closing {
+		t.Fatal("q でタイルが閉じかけにならない (前提)")
+	}
+	m.Close()
+	// hang guard (止めなかったときだけ落とす)
+	testwait.Recv(t, "閉じかけのタイルの取得を、閉じても止めない", canceled, testwait.Within(10*time.Second))
+	waitDiff(t, m)
+	m.Refresh()
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("閉じかけのタイルの diff を開き直しで取り直した (git の呼び出し %d 回)", n)
+	}
+	waitDiff(t, m)
+}
+
 // 取り終えた diff は、閉じて開き直しても取り直さず、読んでいた位置も保つ (止めていない diff を捨てない)。
 func TestDiffKeptAcrossCloseWhenDone(t *testing.T) {
 	calls := fakeDiff(t, false, strings.Repeat("+line\n", 200))

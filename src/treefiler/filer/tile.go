@@ -726,17 +726,17 @@ func (m *Model) diffLoading(t *tile) bool {
 
 // holdDiff は取得中の diff を止め、開き直したときに取り直す印を付ける (Close)。🚨 止めるだけにしない: glogx は閉じた Model を
 // 開き直して使い回す (filerview の Hide と Show)。止めた取得は「diff を取れません: context canceled」で終わるので、取り直さないと開き直した
-// タイルにそれが残る。取り終えた diff は止めない (そのまま見せられる)。閉じかけのタイル (closing) は取り直さない (次の step で外れる)。
+// タイルにそれが残る。取り終えた diff は止めない (そのまま見せられる)。閉じかけのタイル (closing) は止めるが取り直さない (次の step で外れる)。
 // 確かめた直後に取得が終わる競合は防がない: 起きても、取れた diff を Refresh で 1 回取り直すだけ
 func (t *tile) holdDiff() {
-	if t.mode != modeDiff || t.diff == nil || t.closing {
+	if t.mode != modeDiff || t.diff == nil {
 		return
 	}
 	if _, _, done := t.diff.result(); done {
 		return
 	}
 	t.stopDiff()
-	t.diffHeld = true
+	t.diffHeld = !t.closing
 }
 
 // stopDiff は取得中の diff の git を止める (結果は使わない)。
