@@ -58,27 +58,37 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/clean-tmp.XXXXXX") || exit 2
 trap 'rm -rf "$work"' EXIT
 
-# tmp の中の全部の alternates の指す先 (実体のパス)。disposable_gitdir が「借りられている repo」を使い捨てにしないために使う
-alts='' alts_ok=1
-# 🚨 -type f で絞らない: git は symlink の alternates も読む
-if af=$(find "$tmp" -path '*/objects/info/alternates' \( -type f -o -type l \) -print 2>/dev/null); then
+# tmp の中の全部の repo が alternates で借りている objects (実体のパス)。disposable_gitdir が「借りられている repo」を使い捨てにしないために使う。
+# 🚨 alternates のファイルを探して読まない: 名前の大文字小文字 (APFS)・info / objects の symlink・引用符の行を字面で追うと抜ける
+# (1・2 周目の敵対的レビューで 4 形を再現)。tmp の中の git dir を HEAD の形で列挙し、借りている先は git 自身に答えさせる
+# (count-objects -v の alternate: の行。git が解いた後のパス)
+alts='' alts_ok=1 alts_why=''
+if hs=$(find "$tmp" \( -type f -o -type l \) -iname HEAD -print 2>/dev/null); then
 	IFS=$'\n'
 	set -f
-	for f in $af; do
-		# 🚨 while の後ろに || を付けて読めないことを見ない: while の rc は本体で最後に打ったコマンドの rc で、指す先の無い行の cd の失敗を拾う
-		[ -r "$f" ] || { alts_ok=0; continue; }
-		while IFS= read -r l || [ -n "$l" ]; do
-			# 引用符で囲んだ行は git が C 形式で unquote して読む。ここでは解かずに、借りられている先を知らない側 (全部を残す) に倒す
-			case $l in '' | '#'*) continue ;; '"'*) alts_ok=0; continue ;; /*) t=$l ;; *) t="${f%/info/alternates}/$l" ;; esac
-			# 指す先が無い alternates は、どの repo も借りていない (借りた側が既に壊れている)
-			r=$(cd "$t" 2>/dev/null && /bin/pwd -P) && alts="$alts"$'\n'"${r%/objects}"
-		done < "$f"
+	for h in $hs; do
+		g=${h%/*}
+		[ -d "$g/objects" ] && [ -d "$g/refs" ] || continue
+		if ! out=$(GIT_OPTIONAL_LOCKS=0 git --git-dir="$g" -c core.fsmonitor=false count-objects -v 2>/dev/null); then
+			alts_ok=0 alts_why="借りている先を git が答えない repo がある: ${g#"$root"/}" # 壊れた・読めない config
+			continue
+		fi
+		for l in $out; do
+			case $l in
+			'alternate: "'*) alts_ok=0 alts_why="借りている先を git が引用符で書いた repo がある: ${g#"$root"/}" ;; # 解かずに、借りられている先を知らない側に倒す
+			'alternate: '*)
+				# 指す先が無いものは、どの repo も借りていない (借りた側が既に壊れている)
+				r=$(cd "${l#alternate: }" 2>/dev/null && /bin/pwd -P) && alts="$alts"$'\n'"$r"
+				;;
+			esac
+		done
 	done
 	set +f
 	unset IFS
 else
-	alts_ok=0
+	alts_ok=0 alts_why="tmp の中の git の置き場を列挙できない"
 fi
+[ "$alts_ok" = 1 ] || echo "  使い捨ての git repo も残す (${alts_why}。どの repo が借りられているかを決められない)"
 
 # is_skill_dir は $1 が skill-tmpdir の作った skill の dir か (実体のフォルダで、印が実体のファイル)
 # 直下に git の印があるものは skill の dir にしない (find が失敗しても skill の dir にしない = 丸ごと判定に倒す)
@@ -174,19 +184,20 @@ disposable_gitdir() {
 	p=${g%/*}
 	n=$(find "$p" -maxdepth 1 -mindepth 1 ! -name .git -print -quit 2>/dev/null) || return 1
 	[ -n "$n" ] || return 1
-	[ -f "$g/config" ] && [ ! -L "$g/config" ] || return 1
+	[ -f "$g/config" ] && [ ! -L "$g/config" ] && [ -r "$g/config" ] || return 1
 	[ ! -e "$g/commondir" ] && [ ! -L "$g/commondir" ] || return 1
 	# 🚨 config を grep で読まない: 節の見出しと同じ行の key・先頭の BOM など、git が読む書き方を字面では追い切れない。git 自身に読ませる
 	# (--file は include を辿らず、そのファイルだけを読む。読むだけで何も実行しない)
-	git config --file "$g/config" --get-regexp '^(remote|include|includeif)\.|^core\.worktree$|^extensions\.worktreeconfig$' >/dev/null 2>&1
+	# 🚨 読めない config でも git config は警告だけ出して rc=1 (当たらない) を返す。stderr が出たら読めなかったとみなす
+	n=$(git config --file "$g/config" --get-regexp '^(remote|include|includeif)\.|^core\.worktree$|^extensions\.worktreeconfig$|^branch\..*\.remote$' 2>&1 >/dev/null)
 	rc=$?
-	[ "$rc" -eq 1 ] || return 1 # 0 = 当たった、それ以外 = 読めない
+	[ "$rc" -eq 1 ] && [ -z "$n" ] || return 1 # 0 = 当たった、それ以外 = 読めない
 	n=$(git config --file "$g/config" --type=bool --get core.bare 2>/dev/null)
 	rc=$?
 	[ "$rc" -eq 1 ] || { [ "$rc" -eq 0 ] && [ "$n" = false ]; } || return 1 # 名前が .git の bare (外から push される置き場)
 	n=$(find "$g" -maxdepth 3 -iname config.worktree -print -quit 2>/dev/null) || return 1
 	[ -z "$n" ] || return 1
-	borrowed "$g" && return 1
+	borrowed "$c" && return 1
 	# 🚨 fsmonitor は config に書いたコマンドを ls-files が起こす。fixture の config の中身を実行しないように切る
 	n=$(GIT_OPTIONAL_LOCKS=0 git --git-dir="$g" --work-tree="$p" -c core.fsmonitor=false ls-files -d 2>/dev/null) || return 1
 	[ -z "$n" ] || return 1
@@ -204,14 +215,15 @@ disposable_gitdir() {
 	return 0
 }
 
-# borrowed は tmp の中のどれかの alternates が $1 (git dir) の中を指しているか (一覧を取れなかったら借りられているとみなす)
+# borrowed は tmp の中のどれかの repo が、エントリ $1 の中の objects を借りているか (一覧を取れなかったら借りられているとみなす)。
+# 🚨 照合は git dir ではなくエントリで行う: 貸す側の objects を symlink で同じエントリの別の場所へ置くと、git dir のパスと実体が食い違う
 borrowed() {
 	local a hit=1 noglob=0 IFS=$'\n'
 	[ "$alts_ok" = 1 ] || return 0
 	case $- in *f*) noglob=1 ;; esac # 呼び出し元 (find_git) の set -f を外さない
 	set -f
 	for a in $alts; do
-		case $a in "$1" | "$1"/*) hit=0; break ;; esac
+		inside "$1" "$a" && { hit=0; break; }
 	done
 	[ "$noglob" = 1 ] || set +f
 	return "$hit"

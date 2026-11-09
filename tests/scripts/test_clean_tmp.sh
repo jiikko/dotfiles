@@ -355,22 +355,30 @@ fx "$T/k16b/r" && printf '[core]\n\tsparseCheckout = true\n' > "$T/k16b/r/.git/C
 fx "$T/k17/r" && "$REAL_GIT" clone -q -s "$T/k17/r" "$T/y17/c" && mv "$T/y17/c/.git/objects/info/alternates" "$T/y17/alt" && ln -s ../../../../alt "$T/y17/c/.git/objects/info/alternates"
 "$REAL_GIT" -C "$T/y17/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の alternates を git が読まない (前提が崩れた)"
 mkdir -p "$T/k19/p" && "$REAL_GIT" init -q --bare "$T/k19/p/.git" && echo r > "$T/k19/p/README"
+# 2 周目で消せた形: 大文字の Alternates・info の symlink・貸す側の objects の symlink・読めない config・branch.*.remote だけの upstream
+fx "$T/k20/r" && "$REAL_GIT" clone -q -s "$T/k20/r" "$T/y20/c" && mv "$T/y20/c/.git/objects/info/alternates" "$T/y20/c/.git/objects/info/Alternates"
+fx "$T/k21/r" && "$REAL_GIT" clone -q -s "$T/k21/r" "$T/y21/c" && mkdir -p "$T/z21" && mv "$T/y21/c/.git/objects/info" "$T/z21/info" && ln -s ../../../../z21/info "$T/y21/c/.git/objects/info"
+fx "$T/k22/r" && mkdir -p "$T/k22/store" && mv "$T/k22/r/.git/objects" "$T/k22/store/objects" && ln -s ../../store/objects "$T/k22/r/.git/objects" && "$REAL_GIT" clone -q -s "$T/k22/r" "$T/y22/c"
+fx "$T/k24/r" && "$REAL_GIT" -C "$T/k24/r" config branch.main.remote "$REPO"
+for y in y20 y21 y22; do "$REAL_GIT" -C "$T/$y/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: $y の借り方を git が読まない (前提が崩れた)"; done
 find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
 fx "$T/new1/r" && touch -t $OLD "$T/new1" # 中身は今日
+touch "$T/z21/fresh" # info を逃がした先は git の印を持たないので、古ければ今までの規則で消える (借りた側が壊れる。この形は確かめない)
 [ -d "$T/k9/super/.git/modules/s" ] || fail "14: submodule の置き場を作れない"
 run; rc=$?
 [ $rc -eq 0 ] || fail "14: rc=$rc ($(cat "$WORK/out"))"
 for d in fx1 fx2 fx3 fx4 fx5; do
 	if [ ! -e "$T/$d" ]; then ok "14: 閉じた使い捨ての repo だけの $d を消した"; else fail "14: $d を残した ($(grep "$d" "$WORK/out"))"; fi
 done
-for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k16b k17 k19; do
+for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k16b k17 k19 k20 k21 k22 k24; do
 	if [ -d "$T/$d" ] && grep -q "残す (中に git の作業ツリーか置き場がある: tmp/$d/" "$WORK/out"; then ok "14: 外から使われうる $d を残した"; else fail "14: $d を消した / 理由が違う ($(grep "$d" "$WORK/out"))"; fi
 done
 if [ -e "$T/new1/r/f" ] && grep -q "残す (中に 30 日以内の更新がある: tmp/new1" "$WORK/out"; then ok "14: 中が新しい fixture は残した"; else fail "14: 新しい fixture を消した ($(grep new1 "$WORK/out"))"; fi
 [ -e "$WORK/out14wt/u" ] && [ -e "$WORK/out14sep/u" ] || fail "14: 外の作業ツリーが消えた"
 "$REAL_GIT" -C "$WORK/out14sep2" log -1 >/dev/null 2>&1 || fail "14: 外の作業ツリー out14sep2 の repo が壊れた"
 "$REAL_GIT" -C "$T/y13/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 y13 の objects が壊れた"
-"$REAL_GIT" -C "$T/y17/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の alternates で借りた側 y17 の objects が壊れた"
+for y in y17 y20 y21 y22; do "$REAL_GIT" -C "$T/$y/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 $y の objects が壊れた"; done
+
 
 # 14b. 引用符で囲んだ alternates の行 (git は C 形式で unquote して読む) は解かずに、借りられている先を知らないとして使い捨ての repo も残す
 newrepo r14b
@@ -380,6 +388,21 @@ fx "$T/k18/r" && "$REAL_GIT" clone -q -s "$T/k18/r" "$T/y18/c" && printf '"%s"\n
 find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
 run; rc=$?
 if [ -d "$T/k18" ] && "$REAL_GIT" -C "$T/y18/c" cat-file -e 'HEAD:f' 2>/dev/null; then ok "14b: 引用符の alternates が指す repo を残した"; else fail "14b: rc=$rc 借りられている k18 を消した ($(cat "$WORK/out"))"; fi
+
+# 14c. 読めない config の repo は残す。その repo は借りている先も答えないので、決められないことを冒頭に出して使い捨ての repo も全部残す
+newrepo r14c
+T="$REPO/tmp"
+fx "$T/k23/r" && "$REAL_GIT" -C "$T/k23/r" remote add origin "$REPO"
+fx "$T/fx7/r"
+find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
+chmod 000 "$T/k23/r/.git/config"
+run; rc=$?
+chmod 644 "$T/k23/r/.git/config"
+if [ -d "$T/k23" ] && [ -d "$T/fx7" ] && grep -q "使い捨ての git repo も残す (借りている先を git が答えない repo がある: tmp/k23/r/.git" "$WORK/out"; then
+	ok "14c: 読めない config の repo を残し、決められない理由を出して使い捨ての repo も残した"
+else
+	fail "14c: rc=$rc ($(cat "$WORK/out"))"
+fi
 
 if [ "$fails" -ne 0 ]; then
 	echo "✗ clean_tmp: $fails 件失敗"
