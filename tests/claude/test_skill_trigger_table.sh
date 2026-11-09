@@ -7,7 +7,7 @@
 # 乖離を「読んだ人が気づく」から「テストが落ちる」に格上げする。
 #
 # 検出する乖離 (両方向):
-#   1. テーブルが参照する ~/.claude/skills/<name>/SKILL.md が実在しない (削除残り)
+#   1. テーブルが参照する skill (_claude/skills/<name>/SKILL.md) が実在しない (削除残り)
 #   2. _claude/skills/ に存在するのにテーブルに載っていないスキル (登録漏れ)
 #
 # 意図的にテーブルへ載せないスキルができたら EXEMPT_SKILLS に追加すること。
@@ -26,13 +26,17 @@ EXEMPT_SKILLS=""
 
 fail=0
 
-# テーブルが参照するスキル名を抽出 (~/.claude/skills/<name>/SKILL.md 形式)
-# shellcheck disable=SC2088 # チルダは展開させない: CLAUDE.md 内のリテラル文字列を grep するパターン
-# 🚨 `|| true` を外さないこと。`set -euo pipefail` の下では grep が無マッチで非 0 を返した
+# テーブルが参照するスキル名を抽出 (「スキルファイル参照」の節の表の 2 列目の先頭のコードスパン。agent の行は飛ばす)
+# 🚨 `|| true` を外さないこと。`set -euo pipefail` の下では無マッチで非 0 を返した
 # 時点で**代入ごとスクリプトが死に**、下の「1 件も抽出できない」の FAIL に到達できない
 # (出力ゼロの exit 1 = 原因の分からない失敗になる。2026-08-26 に同型が CI を赤にした)。
-referenced=$(grep -o '~/\.claude/skills/[A-Za-z0-9_-]*/SKILL\.md' "$CLAUDE_MD" \
-  | sed 's|.*/skills/||; s|/SKILL\.md||' | sort -u || true)
+referenced=$(awk -F'|' '
+  /^## /{ in_sec = ($0 ~ /^## スキルファイル参照/); next }
+  in_sec && /^\|/ && NF >= 4 {
+    col = $3; sub(/^ +/, "", col)
+    if (col ~ /^agent:/ || col !~ /^`/) next
+    sub(/^`/, "", col); sub(/`.*/, "", col); print col
+  }' "$CLAUDE_MD" | sort -u || true)
 
 if [ -z "$referenced" ]; then
   echo "FAIL: $CLAUDE_MD からスキル参照を 1 件も抽出できない (テーブル形式が変わった?)" >&2

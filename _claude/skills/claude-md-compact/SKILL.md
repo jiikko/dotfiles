@@ -41,7 +41,7 @@ global 層 (`~/.claude/` の CLAUDE.md・rules) の実体は link 先の repo (d
 縮める前に、次を grep で集めて控える。これらは残すか、参照側も同じ変更で直す。
 
 - **名前で参照されている見出し・語**: `grep -rn '「<見出し>」' <repo>` を hook・テスト・skill・他の rule に向けて打つ。見出しは rename しない
-- **文書を読む検査**: `grep -rln '<ファイル名>' tests/ scripts/`。表の形 (スキル表の `~/.claude/skills/<name>/SKILL.md` など) を検査が数えていることがある
+- **文書を読む検査**: `grep -rln '<ファイル名>' tests/ scripts/`。表の形 (スキル表の 2 列目の skill 名など) を検査が数えていることがある
 - **過去の決定**: issue・rationale を「常時読み込み」「上限」「paths:」「要約しない」で grep する。決まった方針 (例: 規範の文は要約しない / 行動で発動する rule は `paths:` にしない) に従う
 - **ユーザー決定の印**: 「ユーザー指示 YYYY-MM-DD」「ユーザー決定」の語は残す (後で決定を探す手がかり)
 

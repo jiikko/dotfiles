@@ -6,7 +6,7 @@ description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDI
 
 # cleanup-tmp-dir — 一時領域・DerivedData・Apple container の掃除
 
-一時領域に件数が溜まると、起動時の削除が長引いて再起動が遅くなるとされる (`_claude/CLAUDE.md`「一時ファイルの配置」)。
+一時領域に件数が溜まると、起動時の削除が長引いて再起動が遅くなるとされる (`_claude/rules-rationale/global-claude-md.md` の「本文から移した実例」)。
 判定と移動は **`bin/tmpclean` だけが行う** (本体と守りの一覧・検出しないものは `src/tmpclean/README.md`)。
 
 🚨 **一時領域を自分で `rm` / `mv` / `find -delete` しない**。生きているセッションの scratchpad を消すとそのセッションが壊れ、

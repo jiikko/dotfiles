@@ -50,7 +50,7 @@
       毎回同じ形で落ちる手段 (UI の操作が効かない等) は対象外で、別の手段へ切り替える
 - **依頼されたスコープをそのまま完遂する**。ルーチンな判断は自分で下し、解釈次第で成果物が実質的に変わるときだけ確認する。依頼が誤っている / もっと良い方法があると思ったら一文で述べてから依頼どおり進める。黙って狭める・広げる・すり替えない
   - **確認を求めるときは、選択肢ごとに「何が起きるか」と「今の挙動から失われるもの」を 1 行ずつ書く**。新しい挙動だけを並べると、暗黙に消える挙動を承認者が見落とす。**消す・止める対象は種類 (ファイル / ディレクトリ / プロセス) を分けて列挙する**。「ファイルを消してよいか」の承認はディレクトリに及ばない。**使い心地が変わる選択 (同時に出す数・待ち・消えるまでの時間) では、失うものの文に、ユーザーが体験する場面を 1 つ添える** (「連打すると 2 回目の通知は前のが消えるまで出ない」)。仕組みの言葉だけでは伝わらない
-    - **選択肢が今の実装の一部を置き換えるなら、その部分が今どう動くかを実装で確かめ、ファイル名とシンボル名を添えて 1 行で書く**。issue や前の報告の言い回しを引くだけにしない (案の名前が既にある機能と似ていると、承認者は「もうやっている」と読む。vlc-multi-video-player retro 501)
+    - **選択肢が今の実装の一部を置き換えるなら、その部分が今どう動くかを実装で確かめ、ファイル名とシンボル名を添えて 1 行で書く**。issue や前の報告の言い回しを引くだけにしない (案の名前が既にある機能と似ていると、承認者は「もうやっている」と読む)
     - **時間を置いて質問を出し直すときは、前に出した時点からの git log (issue と、選択肢が触る実装) を読んでから出す**。前の文面や compaction の要約は出した時点の状態しか持たず、その後に他のセッションが入れたもので前提が変わっている
   - 例外は「コード変更時の自律改善」が義務付ける範囲だけ (境界は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md) の「自律改善との境界」表)。範囲外の気づきは「ぼやきポイント」へ
 - **訂正のナレーションは重要なものだけ**。ユーザーの判断が変わる誤りは端的に訂正する。何も変わらない言い間違いは黙って直す (過去の誤りの列挙・自己批判はしない)
@@ -62,7 +62,6 @@
 - **セッション中のスクラッチ・中間生成物 (push / pull / lint / test の出力を `> log 2>&1` で取ったログ・patch・プロンプトの部品・background の run の出力) は、
   本体 checkout の `tmp/<作業名>-<日付>/` に絶対パスで置く**。ハーネスの scratchpad (`/private/tmp/claude-501/…`) と `/tmp` には置かない
   (ユーザー指示 2026-10-21。ハーネスが scratchpad を使えと言っても、こちらを優先する)
-  - 理由: `du -sh tmp` で溜まり具合に気づける。`/private/tmp` は溜まるほど macOS の起動が遅くなるとされる。再起動で消えないので証拠も残る
   - 本体 checkout は `git rev-parse --git-common-dir` の親。worktree の中の `tmp/` は worktree と一緒に消えるので使わない
   - 🚨 **同じ dir はサブエージェント・fork・並行セッションも使う**。固定名 (`push.log`) で書かず、作業名や issue 番号を dir 名に入れる
   - git repo の外で起動したセッションだけは scratchpad に置く。ハーネス自身が書く background のタスク出力 (scratchpad の `tasks/`) は指定できないので対象外
@@ -158,44 +157,44 @@ Swift / Go の repo で関数・メソッド・型を探すとき。使い方は
 
 ## スキルファイル参照
 
-以下のキーワードに関連するタスクでは、対応する SKILL.md を作業前に Read する。
+以下のキーワードに関連するタスクでは、対応する SKILL.md (`~/.claude/skills/<名前>/SKILL.md`) を作業前に Read する。
 agent はこの表に一部しか載っていないので、**agent を探すときは [`agents/README.md`](agents/README.md) を見る**
 (乖離は `tests/claude/test_agents_index.sh` が検出する)。
 
-| キーワード | 参照先 |
+| キーワード | skill |
 |-----------|-------|
-| 監査, audit, コードレビュー全体 | `~/.claude/skills/audit/SKILL.md` |
-| all-audit-on-diy, 全部の観点で監査して直して, 全タイプの監査をこのセッションで対応 | `~/.claude/skills/all-audit-on-diy/SKILL.md` (対象を引数で渡す。タイプを選んで issue に書くだけなら audit) |
-| コミット, commit, git commit | `~/.claude/skills/c/SKILL.md` |
-| forge, 専門家実装, 専門家エージェントで実装/修正（修正・実装まで任せる） | `~/.claude/skills/forge/SKILL.md` |
+| 監査, audit, コードレビュー全体 | `audit` |
+| all-audit-on-diy, 全部の観点で監査して直して, 全タイプの監査をこのセッションで対応 | `all-audit-on-diy` (対象を引数で渡す。タイプを選んで issue に書くだけなら audit) |
+| コミット, commit, git commit | `c` |
+| forge, 専門家実装, 専門家エージェントで実装/修正（修正・実装まで任せる） | `forge` |
 | CSS, Node.js, Electron, フロントエンド, デスクトップアプリ | agent: `css-expert` / `nodejs-expert` / `electron-expert` |
-| iOS, iPhone, XcodeGen, SPM, code signing, AVFoundation, @rpath | `~/.claude/skills/ios-app-developer/SKILL.md` |
-| perf.log 分析, ボトルネック（ThumbnailThumb 専用 / bin/tt-client 前提） | `~/.claude/skills/perf-analysis/SKILL.md` |
-| WCAG, アクセシビリティ, ダークモード, スタイルレビュー | `~/.claude/skills/style-review/SKILL.md` |
-| AVFoundation, AVPlayer, 動画再生, seek, scrub, frame stepping | `~/.claude/skills/avfoundation-reference/SKILL.md` |
-| watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `~/.claude/skills/watchos-expert/SKILL.md` |
-| リキッドグラス, Liquid Glass, glassEffect, GlassEffectContainer, macOS 26 / iOS 26 のデザイン | `~/.claude/skills/liquid-glass/SKILL.md` (外部の skill。出典と手を入れた所は同じ dir の `UPSTREAM.md`) |
+| iOS, iPhone, XcodeGen, SPM, code signing, AVFoundation, @rpath | `ios-app-developer` |
+| perf.log 分析, ボトルネック（ThumbnailThumb 専用 / bin/tt-client 前提） | `perf-analysis` |
+| WCAG, アクセシビリティ, ダークモード, スタイルレビュー | `style-review` |
+| AVFoundation, AVPlayer, 動画再生, seek, scrub, frame stepping | `avfoundation-reference` |
+| watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `watchos-expert` |
+| リキッドグラス, Liquid Glass, glassEffect, GlassEffectContainer, macOS 26 / iOS 26 のデザイン | `liquid-glass` (外部の skill。出典と手を入れた所は同じ dir の `UPSTREAM.md`) |
 | App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |
-| issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
-| issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `~/.claude/skills/issue-writeback/SKILL.md` (本文の追記漏れ。done 移動は issue-sync) |
-| improve-debug-api, debug API と人の操作の経路の差, debug API 専用の処理を減らす | `~/.claude/skills/improve-debug-api/SKILL.md` (repo の値は各 repo の debug API の docs の節) |
-| dupscan, 重複したメソッド, 既にあるヘルパー, 書く前に探す, セルフレビューで写し, 呼び出し元 (Swift / Go) | `~/.claude/skills/dupscan/SKILL.md` (Swift と Go。def / refs は Swift だけ) |
-| start-issues-ops, issue運用を始める, issuesディレクトリを作る | `~/.claude/skills/start-issues-ops/SKILL.md` |
-| mac-healthcheck, Mac の健康診断, 暴走プロセス, メモリリーク, 買い替えの判断 | `~/.claude/skills/mac-healthcheck/SKILL.md` |
-| mac-uninstall, アンインストール, 使っていないアプリ・formula を消す | `~/.claude/skills/mac-uninstall/SKILL.md` |
-| cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている | `~/.claude/skills/cleanup-tmp-dir/SKILL.md` (消す前に承認を取る。dotfiles の tmp/ は `make clean-tmp`) |
-| claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `~/.claude/skills/claude-md-refresh/SKILL.md` (引数で対象ディレクトリを指定。issues/ は対象外) |
-| claude-md-compact, CLAUDE.md を圧縮, rules を縮める, 常時読み込みを減らす, instruction files の上限 | `~/.claude/skills/claude-md-compact/SKILL.md` (規範を残して実例・重複を外へ移す。ずれを直すのは claude-md-refresh) |
-| refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `~/.claude/skills/refresh-on-session/SKILL.md` (差分だけを見る。バグ探しは `/code-review`) |
-| events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `~/.claude/skills/my-products-update-apps-event/SKILL.md` |
-| クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
-| dupscan-dogfood, dupscan を使って開発, dupscan のフィードバック, dupscan を使い込む | `~/.claude/skills/dupscan-dogfood/SKILL.md` |
-| codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
-| codexにリード, codex主導で着手, 設計から codex に任せて（実装は Claude）, codex-lead | `~/.claude/skills/codex-lead/SKILL.md` |
-| codexに書かせて, codexメインで実装, codexに作らせて, 設計から実装まで codex に丸投げ, codex-drive | `~/.claude/skills/codex-drive/SKILL.md` |
-| cross-review, クロスレビュー, 複数視点レビュー | `~/.claude/skills/cross-review/SKILL.md` |
-| レビューループ, review-loop, make review | `~/.claude/skills/review-loop/SKILL.md` |
-| pro-con, カード, PM, PG, レーン, dispatcher, dogfooding (pro-con を外から動かす・調べる) | `~/.claude/skills/pro-con/SKILL.md` (正本は `pro-con help <話題>`) |
-| 視認性, 色被り, UXレビュー | `~/.claude/skills/ux-visibility-review/SKILL.md` |
-| ずんだもん解説, VOICEVOX, ずんだもん, キャラ音声の掛け合い動画, 読み上げ動画 | `~/.claude/skills/zundamon-kaisetsu/SKILL.md` |
-| 自然な日本語, 日本語がおかしい, 主語がない, 文言を見直して, UI の文言・ストアの説明文を日本語で書く, ja-writing | `~/.claude/skills/ja-writing/SKILL.md` (書き癖の機械の検査は `ja-textlint` (dotfiles の `bin/`)。主語の抜け・語の選び方は機械では拾えない) |
+| issue-sync, issue同期, 完了漏れ, done移動 | `issue-sync` |
+| issue-writeback, issue更新漏れ, 書き戻し漏れ, issue更新した? | `issue-writeback` (本文の追記漏れ。done 移動は issue-sync) |
+| improve-debug-api, debug API と人の操作の経路の差, debug API 専用の処理を減らす | `improve-debug-api` (repo の値は各 repo の debug API の docs の節) |
+| dupscan, 重複したメソッド, 既にあるヘルパー, 書く前に探す, セルフレビューで写し, 呼び出し元 (Swift / Go) | `dupscan` (Swift と Go。def / refs は Swift だけ) |
+| start-issues-ops, issue運用を始める, issuesディレクトリを作る | `start-issues-ops` |
+| mac-healthcheck, Mac の健康診断, 暴走プロセス, メモリリーク, 買い替えの判断 | `mac-healthcheck` |
+| mac-uninstall, アンインストール, 使っていないアプリ・formula を消す | `mac-uninstall` |
+| cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている | `cleanup-tmp-dir` (消す前に承認を取る。dotfiles の tmp/ は `make clean-tmp`) |
+| claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `claude-md-refresh` (引数で対象ディレクトリを指定。issues/ は対象外) |
+| claude-md-compact, CLAUDE.md を圧縮, rules を縮める, 常時読み込みを減らす, instruction files の上限 | `claude-md-compact` (規範を残して実例・重複を外へ移す。ずれを直すのは claude-md-refresh) |
+| refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `refresh-on-session` (差分だけを見る。バグ探しは `/code-review`) |
+| events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `my-products-update-apps-event` |
+| クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `crash-log-analyzer` |
+| dupscan-dogfood, dupscan を使って開発, dupscan のフィードバック, dupscan を使い込む | `dupscan-dogfood` |
+| codex-review, Codexレビュー, コードレビュー依頼 | `codex-review` |
+| codexにリード, codex主導で着手, 設計から codex に任せて（実装は Claude）, codex-lead | `codex-lead` |
+| codexに書かせて, codexメインで実装, codexに作らせて, 設計から実装まで codex に丸投げ, codex-drive | `codex-drive` |
+| cross-review, クロスレビュー, 複数視点レビュー | `cross-review` |
+| レビューループ, review-loop, make review | `review-loop` |
+| pro-con, カード, PM, PG, レーン, dispatcher, dogfooding (pro-con を外から動かす・調べる) | `pro-con` (正本は `pro-con help <話題>`) |
+| 視認性, 色被り, UXレビュー | `ux-visibility-review` |
+| ずんだもん解説, VOICEVOX, ずんだもん, キャラ音声の掛け合い動画, 読み上げ動画 | `zundamon-kaisetsu` |
+| 自然な日本語, 日本語がおかしい, 主語がない, 文言を見直して, UI の文言・ストアの説明文を日本語で書く, ja-writing | `ja-writing` (書き癖の機械の検査は `ja-textlint` (dotfiles の `bin/`)。主語の抜け・語の選び方は機械では拾えない) |
