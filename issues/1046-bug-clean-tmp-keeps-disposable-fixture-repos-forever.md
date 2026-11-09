@@ -33,7 +33,9 @@ git dir の両方が dir の中に閉じていて外から使われないのに�
    core.bare が true でない (clone・外の設定・外の作業ツリー・名前が .git の bare を除く)。`commondir` も `config.worktree` (extensions.worktreeConfig。core.worktree がそこへ移る) も持たない
 3b. 親の作業ファイルが index と食い違わない (`git ls-files -d` が空。fsmonitor は切る)。`git init --separate-git-dir=X/.git W` は X/.git/config に
    core.worktree を書かない (2026-11-09 に実測) ので、X に兄弟のファイルがあると 1〜3 では外の作業ツリーの置き場と見分けられない
-3c. tmp の中のどの repo も、このエントリの中の objects を借りていない (`clone -s` で借りた側の objects が壊れる)。借りている先は tmp の中の git dir を HEAD の形で
+3c. tmp の中の、このエントリの外の持ち主 (git dir・symlink) が、このエントリの中を使っていない。組は 3 種: git dir とその objects の実体 /
+   git dir と alternates で借りている objects / tmp の中の symlink とその先 (.git ごとの symlink・git-new-workdir の形)。列挙は -print0 で読む。
+   (以下は 2 周目の形: tmp の中のどの repo も、このエントリの中の objects を借りていない (`clone -s` で借りた側の objects が壊れる)。借りている先は tmp の中の git dir を HEAD の形で
    列挙し、`git count-objects -v` の `alternate:` で git 自身に答えさせる。答えない repo (壊れた・読めない config) があれば、その名前を冒頭に出して使い捨ての repo も全部残す
 4. `worktrees/*` が無いか、全部の `worktrees/*/gitdir` の指す作業ツリーが、実体のパスでこのエントリの中にある (指す先を解決できなければ残す)
 5. この `.git` dir 自身の HEAD は、この repo の一部として扱う。中の別の git dir (submodule の `modules/*`。origin を持つ clone) は今までどおり残す。
@@ -95,4 +97,12 @@ bare の形 (HEAD と objects/・refs/ が並ぶが `.git` の中に無い dir) 
   中身から検出できないことは変わらないので受け入れるが、理由は「tmp の fixture を外から `clone -s` で借りて使い続ける使い方を前提にしない
   (2026-11-09 の `~/dotfiles/tmp` に alternates を持つ repo は 0 件)」に改める。**未確認リスク**: この使い方が出てきたら、外の repo からは見えないので fixture を消して外を壊す。
   見送り (P3): `bare = yes` などの綴りは `--type=bool` が true にそろえるので、指摘の変異 (`!= true`) は今の実装では退行にならない
+- [x] 敵対的レビュー 3 周目 (opus)。P1 1 件 + P2 2 形 + テストの穴を再現され、直した: 借りる側の git dir のパスに改行があると列挙から黙って外れる
+  (改行で割っていた) → `-print0` / tmp の中の別のエントリが `.git` ごとの symlink や git-new-workdir の形で fixture を使う (alternates の行が出ない)
+  → 3c を「別の場所から使われているか」に一般化 / 借りる側の HEAD が symlink の形をテストが見ていなかった → k25。
+  テスト 14 の k25〜k28、変異 5 本がすべて red (改行で割る・symlink の組を外す・HEAD の -type f・持ち主がエントリの中かの確認を外す・objects と symlink の組を両方外す)。
+  1 つの答えない repo で使い捨ての repo の掃除が止まる設計は、レビュアーも妥当とした (1046 の前より悪くならない・理由を毎回出す)。冒頭の行に「その repo を直すか消すと再開する」を足した
+- **止め方 (§8 の stopping rule)**: 脅威モデルは「このマシンのセッション・道具が、悪意なく tmp に作った repo」。攻撃者が組む形は対象にしない。
+  検出しない形は上の「検出しない」の 4 つ (外から path で `.git` を使う・tmp の外の alternates・起動時の一覧の窓・tracked のファイルが全部親にも同名の separate-git-dir)。
+  3 周とも、壊せた形は「字面で探す」所から出た。config・alternates・HEAD の列挙を git 自身と -print0 に寄せたので、4 周目はその寄せ方 (git の解釈・列挙) だけを見させる
 - [ ] `make test`

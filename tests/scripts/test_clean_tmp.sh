@@ -155,9 +155,9 @@ sed -n -e '/^find_git() {/,/^}/p' -e '/^disposable_git[a-z]*() {/,/^}/p' -e '/^b
 grep -c '^[a-z_]*() ' "$WORK/find_git.sh" | grep -qx 6 || fail "10: find_git と helper 5 つを切り出せない ($(grep '^[a-z_]*() ' "$WORK/find_git.sh" | tr '\n' ' '))"
 fx10() { "$REAL_GIT" init -q "$1" && echo x > "$1/f" && "$REAL_GIT" -C "$1" add f && "$REAL_GIT" -C "$1" -c user.email=t@t -c user.name=t commit -q -m i; }
 mkdir -p "$WORK/r10f" && fx10 "$WORK/r10f/r"
-out=$(/bin/bash -c "source '$WORK/find_git.sh'; alts_ok=1 alts=''; ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10f' 2>/dev/null )")
+out=$(/bin/bash -c "source '$WORK/find_git.sh'; refs_ok=1 ref_owner=() ref_target=(); ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10f' 2>/dev/null )")
 if [ -z "$out" ]; then ok "10: 書き込みが失敗しても使い捨ての repo を判定できる"; else fail "10: ulimit -f 0 の下で使い捨ての repo を印にした [$out]"; fi
-out=$(/bin/bash -c "source '$WORK/find_git.sh'; alts_ok=1 alts=''; ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10' 2>/dev/null )")
+out=$(/bin/bash -c "source '$WORK/find_git.sh'; refs_ok=1 ref_owner=() ref_target=(); ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10' 2>/dev/null )")
 if [ "${out##*/}" = b.git ]; then ok "10: 書き込みが失敗しても git の置き場を見つける"; else fail "10: ulimit -f 0 の下で find_git = [$out] (b.git を返すこと)"; fi
 
 # 11. skill の dir (印 .skill-tmpdir。bin/skill-tmpdir が置く) は丸ごと判定せず、中の session の dir を 1 件ずつ同じ規則で判定する
@@ -361,6 +361,16 @@ fx "$T/k21/r" && "$REAL_GIT" clone -q -s "$T/k21/r" "$T/y21/c" && mkdir -p "$T/z
 fx "$T/k22/r" && mkdir -p "$T/k22/store" && mv "$T/k22/r/.git/objects" "$T/k22/store/objects" && ln -s ../../store/objects "$T/k22/r/.git/objects" && "$REAL_GIT" clone -q -s "$T/k22/r" "$T/y22/c"
 fx "$T/k24/r" && "$REAL_GIT" -C "$T/k24/r" config branch.main.remote "$REPO"
 for y in y20 y21 y22; do "$REAL_GIT" -C "$T/$y/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: $y の借り方を git が読まない (前提が崩れた)"; done
+# 3 周目で消せた形: 借りる側の HEAD が symlink・.git ごとの symlink・git-new-workdir の形・改行を含むパスの借りる側
+fx "$T/k25/r" && "$REAL_GIT" clone -q -s "$T/k25/r" "$T/y25/c" && b25=$("$REAL_GIT" -C "$T/y25/c" symbolic-ref --short HEAD) &&
+	"$REAL_GIT" -C "$T/y25/c" update-ref "refs/heads/$b25" HEAD && rm "$T/y25/c/.git/HEAD" && ln -s "refs/heads/$b25" "$T/y25/c/.git/HEAD"
+fx "$T/k26/r" && mkdir -p "$T/y26/w" && ln -s ../../k26/r/.git "$T/y26/w/.git"
+fx "$T/k27/r" && mkdir -p "$T/y27/w/.git" && for x in config refs objects; do ln -s "../../../k27/r/.git/$x" "$T/y27/w/.git/$x"; done && cp "$T/k27/r/.git/HEAD" "$T/y27/w/.git/HEAD"
+fx "$T/k28/r" && mkdir -p "$T/y28/x
+y" && "$REAL_GIT" clone -q -s "$T/k28/r" "$T/y28/x
+y/c"
+"$REAL_GIT" -C "$T/y25/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の HEAD を git が読まない (前提が崩れた)"
+"$REAL_GIT" --git-dir="$T/y27/w/.git" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: git-new-workdir の形を git が読まない (前提が崩れた)"
 find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
 fx "$T/new1/r" && touch -t $OLD "$T/new1" # 中身は今日
 touch "$T/z21/fresh" # info を逃がした先は git の印を持たないので、古ければ今までの規則で消える (借りた側が壊れる。この形は確かめない)
@@ -370,14 +380,17 @@ run; rc=$?
 for d in fx1 fx2 fx3 fx4 fx5; do
 	if [ ! -e "$T/$d" ]; then ok "14: 閉じた使い捨ての repo だけの $d を消した"; else fail "14: $d を残した ($(grep "$d" "$WORK/out"))"; fi
 done
-for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k16b k17 k19 k20 k21 k22 k24; do
+for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k16b k17 k19 k20 k21 k22 k24 k25 k26 k27 k28; do
 	if [ -d "$T/$d" ] && grep -q "残す (中に git の作業ツリーか置き場がある: tmp/$d/" "$WORK/out"; then ok "14: 外から使われうる $d を残した"; else fail "14: $d を消した / 理由が違う ($(grep "$d" "$WORK/out"))"; fi
 done
 if [ -e "$T/new1/r/f" ] && grep -q "残す (中に 30 日以内の更新がある: tmp/new1" "$WORK/out"; then ok "14: 中が新しい fixture は残した"; else fail "14: 新しい fixture を消した ($(grep new1 "$WORK/out"))"; fi
 [ -e "$WORK/out14wt/u" ] && [ -e "$WORK/out14sep/u" ] || fail "14: 外の作業ツリーが消えた"
 "$REAL_GIT" -C "$WORK/out14sep2" log -1 >/dev/null 2>&1 || fail "14: 外の作業ツリー out14sep2 の repo が壊れた"
 "$REAL_GIT" -C "$T/y13/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 y13 の objects が壊れた"
-for y in y17 y20 y21 y22; do "$REAL_GIT" -C "$T/$y/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 $y の objects が壊れた"; done
+for y in y17 y20 y21 y22 y25 "y28/x
+y"; do "$REAL_GIT" -C "$T/$y/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 $y の objects が壊れた"; done
+"$REAL_GIT" --git-dir="$T/y26/w/.git" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: .git の symlink で使う側 y26 が壊れた"
+"$REAL_GIT" --git-dir="$T/y27/w/.git" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: git-new-workdir の形で使う側 y27 が壊れた"
 
 
 # 14b. 引用符で囲んだ alternates の行 (git は C 形式で unquote して読む) は解かずに、借りられている先を知らないとして使い捨ての repo も残す

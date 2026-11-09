@@ -58,37 +58,47 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/clean-tmp.XXXXXX") || exit 2
 trap 'rm -rf "$work"' EXIT
 
-# tmp の中の全部の repo が alternates で借りている objects (実体のパス)。disposable_gitdir が「借りられている repo」を使い捨てにしないために使う。
-# 🚨 alternates のファイルを探して読まない: 名前の大文字小文字 (APFS)・info / objects の symlink・引用符の行を字面で追うと抜ける
-# (1・2 周目の敵対的レビューで 4 形を再現)。tmp の中の git dir を HEAD の形で列挙し、借りている先は git 自身に答えさせる
-# (count-objects -v の alternate: の行。git が解いた後のパス)
-alts='' alts_ok=1 alts_why=''
-if hs=$(find "$tmp" \( -type f -o -type l \) -iname HEAD -print 2>/dev/null); then
-	IFS=$'\n'
-	set -f
-	for h in $hs; do
+# tmp の中で「どこ (持ち主) が、どこ (先。実体のパス) を使っているか」の組。disposable_gitdir が、別の場所から使われている repo を
+# 使い捨てにしないために使う (borrowed)。持ち主と先は 3 種:
+#   - git dir と、その objects の実体 (objects を symlink で別のエントリへ置いた形・git-new-workdir の形)
+#   - git dir と、それが alternates で借りている objects (clone -s)。🚨 alternates のファイルを探して読まない: 名前の大文字小文字 (APFS)・
+#     info / objects の symlink・引用符の行を字面で追うと抜ける (1・2 周目の敵対的レビューで 4 形を再現)。git 自身に答えさせる
+#     (count-objects -v の alternate: の行。git が解いた後のパス)
+#   - tmp の中の symlink と、その先 (.git ごとの symlink。find は symlink の下へ降りないので、HEAD の列挙では見つからない)
+# 🚨 列挙は -print0 で読む: 改行で割ると、改行を含むパスの git dir が黙って列挙から外れ、貸している側を消した (3 周目に再現)
+ref_owner=() ref_target=() refs_ok=1 refs_why=''
+addref() { ref_owner+=("$1"); ref_target+=("$2"); }
+if find "$tmp" \( -type f -o -type l \) -iname HEAD -print0 > "$work/heads" 2>/dev/null &&
+	find "$tmp" -type l -print0 > "$work/links" 2>/dev/null; then
+	while IFS= read -r -d '' h; do
 		g=${h%/*}
 		[ -d "$g/objects" ] && [ -d "$g/refs" ] || continue
+		r=$(cd "$g/objects" 2>/dev/null && /bin/pwd -P) && addref "$g" "$r"
 		if ! out=$(GIT_OPTIONAL_LOCKS=0 git --git-dir="$g" -c core.fsmonitor=false count-objects -v 2>/dev/null); then
-			alts_ok=0 alts_why="借りている先を git が答えない repo がある: ${g#"$root"/}" # 壊れた・読めない config
+			refs_ok=0 refs_why="借りている先を git が答えない repo がある: ${g#"$root"/}" # 壊れた・読めない config
 			continue
 		fi
+		IFS=$'\n'
+		set -f
 		for l in $out; do
 			case $l in
-			'alternate: "'*) alts_ok=0 alts_why="借りている先を git が引用符で書いた repo がある: ${g#"$root"/}" ;; # 解かずに、借りられている先を知らない側に倒す
+			'alternate: "'*) refs_ok=0 refs_why="借りている先を git が引用符で書いた repo がある: ${g#"$root"/}" ;; # 解かずに、借りられている先を知らない側に倒す
 			'alternate: '*)
 				# 指す先が無いものは、どの repo も借りていない (借りた側が既に壊れている)
-				r=$(cd "${l#alternate: }" 2>/dev/null && /bin/pwd -P) && alts="$alts"$'\n'"$r"
+				r=$(cd "${l#alternate: }" 2>/dev/null && /bin/pwd -P) && addref "$g" "$r"
 				;;
 			esac
 		done
-	done
-	set +f
-	unset IFS
+		set +f
+		unset IFS
+	done < "$work/heads"
+	while IFS= read -r -d '' l; do
+		t=$(readlink -f "$l" 2>/dev/null) && [ -e "$t" ] && addref "$l" "$t" # 先の無い symlink は何も使っていない
+	done < "$work/links"
 else
-	alts_ok=0 alts_why="tmp の中の git の置き場を列挙できない"
+	refs_ok=0 refs_why="tmp の中の git の置き場と symlink を列挙できない"
 fi
-[ "$alts_ok" = 1 ] || echo "  使い捨ての git repo も残す (${alts_why}。どの repo が借りられているかを決められない)"
+[ "$refs_ok" = 1 ] || echo "  使い捨ての git repo も残す (${refs_why}。どの repo が別の場所から使われているかを決められない。その repo を直すか消すと再開する)"
 
 # is_skill_dir は $1 が skill-tmpdir の作った skill の dir か (実体のフォルダで、印が実体のファイル)
 # 直下に git の印があるものは skill の dir にしない (find が失敗しても skill の dir にしない = 丸ごと判定に倒す)
@@ -216,18 +226,18 @@ disposable_gitdir() {
 	return 0
 }
 
-# borrowed は tmp の中のどれかの repo が、エントリ $1 の中の objects を借りているか (一覧を取れなかったら借りられているとみなす)。
+# borrowed は、エントリ $1 の外の持ち主 (git dir・symlink) が、$1 の中を使っているか (組を決められなかったら使われているとみなす)。
 # 🚨 照合は git dir ではなくエントリで行う: 貸す側の objects を symlink で同じエントリの別の場所へ置くと、git dir のパスと実体が食い違う
 borrowed() {
-	local a hit=1 noglob=0 IFS=$'\n'
-	[ "$alts_ok" = 1 ] || return 0
-	case $- in *f*) noglob=1 ;; esac # 呼び出し元 (find_git) の set -f を外さない
-	set -f
-	for a in $alts; do
-		inside "$1" "$a" && { hit=0; break; }
+	local i=0
+	[ "$refs_ok" = 1 ] || return 0
+	while [ "$i" -lt "${#ref_owner[@]}" ]; do
+		if { [ "${ref_target[$i]}" = "$1" ] || inside "$1" "${ref_target[$i]}"; } && ! inside "$1" "${ref_owner[$i]}"; then
+			return 0
+		fi
+		i=$((i + 1))
 	done
-	[ "$noglob" = 1 ] || set +f
-	return "$hit"
+	return 1
 }
 
 # disposable_gitfile は $1 (名前が .git のファイル) の gitdir: がエントリ $2 の中を指すかを返す。指す先の git dir は、それ自身が印として
