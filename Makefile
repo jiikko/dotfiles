@@ -39,6 +39,7 @@ ZSH_SYNTAX_FILES := \
   bin/repair-mp4-timebase \
   bin/runtimeout \
   bin/serial-run \
+  bin/slack-bbs \
   bin/svcdoctor \
   bin/termwidth \
   bin/tf \

@@ -1,0 +1,7 @@
+#!/usr/bin/env zsh
+# slack-bbs — 購読した Slack のチャンネルの会話を、話題ごとに組み直して掲示板風に読む。
+# Go implementation at: ~/dotfiles/src/slack-bbs/ (使い方は main.go の冒頭と README)
+# 再ビルドは同期: 読むたびに打つ道具で、旧版のまま読ませる利点が無い。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/slack-bbs" slack-bbs -- "$@"

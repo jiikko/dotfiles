@@ -1,0 +1,217 @@
+// Package source は slack-cli を起動して、会話の材料 (発言・スレッド・ユーザー・チャンネル) を JSON で読む。
+//
+// Slack へは slack-cli を通してだけ触る。slack-cli は読み取り専用のメソッドしか呼ばない約束をテストと変異検証で
+// 固めているので、ここで Slack の API を直に呼ぶ口を作らない (読み取り専用の保証が 2 実装になる)。
+package source
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+
+	"github.com/jiikko/dotfiles/src/termsafe"
+	"subproc"
+)
+
+// Runner は slack-cli を引数 args で 1 回起動し、stdout と stderr を返す。
+//
+// stderr は捨てない: slack-cli は取得が途中で切れても (ページの上限・続きの cursor が無い) 取れた分を出して rc=0 で終わり、
+// 切れたことは stderr にしか書かない。読む画面では端末の stderr が見えないので、呼び出し側が板の注記に載せる。
+type Runner interface {
+	Run(ctx context.Context, args ...string) (stdout, stderr []byte, err error)
+}
+
+// ExecRunner は実物の slack-cli (Bin) を起動する。Tee が nil でなければ stderr をそこへも流す (429 の待ちのように、
+// 走っている間に出る知らせを端末で見せる。読む画面の中では画面が崩れるので nil にする)。
+type ExecRunner struct {
+	Bin string
+	Tee io.Writer
+}
+
+// Run は Bin を起動して stdout と stderr を返す。失敗は終了コードと stderr を添えて返す。
+func (r ExecRunner) Run(ctx context.Context, args ...string) ([]byte, []byte, error) {
+	cmd := subproc.CommandContext(ctx, r.Bin, args...)
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if r.Tee != nil {
+		cmd.Stderr = io.MultiWriter(&errb, termsafe.BlockWriter(r.Tee))
+	}
+	if err := cmd.Run(); err != nil {
+		return nil, errb.Bytes(), fmt.Errorf("%s %s: %w: %s", r.Bin, args[0], err, strings.TrimSpace(errb.String()))
+	}
+	return out.Bytes(), errb.Bytes(), nil
+}
+
+// Quiet は端末へ stderr を流さない runner を返す (読む画面の中で流すと画面が崩れる。警告は板の注記に載る)。
+// 実物の ExecRunner 以外 (テストの偽物など) はそのまま返す。
+func Quiet(r Runner) Runner {
+	switch er := r.(type) {
+	case ExecRunner:
+		er.Tee = nil
+		return er
+	case *ExecRunner:
+		c := *er
+		c.Tee = nil
+		return c
+	}
+	return r
+}
+
+// Message は slack-cli の history / thread の -json の 1 件 (使う欄だけ)。
+type Message struct {
+	Ts          string `json:"ts"`
+	ThreadTs    string `json:"thread_ts"`
+	User        string `json:"user"`
+	Username    string `json:"username"`
+	BotID       string `json:"bot_id"`
+	Text        string `json:"text"`
+	ReplyCount  int    `json:"reply_count"`
+	LatestReply string `json:"latest_reply"`
+}
+
+// IsThreadParent はスレッドの親か (history は親に thread_ts == ts を付ける)。
+func (m Message) IsThreadParent() bool { return m.ThreadTs != "" && m.ThreadTs == m.Ts }
+
+// IsBroadcastReply は「チャンネルにも投稿する」を付けた返信か。history と thread の両方に同じ ts で出るので、
+// history 側では捨ててスレッドの側に寄せる。
+func (m Message) IsBroadcastReply() bool { return m.ThreadTs != "" && m.ThreadTs != m.Ts }
+
+// Channel は slack-cli の channels の -json の 1 件 (使う欄だけ)。
+type Channel struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	IsPrivate  bool   `json:"is_private"`
+	IsArchived bool   `json:"is_archived"`
+	IsMember   bool   `json:"is_member"`
+	NumMembers int    `json:"num_members"`
+}
+
+// Me は slack-cli の whoami の -json (使う欄だけ)。
+type Me struct {
+	UserID string `json:"user_id"`
+	URL    string `json:"url"` // https://<workspace>.slack.com/
+}
+
+type user struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	RealName string `json:"real_name"`
+	Profile  struct {
+		RealName    string `json:"real_name"`
+		DisplayName string `json:"display_name"`
+	} `json:"profile"`
+}
+
+// HistoryLimit は 1 チャンネルの history で読む上限。届いたら打ち切りとして利用者に知らせる (遡る期間を縮める案内)。
+const HistoryLimit = 20000
+
+// ThreadLimit は 1 スレッドで読む返信の上限。slack-cli は上限に届くと黙って切るので、届いたら打ち切りとして扱う。
+const ThreadLimit = 1000
+
+// OldSlackCLINote は、slack-cli がスレッドの親の reply_count / latest_reply を出さない版の疑いがあるときの注記。
+// その版では返信だけが新しいスレッドが見えなくなるので、黙らずに板へ出す。止めはしない: 返信が全部消されたスレッドの親は
+// 新しい版でも動きを持たず、それしか無いチャンネルを止めると、正しい版でも読めなくなる。
+const OldSlackCLINote = "スレッドの親に返信の数・最後の返信が付いていない。slack-cli が古い (3cf3c5e より前) と、期間より前に始まったスレッドの新しい返信が出ない"
+
+// Client は slack-cli のサブコマンドを型付きで呼ぶ。
+type Client struct {
+	R Runner
+}
+
+// decode は slack-cli を呼んで stdout の JSON を v へ読み、stderr (警告) を返す。
+func (c Client) decode(ctx context.Context, v any, args ...string) (string, error) {
+	out, errb, err := c.R.Run(ctx, args...)
+	if err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal(out, v); err != nil {
+		return "", fmt.Errorf("slack %s の JSON を読めない: %w", args[0], err)
+	}
+	return strings.TrimSpace(string(errb)), nil
+}
+
+// Whoami は接続中のユーザーとワークスペースを返す。
+func (c Client) Whoami(ctx context.Context) (Me, error) {
+	var me Me
+	if _, err := c.decode(ctx, &me, "whoami", "-json"); err != nil {
+		return Me{}, err
+	}
+	if me.UserID == "" {
+		return Me{}, errors.New("slack whoami が user_id を返さない")
+	}
+	return me, nil
+}
+
+// Names は user ID から表示名への表。ボットと無効化済みのユーザーも含める (含めないと退職者・ボットの発言が ID のまま出る)。
+func (c Client) Names(ctx context.Context) (map[string]string, error) {
+	var us []user
+	if _, err := c.decode(ctx, &us, "users", "-json", "-bots", "-deleted"); err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(us))
+	for _, u := range us {
+		for _, n := range []string{u.Profile.DisplayName, u.RealName, u.Profile.RealName, u.Name} {
+			if n != "" {
+				names[u.ID] = n
+				break
+			}
+		}
+	}
+	return names, nil
+}
+
+// Channels はワークスペースのチャンネルの一覧。
+func (c Client) Channels(ctx context.Context) ([]Channel, error) {
+	var chs []Channel
+	_, err := c.decode(ctx, &chs, "channels", "-json")
+	return chs, err
+}
+
+// Fetched は history / thread の結果。Truncated は件数の上限に届いたこと、Warning は slack-cli の stderr (途中で切れた等。空なら無し)。
+// MaybeOld は history の親が 1 つもスレッドの動きを持たなかったこと (OldSlackCLINote)。
+type Fetched struct {
+	Msgs      []Message
+	Truncated bool
+	Warning   string
+	MaybeOld  bool
+}
+
+// History は channel の oldest より新しい発言 (親とスレッド外の発言)。
+// 🚨 フラグは引数より前に置く (slack-cli は引数の後ろのフラグを使い方の誤りとして rc=2 で止める)。
+//
+// 親が 1 つもスレッドの動き (reply_count / latest_reply) を持たないなら MaybeOld を立てる (OldSlackCLINote)。
+func (c Client) History(ctx context.Context, channel, oldest string) (Fetched, error) {
+	var f Fetched
+	warn, err := c.decode(ctx, &f.Msgs, "history", "-json", "-oldest", oldest, "-n", strconv.Itoa(HistoryLimit), channel)
+	if err != nil {
+		return Fetched{}, err
+	}
+	parents, active := 0, 0
+	for _, m := range f.Msgs {
+		if m.IsThreadParent() {
+			parents++
+			if m.ReplyCount > 0 || m.LatestReply != "" {
+				active++
+			}
+		}
+	}
+	f.Truncated, f.Warning, f.MaybeOld = len(f.Msgs) >= HistoryLimit, warn, parents > 0 && active == 0
+	return f, nil
+}
+
+// Thread はスレッドの親と返信 (古い順)。
+func (c Client) Thread(ctx context.Context, channel, parentTs string) (Fetched, error) {
+	var f Fetched
+	warn, err := c.decode(ctx, &f.Msgs, "thread", "-json", "-n", strconv.Itoa(ThreadLimit), channel, parentTs)
+	if err != nil {
+		return Fetched{}, err
+	}
+	f.Truncated, f.Warning = len(f.Msgs) >= ThreadLimit, warn
+	return f, nil
+}

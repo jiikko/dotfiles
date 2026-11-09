@@ -120,6 +120,14 @@
 - `src/safefs/sandbox` (`safefs/sandbox`) — Package sandbox はテストのための safefs.Guard: 明示的に登録した一時ディレクトリの外への操作を**実行前に**拒否する (`~/.claude/rules/sandbox-real-destructive-test-apis.md`)。
 - `src/schedkeys` (`schedkeys`) — 1 行のテキスト編集状態。 (main)
 - `src/serialrun` (`serialrun`) — serial-run — 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにし、同時には 1 本だけ走らせる。 (main)
+- `src/slack-bbs` (`slack-bbs`) — slack-bbs は購読した Slack のチャンネルの会話を、話題ごとに組み直して掲示板風に読むコマンド。 (main)
+- `src/slack-bbs/board` (`slack-bbs/board`) — Package board は会話の発言を「単位」(スレッド 1 本、またはスレッド外の発言 1 件) にまとめ直し、LLM の分類を検査して 話題ごとの板 (Board) に組む。
+- `src/slack-bbs/job` (`slack-bbs/job`) — Package job は 2 段の実行 (prepare → 分類 → show) の間で受け渡すファイルを読み書きする。
+- `src/slack-bbs/llm` (`slack-bbs/llm`) — Package llm は単位の列を claude -p に渡し、話題への分類 (board.Response) を返させる。
+- `src/slack-bbs/render` (`slack-bbs/render`) — Package render は板 (話題の列) を掲示板風の Markdown にする。
+- `src/slack-bbs/source` (`slack-bbs/source`) — Package source は slack-cli を起動して、会話の材料 (発言・スレッド・ユーザー・チャンネル) を JSON で読む。
+- `src/slack-bbs/subs` (`slack-bbs/subs`) — Package subs は購読するチャンネルの一覧 (~/.config/slack-bbs/subscriptions.json) と、それを選ぶ画面を持つ。
+- `src/slack-bbs/view` (`slack-bbs/view`) — Package view は板を読む画面 (TUI)。
 - `src/subproc` (`subproc`) — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
 - `src/subproc/boundarycheck` (`subproc/boundarycheck`) — Package boundarycheck は「外部コマンドの Cmd を作ったのに WaitDelay を張り忘れる」を止める検査の本体。
 - `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う)。
