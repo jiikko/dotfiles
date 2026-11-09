@@ -506,10 +506,8 @@ func TestDiffStopsOnCloseAndRefetchesOnRefresh(t *testing.T) {
 func TestDiffOfClosingTileStopsOnCloseWithoutRefetch(t *testing.T) {
 	started := make(chan struct{}, 4)
 	canceled := make(chan struct{}, 4)
-	var calls atomic.Int32
 	orig, origHead := gitDiffCommand, gitHeadExists
 	gitDiffCommand = func(ctx context.Context, _, _ string, _ bool) ([]byte, error) {
-		calls.Add(1)
 		started <- struct{}{}
 		<-ctx.Done()
 		canceled <- struct{}{}
@@ -530,11 +528,12 @@ func TestDiffOfClosingTileStopsOnCloseWithoutRefetch(t *testing.T) {
 	// hang guard (止めなかったときだけ落とす)
 	testwait.Recv(t, "閉じかけのタイルの取得を、閉じても止めない", canceled, testwait.Within(10*time.Second))
 	waitDiff(t, m)
+	job := tl.diff
 	m.Refresh()
-	if n := calls.Load(); n != 1 {
-		t.Fatalf("閉じかけのタイルの diff を開き直しで取り直した (git の呼び出し %d 回)", n)
+	if tl.diff != job { // 取り直しの git は goroutine の中なので、呼び出しの回数ではなく取得の差し替えで見る
+		waitDiff(t, m)
+		t.Fatal("閉じかけのタイルの diff を開き直しで取り直した")
 	}
-	waitDiff(t, m)
 }
 
 // 取り終えた diff は、閉じて開き直しても取り直さず、読んでいた位置も保つ (止めていない diff を捨てない)。
