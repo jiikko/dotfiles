@@ -88,7 +88,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | 種類 | 置き場 |
 |---|---|
 | 全プロジェクト共通の作業規範 (毎セッション読まれる) | [`_claude/rules/`](../_claude/rules/) — 本文は規範だけ。根拠は `_claude/rules-rationale/` |
-| dotfiles 固有の作業規範 | [`.claude/rules/`](../.claude/rules/) — dotfiles で作業するときに読まれる。踏む場所をファイルの glob で言えるもの (zsh の hook / trap・Bench の確認・skill の評価) は frontmatter の `paths:` で、その glob のファイルを Read したときだけ読ませる (Write / Edit では読み込まれない)。他プロジェクトでも成り立つ規範なら `_claude/rules/` へ (全プロジェクトで毎セッション全文が読まれるので、足すほど全セッションの文脈を食う) |
+| dotfiles 固有の作業規範 | [`.claude/rules/`](../.claude/rules/) — dotfiles で作業するときに読まれる。踏む場所をファイルの glob で言えるもの (zsh の hook / trap・Bench の確認・skill の評価) は frontmatter の `paths:` で、その glob のファイルを Read・Write・Edit したときだけ読ませる (発火の条件と測り方は [CLAUDE.md](../CLAUDE.md) の `_claude/` 節)。他プロジェクトでも成り立つ規範なら `_claude/rules/` へ (全プロジェクトで毎セッション全文が読まれるので、足すほど全セッションの文脈を食う) |
 | ディレクトリ固有の規約 | そのディレクトリの `CLAUDE.md` (`scripts/` / `tests/` / `_claude/` / `src/<name>/` の各 module など) |
 | Go で書いた各ツールの使い方 | `src/<name>/README.md` と `<tool> --help` (tmux・シェル関数・macOS 連携は上の `tools/`) |
 | 作業の記録・残課題・振り返り | [`issues/`](../issues/) (共通規約は [`_claude/issue-rules.md`](../_claude/issue-rules.md)、dotfiles 固有は `issues/README.md`) |

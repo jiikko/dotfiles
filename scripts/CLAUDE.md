@@ -50,11 +50,11 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 - tmux_server_watchdog.sh は `trap '' TERM` が生命線 (サーバは終了時に run-shell 子プロセスへ
   SIGTERM を送る。3.7b 実測 2026-07-30)。外すと肝心の死亡瞬間に watchdog ごと死ぬ
 - 共有の観測ログ (~/.cache/tt-restore-trigger.log) に書くスクリプトは default socket ゲート
-  (guards.sh の tt_on_default_server) を通す。-L テストサーバも conf を source して同じ hook を
+  (lib/tmux_resurrect_guards.sh の tt_on_default_server) を通す。-L テストサーバも conf を source して同じ hook を
   持つため、ゲート無しだとテストのイベントが本番の死因分類 (watchdog の verdict) を汚す。
-  **書き手は guards.sh の `tt_trigger_log` だけ**にする (行書式の正本を 1 箇所に保つため)。
+  **書き手は lib/tmux_resurrect_guards.sh の `tt_trigger_log` だけ**にする (行書式の正本を 1 箇所に保つため)。
   直接 append する箇所は `make test-trigger-log-writers` (`scripts/check_trigger_log_writers.sh`)
-  が落とす。`#!/bin/sh` で guards.sh を source できない等の例外は行内に
+  が落とす。`#!/bin/sh` で lib/tmux_resurrect_guards.sh を source できない等の例外は行内に
   `trigger-log-writer: allow` と理由を書く
 - kill-server / kill-session の command-alias shim (tmux_log_kill_command.sh) は kill の実行
   経路上にある。どんな失敗でも kill 自体を止めない (無音 exit 0) こと。行の書式は
@@ -69,7 +69,7 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | スクリプト | 落とすもの | 例外マーカー |
 |---|---|---|
 | `check_handrolled_timeout.sh` | 時間の上限付き実行を `bin/runtimeout` 以外で手で組む (`timeout` / `gtimeout` / `( sleep; kill ) &`。issue 643) | `handrolled-timeout: allow` |
-| `check_test_sleeps.sh` | テストに、理由の印の無い `sleep` / `time.Sleep` を足す (issue 615) | `sleep-ok: <分類>: <理由>` |
+| `check_test_sleeps.sh` | テストに、理由の印の無い `sleep` / `time.Sleep` を足す (issue 615。待つなら shell は `tests/lib/wait_until.sh`、Go は `src/testwait`) | `sleep-ok: <分類>: <理由>` |
 | `check_pipefail_grep_q.sh` | pipefail 下の `… \| grep -q` (一致しても非 0 になる。issue 096) | `pipefail-grep-q: allow` |
 | `check_trigger_log_writers.sh` | 共有観測ログの書き手が `tt_trigger_log` 以外に増える (issue 079) | `trigger-log-writer: allow` |
 | `check_ci_group_deps.sh` | CI の heavy/rest 分割と Makefile の値の食い違い (issue 073 §3) | — |
@@ -80,6 +80,7 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | `check_comment_provenance.sh` | コードコメントの変更の経緯・出所の語 (issue / retro の番号・以前は・旧実装・レビューの指摘) がファイルごとの一覧 (`comment_provenance_allowlist.txt`) より増える。規範は CLAUDE.md の「何をどこに書くか」。`--list <path>` で該当行、書き直したら `--update`。`--file <path>` は 1 ファイルだけ (add 前も) を一覧と比べる (編集の直後の hook `comment-provenance-on-edit.sh` が使う) | 印は無い (一覧の件数で受ける。増やすなら `--update --allow-increase` でレビューに見せる) |
 | `check_cdpath_before_cd_capture.sh` | `$(cd …)` でパスを取る前に CDPATH を外していない (`unset CDPATH` か lib なら `$(CDPATH='' cd …)`。export された CDPATH の下で相対パスの cd が解決先を stdout に出し、取ったパスが 2 行になる。zsh も対象) | `cdpath: allow` |
 | `check_var_before_multibyte.sh` | bash / sh で `$var` の直後に ASCII 以外の文字 (bash 3.2 が UTF-8 で全角の先頭バイトまで変数名に読む。`set -u` で死ぬか値が消える。zsh のファイルは除く。末尾で字句の状態が閉じないファイルも落とす。issue 633) | `var-multibyte: allow` |
+| `check_instruction_budget.sh` | 毎セッション全文読まれる指示ファイル (CLAUDE.md と `paths:` の無い rule) の合計が Claude Code の上限 150k 字を超える (`make test-instruction-budget`) | — |
 
 `make test-lint` の外から回る check_*.sh が 2 本ある。`check_unused_excluding_tests.sh` は `make test-unused-excluding-tests`
 (`test-src` に含まれ、CI は `unused.yml`。全 push の lint.yml で Go 解析を回さないため test-lint に入れない)。
