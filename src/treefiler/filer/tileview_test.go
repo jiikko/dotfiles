@@ -531,6 +531,7 @@ func TestDiffOfClosingTileStopsOnCloseWithoutRefetch(t *testing.T) {
 	job := tl.diff
 	m.Refresh()
 	if tl.diff != job { // 取り直しの git は goroutine の中なので、呼び出しの回数ではなく取得の差し替えで見る
+		tl.stopDiff() // 取り直した取得は fake の中で止まったままなので、止めてから終わりを待つ (差し替え点を戻す後始末と重ねない)
 		waitDiff(t, m)
 		t.Fatal("閉じかけのタイルの diff を開き直しで取り直した")
 	}
