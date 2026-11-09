@@ -231,7 +231,7 @@ func (m *Model) Close() {
 	m.loadCont = nil // 開き直したときに古い打鍵の続きで潜らない (読み込み中の記録は残し、開き直した後の Advance で取り込む)
 	m.watch.close()
 	for _, t := range m.tiles {
-		t.holdDiff() // 取得中の git と色付けを、閉じた後まで走らせない
+		t.holdDiff() // 取得中の git を、閉じた後まで走らせない (色付けは始まっていれば最後まで走る。highlight.Diff は止められない)
 	}
 	m.savePlace()
 }

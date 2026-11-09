@@ -482,7 +482,9 @@ func TestDiffStopsOnCloseAndRefetchesOnRefresh(t *testing.T) {
 		canceled <- struct{}{}
 		return nil, ctx.Err()
 	}
-	t.Cleanup(func() { gitDiffCommand = orig })
+	origHead := gitHeadExists
+	gitHeadExists = func(context.Context, string) (bool, error) { return true, nil } // 止めた取得を HEAD の無い repo の取り直しへ回さない
+	t.Cleanup(func() { gitDiffCommand, gitHeadExists = orig, origHead })
 	m := newTest(t)
 	markModified(t, m, "c.txt")
 	tl := openTileAt(t, m, "c.txt")
@@ -497,6 +499,28 @@ func TestDiffStopsOnCloseAndRefetchesOnRefresh(t *testing.T) {
 	lines, _, done := tl.diff.result()
 	if tl.mode != modeDiff || !done || len(lines) != 1 || lines[0] != "+added" {
 		t.Fatalf("開き直した diff が取り直されていない: mode=%v done=%v lines=%q", tl.mode, done, lines)
+	}
+}
+
+// 取り終えた diff は、閉じて開き直しても取り直さず、読んでいた位置も保つ (止めていない diff を捨てない)。
+func TestDiffKeptAcrossCloseWhenDone(t *testing.T) {
+	calls := fakeDiff(t, false, strings.Repeat("+line\n", 200))
+	m := newTest(t)
+	markModified(t, m, "c.txt")
+	writeRel(t, m, "c.txt", "x\n")
+	tl := openTileAt(t, m, "c.txt")
+	m.HandleKey("d")
+	waitDiff(t, m)
+	job := tl.diff
+	tl.scroll = 50
+	m.Close()
+	m.Refresh()
+	waitDiff(t, m)
+	if n := len(*calls); n != 1 {
+		t.Fatalf("取り終えた diff を開き直しで取り直した (git の呼び出し %d 回)", n)
+	}
+	if tl.diff != job || tl.scroll != 50 {
+		t.Fatalf("取り終えた diff を捨てた・位置を戻した (同じ取得=%v scroll=%d)", tl.diff == job, tl.scroll)
 	}
 }
 

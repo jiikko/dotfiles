@@ -708,7 +708,6 @@ func (m *Model) toggleDiff(t *tile) {
 // setMode は本体と diff を切り替え、先頭から出し直す。
 func (t *tile) setMode(mode tileMode) {
 	t.stopDiff()
-	t.diffHeld = false
 	t.mode = mode
 	if mode == modeDiff {
 		t.diff = startDiff(t.n.path()) // 切り替えるたびに取り直す (開いている間に書き換えた・git add した分を出す)
@@ -727,9 +726,10 @@ func (m *Model) diffLoading(t *tile) bool {
 
 // holdDiff は取得中の diff を止め、開き直したときに取り直す印を付ける (Close)。🚨 止めるだけにしない: glogx は閉じた Model を
 // 開き直して使い回す (filerview の Hide と Show)。止めた取得は「diff を取れません: context canceled」で終わるので、取り直さないと開き直した
-// タイルにそれが残る。取り終えた diff は止めない (そのまま見せられる)
+// タイルにそれが残る。取り終えた diff は止めない (そのまま見せられる)。閉じかけのタイル (closing) は取り直さない (次の step で外れる)。
+// 確かめた直後に取得が終わる競合は防がない: 起きても、取れた diff を Refresh で 1 回取り直すだけ
 func (t *tile) holdDiff() {
-	if t.mode != modeDiff || t.diff == nil {
+	if t.mode != modeDiff || t.diff == nil || t.closing {
 		return
 	}
 	if _, _, done := t.diff.result(); done {
@@ -740,7 +740,9 @@ func (t *tile) holdDiff() {
 }
 
 // stopDiff は取得中の diff の git を止める (結果は使わない)。
+// 印 (diffHeld) もここで消す: 止めた取得は、差し替える・本体へ戻す・外すどの経路でも取り直さない (holdDiff だけが止めた後に付け直す)。
 func (t *tile) stopDiff() {
+	t.diffHeld = false
 	if t.diff != nil && t.diff.cancel != nil {
 		t.diff.cancel()
 	}
