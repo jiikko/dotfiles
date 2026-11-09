@@ -29,8 +29,8 @@ git dir の両方が dir の中に閉じていて外から使われないのに�
 
 1. 名前がちょうど `.git` の実体の dir (symlink・`.GIT` などの大文字は今までどおり残す)
 2. 親の dir に `.git` 以外のエントリがある (名前が `.git` の `--separate-git-dir` の置き場を外の作業ツリーから使っている形を除く)
-3. `config` が実体のファイルで、`[remote`・`[include`・`[includeIf` の節も `worktree =` の行も無い (clone と、外の作業ツリーを指す core.worktree を除く。
-   大文字小文字を問わない)。`commondir` も `config.worktree` (extensions.worktreeConfig。core.worktree がそこへ移る) も持たない
+3. `config` が実体のファイルで、git 自身に読ませて (`git config --file`) remote・include・includeIf・core.worktree・extensions.worktreeConfig が無く、
+   core.bare が true でない (clone・外の設定・外の作業ツリー・名前が .git の bare を除く)。`commondir` も `config.worktree` (extensions.worktreeConfig。core.worktree がそこへ移る) も持たない
 3b. 親の作業ファイルが index と食い違わない (`git ls-files -d` が空。fsmonitor は切る)。`git init --separate-git-dir=X/.git W` は X/.git/config に
    core.worktree を書かない (2026-11-09 に実測) ので、X に兄弟のファイルがあると 1〜3 では外の作業ツリーの置き場と見分けられない
 3c. tmp の中のどの repo の `objects/info/alternates` もこの git dir を指していない (`clone -s` で借りた側の objects が壊れる)。一覧を読めなければ全部を残す
@@ -74,5 +74,14 @@ bare の形 (HEAD と objects/・refs/ が並ぶが `.git` の中に無い dir) 
   変異 16 本がすべて red (条件 2・remote・include・worktree =・commondir・worktree の登録の外・解決できない登録・submodule の置き場を飛ばす・
   使い捨ての dir / ファイルの判定を外す・.git ファイルが外を指す・config.worktree・ls-files -d・alternates・alternates の読み込みの rc・相対パスの基準)。
   緑のまま 1 本: 名前の完全一致の確認を外す (`.GIT`) → その中の HEAD が git dir の形として別に残すので消えない (二重の守りの片方。等価な変異ではない)
-- [ ] 敵対的レビュー (opus)
+- [x] 敵対的レビュー 1 周目 (opus、読み取りと自分の mktemp の repo での再現だけ)。P1 5 件 + P2 1 件を再現され、うち 6 形を直した:
+  config を grep で読むと抜ける書き方 (見出しと同じ行の `[core] worktree = …`・先頭の BOM の後の `[remote`) → **軸を字面から git の解釈へ移し**、`git config --file` で読む /
+  大文字の `CONFIG.WORKTREE` (APFS では git が読む) → `-iname` と extensions.worktreeConfig / symlink の alternates → `-type l` も読む /
+  引用符で囲んだ alternates の行 (git は C 形式で unquote する) → 解かずに全部を残す側に倒す / 名前が `.git` の bare に兄弟がある (index が無く ls-files -d も空) → core.bare。
+  テスト 14 の k14〜k19 と 14b、変異 5 本がすべて red (config を grep に戻す・core.bare・-iname・-type f・引用符の扱い)。
+  **受け入れた (検出しない)**: git-new-workdir の形 (外の dir が `.git` の中身を symlink で指して使う)。外から path でこの `.git` を使う形 (`GIT_DIR`・tmp の外の alternates) と同じで、
+  中身からは見えない。使っている間は objects・refs への書き込みで中身が新しくなるので、DAYS 日使われなかったときだけ消える (tmp の中の普通のファイルを外から指している場合と同じ)。
+  alternates の一覧を起動時に 1 回だけ取る窓 (実行中の `clone -s`) も受け入れた (判定から rm までの書き込みを見ないのと同じ種類。未再現)。
+  壊せなかった観点: ls-files -d からのコマンド実行 (fsmonitor・pager・editor・sshCommand・credential・filter・hooksPath・untrackedCache ほか)・大文字小文字の違う alternates・
+  `"`・空白・é を含むパス・`objects/../objects`・bash 3.2 の IFS / set -f の漏れ
 - [ ] `make test`

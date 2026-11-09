@@ -346,6 +346,15 @@ fx "$T/k13/r" && "$REAL_GIT" clone -q -s "$T/k13/r" "$T/y13/c"
 fx "$T/fx4/a" && "$REAL_GIT" -C "$T/fx4/a" worktree add -q --relative-paths --detach "$T/fx4/w" >/dev/null 2>&1
 case $(cat "$T/fx4/a/.git/worktrees/w/gitdir" 2>/dev/null) in /*|'') fail "14: 相対パスの worktree の登録を作れない (git $("$REAL_GIT" --version))" ;; esac
 fx "$T/fx5/r" && echo /nonexistent14/objects > "$T/fx5/r/.git/objects/info/alternates"
+# 敵対的レビューで消せた形: config を字面で読むと抜ける書き方 (同じ行の key・BOM)・大文字の config.worktree・symlink の alternates・名前が .git の bare
+fx "$T/k14/r" && printf '[core] worktree = %s\n' "$WORK/out14k14" >> "$T/k14/r/.git/config"
+fx "$T/k15/r" && { printf '\357\273\277[remote "origin"]\n\turl = %s\n' "$REPO"; cat "$T/k15/r/.git/config"; } > "$WORK/cfg15" && mv "$WORK/cfg15" "$T/k15/r/.git/config"
+"$REAL_GIT" -C "$T/k15/r" remote | grep -qx origin || fail "14: BOM の後の remote を git が読まない (前提が崩れた)"
+fx "$T/k16/r" && "$REAL_GIT" -C "$T/k16/r" config extensions.worktreeConfig true && printf '[core]\n\tworktree = %s\n' "$WORK/out14k16" > "$T/k16/r/.git/CONFIG.WORKTREE"
+fx "$T/k16b/r" && printf '[core]\n\tsparseCheckout = true\n' > "$T/k16b/r/.git/CONFIG.WORKTREE"
+fx "$T/k17/r" && "$REAL_GIT" clone -q -s "$T/k17/r" "$T/y17/c" && mv "$T/y17/c/.git/objects/info/alternates" "$T/y17/alt" && ln -s ../../../../alt "$T/y17/c/.git/objects/info/alternates"
+"$REAL_GIT" -C "$T/y17/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の alternates を git が読まない (前提が崩れた)"
+mkdir -p "$T/k19/p" && "$REAL_GIT" init -q --bare "$T/k19/p/.git" && echo r > "$T/k19/p/README"
 find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
 fx "$T/new1/r" && touch -t $OLD "$T/new1" # 中身は今日
 [ -d "$T/k9/super/.git/modules/s" ] || fail "14: submodule の置き場を作れない"
@@ -354,13 +363,23 @@ run; rc=$?
 for d in fx1 fx2 fx3 fx4 fx5; do
 	if [ ! -e "$T/$d" ]; then ok "14: 閉じた使い捨ての repo だけの $d を消した"; else fail "14: $d を残した ($(grep "$d" "$WORK/out"))"; fi
 done
-for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13; do
+for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k16b k17 k19; do
 	if [ -d "$T/$d" ] && grep -q "残す (中に git の作業ツリーか置き場がある: tmp/$d/" "$WORK/out"; then ok "14: 外から使われうる $d を残した"; else fail "14: $d を消した / 理由が違う ($(grep "$d" "$WORK/out"))"; fi
 done
 if [ -e "$T/new1/r/f" ] && grep -q "残す (中に 30 日以内の更新がある: tmp/new1" "$WORK/out"; then ok "14: 中が新しい fixture は残した"; else fail "14: 新しい fixture を消した ($(grep new1 "$WORK/out"))"; fi
 [ -e "$WORK/out14wt/u" ] && [ -e "$WORK/out14sep/u" ] || fail "14: 外の作業ツリーが消えた"
 "$REAL_GIT" -C "$WORK/out14sep2" log -1 >/dev/null 2>&1 || fail "14: 外の作業ツリー out14sep2 の repo が壊れた"
 "$REAL_GIT" -C "$T/y13/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 y13 の objects が壊れた"
+"$REAL_GIT" -C "$T/y17/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の alternates で借りた側 y17 の objects が壊れた"
+
+# 14b. 引用符で囲んだ alternates の行 (git は C 形式で unquote して読む) は解かずに、借りられている先を知らないとして使い捨ての repo も残す
+newrepo r14b
+T="$REPO/tmp"
+fx "$T/k18/r" && "$REAL_GIT" clone -q -s "$T/k18/r" "$T/y18/c" && printf '"%s"\n' "$(cd "$T/k18/r/.git/objects" && /bin/pwd -P)" > "$T/y18/c/.git/objects/info/alternates"
+"$REAL_GIT" -C "$T/y18/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14b: 引用符の alternates を git が読まない (前提が崩れた)"
+find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
+run; rc=$?
+if [ -d "$T/k18" ] && "$REAL_GIT" -C "$T/y18/c" cat-file -e 'HEAD:f' 2>/dev/null; then ok "14b: 引用符の alternates が指す repo を残した"; else fail "14b: rc=$rc 借りられている k18 を消した ($(cat "$WORK/out"))"; fi
 
 if [ "$fails" -ne 0 ]; then
 	echo "✗ clean_tmp: $fails 件失敗"

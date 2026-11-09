@@ -60,14 +60,16 @@ trap 'rm -rf "$work"' EXIT
 
 # tmp の中の全部の alternates の指す先 (実体のパス)。disposable_gitdir が「借りられている repo」を使い捨てにしないために使う
 alts='' alts_ok=1
-if af=$(find "$tmp" -path '*/objects/info/alternates' -type f -print 2>/dev/null); then
+# 🚨 -type f で絞らない: git は symlink の alternates も読む
+if af=$(find "$tmp" -path '*/objects/info/alternates' \( -type f -o -type l \) -print 2>/dev/null); then
 	IFS=$'\n'
 	set -f
 	for f in $af; do
 		# 🚨 while の後ろに || を付けて読めないことを見ない: while の rc は本体で最後に打ったコマンドの rc で、指す先の無い行の cd の失敗を拾う
 		[ -r "$f" ] || { alts_ok=0; continue; }
 		while IFS= read -r l || [ -n "$l" ]; do
-			case $l in '' | '#'*) continue ;; /*) t=$l ;; *) t="${f%/info/alternates}/$l" ;; esac
+			# 引用符で囲んだ行は git が C 形式で unquote して読む。ここでは解かずに、借りられている先を知らない側 (全部を残す) に倒す
+			case $l in '' | '#'*) continue ;; '"'*) alts_ok=0; continue ;; /*) t=$l ;; *) t="${f%/info/alternates}/$l" ;; esac
 			# 指す先が無い alternates は、どの repo も借りていない (借りた側が既に壊れている)
 			r=$(cd "$t" 2>/dev/null && /bin/pwd -P) && alts="$alts"$'\n'"${r%/objects}"
 		done < "$f"
@@ -161,8 +163,11 @@ inside() { case $2 in "$1"/*) return 0 ;; esac; return 1; }
 #     (`git init --separate-git-dir=X/.git W` は X/.git/config に core.worktree を書かない。2026-11-09 に実測)
 #   - worktrees/* の作業ツリーが外 (登録済みの worktree の commit と未コミットの変更を失う)。指す先を解決できない (prune 待ち) も残す
 #   - tmp の中の別の repo が alternates (clone --shared) でこの objects を借りている (借りた側の objects が壊れる)
-# 検出しない: tmp の外の repo が alternates で借りる形・外から GIT_DIR でこの .git を直接使う形・外の作業ツリーの tracked のファイルが
-# たまたま全部親にも同名である --separate-git-dir の置き場 (中身から見えない)
+#   - core.bare が true (名前が .git の bare。外から push される置き場で、index が無いので ls-files -d も空になる)
+# 検出しない (中身から見えない。tmp の中の普通のファイルを外から指しているのと同じ扱いで、使われている間は中身が新しくなるので
+# DAYS 日使われなかったときだけ消える): 外の dir がこの .git を path で直接使う形 (GIT_DIR・git-new-workdir の symlink・tmp の外の
+# alternates)・外の作業ツリーの tracked のファイルが、たまたま全部親にも同名である --separate-git-dir の置き場。
+# alternates の一覧は起動時に 1 回だけ取る (実行中に clone -s で借りた側は見ない。判定から rm までの書き込みを見ないのと同じ)
 disposable_gitdir() {
 	local g=$1 c=$2 p n ws w t d rc IFS
 	[ "${g##*/}" = .git ] && [ -d "$g" ] && [ ! -L "$g" ] || return 1
@@ -171,10 +176,15 @@ disposable_gitdir() {
 	[ -n "$n" ] || return 1
 	[ -f "$g/config" ] && [ ! -L "$g/config" ] || return 1
 	[ ! -e "$g/commondir" ] && [ ! -L "$g/commondir" ] || return 1
-	grep -Eiq '^[[:space:]]*\[[[:space:]]*(remote|include)|^[[:space:]]*worktree[[:space:]]*=' "$g/config"
+	# 🚨 config を grep で読まない: 節の見出しと同じ行の key・先頭の BOM など、git が読む書き方を字面では追い切れない。git 自身に読ませる
+	# (--file は include を辿らず、そのファイルだけを読む。読むだけで何も実行しない)
+	git config --file "$g/config" --get-regexp '^(remote|include|includeif)\.|^core\.worktree$|^extensions\.worktreeconfig$' >/dev/null 2>&1
 	rc=$?
-	[ "$rc" -eq 1 ] || return 1 # 0 = 当たった、2 = 読めない
-	n=$(find "$g" -maxdepth 3 -name config.worktree -print -quit 2>/dev/null) || return 1
+	[ "$rc" -eq 1 ] || return 1 # 0 = 当たった、それ以外 = 読めない
+	n=$(git config --file "$g/config" --type=bool --get core.bare 2>/dev/null)
+	rc=$?
+	[ "$rc" -eq 1 ] || { [ "$rc" -eq 0 ] && [ "$n" = false ]; } || return 1 # 名前が .git の bare (外から push される置き場)
+	n=$(find "$g" -maxdepth 3 -iname config.worktree -print -quit 2>/dev/null) || return 1
 	[ -z "$n" ] || return 1
 	borrowed "$g" && return 1
 	# 🚨 fsmonitor は config に書いたコマンドを ls-files が起こす。fixture の config の中身を実行しないように切る
