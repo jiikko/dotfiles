@@ -556,6 +556,42 @@ func oneStatementFunc(body *ast.BlockStmt) bool {
 	return thin
 }
 
+// lockedAccessor は、本体がちょうど 3 文で「X.Lock() か X.RLock()」→「同じ X の defer X.Unlock() か X.RUnlock()」→
+// 制御文でない文 1 つ (oneStatementFunc と同じ条件) か。X は字面で比べる (型は解決しない)。
+func lockedAccessor(body *ast.BlockStmt) bool {
+	if body == nil || len(body.List) != 3 {
+		return false
+	}
+	lock, ok := body.List[0].(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	recv, name := methodCall(lock.X)
+	unlock := map[string]string{"Lock": "Unlock", "RLock": "RUnlock"}[name]
+	d, ok := body.List[1].(*ast.DeferStmt)
+	if unlock == "" || !ok {
+		return false
+	}
+	drecv, dname := methodCall(d.Call)
+	if dname != unlock || types.ExprString(drecv) != types.ExprString(recv) {
+		return false
+	}
+	return oneStatementFunc(&ast.BlockStmt{List: body.List[2:]})
+}
+
+// methodCall は引数の無い X.M() の X と M を返す (違う形なら nil と "")。
+func methodCall(e ast.Expr) (ast.Expr, string) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return nil, ""
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return nil, ""
+	}
+	return sel.X, sel.Sel.Name
+}
+
 // thinCallArgs は薄い委譲の引数の数の上限。
 const thinCallArgs = 2
 

@@ -151,7 +151,14 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 		w.printf("%s\n", skippedSimilar)
 	} else {
 		w.section("3. 部分木が似ている対 (Dice %.2f 以上・%d 節以上。同一動作・再利用は未証明。上の組に入る対は除く。行頭は Dice と w = 共有している部分木の重みの合計 (寄せたときに減る量の目安) で、w の大きい順)", *threshold, sweepDeepMinNodes)
-		sweepSimilarText(w, similar, *c.limit)
+		shownSimilar, lockedPairs := similar, 0
+		if !*c.verbose {
+			shownSimilar, lockedPairs = foldLockedPairs(similar)
+		}
+		sweepSimilarText(w, shownSimilar, *c.limit)
+		if lockedPairs > 0 {
+			w.printf("lock → defer unlock → 文 1 つの accessor どうしの対 %d (寄せる先の無い決まった形なので畳んだ。-v で出す)\n", lockedPairs)
+		}
 	}
 	w.section("4. 名前の束 (同じ動詞で始まる小さい関数が同じ dir に %d 個以上・同名のメソッド・連番の名前。寄せられる共通の道具の手がかり)", sweepClusterMin)
 	sweepClusterText(w, clusters, *c.limit)
@@ -291,6 +298,9 @@ func sweepGroups(w *lineWriter, groups []group.Group, limit int) {
 		}
 		if report.SingleCall(g.Members) {
 			w.printf("%s\n", report.SingleCallMark)
+		}
+		if lockedAccessors(g.Members) {
+			w.printf("%s\n", sweepLockedMark)
 		}
 	}
 }
@@ -469,6 +479,25 @@ func nested(a, b *tree.Unit) bool {
 	}
 	in := func(x, y *tree.Unit) bool { return y.Line <= x.Line && x.EndLine <= y.EndLine }
 	return in(a, b) || in(b, a)
+}
+
+// sweepLockedMark は、全員が lock の accessor (tree.Unit.LockedAccessor) の組の下に足す印の行。
+const sweepLockedMark = "  印: 全員の本体が lock → defer unlock → 文 1 つの accessor (欄ごとに書く決まった形で、寄せる先は無いことが多い。除外するなら理由にそう書く)"
+
+func lockedAccessors(members []*group.Entry) bool {
+	for _, m := range members {
+		if !m.Unit.LockedAccessor {
+			return false
+		}
+	}
+	return len(members) > 0
+}
+
+// foldLockedPairs は、両方が lock の accessor の対を外し、外した数を返す。欄ごとに同じ 3 文を書く accessor は互いに部分木の大半を共有し、
+// 節 3 の上位を埋める (src で treefiler が絡む 13 対が全部この形だった)。組 (節 1・2) と違い対は数が多いので、印ではなく畳む
+func foldLockedPairs(pairs []sweepSimilar) ([]sweepSimilar, int) {
+	kept := keepIf(pairs, func(p sweepSimilar) bool { return !p.a.Unit.LockedAccessor || !p.b.Unit.LockedAccessor })
+	return kept, len(pairs) - len(kept)
 }
 
 func sweepSimilarText(w *lineWriter, pairs []sweepSimilar, limit int) {

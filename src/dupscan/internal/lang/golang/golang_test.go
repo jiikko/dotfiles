@@ -269,6 +269,30 @@ func newFixture(name string) int { return len(name) }`)
 	}
 }
 
+// lock の accessor は「X.Lock / X.RLock → 同じ X の defer Unlock / RUnlock → 制御文でない文 1 つ」の 3 文だけ。
+func TestLockedAccessor(t *testing.T) {
+	r := parse(t, "a.go", `package a
+func (j *J) a1() bool { j.mu.Lock(); defer j.mu.Unlock(); return j.done }
+func (w *W) a2(p bool) { w.mu.Lock(); defer w.mu.Unlock(); w.paused = p }
+func (s *S) a3() int { s.mu.RLock(); defer s.mu.RUnlock(); return len(s.xs) }
+func (s *S) b1() int { s.mu.Lock(); defer s.other.Unlock(); return s.n }
+func (s *S) b2() int { s.mu.Lock(); defer s.mu.RUnlock(); return s.n }
+func (s *S) b3() int { s.mu.Lock(); s.mu.Unlock(); return s.n }
+func (s *S) b4() error { s.mu.Lock(); defer s.mu.Unlock(); s.n++; return nil }
+func (s *S) b5() { s.mu.Lock(); defer s.mu.Unlock(); if s.n > 0 { s.n = 0 } }
+func (s *S) b6() { s.mu.Lock(); defer s.mu.Unlock(); go func() { s.a(); s.b() }() }`)
+	for _, n := range []string{"a1", "a2", "a3"} {
+		if !langtest.Find(t, r, n).LockedAccessor {
+			t.Errorf("%s が lock の accessor にならない", n)
+		}
+	}
+	for _, n := range []string{"b1", "b2", "b3", "b4", "b5", "b6"} {
+		if langtest.Find(t, r, n).LockedAccessor {
+			t.Errorf("%s が lock の accessor になった", n)
+		}
+	}
+}
+
 func TestDelegation(t *testing.T) {
 	r := parse(t, "a.go", `package a
 func a1(id string) error { return s.inner.Delete(ctx, id, -1, "x", time.Now()) }

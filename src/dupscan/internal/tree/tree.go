@@ -127,7 +127,10 @@ type Unit struct {
 	// SingleCall は本体が「共通の道具を 1 回呼ぶだけ」の薄い委譲か (本体が 1 文の呼び出しで、呼ぶ先が名前・メンバーの参照、引数が 2 つまでで、どれも原子か文が 1 つのクロージャ)。
 	// 共通の道具へ寄せた後に残る薄い委譲の組に印を付けるのに使う (隠さない。寄せられる 1 行の写しも同じ形になるため)。
 	SingleCall bool
-	Unreadable bool // 読めない構文 (ERROR / MISSING) を含む
+	// LockedAccessor は本体が「lock → defer unlock → 分岐の無い文 1 つ」の accessor か (Go だけ。Swift の lock は書き方が割れるので決めない)。
+	// sweep が、寄せる先の無い決まった形の組に印を付け、似ている対を畳むのに使う (隠しきらない)
+	LockedAccessor bool
+	Unreadable     bool // 読めない構文 (ERROR / MISSING) を含む
 	// Allow は単位の直前のコメントに書いた `dupscan:allow` の後ろ (種別と理由)。HasAllow はその印があること (後ろが空でも)。
 	Allow     string
 	HasAllow  bool

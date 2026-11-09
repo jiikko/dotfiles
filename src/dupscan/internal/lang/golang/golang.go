@@ -193,6 +193,7 @@ func (w *walker) funcDecl(d *ast.FuncDecl, limit int) {
 	u := w.newUnit(d, tree.KindFunc, name, sig, encl, locals, ctx{broken: broken})
 	if !w.metadataOnly {
 		u.Body = w.convUnit(d, d.Body)
+		u.LockedAccessor = lockedAccessor(d.Body)
 		if call := soleCall(d.Body); call != nil {
 			u.SingleCall = thinCall(call)
 			u.Delegation = atomCall(call, true)

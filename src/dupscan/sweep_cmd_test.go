@@ -812,3 +812,92 @@ func prodB(xs []int, k int) int {
 		t.Errorf("起点の外の -focus は止める: rc=%d %q", rc, errs)
 	}
 }
+
+// lock → defer unlock → 文 1 つの accessor どうしの似ている対は、既定では数だけにして -v で出す。組には印を付ける。
+func TestSweepFoldsLockedAccessorPairsAndMarksGroups(t *testing.T) {
+	src := `package a
+
+import (
+	"bytes"
+	"sync"
+)
+
+type job struct {
+	mu   sync.Mutex
+	done bool
+}
+
+func (j *job) finished() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.done
+}
+
+type watch struct {
+	mu     sync.Mutex
+	paused bool
+}
+
+func (w *watch) pause(p bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.paused = p
+}
+
+type flaky struct {
+	mu    sync.Mutex
+	stops int
+}
+
+func (f *flaky) stop() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stops++
+	return nil
+}
+
+type buf1 struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *buf1) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+type buf2 struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *buf2) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+`
+	root := repoWith(t, map[string]string{"a/a.go": src})
+	rc, out, errs := sweep(t, root)
+	if rc != 0 {
+		t.Fatalf("rc=%d %q", rc, errs)
+	}
+	s3 := sweepSection(t, out, 3)
+	both := func(s string) bool {
+		return slices.ContainsFunc(strings.Split(s, "\n"), func(l string) bool { return strings.Contains(l, "finished") && strings.Contains(l, "pause") })
+	}
+	if both(s3) || !strings.Contains(s3, "accessor どうしの対 1 ") {
+		t.Errorf("accessor どうしの対は畳んで数だけ出す: %q", s3)
+	}
+	if !strings.Contains(s3, "stop") {
+		t.Errorf("前提: 文が 2 つの stop を含む対は畳まずに出る: %q", s3)
+	}
+	if !strings.Contains(out, "Write") || !strings.Contains(out, sweepLockedMark) {
+		t.Errorf("accessor の組に印を付ける: %q", out)
+	}
+	_, outv, _ := sweep(t, "-v", root)
+	if s := sweepSection(t, outv, 3); !both(s) || strings.Contains(s, "accessor どうしの対 ") {
+		t.Errorf("-v では畳まずに出す: %q", s)
+	}
+}

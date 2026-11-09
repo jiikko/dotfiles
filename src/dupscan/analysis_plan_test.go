@@ -41,7 +41,7 @@ func TestMetadataPlanPreservesAnalysisWithoutCloneBodies(t *testing.T) {
 	}
 	for i, u := range metadata.units {
 		other := *clones.units[i]
-		other.Body, other.Delegation, other.SingleCall = nil, false, false
+		other.Body, other.Delegation, other.SingleCall, other.LockedAccessor = nil, false, false, false
 		if u.Body != nil || !reflect.DeepEqual(u, &other) {
 			t.Errorf("unit metadata changed: %+v / %+v", u, &other)
 		}
