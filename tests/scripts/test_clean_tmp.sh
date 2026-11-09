@@ -151,8 +151,8 @@ fi
 # 10. 書き込みが失敗する状況 (ディスクが一杯) でも find_git は印を見落とさない (bash 3.2 の here-string は一時ファイルに書く)
 mkdir -p "$WORK/r10" && "$REAL_GIT" clone -q --bare "$WORK/r1" "$WORK/r10/b.git" 2>/dev/null
 # find_git と、それが呼ぶ helper を切り出す (helper が無いと command not found で「残す」に倒れ、helper の分を検査しない)
-sed -n -e '/^find_git() {/,/^}/p' -e '/^disposable_git[a-z]*() {/,/^}/p' -e '/^borrowed() {/,/^}/p' -e '/^resolve_dir() /p' -e '/^inside() /p' "$SCRIPT" > "$WORK/find_git.sh"
-grep -c '^[a-z_]*() ' "$WORK/find_git.sh" | grep -qx 6 || fail "10: find_git と helper 5 つを切り出せない ($(grep '^[a-z_]*() ' "$WORK/find_git.sh" | tr '\n' ' '))"
+sed -n -e '/^find_git() {/,/^}/p' -e '/^disposable_git[a-z]*() {/,/^}/p' -e '/^borrowed() {/,/^}/p' -e '/^gitfile_target() {/,/^}/p' -e '/^resolve_dir() /p' -e '/^inside() /p' "$SCRIPT" > "$WORK/find_git.sh"
+grep -c '^[a-z_]*() ' "$WORK/find_git.sh" | grep -qx 7 || fail "10: find_git と helper 6 つを切り出せない ($(grep '^[a-z_]*() ' "$WORK/find_git.sh" | tr '\n' ' '))"
 fx10() { "$REAL_GIT" init -q "$1" && echo x > "$1/f" && "$REAL_GIT" -C "$1" add f && "$REAL_GIT" -C "$1" -c user.email=t@t -c user.name=t commit -q -m i; }
 mkdir -p "$WORK/r10f" && fx10 "$WORK/r10f/r"
 out=$(/bin/bash -c "source '$WORK/find_git.sh'; refs_ok=1 ref_owner=() ref_target=(); ( trap '' XFSZ; ulimit -f 0; find_git '$WORK/r10f' 2>/dev/null )")
@@ -370,6 +370,11 @@ fx "$T/k28/r" && mkdir -p "$T/y28/x
 y" && "$REAL_GIT" clone -q -s "$T/k28/r" "$T/y28/x
 y/c"
 "$REAL_GIT" -C "$T/y25/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: symlink の HEAD を git が読まない (前提が崩れた)"
+# 4 周目で消せた形: エントリそのものを指す symlink・別のエントリの .git を指す .git ファイル (--separate-git-dir での再初期化と、手書きの相対)
+fx "$T/k29/r" && mkdir -p "$T/y29" && ln -s ../k29 "$T/y29/link"
+fx "$T/k30/r" && mkdir -p "$T/y30/w" && (cd "$T/y30/w" && "$REAL_GIT" init -q --separate-git-dir=../../k30/r/.git .)
+fx "$T/k31/r" && mkdir -p "$T/y31/w" && echo "gitdir: ../../k31/r/.git" > "$T/y31/w/.git"
+for y in y30 y31; do "$REAL_GIT" -C "$T/$y/w" log -1 >/dev/null 2>&1 || fail "14: $y の .git ファイルを git が読まない (前提が崩れた)"; done
 "$REAL_GIT" --git-dir="$T/y27/w/.git" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: git-new-workdir の形を git が読まない (前提が崩れた)"
 find "$T" -mindepth 1 -exec touch -h -t $OLD {} + 2>/dev/null
 fx "$T/new1/r" && touch -t $OLD "$T/new1" # 中身は今日
@@ -380,7 +385,7 @@ run; rc=$?
 for d in fx1 fx2 fx3 fx4 fx5; do
 	if [ ! -e "$T/$d" ]; then ok "14: 閉じた使い捨ての repo だけの $d を消した"; else fail "14: $d を残した ($(grep "$d" "$WORK/out"))"; fi
 done
-for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k16b k17 k19 k20 k21 k22 k24 k25 k26 k27 k28; do
+for d in k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k16b k17 k19 k20 k21 k22 k24 k25 k26 k27 k28 k29 k30 k31; do
 	if [ -d "$T/$d" ] && grep -q "残す (中に git の作業ツリーか置き場がある: tmp/$d/" "$WORK/out"; then ok "14: 外から使われうる $d を残した"; else fail "14: $d を消した / 理由が違う ($(grep "$d" "$WORK/out"))"; fi
 done
 if [ -e "$T/new1/r/f" ] && grep -q "残す (中に 30 日以内の更新がある: tmp/new1" "$WORK/out"; then ok "14: 中が新しい fixture は残した"; else fail "14: 新しい fixture を消した ($(grep new1 "$WORK/out"))"; fi
@@ -391,6 +396,8 @@ for y in y17 y20 y21 y22 y25 "y28/x
 y"; do "$REAL_GIT" -C "$T/$y/c" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: alternates で借りた側 $y の objects が壊れた"; done
 "$REAL_GIT" --git-dir="$T/y26/w/.git" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: .git の symlink で使う側 y26 が壊れた"
 "$REAL_GIT" --git-dir="$T/y27/w/.git" cat-file -e 'HEAD:f' 2>/dev/null || fail "14: git-new-workdir の形で使う側 y27 が壊れた"
+for y in y30 y31; do "$REAL_GIT" -C "$T/$y/w" log -1 >/dev/null 2>&1 || fail "14: .git ファイルで使う側 $y が壊れた"; done
+[ -e "$T/k29/r/f" ] || fail "14: エントリそのものを symlink で指されていた k29 の中身が消えた"
 
 
 # 14b. 引用符で囲んだ alternates の行 (git は C 形式で unquote して読む) は解かずに、借りられている先を知らないとして使い捨ての repo も残す

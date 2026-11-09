@@ -34,7 +34,7 @@ git dir の両方が dir の中に閉じていて外から使われないのに�
 3b. 親の作業ファイルが index と食い違わない (`git ls-files -d` が空。fsmonitor は切る)。`git init --separate-git-dir=X/.git W` は X/.git/config に
    core.worktree を書かない (2026-11-09 に実測) ので、X に兄弟のファイルがあると 1〜3 では外の作業ツリーの置き場と見分けられない
 3c. tmp の中の、このエントリの外の持ち主 (git dir・symlink) が、このエントリの中を使っていない。組は 3 種: git dir とその objects の実体 /
-   git dir と alternates で借りている objects / tmp の中の symlink とその先 (.git ごとの symlink・git-new-workdir の形)。列挙は -print0 で読む。
+   git dir と alternates で借りている objects / tmp の中の symlink とその先 (.git ごとの symlink・git-new-workdir の形) / tmp の中の .git ファイルと gitdir: の先。列挙は -print0 で読む。
    (以下は 2 周目の形: tmp の中のどの repo も、このエントリの中の objects を借りていない (`clone -s` で借りた側の objects が壊れる)。借りている先は tmp の中の git dir を HEAD の形で
    列挙し、`git count-objects -v` の `alternate:` で git 自身に答えさせる。答えない repo (壊れた・読めない config) があれば、その名前を冒頭に出して使い捨ての repo も全部残す
 4. `worktrees/*` が無いか、全部の `worktrees/*/gitdir` の指す作業ツリーが、実体のパスでこのエントリの中にある (指す先を解決できなければ残す)
@@ -105,4 +105,11 @@ bare の形 (HEAD と objects/・refs/ が並ぶが `.git` の中に無い dir) 
 - **止め方 (§8 の stopping rule)**: 脅威モデルは「このマシンのセッション・道具が、悪意なく tmp に作った repo」。攻撃者が組む形は対象にしない。
   検出しない形は上の「検出しない」の 4 つ (外から path で `.git` を使う・tmp の外の alternates・起動時の一覧の窓・tracked のファイルが全部親にも同名の separate-git-dir)。
   3 周とも、壊せた形は「字面で探す」所から出た。config・alternates・HEAD の列挙を git 自身と -print0 に寄せたので、4 周目はその寄せ方 (git の解釈・列挙) だけを見させる
+- [x] 敵対的レビュー 4 周目 (opus。3 周目の差分だけ)。P1 なし。P2 2 件を再現され、直した: tmp の中の `.git` ファイルが別のエントリの `.git` を指す形
+  (`git init --separate-git-dir=../../k/r/.git` の再初期化・手書きの相対) が組から漏れる → 組の 4 種目にした (`gitdir:` の解き方は `gitfile_target` に寄せ、
+  `disposable_gitfile` と共有) / エントリそのものを指す symlink (等号の枝) をテストが見ていない → k29。テスト k29〜k31、変異 2 本が red。
+  記録 (P3): 読めない repo が 1 つあると使い捨ての repo の掃除が全部止まり、壊れた repo 自身も印として残るので、人が消すまで再開しない (冒頭に理由と「直すか消すと再開する」を出す) /
+  使う側の `.git` ファイルの先が消えた後のエントリは、解けずに印に倒れて残る / tmp の中の symlink がエントリの中の git と関係ないファイルを指していても、そのエントリの使い捨ての repo は残る
+  (link 側のエントリが古くなって消えれば次の回で消える) / objects の実体の組は tmp の中では symlink の組と重なる (片方だけ外す変異は緑の見込み。実害なし)。
+  **5 周目は回していない**: 4 周目は P1 が無く、直したのは 3 周目と同じ仕組みに組の種類を 1 つ足した機械的な差分のため
 - [ ] `make test`

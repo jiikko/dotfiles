@@ -65,11 +65,21 @@ trap 'rm -rf "$work"' EXIT
 #     info / objects の symlink・引用符の行を字面で追うと抜ける (1・2 周目の敵対的レビューで 4 形を再現)。git 自身に答えさせる
 #     (count-objects -v の alternate: の行。git が解いた後のパス)
 #   - tmp の中の symlink と、その先 (.git ごとの symlink。find は symlink の下へ降りないので、HEAD の列挙では見つからない)
+#   - tmp の中の .git ファイルと、gitdir: の指す git dir (別のエントリの .git を --separate-git-dir で再初期化した形。4 周目に再現)
 # 🚨 列挙は -print0 で読む: 改行で割ると、改行を含むパスの git dir が黙って列挙から外れ、貸している側を消した (3 周目に再現)
 ref_owner=() ref_target=() refs_ok=1 refs_why=''
 addref() { ref_owner+=("$1"); ref_target+=("$2"); }
+# gitfile_target は .git ファイル $1 の gitdir: の指す先の実体のパスを出す (相対は $1 の dir から。解けなければ rc≠0)
+gitfile_target() {
+	local t
+	[ -f "$1" ] && [ ! -L "$1" ] || return 1
+	t=$(sed -n '1s/^gitdir: //p' "$1") && [ -n "$t" ] || return 1
+	case $t in /*) ;; *) t="${1%/*}/$t" ;; esac
+	(cd "$t" 2>/dev/null && /bin/pwd -P)
+}
 if find "$tmp" \( -type f -o -type l \) -iname HEAD -print0 > "$work/heads" 2>/dev/null &&
-	find "$tmp" -type l -print0 > "$work/links" 2>/dev/null; then
+	find "$tmp" -type l -print0 > "$work/links" 2>/dev/null &&
+	find "$tmp" -type f -iname .git -print0 > "$work/gitfiles" 2>/dev/null; then
 	while IFS= read -r -d '' h; do
 		g=${h%/*}
 		[ -d "$g/objects" ] && [ -d "$g/refs" ] || continue
@@ -95,8 +105,11 @@ if find "$tmp" \( -type f -o -type l \) -iname HEAD -print0 > "$work/heads" 2>/d
 	while IFS= read -r -d '' l; do
 		t=$(readlink -f "$l" 2>/dev/null) && [ -e "$t" ] && addref "$l" "$t" # 先の無い symlink は何も使っていない
 	done < "$work/links"
+	while IFS= read -r -d '' f; do
+		t=$(gitfile_target "$f") && addref "$f" "$t" # 指す先の無い .git ファイルは何も使っていない
+	done < "$work/gitfiles"
 else
-	refs_ok=0 refs_why="tmp の中の git の置き場と symlink を列挙できない"
+	refs_ok=0 refs_why="tmp の中の git の置き場・symlink・.git ファイルを列挙できない"
 fi
 [ "$refs_ok" = 1 ] || echo "  使い捨ての git repo も残す (${refs_why}。どの repo が別の場所から使われているかを決められない。その repo を直すか消すと再開する)"
 
@@ -243,12 +256,9 @@ borrowed() {
 # disposable_gitfile は $1 (名前が .git のファイル) の gitdir: がエントリ $2 の中を指すかを返す。指す先の git dir は、それ自身が印として
 # find_git で判定される (使い捨ての .git dir の中なら数えず、bare の形なら残す)
 disposable_gitfile() {
-	local f=$1 c=$2 t d
-	[ -f "$f" ] && [ ! -L "$f" ] || return 1
-	t=$(sed -n '1s/^gitdir: //p' "$f") && [ -n "$t" ] || return 1
-	case $t in /*) ;; *) t="${f%/*}/$t" ;; esac
-	d=$(resolve_dir "$t") || return 1
-	inside "$c" "$d"
+	local d
+	d=$(gitfile_target "$1") || return 1
+	inside "$2" "$d"
 }
 
 # judge は 1 件を判定し、消してよければすぐ消す (直下のエントリと skill の dir の中の session の dir で同じ規則)
