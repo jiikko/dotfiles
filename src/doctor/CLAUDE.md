@@ -1,6 +1,6 @@
 # doctor
 
-ディスク掃除候補 (`diskdoctor`)・壊れた launchd 登録 (`svcdoctor`)・Mac 全体の健康診断 (`mac-healthcheck`)・アプリと formula の片付け (`mac-uninstall`) のライブラリと CLI 4 本。CLI は dry-run のみ (削除・停止はしない)。使い分け・終了コードの語彙・設計の要点の正本は README.md。
+ディスク掃除候補 (`diskdoctor`)・壊れた launchd 登録 (`svcdoctor`)・Mac 全体の健康診断 (`mac-healthcheck`)・アプリと formula の片付け (`mac-uninstall`) のライブラリと CLI 4 本。`diskdoctor` / `svcdoctor` / `mac-healthcheck` は読み取りだけ (削除・停止はしない)。動かすのは `mac-uninstall apply` が承認された計画を実行するときだけ。使い分け・終了コードの語彙・設計の要点の正本は README.md。
 
 ## パッケージの地図
 
@@ -14,7 +14,8 @@
 - `cachedir/` — キャッシュ置き場 (`~/.cache/glog`。ディレクトリ名は `glogx` ではなく `glog`) の解決
 - `internal/displaycheck/` — 表示用構造体への文字列フィールド追加で無害化通し忘れを止める検査の本体 (`disk` / `svc` / `docker` / `ssd` の `display_coverage_test.go` が使う。production のコードからは呼ばない)
 - `runner/` — 外部コマンド実行口 (stdout / stderr / exit code を分けて返す。テストではここを差し替える)。`LookPath` もここ
-- `exitcode/` — 2 CLI 共通の終了コード語彙 (`NoFindings` / `Findings` / `Undiagnosed` / `EnvFailure`)。値を変えたら README と両 CLI の `--help` も同じ変更で直す
+- `exitcode/` — 4 CLI 共通の終了コード語彙 (`NoFindings` / `Findings` / `Undiagnosed` / `EnvFailure`)。値を変えたら README と各 CLI の `--help` も同じ変更で直す
+- `internal/homepath/` — ホームの下のパスを `~` で始まる形にする (レポート・表示にユーザー名を出さない。`health` と `uninstall` が共有)
 - `testtmp/` — テストが `$TMPDIR` に作る一時ディレクトリを、中断 (SIGKILL 等) でも次回起動時に回収する共通ヘルパー
 - `cmd/diskdoctor/`, `cmd/svcdoctor/`, `cmd/mac-healthcheck/`, `cmd/mac-uninstall/` — 各 CLI の `main.go` と、判定を純関数に切り出した `exit.go` (`diskExitCode` / `svcExitCode` / `healthExitCode`。テストは同ディレクトリの `exit_test.go`)
 

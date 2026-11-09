@@ -1,10 +1,10 @@
-# doctor — ディスク掃除候補と壊れた launchd 登録の診断
+# doctor — ディスク掃除候補・壊れた launchd 登録・Mac の健康診断・アプリの片付け
 
-「消してよさそうなもの」と「壊れて残っている常駐」を見つけて説明するライブラリと CLI 2 本。
+「消してよさそうなもの」と「壊れて残っている常駐」を見つけて説明するライブラリと CLI 4 本 (`diskdoctor` / `svcdoctor` / `mac-healthcheck` / `mac-uninstall`)。
 
-- **CLI (`bin/diskdoctor` / `bin/svcdoctor`) は削除・停止を一切しない** (dry-run のみ)。
-  実行するコマンドは提示するので、判断と実行は人が行う
-- **このライブラリで削除するのは `disk.Delete` だけ**で、その唯一の呼び出し元は
+- **診断の CLI (`bin/diskdoctor` / `bin/svcdoctor` / `bin/mac-healthcheck`) は削除・停止を一切しない** (dry-run のみ)。
+  実行するコマンドは提示するので、判断と実行は人が行う。動かす CLI は `bin/mac-uninstall apply` だけで、承認された計画しか実行しない (下の 4 本目)
+- **診断のライブラリで削除するのは `disk.Delete` だけ**で、その唯一の呼び出し元は
   glogx の doctor 画面 (`D` → `Space` で選択 → `d` → 確認 → `y`)。サービス診断 (`svc`) と
   Docker 診断 (`docker`) は削除の関数を持たない。
   🚨 ただし **`docker` が提示するコマンドは glogx から実行できる** (`Space` → `x` → 確認 → `y`)。
@@ -23,22 +23,22 @@
 迷ったら「**容量が知りたいなら diskdoctor、常駐が知りたいなら svcdoctor**」。両者は対象が
 重ならないので、片方の結果からもう片方を推測できない。
 
-### 4 本目: `bin/mac-uninstall` (アプリと formula の片付け)
-
-`uninstall/` パッケージの CLI。`list` (候補を最後に使った日の古い順に) と `plan` (消える物をパスと大きさで並べた計画を書く) は何も動かさず、
-`apply -plan <file> -approve <ID>` が承認された計画だけを、cask / formula は `brew uninstall`、それ以外はゴミ箱への移動 (`safefs.TrashMove`) で片付ける。
-apply は候補を作り直して計画との交わりのうち実体 (dev, ino) が変わっていないものだけを動かすので、計画を書き換えても動かすものは増やせない。
-設定とデータ (Application Support・Preferences・Containers) は `-data` で選んだアプリだけ。動いているもの・pkg で入れたアプリ・Group Containers・LaunchAgents は動かさない。
-手順は skill `mac-uninstall`。
-
 ### 3 本目: `bin/mac-healthcheck` (Mac 全体の健康診断)
 
 `health/` パッケージの CLI。ハードウェアと寿命 (SSD は `ssd/` をそのまま呼ぶ)・プロセスとメモリ・ネットワーク・ディスクの空き・
-tmux / nvim / Chrome を**読み取りだけで**診断し、Markdown か JSON (`-json`、`-report <path>` で Markdown も同時に) で出す。
+tmux / nvim / Chrome を**読み取りだけで**診断し、Markdown か JSON (`-json`、`-report <path>` で Markdown も同時に) で出す。`-categories` で観点を絞り、`-interval` (既定 5 秒) で CPU とメモリを 2 回読む間隔を変え、重い検査 (networkQuality) は `-explicit` のときだけ回す。
 容量の内訳と常駐の診断は持たず、上の 2 本に任せる。手順 (観点を選ぶ → レポート → 直すかを聞く) は skill `mac-healthcheck`、
 項目の正本は `docs/macos-health-check.md`。終了コードは下の共通の語彙で、「候補」を「注意・異常の項目」、「診断できなかったもの」を「判定不能の項目」と読む。
 
-## 終了コード (2 本で共通の語彙)
+### 4 本目: `bin/mac-uninstall` (アプリと formula の片付け)
+
+`uninstall/` パッケージの CLI。`list` (候補を最後に使った日の古い順に) と `plan -out <dir> [-app <bundle ID,...>] [-formula <名前,...>]` (消える物をパスと大きさで並べた計画を `<dir>/plan-<ID>.json` に書く) は何も動かさず (どちらも `-json` あり)、
+`apply -plan <file> -approve <ID>` が承認された計画だけを、cask / formula は `brew uninstall`、それ以外はゴミ箱への移動 (`safefs.TrashMove`) で片付ける。
+apply は候補を作り直して計画との交わりのうち実体 (dev, ino) が変わっていないものだけを動かすので、計画を書き換えても動かすものは増やせない。
+設定とデータ (Application Support・Preferences・Containers) は `-data` で選んだアプリだけ。動いているもの・pkg で入れたアプリ・Group Containers・LaunchAgents は動かさない。
+手順は skill `mac-uninstall`。終了コードは下の共通の語彙のうち、apply の `1` を「片付けられなかった・止めたものがある」と読む。
+
+## 終了コード (4 本で共通の語彙)
 
 `--help` にも同じ内容がある。**「検査できなかった」を緑にしない**のが共通の設計。
 
@@ -84,7 +84,10 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | `brewledger/` | Homebrew が管理している formula/cask の台帳。**disk (`brew-orphan-state`) と svc (`homebrew.mxcl.<formula>` が台帳に無い判定) が同じ集合を引く**ための共有パッケージ |
 | `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (🚨 ディレクトリ名は `glogx` ではなく `glog`) |
 | `internal/displaycheck/` | 「表示用の構造体へ文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 252)。`disk` / `svc` / `docker` / `ssd` の 4 つが**同じ判定を 1 実装で共有**し、各 package は関門表と免除表だけを渡す。検査器自身のテストは testdata の fixture で持つ |
-| `exitcode/` | 2 本の CLI で共通の終了コード語彙 (上の表の値の正本) |
+| `health/` | Mac 全体の健康診断 (`mac-healthcheck`)。観点ごとに 1 ファイル。読み取りだけで、止める・消す経路は持たない |
+| `uninstall/` | アプリと formula の片付け (`mac-uninstall`)。動かす経路は `apply.go` の 1 本 (`brew uninstall` と `safefs.TrashMove`) |
+| `internal/homepath/` | ホームの下のパスを `~` で始まる形にする (`health` と `uninstall` が共有) |
+| `exitcode/` | 4 本の CLI で共通の終了コード語彙 (上の表の値の正本) |
 | `testtmp/` | テストが `$TMPDIR` に作る一時ディレクトリを、中断 (SIGKILL 等) されても次の起動で回収する共通ヘルパー |
 | `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える。コマンドの探索 (`LookPath`) もここ (os/exec を import してよいのはこの package だけ) |
 
@@ -111,10 +114,10 @@ plist の中身、`Reason` は OS のエラー文。対象は `$TMPDIR` や `~/L
 
 ## 設計の要点
 
-- **CLI が削除の入口を持たない**ことが「CLI は実行しない」の担保。停止・削除のフラグは無く、
-  提示するのは人が読んで叩くコマンドだけ。削除は `disk.Delete` (ライブラリ) にだけあり、
+- **診断の CLI が削除の入口を持たない**ことが「診断の CLI は実行しない」の担保。停止・削除のフラグは無く、
+  提示するのは人が読んで叩くコマンドだけ。診断の削除は `disk.Delete` (ライブラリ) にだけあり、
   破壊的操作を持つファイルは `disk/delete.go` の 1 本に閉じている (ゴミ箱への rename の本体は共有 module `src/safefs` で、
-  `delete.go` が検査点を渡して呼ぶ)
+  `delete.go` が検査点を渡して呼ぶ)。片付けの `mac-uninstall` は別の経路で、動かすのは `uninstall/apply.go` の 1 本に閉じている
 - **判定できなかったものを合計に足さない** (`blocked` / `failed` は別扱いで、
   終了コードにも出す)。「見えなかったもの」を「無かったもの」に丸めない
 - 外部コマンドは `runner` 越しに呼ぶので、テストは実 `launchctl` / `du` なしで書ける
