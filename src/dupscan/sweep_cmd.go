@@ -101,10 +101,10 @@ func runSweep(args []string, stdout, stderr io.Writer) int {
 	ex := exclude.New(cfg, entries, scopeFilter(sc))
 
 	baseAll := group.Build(entries, opt)
-	base := dropAllowedGroups(ex, entries, ex.ApplyGroups(baseAll))
+	base := dropAllowedGroups(ex, ex.ApplyGroups(baseAll))
 	deepOpt := group.Options{MinNodes: sweepDeepMinNodes, MinClosureNodes: sweepDeepMinNodes, Levels: []norm.Level{norm.L1, norm.L2, norm.LM}}
 	deepAll := group.Build(entries, deepOpt)
-	deep := newGroups(dropAllowedGroups(ex, entries, ex.ApplyGroups(deepAll)), base)
+	deep := newGroups(dropAllowedGroups(ex, ex.ApplyGroups(deepAll)), base)
 	// 節 3 から除く「組に入る対」は、除外で消す前の組で数える (組の除外・allow-group で消した組の対を、似ている対として出し直さない)
 	similar, skippedSimilar := sweepSimilarPairs(entries, baseAll, deepAll, *threshold, *maxUnits, ex.Allowed)
 	clusters := sweepClusters(entries, opt)
@@ -229,24 +229,12 @@ func sweepExclusionText(w *lineWriter, silenced int, stale []exclude.Rule, whole
 
 // dropAllowedGroups は、メンバーが全部 `dupscan:allow` の許可済みの組を除く (gate が許可済みを新しい重複に数えないのと同じ扱い)。
 // report は許可済みの単位に印を付けるだけで組は出すが、sweep は「見終えた組を静かにする」ための出力なので、全員が許可済みなら出さない。
-// クロージャは、囲む単位が許可済みなら許可済みとして数える (関数に付けた印が、その中の同じ形のクロージャの組にも効く)。
-func dropAllowedGroups(ex interface{ Allowed(*group.Entry) bool }, entries []*group.Entry, groups []group.Group) []group.Group {
-	byKey := map[string]*group.Entry{}
-	for _, e := range entries {
-		byKey[e.Unit.Key] = e
-	}
-	allowed := func(m *group.Entry) bool {
-		if ex.Allowed(m) {
-			return true
-		}
-		owner := byKey[m.Unit.Owner]
-		return m.Unit.Owner != "" && owner != nil && ex.Allowed(owner)
-	}
+func dropAllowedGroups(ex interface{ Allowed(*group.Entry) bool }, groups []group.Group) []group.Group {
 	out := groups[:0:0]
 	for _, g := range groups {
 		all := true
 		for _, m := range g.Members {
-			all = all && allowed(m)
+			all = all && ex.Allowed(m)
 		}
 		if !all {
 			out = append(out, g)

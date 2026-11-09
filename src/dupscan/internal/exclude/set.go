@@ -19,6 +19,7 @@ type Set struct {
 	pinKeys   map[string]int // ハッシュを除いた鍵ごとの単位数 (理由と候補の一意性を確かめる)
 	pinCount  map[string]int
 	entries   []*group.Entry
+	byKey     map[string]*group.Entry // 単位の鍵 → 単位 (クロージャの囲む単位を引く)
 	groups    []group.Group
 	// basePins は gate のときの base の単位の釘。組・単位の除外は、base に同じ釘の単位があったときか、
 	// その釘が新しく足された要素のときだけ効く (消えた写しの釘の場所に後から同じ写しを置いても覆わない)。nil なら制限しない (report)。
@@ -38,13 +39,14 @@ type Set struct {
 // New は head の単位 (path の除外で外す前の全部) に対する除外を作る。c が nil なら除外は無い。
 // inScope は起点の中のファイルか (nil なら repo 全体)。起点の外を指す除外は「効いていない」に数えない。
 func New(c *Config, entries []*group.Entry, inScope func(string) bool) *Set {
-	s := &Set{pinCount: map[string]int{}, pinKeys: map[string]int{}, inScope: inScope, entries: entries}
+	s := &Set{pinCount: map[string]int{}, pinKeys: map[string]int{}, inScope: inScope, entries: entries, byKey: map[string]*group.Entry{}}
 	if c != nil {
 		s.rules = c.Exclude
 	}
 	s.used = make([]bool, len(s.rules))
 	s.ambiguous = make([]bool, len(s.rules))
 	for _, e := range entries {
+		s.byKey[e.Unit.Key] = e
 		s.pinCount[Pin(e)]++
 		s.pinKeys[pinKey(Pin(e))]++
 	}
@@ -188,8 +190,19 @@ func (s *Set) GroupExcluded(lv norm.Level, members []*group.Entry) bool {
 	return false
 }
 
-// Allowed は、単位の除外 (許可) がその単位に効くか。
+// Allowed は、単位の除外 (許可) がその単位か、それを囲む単位に効くか。クロージャの直前には許可の印を書けないので (名前で指せない)、
+// 関数に付けた印を中のクロージャにも効かせる。
 func (s *Set) Allowed(e *group.Entry) bool {
+	for e != nil {
+		if s.allowedExactly(e) {
+			return true
+		}
+		e = s.byKey[e.Unit.Owner]
+	}
+	return false
+}
+
+func (s *Set) allowedExactly(e *group.Entry) bool {
 	p := Pin(e)
 	for i, r := range s.rules {
 		if r.Unit == p && !s.ambiguous[i] && s.known(p, "unit:"+p, 1) {

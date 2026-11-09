@@ -139,6 +139,31 @@ func TestGateSameEditToBothCopiesPasses(t *testing.T) {
 	}
 }
 
+// クロージャの直前には印を書けない。関数に付けた印が中のクロージャの新しい写しにも効く (sweep と同じ扱い)。
+func TestGateAllowOnFunctionCoversItsClosures(t *testing.T) {
+	const closure = `        run { value in
+            let doubled = value * 2 + 1
+            if doubled > 10 { print("large", doubled) }
+            for index in 0..<doubled { print(index, doubled, value) }
+            return doubled + value
+        }
+`
+	source := func(name, mark, extra string) string {
+		return "struct " + name + " {\n    " + mark + "func work" + name + "() {\n        let unused" + name + " = " + extra + "\n" + closure + "    }\n}\n"
+	}
+	root := repoWith(t, map[string]string{"Sources/A.swift": source("A", "", "1")})
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "base")
+	writeFile(t, root, "Sources/B.swift", source("B", "", "\"different\""))
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD", root); rc != 1 || !strings.Contains(out, "{closure}") {
+		t.Fatalf("印なしのクロージャの写しは赤のはず: rc=%d out=%q err=%q", rc, out, errs)
+	}
+	writeFile(t, root, "Sources/B.swift", source("B", "// dupscan:allow intentional 理由\n    ", "\"different\""))
+	if rc, out, errs := runGateCmd(t, "-base", "HEAD", root); rc != 0 {
+		t.Errorf("関数の印が中のクロージャに効いていない: rc=%d out=%q err=%q", rc, out, errs)
+	}
+}
+
 // untracked から読んだファイルは CI の checkout に無いので、手元と CI の結果の差として別に出す。追跡している変更・commit を head にした比較では出さない。
 func TestGateListsUntrackedFiles(t *testing.T) {
 	root := repoWith(t, map[string]string{"Sources/A.swift": helperA, "Sources/U.swift": unrelated})
