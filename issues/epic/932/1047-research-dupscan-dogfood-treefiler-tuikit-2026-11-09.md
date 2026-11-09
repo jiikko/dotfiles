@@ -67,4 +67,6 @@ F1・P1・F3 はこのセッションで dupscan を直した。F2 は直して�
 
 - [x] F1 (案内の文言) と P1 (`sweep -focus`) を直した。変異 6 本で red (節 1・2 の組・節 3 の対・節 4 の束の絞り込み・起点の外の確認・注目の行・静かにした組を数える位置)。節 5・6 の絞り込みは fixture に該当が無く確かめていない
 - [x] F3 を直した。変異 1 本で red
+- [x] skill dupscan の 3 節に \`sweep -focus\` を 1 行足した。整合チェック 3 観点 (skill の中・実装と README・例を repo root から実際に打つ) と \`bin/skill-eval dupscan\` (PASS 2/2、\$0.54)
+- [x] ルートの \`make test\` は rc=0 (test-dupscan-gate も走った)。dupscan の 2 commit と treefiler の commit を master に push した
 - [ ] F2 (lock の accessor の対の印) — 未着手。言語ごとの形の判定の設計から
