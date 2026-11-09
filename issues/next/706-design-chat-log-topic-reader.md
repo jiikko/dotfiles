@@ -1,1 +1,0 @@
-../706-design-chat-log-topic-reader.md
