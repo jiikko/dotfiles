@@ -112,4 +112,12 @@ bare の形 (HEAD と objects/・refs/ が並ぶが `.git` の中に無い dir) 
   使う側の `.git` ファイルの先が消えた後のエントリは、解けずに印に倒れて残る / tmp の中の symlink がエントリの中の git と関係ないファイルを指していても、そのエントリの使い捨ての repo は残る
   (link 側のエントリが古くなって消えれば次の回で消える) / objects の実体の組は tmp の中では symlink の組と重なる (片方だけ外す変異は緑の見込み。実害なし)。
   **5 周目は回していない**: 4 周目は P1 が無く、直したのは 3 周目と同じ仕組みに組の種類を 1 つ足した機械的な差分のため
-- [ ] `make test`
+- [x] `make test` rc=0 (最後の版。test-lint の comment-provenance と pipefail-grep-q に一度落ち、コメントとテストの判定を直した)
+
+## 決着 (2026-11-09)
+
+- 実データ: 新しい版を DRY_RUN で `~/dotfiles/tmp` に当てると (DAYS=4)、「中に git の作業ツリーか置き場がある」で残る dir は 23 → 6 件。
+  残る 6 件は設計どおりの形: origin を持つ clone (`dupscan-review-gate1`・`dupscan-skilltest-2026-10-25`・877 の 2 つ。877 には bare もある) /
+  index のファイルが作業ツリーから消えた repo (`959-2026-10-29/r1`。separate-git-dir の置き場と見分けられない) / `serialrun-20261022/review-scope/B1` (理由の条件は未確認)
+- 未確認リスク: tmp の外の repo が tmp の fixture を alternates で借りて使い続ける形 (対応方針の「検出しない」)
+- 残課題は無い (F2 のような別の提案は無い)。done へ移す
