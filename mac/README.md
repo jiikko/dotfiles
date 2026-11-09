@@ -74,10 +74,7 @@ ssh-keygen -t rsa -b 4096 -C "jiikko"
 
 ### textlint (任意)
 
-```shell
-npm i -g textlint textlint-rule-preset-ja-technical-writing
-textlint --preset ja-technical-writing <校正対象ファイル>
-```
+入れなくてよい。`bin/ja-textlint <file>` が版と規則を固定した textlint (`_claude/skills/ja-writing/textlint/` の lock と textlintrc.json) を初回にキャッシュへ入れて使う。
 
 ## 手で設定するもの
 
