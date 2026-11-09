@@ -69,7 +69,7 @@ bin/restore_karabiner_config.sh
 ### 8. ssh の鍵
 
 ```shell
-ssh-keygen -t rsa -b 4096 -C "jiikko"
+ssh-keygen -t ed25519 -C "jiikko"
 ```
 
 ### textlint (任意)
