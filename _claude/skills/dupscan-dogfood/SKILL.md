@@ -48,7 +48,7 @@ skill dupscan の 1〜4 節に従う。**grep より先に dupscan を試す場�
 | 関数を置き換える・消す前の呼び出し元 | `dupscan callers -limit 0 <名前>` (打ち切りで取りこぼさない) |
 | 定義・参照を探す (Swift) | `def` / `refs` / `context` |
 | 実装が終わったとき | `dupscan gate` (commit の前)。**repo root から打つ**: `dupscan` は cwd の配下だけを走査するので、サブディレクトリ (例: `macOS/`) から打つと別 target (例: `shared/`) にある同じ形の相手が見えない (issue 954 の P4。見逃すかの検証は未了) |
-| 初めて入る module・まとめて重複を寄せる前 | `dupscan sweep <dir>` |
+| 初めて入る module・まとめて重複を寄せる前 | `dupscan sweep <dir>`。module をまたぐ相手も見るなら `dupscan sweep -focus <module> <広い起点>` (例: `sweep -focus src/treefiler src`。起点を module に絞ると、別の module との写しが見えない。issue 1047) |
 | 大きなファイルを分ける・移す前の地図 | `dupscan index -file <path> -limit 0` (関数ごとの行範囲と呼び出しの数が 1 回で出る。移す先の対応表の元にする。2026-10-29 の glogx の tui.go の分割、issue 972) |
 
 - 文字列・コメント・設定ファイル・ログ・定義 1 件を狙い撃ちする検索は grep / rg でよい (それは不満ではない)。
