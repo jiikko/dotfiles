@@ -58,4 +58,9 @@
 ## 残タスク
 
 - スコープ外: `Model.Close` は取得中の diff を止めない (前から。git は `subproc.GitOpTimeout` で終わる)。閉じた後に取得が終わると、捨てる結果に色付けが走る
+  - 2026-11-09 に解消: `Model.Close` が取得中の diff を止めて印を付け、開き直したときの `Refresh` で取り直す (glogx は閉じた Model を開き直して使う。止めるだけだと取り消した結果が残る)。
+    取り終えた diff は止めずに残し、閉じかけのタイルは止めるが取り直さない。テストは `TestDiffStopsOnCloseAndRefetchesOnRefresh`・`TestDiffKeptAcrossCloseWhenDone`・`TestDiffOfClosingTileStopsOnCloseWithoutRefetch` で、
+    変異 4 本 (止めない・取り直さない・取り終えた diff も取り直す・閉じかけのタイルを飛ばす / 取り直す) が赤になることを確かめた。
+    敵対的レビュー (opus) を 2 周回し、P1 / P2 は 1 周目のテストの穴 1 件 (直した)。2 周目の修正 (閉じかけのタイルも止める・3 行) には 3 周目を回していない (変異 2 本で赤を確かめた)。
+    記録のみ: 色付けは始まると止められない (`highlight.Diff` は ctx を見ない)・完了を確かめた直後に取得が終わる競合 (Refresh で 1 回余分に取り直すだけ)・`stopDiff` で印を消す経路はテストに固定していない (glogx から届かない)
 
