@@ -32,7 +32,8 @@ import (
 //   - 長い検証を引用で包んだ呼び出し (`bash -c "make test" &`) と、一覧に無い前置き (caffeinate・stdbuf・sudo・xargs) を付けた形
 //   - bash で走らせたときにだけ丸ごと背景に回る `make test && echo ok &` / `make test &&\n echo ok &` (Bash ツールの shell は zsh)
 //   - 長い検証を Bash ツールの外 (別のスクリプト) で背景に回す形
-//   - wait が待てない job (サブシェルの中で背景に回したもの) の後ろの wait も、待つ形として通す
+//   - wait / disown は、書いた位置 (パイプの段・( ) の中・& で背景に置いた形・&& の後ろ・`wait $pid` で別の job を待つ形) に関わらず、
+//     それより前の背景の長い検証を待つ・detach すると読む (待てない job の後ろの wait も通す)
 //   - PATH 上の serial-run がこの checkout のものでない / SERIAL_RUN_HOOK_DISABLE=1 (_claude/hooks/serial-run-wrap.sh が Go の判定まで進まない)
 func backgroundDenial(cmd string) string {
 	if strings.Contains(cmd, "<<") || strings.Contains(cmd, "((") {
@@ -57,14 +58,7 @@ var testScriptRe = regexp.MustCompile(`(^|/)tests/.*\.sh$`)
 // 直列化はしないが長いもの (skill-eval・tests/ の下の .sh) もここで足す (isHeavy に足すと直列化の対象まで変わる)
 // 🚨 コマンド名を足したら、hook の入口 (_claude/hooks/serial-run-wrap.sh) の手がかりの語にも足す
 func longVerification(words []string) bool {
-	if isSerialRun(words) {
-		for i, w := range words {
-			if w == "--" {
-				words = words[i+1:]
-				break
-			}
-		}
-	}
+	words = stripSerialRun(words)
 	if isHeavy(words) {
 		return true
 	}
@@ -89,9 +83,22 @@ func longVerification(words []string) bool {
 	return testScriptRe.MatchString(w[0])
 }
 
+// stripSerialRun は手で書いた `serial-run [オプション] -- <コマンド>` の中のコマンドの語を返す (そうでなければそのまま)
+func stripSerialRun(words []string) []string {
+	if isSerialRun(words) {
+		for i, w := range words {
+			if w == "--" {
+				return words[i+1:]
+			}
+		}
+	}
+	return words
+}
+
 // detachedCommand は単純コマンドが nohup / setsid で包まれているか。見るのはコマンド語と前置き (env 等) だけで、
 // 引数 (`make -C ~/src/nohup test`) は見ない
 func detachedCommand(words []string) bool {
+	words = stripSerialRun(words) // hook 自身が `nohup make test &` を `serial-run -- nohup make test &` に書き換える
 	if len(words) > 0 && filepath.Base(words[0]) == "setsid" {
 		return true
 	}

@@ -87,6 +87,7 @@ func TestBackgroundDenialLeavesOtherFormsAlone(t *testing.T) {
 		"if true; then make test & fi; disown",
 		"make lint || echo ng &",
 		"setsid make test > log &",
+		"serial-run -- nohup make test > log 2>&1 &",
 		"cat tests/claude/test_x.sh &",
 		"bash -c 'make test &'",
 		"cat <<'EOF' > x\nmake test &\nEOF",
