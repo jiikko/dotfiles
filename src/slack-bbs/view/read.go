@@ -39,6 +39,8 @@ func (m *Model) loadRead(i int) {
 
 // unitUnread は単位に、印より後の他人の期間内の発言か、印より後の他人の言及 (ms。別のチャンネルでこの単位の発言のリンクを貼った発言) があるか。
 // 自分の発言・自分の言及と、文脈として出した期間前の発言は数えない (自分が返信しただけのスレッドを未読にしない)。
+// 言及の新しさは ts で決める: 既読の後に、既読の印より前の ts の発言を編集してリンクを足しても未読に戻らない (取得のたびに見た言及の
+// 集合を印に残せば拾えるが、印の形が変わる。編集でリンクを足す形は稀とみて受け入れる)。
 func unitUnread(u board.Unit, read map[string]string, ms []render.Mention) bool {
 	mark, ok := read[u.ID]
 	for _, msg := range u.Msgs {

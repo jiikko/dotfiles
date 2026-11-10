@@ -266,9 +266,8 @@ const SearchCount = 100
 
 // Search は query に一致する発言の page ページ目 (新しい順)。
 //
-// 🚨 返る件数で終わりを判定しない: search.messages は権限で見えない発言を落としてから返すので、続きがあるページでも count より
-// 少なく返り (実測 2026-11-11: 1 ページ目が 65 件で 2 ページ目が 100 件)、範囲より後ろのページを頼んでも空にならない
-// (50 ページ目も 100 件)。終わりは呼び出し側が発言の時刻で決める。
+// 🚨 返る件数が count より少ないことを終わりと読まない: 続きがあるページでも少なく返る (実測 2026-11-11: 1 ページ目が 65 件で
+// 2 ページ目が 100 件)。終わりは空のページか、呼び出し側が発言の時刻で決める (範囲の外のページは空で返る。実測 2026-11-11)。
 func (c Client) Search(ctx context.Context, query string, page int) ([]Found, error) {
 	var fs []Found
 	_, err := c.decode(ctx, &fs, "search", "-json", "-n", strconv.Itoa(SearchCount), "-page", strconv.Itoa(page), query)

@@ -874,7 +874,9 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, na
 	}
 	if len(units) > 0 {
 		// 言及の検索の失敗ではチャンネルを止めない (板は出し、注記で知らせる)。取り消しは止める
-		ms, truncated, err := findMentions(ctx, cli, ch, sinceTs, o.since.AddDate(0, 0, -1).Format("2006-01-02"), units, me.UserID, names)
+		// after: は日付で、その日を含まず、日の境はローカルの日付とずれる (実測 2026-11-11: after:11-09 の最も古い結果が 11-09 23:49 UTC)。
+		// 2 日の余裕を取り、期間の始まりより前の結果は findMentions が捨てる
+		ms, truncated, err := findMentions(ctx, cli, ch, sinceTs, o.since.AddDate(0, 0, -2).Format("2006-01-02"), units, me.UserID, names)
 		if err != nil && ctx.Err() != nil {
 			return collected{}, err
 		}

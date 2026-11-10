@@ -42,7 +42,7 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 				found("C1", "dev", ts(since+310), "U1", "上を見て "+link("C1", parent)),
 				found("C8", "ops", ts(since+700), "ME", "共有 <https://ws.slack.com/archives/C1/p"+strings.ReplaceAll(ts(since+305), ".", "")+"?thread_ts="+parent+"&cid=C1>"),
 			}, ",") + "]",
-			2: "[" + found("C9", "random", ts(since-10), "U1", "古い") + "]",
+			2: "[" + found("C9", "random", ts(since+1), "U1", "境の上 "+link("C1", mine)) + "," + found("C9", "random", ts(since-10), "U1", "期間の前の引用 "+link("C1", mine)) + "]",
 			3: "[" + found("C9", "random", ts(since-20), "U1", "読まないはず "+link("C1", mine)) + "]",
 		},
 	}
@@ -65,7 +65,7 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 		return ""
 	}
 	design, release, outage := section("設計"), section("リリース"), section("障害")
-	if !strings.Contains(design, "この話題への言及 (1 件)") || !strings.Contains(design, "[#random] これどう思う?") ||
+	if !strings.Contains(design, "この話題への言及 (2 件)") || !strings.Contains(design, "[#random] これどう思う?") ||
 		!strings.Contains(design, "あなたの発言") || !strings.Contains(design, "](https://ws.slack.com/archives/C9/p") {
 		t.Errorf("自分の発言への別のチャンネルの言及が、その話題に出ない:\n%s", design)
 	}
@@ -75,14 +75,14 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 	if !strings.Contains(outage, "この話題への言及 (1 件)") || !strings.Contains(outage, "[#ops] 共有") || strings.Contains(outage, "[#dev]") {
 		t.Errorf("スレッドへの言及 (板に無い返信へのリンク) が出ない・同じスレッドの中のリンクを言及にした:\n%s", outage)
 	}
-	if strings.Contains(md, "関係ない") || strings.Contains(md, "読まないはず") || strings.Contains(md, "別のチャンネルの同じ ts") {
+	if strings.Contains(md, "関係ない") || strings.Contains(md, "読まないはず") || strings.Contains(md, "別のチャンネルの同じ ts") || strings.Contains(md, "期間の前の引用") {
 		t.Errorf("板に無い発言・別のチャンネルの発言への言及、期間より前まで読んだ後の候補を出した:\n%s", md)
 	}
 	pages := 0
 	for _, c := range sl.calls {
 		if c[0] == "search" {
 			pages++
-			if q := c[len(c)-1]; !strings.HasPrefix(q, "archives/C1 after:") {
+			if q, want := c[len(c)-1], "archives/C1 after:"+now.Add(-48*time.Hour).AddDate(0, 0, -2).Format("2006-01-02"); q != want {
 				t.Errorf("search の語: %q", q)
 			}
 		}

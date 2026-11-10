@@ -25,7 +25,10 @@ var threadParam = regexp.MustCompile(`thread_ts=(\d+\.\d{6})`)
 // findMentions は、チャンネル ch の板の発言 (units) へのリンクを貼った発言を Slack の検索で探す。
 // 検索は「archives/<チャンネル ID>」で候補をまとめて引き (話題ごとに検索しない)、本文のリンクが指す ts を単位の発言と突き合わせて、
 // 板の発言を指すものだけを残す。同じ単位の中の発言が自分の単位を指すもの (スレッドの中で上の発言を貼った等) は言及に数えない。
-// 期間の始まり since より前の発言まで読んだら止める (search.messages は新しい順)。
+// 期間の始まり sinceTs より前の言及は付けない (付けると、ページの境しだいで付いたり付かなかったりする)。sinceTs より前の発言まで
+// 読んだか、空のページが返ったら止める (search.messages は新しい順)。
+//
+// 見えないもの: 「転送」で共有した発言は本文に元の URL が無い (attachments にあり、slack-cli の search は出さない)。
 //
 // 見えるのは自分のアカウントで検索できる発言だけ (公開チャンネルと、自分が入っている非公開チャンネル・DM)。
 func findMentions(ctx context.Context, cli source.Client, ch subs.Channel, sinceTs, sinceDay string, units []board.Unit, me string, names map[string]string) (ms []render.Mention, truncated bool, err error) {
@@ -66,6 +69,9 @@ func findMentions(ctx context.Context, cli source.Client, ch subs.Channel, since
 		for _, f := range fs {
 			if board.TsBefore(f.Ts, oldest) {
 				oldest = f.Ts
+			}
+			if board.TsBefore(f.Ts, sinceTs) {
+				continue
 			}
 			for _, l := range permalink.FindAllStringSubmatch(f.Text, -1) {
 				if l[1] != ch.ID {
