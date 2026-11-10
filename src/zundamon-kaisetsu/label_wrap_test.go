@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"zundamon-kaisetsu/internal/build"
 	"zundamon-kaisetsu/internal/show"
@@ -93,6 +94,102 @@ func TestLabelProblems(t *testing.T) {
 				t.Errorf("問題 (改行 %q / 計測 %q) の %v の側に %q が 1 つだけ出るはず", layout, broken, map[bool]string{false: "改行", true: "計測"}[c.broken], c.want)
 			}
 		})
+	}
+}
+
+// 数の前に付く字 (約・第) と数の間の改行は、語の境目でも止める。前が漢字なら (最大約・契約) 語の一部かを決められないので、
+// 止めずに知らせる (note)。数ごと次の行へ送った改行と、数の後ろの改行は何も出さない
+func TestLabelProblemsBreakBeforeNumber(t *testing.T) {
+	for name, c := range map[string]struct {
+		text  string
+		lines []string
+		want  string
+		note  bool
+	}{
+		"約 と数の間":           {"昼のピーク 約10920", []string{"昼のピーク 約", "10920"}, "「約」「第」と数の間で改行する (昼のピーク 約 / 10920)", false},
+		"空白を挟んだ 第 と数の間":    {"負荷試験の第 3回", []string{"負荷試験の第 ", "3回"}, "「約」「第」と数の間で改行する", false},
+		"全角の数字":            {"見込みは約１０９２０", []string{"見込みは約", "１０９２０"}, "「約」「第」と数の間で改行する", false},
+		"約 ごと次の行へ送った改行は通す": {"昼のピーク 約10920", []string{"昼のピーク ", "約10920"}, "", false},
+		"数の後ろの改行は通す":       {"約10920件の要求", []string{"約10920件の", "要求"}, "", false},
+		"前が漢字の 約 は知らせる":    {"最大約10920", []string{"最大約", "10920"}, "", true},
+		"契約 の後の改行も知らせる":    {"契約 3件", []string{"契約 ", "3件"}, "", true},
+		"計 は数の前の字に入れない":    {"合計 5万円", []string{"合計 ", "5万円"}, "", false},
+		// 止める改行と知らせる改行が同じ欄にあれば、止める側だけを出す (知らせを重ねない)
+		"止める改行と知らせる改行が同じ欄": {"昼のピーク 約10920件の最大約3", []string{"昼のピーク 約", "10920件の最大約", "3"}, "「約」「第」と数の間で改行する", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := &build.PlayerData{Shows: []show.Data{{Type: "keyword", Text: c.text}}, Lines: []build.TimelineLine{{Show: new(int)}}}
+			glen := make([]int, len(c.lines))
+			for i, l := range c.lines {
+				glen[i] = utf8.RuneCountInString(l)
+			}
+			breaks := make([]bool, len(c.lines)-1)
+			for i := range breaks {
+				breaks[i] = true
+			}
+			ms := []build.LabelMeasure{
+				{Key: "show:0", Kind: "box", Clip: []int{0, 0}},
+				{Key: "show:0:text", Kind: "wrap", Text: c.text, Lines: c.lines, Breaks: breaks, Glen: glen, Clip: []int{0, 0}},
+			}
+			layout, broken := build.LabelProblems(d, ms)
+			if len(broken) != 0 {
+				t.Fatalf("計測の契約違反が出た: %q", broken)
+			}
+			if notes := build.LabelNotes(d, ms); (len(notes) == 1) != c.note || (c.note && !strings.Contains(notes[0], "と数の間で改行している ("+strings.Join(c.lines, " / ")+")")) {
+				t.Errorf("知らせ %q (知らせるはず: %v)", notes, c.note)
+			}
+			if c.want == "" {
+				if len(layout) != 0 {
+					t.Errorf("通すはずの改行で問題が出た: %q", layout)
+				}
+				return
+			}
+			if len(layout) != 1 || !strings.Contains(layout[0], c.want) {
+				t.Errorf("問題 %q が 1 つだけ出るはず: %q", c.want, layout)
+			}
+		})
+	}
+}
+
+// 前が漢字の「約」と数の間の改行は、build を止めずに知らせて書き出す
+func TestBuildNotesBreakAfterKanjiPrefix(t *testing.T) {
+	path := buildFixtureScript(t, func(raw map[string]any) {
+		raw["lines"].([]any)[0].(map[string]any)["show"] = map[string]any{"type": "keyword", "text": "最大約10920"}
+	})
+	env := testEnv(t)
+	env.MeasureLabels = fakeLabelMeasure(func(_ *build.PlayerData, ms []build.LabelMeasure) []build.LabelMeasure {
+		for i := range ms {
+			if ms[i].Key == "show:0:text" {
+				ms[i].Lines, ms[i].Breaks, ms[i].Glen = []string{"最大約", "10920"}, []bool{true}, []int{3, 5}
+			}
+		}
+		return ms
+	})
+	var stderr strings.Builder
+	env.Stderr = &stderr
+	out := filepath.Join(t.TempDir(), "out")
+	must(t, dispatch([]string{"build", path, "-o", out, "--format", "html", "--allow-fast-captions"}, env))
+	if !strings.Contains(stderr.String(), "確かめてほしい欄が 1 個") || !strings.Contains(stderr.String(), "と数の間で改行している (最大約 / 10920)") {
+		t.Errorf("知らせが出ていない:\n%s", stderr.String())
+	}
+	// 知らせがあるときに「(問題なし)」と結ばない (すぐ上の知らせが読み飛ばされる)
+	if strings.Contains(stderr.String(), "(問題なし)") || !strings.Contains(stderr.String(), "(止める問題なし。確かめてほしい欄 1 個は上)") {
+		t.Errorf("知らせのあとの結びが違う:\n%s", stderr.String())
+	}
+	if _, err := os.Stat(out + ".html"); err != nil {
+		t.Errorf("止めずに書き出すはず: %v", err)
+	}
+}
+
+// 検査が通ったときも、測ったラベルの数を出す (出さないと、検査が走ったのか飛ばしたのかを外から区別できない)
+func TestBuildReportsLabelCheckPassed(t *testing.T) {
+	env := testEnv(t)
+	var stderr strings.Builder
+	env.Stderr = &stderr
+	out := filepath.Join(t.TempDir(), "out")
+	must(t, dispatch([]string{"build", buildFixtureScript(t, nil), "-o", out, "--format", "html", "--allow-fast-captions"}, env))
+	if !strings.Contains(stderr.String(), "個の改行・はみ出しを測った (問題なし)") {
+		t.Errorf("検査が通ったことが出ていない:\n%s", stderr.String())
 	}
 }
 

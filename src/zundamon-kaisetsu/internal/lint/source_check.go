@@ -1,8 +1,10 @@
 package lint
 
 import (
+	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"zundamon-kaisetsu/internal/app"
@@ -17,11 +19,18 @@ import (
 // 出すもの: 資料に無い数字 (95.03%・2018年・8割)・資料に無い英字の語・導入の終わりに本題へ移る区切りの語が無い。
 // 数字は、台本と資料の両方から同じ規則で「数字と単位の組」(6割・95.03%・2018年度) を取り出し、組どうしを比べる (部分一致にしない:
 // 資料の「95.03%」の中の「3%」、「16割」の中の「6割」、「2018年度」の中の「2018年」で誤った数字が素通りした)。
-// 字句の近似の手直しを 2 周続けて破られたので (部分一致 → 単位・範囲・符号)、これ以上は直さない。数字の照合は目安で、事実の確認の本体は
-// 手順 3-3 の確認役。
+// 資料と違う数字を素通りさせないための字句の近似の手直しは、2 周続けて破られたので (部分一致 → 単位・範囲・符号)、これ以上は足さない。
+// 数字の照合は目安で、事実の確認の本体は手順 3-3 の確認役。
+// 月日だけは書き方を揃えて比べる: 台本は「9月22日」と書く決まりで、資料は「9/22」「2024/9/22」「2024-09-22」と書くことが多く、
+// 日付の多い資料 (障害の報告・年表) では目安の大半がこの書き方の違いになって、目安ごと読み飛ばされる。台本の「9月22日」は 1 組にして、
+// 資料に同じ月日 (9月22日・9/22・2024-09-22) があるときだけ通す。資料が「9月に…22日に」と月と日を離して書く形は出る (受ける誤検出)。
+// 「9月」と「22日」が別々にあれば通す形にしない: 資料の「9月10日」と「10月22日」から、資料に無い「9月22日」を通してしまう。
+// 資料の側は「9月」「22日」も残す (台本が「22日」とだけ言う形を通す)。資料の「9/22」からは「22日」を作らない (部分一致になる)。
 // 検出しない形: 漢数字 (六割)・一覧に無い単位 (GHz・km)・code / mermaid / image の図解の中の数字・表記ゆれ (「3か月」と「3ヶ月」・
-// 「約3割」と「30%」は誤検出になる)・単位の付かない数字 (文脈が分からない)・数字・語の言い換え (「6 割」を「過半数」、「10/1」と「10月1日」) と、資料に現れるが
-// 文脈の違う数字・導入の区切りの言葉の否定 (「本題じゃない」)。チャプターが 1 個以下なら導入の区切りは見ない。「1つ」「2つ」のような数える「〜つ」は
+// 「約3割」と「30%」は誤検出になる)・単位の付かない数字 (文脈が分からない)・数字・語の言い換え (「6 割」を「過半数」) と、資料に現れるが
+// 文脈の違う数字 (資料の分数・比率・ページの「1/2」「3/10」も月日と数えるので、台本の 1月2日・3月10日 が資料に無くても通る)・
+// 年の無い「9-22」と米式の「9/22/2024」(月日と見ない)・
+// 導入の区切りの言葉の否定 (「本題じゃない」)。チャプターが 1 個以下なら導入の区切りは見ない。「1つ」「2つ」のような数える「〜つ」は
 // 話の中で数えるだけのことが多いので見ない。重要語の図解の語がセリフに無いかは、言い回しの違い (「Windows 95.03%」と「Windowsが95.03%」)
 // で鳴りすぎたので入れなかった (2026-10-08 に 3 本で試作して 6 件中ほとんどが言い回しの違い)。
 
@@ -32,15 +41,86 @@ var (
 	thousandsRe    = regexp.MustCompile(`,(\d{3})`)
 	countingRe     = regexp.MustCompile(`^\d+つ$`)
 	introBoundary  = []string{"本題"}
+	monthDayJaRe   = regexp.MustCompile(`(\d{1,2})月(\d{1,2})日`)
+	// 資料の側の月日の書き方。年の無い「-」は範囲 (9-22%) と区別できないので取らない
+	monthDaySlashRe = regexp.MustCompile(`(\d{4})/(\d{1,2})/(\d{1,2})|(\d{4})-(\d{1,2})-(\d{1,2})|(\d{1,2})/(\d{1,2})`)
 )
 
-// numberTokens は文の中の「数字と単位の組」を、比べられる形 (全角を半角に・桁区切りのカンマを除く・パーセントを % に) で返す。
+// numberTokens は文の中の「数字と単位の組」と月日を、比べられる形 (全角を半角に・桁区切りのカンマを除く・パーセントを % に・
+// 月日は「9月22日」の 1 組) で、文の中の順に返す。
 func numberTokens(s string) []string {
+	s = textx.FoldWidth(s)
+	var out []string
+	last := 0
+	for _, m := range monthDayJaRe.FindAllStringSubmatchIndex(s, -1) {
+		k := monthDay(s[m[2]:m[3]], s[m[4]:m[5]])
+		if k == "" {
+			continue
+		}
+		out = append(out, unitNumberTokens(s[last:m[0]])...)
+		out = append(out, k)
+		last = m[1]
+	}
+	return append(out, unitNumberTokens(s[last:])...)
+}
+
+// sourceNumbers は資料の側の組。台本の側 (numberTokens) より広く取る: 「9月22日」の「9月」「22日」も残し、
+// 「9/22」「2024/9/22」「2024-09-22」の月日 (年があれば「2024年」も) を足す。
+func sourceNumbers(source string) map[string]bool {
+	s := textx.FoldWidth(source)
+	set := map[string]bool{}
+	for _, ks := range [][]string{numberTokens(s), unitNumberTokens(s), slashMonthDays(s)} {
+		for _, k := range ks {
+			set[k] = true
+		}
+	}
+	return set
+}
+
+// slashMonthDays は「9/22」「2024/9/22」「2024-09-22」の月日 (と年)。前後に数字か「/」が続く形 (パスの 33259/12・9/22/2024) は月日と見ない
+func slashMonthDays(s string) []string {
+	var out []string
+	for _, m := range monthDaySlashRe.FindAllStringSubmatchIndex(s, -1) {
+		if (m[0] > 0 && isDigitOrSlash(s[m[0]-1])) || (m[1] < len(s) && isDigitOrSlash(s[m[1]])) {
+			continue
+		}
+		g := func(i int) string {
+			if m[2*i] < 0 {
+				return ""
+			}
+			return s[m[2*i]:m[2*i+1]]
+		}
+		k := monthDay(g(2)+g(5)+g(7), g(3)+g(6)+g(8))
+		if k == "" {
+			continue
+		}
+		out = append(out, k)
+		if y := g(1) + g(4); y != "" {
+			out = append(out, y+"年")
+		}
+	}
+	return out
+}
+
+// monthDay は月日の比べる形「9月22日」(先頭の 0 は除く)。月日として成り立たない数 (13月・32日) なら ""
+func monthDay(month, day string) string {
+	mo, err1 := strconv.Atoi(month)
+	d, err2 := strconv.Atoi(day)
+	if err1 != nil || err2 != nil || mo < 1 || mo > 12 || d < 1 || d > 31 {
+		return ""
+	}
+	return fmt.Sprintf("%d月%d日", mo, d)
+}
+
+func isDigitOrSlash(b byte) bool { return (b >= '0' && b <= '9') || b == '/' }
+
+// unitNumberTokens は文の中の「数字と単位の組」(月日を分けずに、9月22日 なら「9月」「22日」)。s は全角を半角にした文
+func unitNumberTokens(s string) []string {
 	var out []string
 	num := func(n string) string { // 桁区切りのカンマ (後ろが 3 桁) だけを除き、全角のマイナスを揃える。小数のカンマ (10,5) は残す
 		return strings.ReplaceAll(thousandsRe.ReplaceAllString(n, "$1"), "−", "-")
 	}
-	for _, m := range sourceNumberRe.FindAllStringSubmatch(textx.FoldWidth(s), -1) {
+	for _, m := range sourceNumberRe.FindAllStringSubmatch(s, -1) {
 		unit := strings.ToUpper(strings.ReplaceAll(m[3], "パーセント", "%"))
 		if m[2] != "" {
 			out = append(out, num(m[1])+unit, num(m[2])+unit)
@@ -57,10 +137,7 @@ func SourceCandidates(s *script.Script, source string) []lintIssue {
 	hint := func(i int, rule, msg string) {
 		out = append(out, lintIssue{Line: i, Rule: rule, Msg: msg, Hint: true})
 	}
-	srcNumbers := map[string]bool{}
-	for _, k := range numberTokens(source) {
-		srcNumbers[k] = true
-	}
+	srcNumbers := sourceNumbers(source)
 	srcFold := textx.FoldWidth(source)
 	for i, line := range s.Lines {
 		// 字幕と、図解の中の文字 (重要語・比較の見出しと項目) を見る (図解の中の誤った数字も素通りさせない)

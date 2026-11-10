@@ -87,7 +87,18 @@ func TestLintRules(t *testing.T) {
 		"慣用語を取り除いてから数える":  {[]map[string]any{m("metan", "一日中作業して、一日で終わったわ")}, []string{"0:kanji-number"}},
 		"大きな数と 〇":         {[]map[string]any{m("metan", "一〇〇件と約三万件と五億円")}, []string{"0:kanji-number", "0:kanji-number", "0:kanji-number"}},
 		"概数は数えない":         {[]map[string]any{m("metan", "数十個と何百人")}, nil},
-		"左側の は図を指していない":   {[]map[string]any{m("zundamon", "左側の車線を走るのだ")}, nil},
+		// 算用数字に万・億を添えた書き方は算用数字で書けている (漢数字だけの「約三万件」は上で出る)
+		"算用数字の後の万・億は数えない": {[]map[string]any{m("metan", "最大15万件と3億円と１５万人")}, nil},
+		"算用数字の後でも千・百は数える": {[]map[string]any{m("metan", "3千円と5百人と1千万円")}, []string{"0:kanji-number", "0:kanji-number", "0:kanji-number"}},
+		// 図解が出ていない行の null は消す図解が無い (行を消すときに消す指定を引き継いだ名残)
+		"最初の行の null": {[]map[string]any{m("metan", "a", "show", nil)}, []string{"0:show-null-idle"}},
+		"消した後にもう一度 null": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}),
+			m("metan", "b", "show", nil), m("zundamon", "c？"), m("metan", "d", "show", nil)}, []string{"3:show-null-idle"}},
+		"段を進めた後の null は図解を消す": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "list", "items": []any{"x", "y"}, "build": true}),
+			m("metan", "b", "show", "next"), m("zundamon", "c？", "show", nil)}, nil},
+		"左側の は図を指していない": {[]map[string]any{m("zundamon", "左側の車線を走るのだ")}, nil},
 		// 2 周目: 1 周目に足した「僕」「ボク」が「ボクシング」「公僕」で止めた。ひらがなの「ぼく」だけを見る
 		"ボクシング・公僕は一人称ではない": {[]map[string]any{m("metan", "ボクシングを見たわ。公僕として")}, nil},
 		"のだっ・のだ〜も文末":       {[]map[string]any{m("zundamon", "そうなのだっ。いいのだ〜")}, []string{"0:noda"}},
@@ -130,6 +141,9 @@ func TestLintCommandExitCode(t *testing.T) {
 	}
 	if out, err := run(l("metan", "三人で行くわ")); err != nil || !strings.Contains(out, "0\t目安\tkanji-number\t") {
 		t.Errorf("漢数字 (目安) だけで rc=1 になった: %v\n%s", err, out)
+	}
+	if out, err := run(map[string]any{"who": "metan", "text": "a", "show": nil}); err != nil || !strings.Contains(out, "0\t目安\tshow-null-idle\t") {
+		t.Errorf("図解の出ていない null (目安) だけで rc=1 になった: %v\n%s", err, out)
 	}
 	if out, err := run(l("metan", "a")); err != nil || !strings.Contains(out, "(警告なし)") {
 		t.Errorf("警告の無い台本: %v\n%s", err, out)

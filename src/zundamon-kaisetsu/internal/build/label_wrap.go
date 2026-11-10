@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"zundamon-kaisetsu/internal/app"
 	"zundamon-kaisetsu/internal/extcmd"
@@ -25,7 +27,10 @@ import (
 // どこで折り返すか (文節が 1 行の幅を超えると語の途中で切れる・タイトルが 2 行になる) は描いてみないと分からない。
 //
 // 測るのは player.html の計測モード (#measure)、判定はこのファイル。検出しないもの:
-//   - 語の境目 (Intl.Segmenter の word) では切れているが、文節の途中の改行 (Chrome の auto-phrase の文節は外から見えない)
+//   - 語の境目 (Intl.Segmenter の word) では切れているが、文節の途中の改行 (Chrome の auto-phrase の文節は外から見えない)。
+//     ただし数の前に付く字 (numberPrefixes) と数の間の改行 (「約」/「10920」) は、描かれた行の字から決まるので見る (numberBreak)。
+//     前が漢字の形 (最大約 / 10920・契約 / 3件) は語の一部かを字では決められないので、止めずに LabelNotes で知らせる
+//   - 数の前に付く字のうち 約・第 以外 (計・全・各・毎) と、漢数字の数 (約 / 三万件。数は算用数字で書く決まりで、lint の kanji-number が出す)
 //   - mp4 と違う窓の幅で HTML を開いたときの改行 (測るのは 1280x720 の舞台だけ。字幕も測らない)
 //   - 箇条書きの項目・コードは折り返さない (white-space: nowrap / pre) ので、幅の超過はカードのはみ出しとしてだけ出る
 
@@ -158,6 +163,9 @@ func LabelProblems(d *PlayerData, ms []LabelMeasure) (layout, broken []string) {
 			if len(m.Lines) > 1 && slices.ContainsFunc(m.Glen, func(n int) bool { return n <= 1 }) {
 				why = append(why, "1 字だけの行ができる")
 			}
+			if sure, _ := numberBreak(m.Lines); sure {
+				why = append(why, "「約」「第」と数の間で改行する")
+			}
 		default:
 			bad = append(bad, fmt.Sprintf("計測モードが知らない種類 %q を返した (player.html と label_wrap.go が食い違っている)", m.Kind))
 		}
@@ -170,6 +178,46 @@ func LabelProblems(d *PlayerData, ms []LabelMeasure) (layout, broken []string) {
 		}
 	}
 	return layout, broken
+}
+
+// numberPrefixes は数の前に付いて 1 語になる字 (約10920・第3回)。計・全・各・毎 は入れない: 合計・安全のように語の末尾にも来て、
+// 数の前の字かを字だけでは決めにくい。誤って止めると動画を書き出せないので、確かな字だけにする
+const numberPrefixes = "約第"
+
+// numberBreak は、行の終わりが数の前に付く字で、次の行が数字で始まる改行があるか。語の境目なので Breaks には出ないが、
+// 「約」だけが行末に残り、数が次の行の頭に離れて読みにくい。字の前が漢字でない (空白・仮名・英字・記号・行頭) なら sure (昼のピーク 約 / 10920)。
+// 前が漢字なら maybe: 「最大約 / 10920」のような数の前の字のことも、「契約 / 3件」のような語の一部のこともあり、字では決められない。
+// 語の一覧で分けないのは、一覧に無い語で動画を書き出せなくなる (誤って止める) か、一覧の語の後の本物の改行を見逃すかのどちらかになるため
+func numberBreak(lines []string) (sure, maybe bool) {
+	for i := 0; i+1 < len(lines); i++ {
+		head := strings.TrimRight(lines[i], " \u3000")
+		prefix, size := utf8.DecodeLastRuneInString(head)
+		before, _ := utf8.DecodeLastRuneInString(head[:len(head)-size])
+		next, _ := utf8.DecodeRuneInString(strings.TrimLeft(lines[i+1], " \u3000"))
+		if !strings.ContainsRune(numberPrefixes, prefix) || !unicode.IsDigit(next) {
+			continue
+		}
+		if unicode.Is(unicode.Han, before) {
+			maybe = true
+		} else {
+			sure = true
+		}
+	}
+	return sure, maybe
+}
+
+// LabelNotes は止めずに知らせる改行 (前が漢字の「約」「第」と数の間。numberBreak の maybe)。止める問題がある欄は LabelProblems が出すので除く
+func LabelNotes(d *PlayerData, ms []LabelMeasure) []string {
+	var out []string
+	for _, m := range ms {
+		if m.Kind != "wrap" {
+			continue
+		}
+		if sure, maybe := numberBreak(m.Lines); maybe && !sure {
+			out = append(out, fmt.Sprintf("%s: 「約」「第」と数の間で改行している (%s)", labelWhere(d, m.Key), strings.Join(m.Lines, " / ")))
+		}
+	}
+	return out
 }
 
 // labelWhere はラベルの鍵を、台本のどこかが分かる言い方にする。
@@ -290,6 +338,14 @@ func CheckLabelLayout(env *app.Env, data *PlayerData, td string, allow bool) err
 		return err
 	}
 	layout, broken := LabelProblems(data, ms)
+	// 計測が壊れているとき (broken) は止めるので、知らせは出さない (知らせの元の行も信用できない)
+	notes := LabelNotes(data, ms)
+	if len(broken) == 0 && len(notes) > 0 {
+		fmt.Fprintf(env.Stderr, "build: 確かめてほしい欄が %d 個 (この欄では止めない。契約・次第のような語の後なら問題ない。数の前の「約」なら語を短くする):\n", len(notes))
+		for _, n := range notes {
+			fmt.Fprintf(env.Stderr, "  %s\n", n)
+		}
+	}
 	if len(broken) > 0 {
 		fmt.Fprintf(env.Stderr, "build: ラベルの改行を正しく測れなかった (%d 個):\n", len(broken))
 		for _, p := range broken {
@@ -298,6 +354,18 @@ func CheckLabelLayout(env *app.Env, data *PlayerData, td string, allow bool) err
 		return app.Fail("ラベルの改行の計測が壊れているので止めた (templates/player.html の #measure と label_wrap.go が食い違っている。--allow-label-wraps では通さない)")
 	}
 	if len(layout) == 0 {
+		// 通ったことも出す (何も出さないと、検査が走ったのか・飛ばしたのかを外から区別できない)
+		labels := 0
+		for _, m := range ms {
+			if m.Kind != "box" {
+				labels++
+			}
+		}
+		if len(notes) > 0 { // 「問題なし」と書くと、すぐ上の知らせが読み飛ばされる
+			fmt.Fprintf(env.Stderr, "build: ラベル %d 個と図解の枠 %d 個の改行・はみ出しを測った (止める問題なし。確かめてほしい欄 %d 個は上)\n", labels, len(ms)-labels, len(notes))
+		} else {
+			fmt.Fprintf(env.Stderr, "build: ラベル %d 個と図解の枠 %d 個の改行・はみ出しを測った (問題なし)\n", labels, len(ms)-labels)
+		}
 		return nil
 	}
 	fmt.Fprintf(env.Stderr, "build: 意図しない改行・はみ出しのあるラベルが %d 個 (mp4 と同じ 1280x720 の舞台で測った):\n", len(layout))

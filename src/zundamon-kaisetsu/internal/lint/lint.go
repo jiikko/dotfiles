@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"zundamon-kaisetsu/internal/app"
@@ -41,8 +42,9 @@ const lintCaptionMax = 60 // 字幕 2 行 (SKILL.md の「60 字程度」を機�
 
 var (
 	// 半角の算用数字にすべき漢数字 (目安): 数の後に助数詞が続く形だけを見る (「一緒」「一般」「統一」は助数詞が続かないので当たらない)。
-	// 前の「数」「何」は概数 (数十個・何百人) で、算用数字にできないので除く
-	kanjiNumberRe = regexp.MustCompile(`(?:^|[^数何])([一二三四五六七八九十百千万億〇]+(?:つ|人|名|個|本|回|件|年|月|日|時間|行|秒|分|割|倍|種類|章|段|位|台|枚|社|点|歳|週|か月|ヶ月|円|ページ|文字|代))`)
+	// 前の「数」「何」は概数 (数十個・何百人) で、算用数字にできないので除く。算用数字に万・億だけを添えた形 (15万件) は digitsWithMan が除く。
+	// 1 組目は助数詞まで、2 組目は漢数字の部分
+	kanjiNumberRe = regexp.MustCompile(`(?:^|[^数何])(([一二三四五六七八九十百千万億〇]+)(?:つ|人|名|個|本|回|件|年|月|日|時間|行|秒|分|割|倍|種類|章|段|位|台|枚|社|点|歳|週|か月|ヶ月|円|ページ|文字|代))`)
 	// 数を表さない慣用的な語。数える前に行から取り除く (行のどこかにあるかで判定すると、同じ行の本物の数まで見逃す)
 	kanjiNumberIdioms = []string{"一人ひとり", "一つひとつ", "一日中", "一年中", "一段と", "一人で", "一人前", "同一人物", "十人十色", "二人三脚", "一回り", "一本化", "一枚岩", "一点張り", "三日月", "十分"}
 	// 文末の「のだ」(後ろが句読点か行末)。「のだろう」「のだから」は数えない
@@ -57,7 +59,7 @@ var (
 )
 
 // チャプターの数の目安 (SKILL.md の「チャプターは 4〜6 個。尺が長い (8 分を超える程度) なら増やしてよい」)。
-// 行数で尺を見積もる (1 行あたり約 5.5 秒なので、8 分は約 87 行)
+// 行数で尺を見積もる (1 行あたり約 5.5〜6 秒。87 行で約 8〜8.7 分。係数の実測は SKILL.md の手順 0)
 const (
 	lintChaptersMin  = 4
 	lintChaptersMax  = 6
@@ -65,6 +67,13 @@ const (
 	lintShowsPerChap = 2
 	lintStyleLongMax = 20 // 声のスタイル (ノーマル以外) は 1 行の反応や一言にだけ使う。これより長い行は説明の行とみなす
 )
+
+// digitsWithMan は、t[start:end] の漢数字が万・億だけで、すぐ前が算用数字か (15万件・3億円)。SKILL.md の「数は半角の算用数字」が
+// 許す書き方なので漢数字の目安にしない (出すと「150000件」のような読みにくい字幕に書き換えさせる)。「3千円」「1千万円」は数える
+func digitsWithMan(t string, start, end int) bool {
+	prev, _ := utf8.DecodeLastRuneInString(t[:start])
+	return unicode.IsDigit(prev) && strings.Trim(t[start:end], "万億") == ""
+}
 
 // LintScript は台本の行を規則で見て、警告を行の順に返す。dict は skill の読み辞書 (readings.json。合流漏れを見る。nil なら見ない)。
 func LintScript(s *script.Script, dict map[string]string) []lintIssue {
@@ -129,8 +138,12 @@ func LintScript(s *script.Script, dict map[string]string) []lintIssue {
 		if who == "metan" && strings.Contains(text, "ぼく") {
 			add(i, "pronoun", "めたんの行に「ぼく」(めたんは「わたくし」。ずんだもんの言葉の引用なら無視してよい)")
 		}
-		for _, m := range kanjiNumberRe.FindAllStringSubmatch(withoutIdioms(text), -1) {
-			out = append(out, lintIssue{Line: i, Rule: "kanji-number", Msg: fmt.Sprintf("「%s」は半角の算用数字で書く (SKILL.md の「数は半角の算用数字」。慣用語なら無視してよい)", m[1]), Hint: true})
+		t := withoutIdioms(text)
+		for _, m := range kanjiNumberRe.FindAllStringSubmatchIndex(t, -1) {
+			if digitsWithMan(t, m[4], m[5]) {
+				continue
+			}
+			out = append(out, lintIssue{Line: i, Rule: "kanji-number", Msg: fmt.Sprintf("「%s」は半角の算用数字で書く (SKILL.md の「数は半角の算用数字」。慣用語なら無視してよい)", t[m[2]:m[3]]), Hint: true})
 		}
 		if m := pointingRe.FindString(text); m != "" {
 			add(i, "pointing", "「%s」で図解を指している (ものは名前で呼ぶ。音だけで聞く人に通じない)", strings.TrimRight(m, "をはがでにのもと、。！？!?"))
@@ -143,6 +156,10 @@ func LintScript(s *script.Script, dict map[string]string) []lintIssue {
 		if hasShow {
 			switch show.(type) {
 			case nil:
+				// 目安: 何も消さない null は害が無いが、行を消す・まとめる編集で「消す」指定を別の行へ引き継いだ名残のことがある
+				if !showActive {
+					hint(i, "show-null-idle", "図解が出ていないのに \"show\": null (消す図解が無い。行を消した・まとめたときに、消す指定を引き継いだ名残ではないか)")
+				}
 				showActive = false
 			case string: // "next" は図解を変えない
 			default:

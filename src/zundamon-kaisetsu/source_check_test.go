@@ -134,6 +134,16 @@ func TestSourceCandidatesRules(t *testing.T) {
 		"小数のカンマは残す":   {"105%", []string{"10,5%"}, []string{"source-number:10,5%"}},
 		"桁区切りのカンマは除く": {"1000円", []string{"1,000円"}, nil},
 		"ヵ月・才・小文字の単位": {"gb", []string{"5ヵ月と20才と32gb"}, []string{"source-number:5ヵ月", "source-number:20才", "source-number:32GB"}},
+		// 月日: 台本の「9月22日」は月まで合わせた 1 組にして、資料の 9/22・2024/9/22・2024-09-22・9月22日 と比べる
+		"資料の 9/22 の書き方の月日":          {"3/25 (火) と ２０２４／９／２２ と 2025-04-15", []string{"3月25日と9月22日と2024年と4月15日"}, nil},
+		"別の月の同じ日は出る":                {"9月22日", []string{"10月22日"}, []string{"source-number:10月22日"}},
+		"資料の 9月22日 の月だけ・日だけ":        {"9月22日", []string{"22日と9月"}, nil},
+		"別の月日の部品では通さない":             {"9月10日と10月22日", []string{"9月22日"}, []string{"source-number:9月22日"}},
+		"資料が月と日を離して書く形は出る (受ける誤検出)": {"9月に障害。22日に復旧", []string{"9月22日に復旧"}, []string{"source-number:9月22日"}},
+		"資料の 9/22 から 22日 は作らない":     {"9/22", []string{"22日"}, []string{"source-number:22日"}},
+		"数字か / が続く形は月日と見ない":         {"posts/33259/12 と 9/22/2024 と 112/5", []string{"9月22日と12月5日"}, []string{"source-number:9月22日", "source-number:12月5日"}},
+		"成り立たない月日は分けて見る":            {"13/40", []string{"13月40日"}, []string{"source-number:13月", "source-number:40日"}},
+		"月日も文の中の順に出す":               {"", []string{"5か月と10月22日と3人"}, []string{"source-number:5か月", "source-number:10月22日", "source-number:3人"}},
 	} {
 		if got := run(tc.source, tc.texts...); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %v (want %v)", name, got, tc.want)
