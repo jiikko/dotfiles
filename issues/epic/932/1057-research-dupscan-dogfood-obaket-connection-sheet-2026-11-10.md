@@ -47,10 +47,11 @@ obaket の接続の編集モーダルで「保存したら閉じる」を直す�
 
 ## 直したもの
 
+- F3: `-returns` を渡したとき、戻り型が語と完全に一致する単位 (末尾の `?` `!` を除く) を部分一致より先に並べる (`BuildIndex`)。obaket の `-returns StorageConnection -limit 15 macOS/ObaketTests` は、先頭が `makeViewModel() -> StorageConnectionsViewModel` と `snapshot() -> [StorageConnection]` だった並びから、全 15 行が完全一致になった。
 - F1: `-name` に `|` があって 0 件のとき、語ごとに引き直す案内を stderr に出す。usage にも正規表現ではないと書いた。テストは「`|` で 0 件なら出す / `|` が無い 0 件と当たったときは出さない」。案内の条件を消す変異で赤を確認した。
 
 検証: `make -C src/dupscan test lint` が rc 0。実物の `-name 'dismiss|save'` で案内が出ることを確かめた。root の `make test` は別の重い検査と同時に回して失敗した (`test_claude_bin`・`test_dangling_symlinks`・`test_ratelimit_warn`・`test_git_prompt`・`src/pro-con/ui` の `TestPopupGivesUpOnHungTmux`・`src/ratelimit/usage` の `TestFetch*`)。dupscan の検査は通っていた。単独で回し直すと dangling symlink 以外は通った。dangling symlink は `~/.claude/rules` と `~/.config/nvim` の手元の link の残骸で、この変更とは関係ない。
 
 ## 直していないもの
 
-- F2・F3: 出力の形と並びを変えるので、このタスクの範囲では直さず記録した。
+- F2: 出力の形を変えるので、このタスクの範囲では直さず記録した。

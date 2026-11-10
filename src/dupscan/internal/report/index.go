@@ -46,13 +46,14 @@ type IndexSummary struct {
 }
 
 // BuildIndex は名前の付いた単位 (クロージャを除く) から q に当たるものを並べる。
-// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → 共通の置き場所を前 → prod を test より前 → private でないものを前 (他 module/target からの利用可否は未解決) → 呼び出しの多いもの → 場所。
+// 並べ方: 名前の一致の強さ (同じ > 前方 > 一部) → -returns が戻り型と完全に一致するものを前 (`StorageConnection?` は一致、`[StorageConnection]` や `StorageConnectionsViewModel` は部分一致) → 共通の置き場所を前 → prod を test より前 → private でないものを前 (他 module/target からの利用可否は未解決) → 呼び出しの多いもの → 場所。
 // File を指したときはファイルの中の行の順 (outline)。
 func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 	counts := callCounts(units, calls)
 	type hit struct {
 		u     *tree.Unit
 		score int
+		exact bool // -returns が戻り型と (末尾の ? ! を除いて) 完全に一致
 	}
 	var hits []hit
 	n := 0
@@ -63,7 +64,7 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 		n++
 		score, ok := q.match(u)
 		if ok {
-			hits = append(hits, hit{u, score})
+			hits = append(hits, hit{u, score, q.exactReturn(u)})
 		}
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
@@ -71,6 +72,9 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 		if q.File == "" {
 			if a.score != b.score {
 				return a.score > b.score
+			}
+			if a.exact != b.exact {
+				return a.exact
 			}
 			if sa, sb := q.shared(a.u.File), q.shared(b.u.File); sa != sb {
 				return sa
@@ -99,6 +103,14 @@ func BuildIndex(units []*tree.Unit, calls []tree.Call, q Query) IndexSummary {
 		s.Entries = append(s.Entries, e)
 	}
 	return s
+}
+
+// exactReturn は -returns を渡していて、戻り型が末尾の ? ! を除いて語と完全に一致するか。渡していなければ常に false (並びを変えない)。
+func (q Query) exactReturn(u *tree.Unit) bool {
+	if q.Returns == "" {
+		return false
+	}
+	return strings.TrimRight(strings.TrimSpace(u.ReturnType), "?!") == q.Returns
 }
 
 func (q Query) shared(file string) bool { return q.Shared != nil && q.Shared(file) }
