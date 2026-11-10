@@ -36,20 +36,27 @@ Bash で `printf '%s' 'X\u3000Y' | od -An -tx1` を打つと `58 e3 80 80 59` (X
 
 ## 対応方針 (案)
 
-1. PostToolUse (Edit・Write) の hook: 書いた後のファイルの差分で増えた行に、見えにくい字 (U+3000・U+00A0・U+200B〜U+200D・U+FEFF など) があれば、
-   「表記のつもりなら字に変わっている。python の chr(0x5c) などで表記を書き直す」と知らせる。止めない (本当にその字を書きたいこともある)
+1. PostToolUse (Edit・Write) の hook: 道具の入力 (Write の `content`、Edit の `new_string` のうち `old_string` に無い分) に見えにくい字
+   (U+3000・U+00A0・U+200B〜U+200D・U+FEFF など) があれば、「表記のつもりなら字に変わっている。python の chr(0x5c) などで表記を組み直す」と知らせる。
+   止めない (本当にその字を書きたいこともある)
+   - ファイルの git の差分ではなく入力を見る: 起きた 2 件目は git の外 (ignore された tmp/) の markdown で、差分では取れない
+     (`_claude/hooks/comment-provenance-on-edit.sh` は git の root を判定して、外のファイルを見ない)
    - 置き場: `_claude/hooks/` に足し、`_claude/settings.json` の PostToolUse の `Write|Edit` に並べる (今は gofmt-on-edit.sh・comment-provenance-on-edit.sh)
-   - 見るのは増えた行だけ (ファイルに元からある字で毎回鳴らさない)
-2. Bash の入力は、コマンドの文字列に同じ字があれば知らせる (PostToolUse の `Bash`。今は git-state-verify.sh・next-claim-push.sh)。
-   ファイルに書かれたかは分からないので、文字列で見る
+2. Bash は PreToolUse で、コマンドの文字列に同じ字があれば止めずに知らせる (additionalContext。例: `_claude/hooks/suggest-dupscan-for-go-edit.sh`)。
+   PostToolUse では、実行が済んで commit message やファイルに字が書かれた後になり、rc≠0 で終わったコマンドは PostToolUse に来ない
 3. rule の項を直す: 「ファイルを書くツールは」を「Edit・Write・Bash の入力では」に広げ、バックスラッシュ 1 つの表記は届く前に字に変わること、
    表記を残したいときは python の chr(0x5c) や `\x5c` で組むことを書く。hook ができたら hook が正本で、rule は案内だけにする
-4. hook のテスト: 字を含む行を足したとき鳴る・元からある字では鳴らない・字を含まない変更では鳴らない、を `tests/claude/` の既存の hook のテストに倣って足す
+4. hook のテスト: 字を含む入力で鳴る・字を含まない入力では鳴らない・Edit で `old_string` に元からある字では鳴らない、を `tests/claude/` の既存の hook のテスト
+   (例: `test_comment_provenance_on_edit.sh`) に倣って足す。冒頭で `_claude/settings.json` の matcher の配線を `jq -e` で確かめる形も同じにする
+5. 入口に載せる: 同種の hook を並べている repo の `CLAUDE.md` (コメントの経緯の hook の項) と `scripts/CLAUDE.md` に 1 行足す
 
-### 検出しないもの (案の段階の見込み)
+### 検出しないもの・誤検出 (案の段階の見込み)
 
-- 見えにくい字の一覧に無い字 (\u0041 → A のような普通の字に変わった形)。書いたつもりの表記が普通の字に変わると、hook からは区別できない
-- 意図してその字を書いた場合も鳴る (止めないので、読み飛ばしてよい)
+- hook が受け取る入力は、字に変わった後のもの。「表記を書いて字に変わった」と「初めから字を書いた」を hook は区別できない。知らせは「字が入っている」までしか言えない
+- 見えにくい字の一覧に無い字に変わった形 (u0041 の表記が A になる、など)。普通の字に変わると区別できない
+- 誤検出: 意図して書いた字でも鳴る。repo には NBSP・全角空白を意図して書いたテストがあり (`tests/zshrc/av1ify/test_av1ify_clipboard.sh`)、
+  日本語の文書・commit message の全角空白も普通に使う。止めないので害は小さいが、毎回鳴ると読み飛ばされる。
+  鳴らす範囲 (字の種類・Bash は全角空白を見るか・ファイルの種類) は、既存のファイルと過去の入力で鳴る頻度を数えてから決める
 
 ## 関連ファイル
 
@@ -60,7 +67,9 @@ Bash で `printf '%s' 'X\u3000Y' | od -An -tx1` を打つと `58 e3 80 80 59` (X
 
 ## 進捗
 
-- [ ] hook (Edit・Write) を足す
-- [ ] hook (Bash) を足す
+- [ ] 鳴らす範囲を決める (既存のファイルと過去の入力で鳴る頻度を数える)
+- [ ] hook (Edit・Write。PostToolUse) を足す
+- [ ] hook (Bash。PreToolUse) を足す
 - [ ] rule の項を直す
-- [ ] hook のテスト
+- [ ] hook のテスト (settings.json の配線の検査を含む)
+- [ ] 入口 (repo の CLAUDE.md・scripts/CLAUDE.md) に載せる
