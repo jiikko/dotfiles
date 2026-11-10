@@ -20,9 +20,10 @@ Tests run で rc=127 になった (fab386d18 で `"$RUNTIMEOUT"` に直した)�
 
 ## 検出しない形・CI と食い違う形 (正本は `scripts/test_bare_bin_guard.sh` の冒頭)
 
-- テストの子が PATH を自分で組み直す / 開発機の PATH の別の場所に同じ名前の別の実体がある道具 / runner を通らない起動 (テストの直接実行・Go のテストの exec・test-pro-con-slow)
+- テストの子が PATH を自分で組み直す / 開発機の PATH の別の場所に同じ名前の別の実体がある道具 / make の runner (run_tests 系・test-bats) を通らない起動
+  (テストの直接実行・Makefile の recipe が直接起こすテスト = `test-go-packages-index`・`test-pro-con-slow`・Go のテストの exec・workflow が make を介さず起こすもの。workflow 側は調べていない)
 - stub は「在るが落ちる」で、CI の「無い」とは違う。`command -v X` で在るかを見る分岐は手元と CI で逆へ進む (在ることだけを assert するテストは手元で緑のまま /
-  `command -v X || exit 77` で skip するテストは手元で落ちる)。2026-11-10 時点で bin の道具を `command -v` で見るテストは 0 件 (grep)。敵対的レビューが dev / guard / CI 相当の 3 通りの PATH で関連テストを回し、全部 rc=0
+  `command -v X || exit 77` で skip するテストは手元で落ちる)。2026-11-10 時点で、テスト本体が stub になる bin の道具を `command -v` で見る箇所は 0 件 (grep。tmux を見る 2 本は stub にならない)。bin のスクリプトの中には `bin/skill-eval` の `command -v ratelimit` があり、手元では stub を拾って「判定できなかった」側へ進むが、`tests/bin/test_skill_eval.sh` が `SKILL_EVAL_RATELIMIT` を必ず渡すので今は表に出ない。敵対的レビューが dev / guard / CI 相当の 3 通りの PATH で関連テストを回し、全部 rc=0
 
 ## 進捗
 
@@ -38,3 +39,4 @@ Tests run で rc=127 になった (fab386d18 で `"$RUNTIMEOUT"` に直した)�
     外の実体を指す `<root>/bin/x` の symlink を再び stub にする (2 周目で直した退行が戻る。2026-11-10 に `[ /opt/x -ef r/bin/x ]` が真になることを確かめた)。
     開発機に hardlink を置く経路は無いので受ける。**再提起するなら** 開発機の PATH に bin の hardlink が現れる経路を添える
   - 古い checkout (隣に `_claude/settings.json` が無い) の bin を指す symlink が stub にならない (3 周目。`is_dotfiles_bin` の見分け方の限界で、目印を持たない checkout は見分けられない)
+- [x] issue 本文の反証レビュー (sonnet 1 体): P1 0 件。P2「runner を通らない起動の列挙が欠ける (test-go-packages-index)」と P3「`command -v` の 0 件はテスト本体に限る (bin/skill-eval の分岐)」を採り、本文と guard の冒頭を直した

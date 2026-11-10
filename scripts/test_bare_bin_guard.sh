@@ -12,10 +12,12 @@
 # テストが自分で "$ROOT/bin" を PATH の先頭に足す形は、stub より前に来るので今までどおり通る。
 #
 # 検出しない形: テストの子が PATH を自分で組み直す (PATH=/usr/bin:/bin 等) / 開発機の PATH の別の場所
-# (~/.local/bin 等) にも同じ名前の別の実体が在る道具 (stub にしない) / runner を通らない起動 (テストの直接実行・
-# Go のテストの exec・test-pro-con-slow)。
+# (~/.local/bin 等) にも同じ名前の別の実体が在る道具 (stub にしない) / make の runner (run_tests 系・test-bats) を
+# 通らない起動 (テストの直接実行・Makefile の recipe が直接起こすテスト (test-go-packages-index・test-pro-con-slow)・
+# Go のテストの exec・workflow が make を介さず起こすもの)。
 # CI と食い違う形: stub は「在るが落ちる」で、CI の「無い」とは違う。`command -v X` で在るかを見る分岐は手元と CI で
 # 逆へ進む (在ることだけを assert するテストは手元で緑のまま / `command -v X || exit 77` で skip するテストは手元で落ちる)。
+# bin のスクリプトの中の分岐も同じ (bin/skill-eval の `command -v ratelimit` は、CI では空で飛ばし、手元では stub を拾う)。
 # 在るかを見る側を stub に合わせて騙すと、検査が 2 種類の「在る」を区別する必要が出るので、ここでは揃えない。
 set -eu
 unset CDPATH
