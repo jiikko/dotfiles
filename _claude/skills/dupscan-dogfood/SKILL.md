@@ -35,11 +35,14 @@ description: dupscan を実際に使って開発タスクをこなし、使っ�
      (2026-11-09 の tuikit: 1047 の「tuikit にテストだけの依存が増える」は、tuikit が既に testwait を取り込んでいて成り立たず、同じ日に寄せた。issue 1048)
 2. **作業 dir を作る**: **開発タスクの repo に cd してから** `d="$(skill-tmpdir dupscan-dogfood)"` (`<本体 checkout>/tmp/dupscan-dogfood/<session-id>/`)。`skill-tmpdir` は cwd の repo で場所を決めるので、起動した cwd がタスクと別の repo だと、別の repo に作業 dir ができる (2026-10-29: SAC の作業で obaket の下にでき、作り直した)。摩擦と提案のメモは `$d/friction.md` に書く。
 3. **dupscan が動くか 1 回確かめる**: `dupscan capabilities` (build に時間がかかる初回は待つ)。動かないこと自体が最初の不満になる。
-4. **他に dupscan を触っているセッションがいないか**: `src/dupscan` を直すのは 1 セッションだけ (衝突を避ける)。
-   `ListAgents` に dupscan の名前のセッションが**居ることだけでは決めない**。次のどれかがあれば「触っている」とみなし、直すのはそのセッションに任せ、こちらは記録と起票だけにする:
+4. **他に dupscan を触っているセッションがいないか**: `src/dupscan` の同じファイルを直すのは 1 セッションだけ (衝突を避ける)。
+   `ListAgents` に dupscan の名前のセッションが**居ることだけでは決めない**。次のどちらかがあれば、触っているセッションがいる前提で進める:
    epic 932 の `next/` に dupscan の修正の claim がある / `git -C ~/dotfiles log -5 --format='%h %ar %s' -- src/dupscan` に、このセッションが作っていない半日以内の commit がある
-   (作者の名前は全セッション同じなので、作者では見分けない) / そのセッションに聞いて「触っている」と返る。
-   どれも無ければ、こちらで直してよい (直す前に、触ることをそのセッションへ一声かける)
+   (作者の名前は全セッション同じなので、作者では見分けない)。
+   そのときは直す前に、触るファイルを `ListAgents` の全セッションへ伝えて聞く。触るファイルが重ならないと返事で分かれば、こちらで直してよい。
+   重なる・触っていると返る・返事が無いなら、直すのはそのセッションに任せ、こちらは記録と起票だけにする。返事を待つ間も、タスクと記録は先に進める
+   (2026-11-11: commit だけで止めると、別の範囲を直しているセッションがいるたびに修正が止まった。obaket retro 1478)。
+   どちらも無ければ、こちらで直してよい (直す前に、触ることをそのセッションへ一声かける)
 
 ## 1. タスクを dupscan を使ってこなす
 
@@ -128,7 +131,7 @@ dupscan のコマンドを何本も組み合わせた / 出力を自前で加工
 
 dupscan の修正の作法 (dotfiles の `CLAUDE.md`「`src/` の Go を書くとき」):
 
-- **dupscan の修正は dotfiles の repo (`~/dotfiles`) で行う**。開発タスクが別の repo (obaket など) でも、dotfiles の worktree を切って作業する (タスクの repo には dupscan の修正を混ぜない)。共有の checkout で編集しない。`src/dupscan` を触るセッションは 1 つだけ (0 節の 4)。
+- **dupscan の修正は dotfiles の repo (`~/dotfiles`) で行う**。開発タスクが別の repo (obaket など) でも、dotfiles の worktree を切って作業する (タスクの repo には dupscan の修正を混ぜない)。共有の checkout で編集しない。`src/dupscan` の同じファイルを触るセッションは 1 つだけ (0 節の 4)。
 - テストを書き、**変異を当てて赤を確認する** (`~/.claude/rules/mutation-verify-new-tests.md`)。結果を変えない最適化の変異は緑のままでよい (そう書く)。
 - `make -C src/dupscan test lint` と、ルートの `make test` (`make test-lint` を含む) を rc で確かめてから push する。文書 (README・skill・usage) が実体とずれたら同じ commit で直す。
 - 実機で再現した入力に対して、直す前後の出力を並べて確かめる (テストが緑でも、実物で効いたかは別)。
