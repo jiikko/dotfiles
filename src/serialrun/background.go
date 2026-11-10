@@ -15,17 +15,21 @@ import (
 //
 // ## 脅威モデル
 // 守るのは、Claude が 1 本の Bash の中で `make test … &` / `( make -C x lint test > log 2>&1; echo $? > rc ) &` のように
-// 長い検証を素の & で背景に回す形だけ。単位は bash と同じく ; と改行で切れ、&& / || / | では切れない (`make test && echo ok &` は
-// 丸ごと背景に回る)。( … ) / { …; } / if・while・until・for・select の中にあれば、それを閉じた後ろの & も見る。
+// 長い検証を素の & で背景に回す形だけ。単位は Bash ツールの shell (zsh) と同じく ; 改行 && || で切れ、| では切れない
+// (zsh の `make test && echo ok &` は make test を前面で走らせる。理由は scanner の bgFrame)。
+// ( … ) / { …; } / if・while・until・for・select の中にあれば、それを閉じた後ろの & も見る。
 // 長い検証の語の正本は isHeavy (serial-run が直列化するもの) に、bin/skill-eval と tests/ の下の .sh を足したもの。
 //
 // ## 止めない形
-//   - nohup / setsid / disown がコマンドの位置にある (規範が認める detach。終了コードを run 固有のファイルへ書く形)
+//   - 長い検証のコマンド自身に nohup / setsid を付けた形、背景に回した & の直後の disown (規範が認める detach。
+//     終了コードを run 固有のファイルへ書く形。disown は書かない形も通す)
 //   - &&・|&・>&・&>・2>&1・引用符の中の &・長い検証を含まない単位の & (`make test; sleep 1 &`)
 //
 // ## 検出しない形 (読み切れないものは止めない。serial-run の hook は失敗で tool を止めない)
-//   - heredoc (`<<`) と算術 (`((`) を含むコマンド、scanner が読み切れない形 (関数定義・case・$'…' 等)
+//   - heredoc (`<<`) と算術 (`((`) を字面に含むコマンド (引用の中にあるだけでも外れる)、scanner が読み切れない形 (関数定義・case・$'…' 等)
 //   - 変数・関数・eval・スクリプトの中身・コマンド置換の中で背景に回す形、`zsh -c '… &'` の引用の中
+//   - 長い検証を引用で包んだ呼び出し (`bash -c "make test" &`) と、一覧に無い前置き (caffeinate・stdbuf・sudo・xargs) を付けた形
+//   - bash で走らせたときにだけ丸ごと背景に回る `make test && echo ok &` / `make test &&\n echo ok &` (Bash ツールの shell は zsh)
 //   - 長い検証を Bash ツールの外 (別のスクリプト) で背景に回す形
 //   - PATH 上の serial-run がこの checkout のものでない / SERIAL_RUN_HOOK_DISABLE=1 (_claude/hooks/serial-run-wrap.sh が Go の判定まで進まない)
 func backgroundDenial(cmd string) string {
@@ -33,7 +37,7 @@ func backgroundDenial(cmd string) string {
 		return ""
 	}
 	s := scanner{src: cmd}
-	if _, ok := s.scan(); !ok || !s.bgHeavy || s.detached {
+	if _, ok := s.scan(); !ok || s.bgHeavy <= 0 {
 		return ""
 	}
 	return "長い検証 (make test / go test / mutate-verify 等) を、Bash ツール 1 回の中の素の & で背景に回しています。" +
@@ -70,12 +74,26 @@ func longVerification(words []string) bool {
 	case "skill-eval":
 		return true
 	case "bash", "sh", "zsh":
-		for _, a := range w[1:] {
-			if !strings.HasPrefix(a, "-") {
+		for i := 1; i < len(w); i++ {
+			switch a := w[i]; {
+			case a == "-o" || a == "+o" || a == "-O" || a == "+O":
+				i++ // 値を取るオプション (`bash -o pipefail tests/x.sh`)
+			case !strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "+"):
 				return testScriptRe.MatchString(a)
 			}
 		}
 		return false
 	}
 	return testScriptRe.MatchString(w[0])
+}
+
+// detachedCommand は単純コマンドが nohup / setsid で包まれているか (前置きの env 等の後ろでもよい)
+func detachedCommand(words []string) bool {
+	for _, w := range words {
+		switch filepath.Base(w) {
+		case "nohup", "setsid":
+			return true
+		}
+	}
+	return false
 }

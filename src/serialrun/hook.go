@@ -402,13 +402,15 @@ type scanner struct {
 	afterPipe    bool // 直前が | だった
 
 	// 背景に回す形の検出 (backgroundDenial)。frames は入れ子 (サブシェル・{ }・制御構文) ごとの段で、末尾が今の段
-	frames   []bgFrame
-	bgHeavy  bool // 長い検証を含む単位を素の & で背景に回した
-	detached bool // nohup / setsid / disown がコマンドの位置にあった
+	frames  []bgFrame
+	bgHeavy int  // 長い検証を含む単位を素の & で背景に回した数 (直後の disown で 1 つ減らす)
+	justBg  bool // 直前の単純コマンドの後ろが、長い検証を背景に回した & だった
 }
 
-// bgFrame は入れ子の 1 段。unit は今の単位 (; と改行で切れ、&& / || / | では切れない。bash は `a && b &` を丸ごと背景に回す) が
-// 長い検証を含むか、any はこの段のどこかが含むか (段が閉じたら外の単位へ持ち上げる)
+// bgFrame は入れ子の 1 段。unit は今の単位 (; 改行 && || で切れ、| では切れない) が長い検証を含むか、
+// any はこの段のどこかが含むか (段が閉じたら外の単位へ持ち上げる)。
+// 🚨 && / || で切るのは、Bash ツールが走らせる shell が zsh だから。zsh の `a && b &` は最後のパイプライン (b) だけを背景に回し、
+// a は前面で走る (bash は列を丸ごと回す)。bash の規則で切らずにおくと、zsh では前面で走る `make test && echo ok &` を止める
 type bgFrame struct {
 	paren     bool // ( … ) の段 (でなければ { } / if / while / until / for / select の段)
 	unit, any bool
@@ -432,13 +434,13 @@ func (s *scanner) popFrame() {
 func (s *scanner) endSimple(pipe bool) {
 	// 1 つのパイプラインで包むのは最初の重い段 1 つだけ (両端を包むと、互いの札を待って待ちの上限まで止まる)
 	if s.cmdAt >= 0 {
-		if longVerification(s.words) {
+		if longVerification(s.words) && !detachedCommand(s.words) {
 			s.top().unit, s.top().any = true, true
 		}
-		switch filepath.Base(s.words[0]) {
-		case "nohup", "setsid", "disown":
-			s.detached = true
+		if filepath.Base(s.words[0]) == "disown" && s.justBg {
+			s.bgHeavy-- // `make test > log & disown` は規範が認める detach
 		}
+		s.justBg = false
 		switch {
 		case isSerialRun(s.words):
 			s.manual = true
@@ -474,6 +476,7 @@ func (s *scanner) scan() ([]int, bool) {
 			s.i++
 		case c == '|' && s.i+1 < len(src) && src[s.i+1] == '|':
 			s.endSimple(false) // `||`
+			s.top().unit = false
 			s.i += 2
 		case c == '|':
 			s.endSimple(true) // パイプ (`|` / `|&`)
@@ -506,17 +509,20 @@ func (s *scanner) scan() ([]int, bool) {
 			}
 			if j < len(src) && src[j] == '\n' {
 				s.pipeNewline = true
+				s.i = j + 1 // 改行の後もパイプの続き (背景に回す単位を切らない。書き換えは pipeNewline で見送る)
 			}
 		case c == '\\' && s.i+1 < len(src) && src[s.i+1] == '\n':
 			s.i += 2 // 行の継ぎ (空白と同じ)
 		case c == '&' && s.i+1 < len(src) && src[s.i+1] == '&':
-			s.endSimple(false) // `&&` (今の単位は続く)
+			s.endSimple(false) // `&&`
+			s.top().unit = false
 			s.closer, s.afterPipe = false, false
 			s.i += 2
 		case c == '\n' || c == ';' || c == '&':
 			s.endSimple(false)
 			if c == '&' && s.top().unit {
-				s.bgHeavy = true
+				s.bgHeavy++
+				s.justBg = true
 			}
 			s.top().unit = false
 			s.closer, s.afterPipe = false, false
