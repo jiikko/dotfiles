@@ -437,10 +437,17 @@ func (s *scanner) endSimple(pipe bool) {
 		if longVerification(s.words) && !detachedCommand(s.words) {
 			s.top().unit, s.top().any = true, true
 		}
-		if filepath.Base(s.words[0]) == "disown" && s.justBg {
-			s.bgHeavy-- // `make test > log & disown` は規範が認める detach
+		switch filepath.Base(s.words[0]) {
+		case "disown":
+			if s.justBg {
+				s.bgHeavy-- // `make test > log & disown` は規範が認める detach
+			}
+		case "wait":
+			s.bgHeavy = 0 // `make test & wait` は同じ呼び出しの中で完了まで待つ (前面で走るのと同じ)
 		}
-		s.justBg = false
+		if !compoundClosers[s.words[0]] {
+			s.justBg = false // `if …; then make test & fi; disown` の fi は job を持つ shell を変えない
+		}
 		switch {
 		case isSerialRun(s.words):
 			s.manual = true
@@ -490,10 +497,14 @@ func (s *scanner) scan() ([]int, bool) {
 				s.i++
 			}
 			// | の後の空白・行の継ぎ・コメントを読み飛ばし、改行が来たら見送る (scanner は改行を区切りと読むが、bash はパイプを続ける)
-			j := s.i
+			j, nl := s.i, false
 			for j < len(src) {
 				switch {
 				case src[j] == ' ' || src[j] == '\t':
+					j++
+					continue
+				case src[j] == '\n':
+					nl = true
 					j++
 					continue
 				case src[j] == '\\' && j+1 < len(src) && src[j+1] == '\n':
@@ -507,12 +518,17 @@ func (s *scanner) scan() ([]int, bool) {
 				}
 				break
 			}
-			if j < len(src) && src[j] == '\n' {
+			if nl {
 				s.pipeNewline = true
-				s.i = j + 1 // 改行の後もパイプの続き (背景に回す単位を切らない。書き換えは pipeNewline で見送る)
+				s.i = j // 空行・コメント行の後もパイプの続き (背景に回す単位を切らない。書き換えは pipeNewline で見送る)
 			}
 		case c == '\\' && s.i+1 < len(src) && src[s.i+1] == '\n':
 			s.i += 2 // 行の継ぎ (空白と同じ)
+		case c == '&' && s.i+1 < len(src) && (src[s.i+1] == '|' || src[s.i+1] == '!'):
+			s.endSimple(false) // zsh の `&|` / `&!` (背景に回して disown する。規範が認める detach)
+			s.top().unit, s.justBg = false, false
+			s.closer, s.afterPipe = false, false
+			s.i += 2
 		case c == '&' && s.i+1 < len(src) && src[s.i+1] == '&':
 			s.endSimple(false) // `&&`
 			s.top().unit = false
@@ -549,6 +565,7 @@ func (s *scanner) scan() ([]int, bool) {
 				s.popFrame() // 閉じ損ねた { } / 制御構文の段
 			}
 			s.popFrame()
+			s.justBg = false // サブシェルの中で背景に回した job は、外の disown が届かない
 			s.closer, s.afterPipe = true, false
 			s.i++
 		case c == '>' || c == '<':

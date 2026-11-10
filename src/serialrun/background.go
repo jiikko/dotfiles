@@ -21,8 +21,9 @@ import (
 // 長い検証の語の正本は isHeavy (serial-run が直列化するもの) に、bin/skill-eval と tests/ の下の .sh を足したもの。
 //
 // ## 止めない形
-//   - 長い検証のコマンド自身に nohup / setsid を付けた形、背景に回した & の直後の disown (規範が認める detach。
-//     終了コードを run 固有のファイルへ書く形。disown は書かない形も通す)
+//   - 長い検証のコマンド自身に nohup / setsid を付けた形、背景に回した & の直後の disown、zsh の `&|` / `&!`
+//     (規範が認める detach。終了コードを run 固有のファイルへ書く形。disown は書かない形も通す)
+//   - 後ろに wait がある形 (`make -C a test & make -C b test & wait`。同じ呼び出しの中で完了まで待つ)
 //   - &&・|&・>&・&>・2>&1・引用符の中の &・長い検証を含まない単位の & (`make test; sleep 1 &`)
 //
 // ## 検出しない形 (読み切れないものは止めない。serial-run の hook は失敗で tool を止めない)
@@ -31,6 +32,7 @@ import (
 //   - 長い検証を引用で包んだ呼び出し (`bash -c "make test" &`) と、一覧に無い前置き (caffeinate・stdbuf・sudo・xargs) を付けた形
 //   - bash で走らせたときにだけ丸ごと背景に回る `make test && echo ok &` / `make test &&\n echo ok &` (Bash ツールの shell は zsh)
 //   - 長い検証を Bash ツールの外 (別のスクリプト) で背景に回す形
+//   - wait が待てない job (サブシェルの中で背景に回したもの) の後ろの wait も、待つ形として通す
 //   - PATH 上の serial-run がこの checkout のものでない / SERIAL_RUN_HOOK_DISABLE=1 (_claude/hooks/serial-run-wrap.sh が Go の判定まで進まない)
 func backgroundDenial(cmd string) string {
 	if strings.Contains(cmd, "<<") || strings.Contains(cmd, "((") {
@@ -87,11 +89,14 @@ func longVerification(words []string) bool {
 	return testScriptRe.MatchString(w[0])
 }
 
-// detachedCommand は単純コマンドが nohup / setsid で包まれているか (前置きの env 等の後ろでもよい)
+// detachedCommand は単純コマンドが nohup / setsid で包まれているか。見るのはコマンド語と前置き (env 等) だけで、
+// 引数 (`make -C ~/src/nohup test`) は見ない
 func detachedCommand(words []string) bool {
-	for _, w := range words {
-		switch filepath.Base(w) {
-		case "nohup", "setsid":
+	if len(words) > 0 && filepath.Base(words[0]) == "setsid" {
+		return true
+	}
+	for _, w := range words[:len(words)-len(unwrapPrefix(words))] {
+		if filepath.Base(w) == "nohup" {
 			return true
 		}
 	}
