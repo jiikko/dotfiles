@@ -230,7 +230,7 @@ func TestBrowseSubscriptionsOnlyWithoutArgs(t *testing.T) {
 		d.browse = func(m *view.Model) error {
 			m.Update(m.Init()())
 			m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
-			note = strings.Join(m.Lines(), "\n")
+			note = m.LastToast()
 			return nil
 		}
 		if c.args == nil {
@@ -255,4 +255,41 @@ func mustSubsPath(t *testing.T, d deps) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// 読む画面の既読の印はキャッシュの置き場の <チャンネル ID>.read.json に残り、次に開いたときに戻る。
+func TestBrowseKeepsReadMarksInCache(t *testing.T) {
+	_, _, d, dir := cacheFixture(t)
+	d.tty = func() bool { return true }
+	unread := -1
+	d.browse = func(m *view.Model) error {
+		m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+		m.Update(m.Init()())
+		m.Lines()
+		m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // 2 つ目の話題を選ぶ (既読にする)
+		unread = strings.Count(strings.Join(m.Lines(), "\n"), "●")
+		return nil
+	}
+	var out, errb bytes.Buffer
+	if rc := run(context.Background(), []string{"C1"}, &out, &errb, d); rc != 0 {
+		t.Fatalf("rc=%d %s", rc, errb.String())
+	}
+	if unread != 1 {
+		t.Fatalf("j の後の未読の印 = %d, want 1", unread)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "C1.read.json")); err != nil {
+		t.Fatalf("既読の印を残していない: %v", err)
+	}
+	d.browse = func(m *view.Model) error {
+		m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+		m.Update(m.Init()())
+		unread = strings.Count(strings.Join(m.Lines(), "\n"), "●")
+		return nil
+	}
+	if rc := run(context.Background(), []string{"C1"}, &out, &errb, d); rc != 0 {
+		t.Fatalf("rc=%d %s", rc, errb.String())
+	}
+	if unread != 1 {
+		t.Errorf("開き直した後の未読の印 = %d, want 1 (前回の既読が戻る)", unread)
+	}
 }

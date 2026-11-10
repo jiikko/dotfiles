@@ -45,8 +45,14 @@ func (l *loader) load(_ context.Context, ch subs.Channel) (render.Page, error) {
 }
 
 func newModel(l *loader) *Model {
-	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}, l.load, nil, func() time.Time { return t0 })
+	m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}, l.load, nil, func() time.Time { return t0 }))
 	m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+	return m
+}
+
+// quiet は toast の時計を張らない画面にする (run が tea.Tick を実時間で待たないように)。toast を動かすテストは tickMsg を自分で送る。
+func quiet(m *Model) *Model {
+	m.after = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil }
 	return m
 }
 
@@ -210,8 +216,12 @@ func TestReloadWhileLoadingIsIgnored(t *testing.T) {
 	l := &loader{calls: map[string]int{}}
 	m := newModel(l)
 	pending := m.Init()
-	if cmd := press(m, "r"); cmd != nil {
-		t.Error("読み込み中の r で読み直しを頼んだ")
+	run(m, press(m, "r"))
+	if l.calls["C1"] != 0 {
+		t.Errorf("読み込み中の r で読み直しを頼んだ: %v", l.calls)
+	}
+	if !strings.Contains(m.LastToast(), "#dev は読み込み中なので、読み直せない") {
+		t.Errorf("読み込み中の r の知らせ = %q", m.LastToast())
 	}
 	run(m, pending)
 }
@@ -276,7 +286,7 @@ func TestHeaderKeepsCurrentTabAndState(t *testing.T) {
 		chans = append(chans, subs.Channel{ID: fmt.Sprintf("C%d", i), Name: fmt.Sprintf("ch-%d-あいうえおかきく", i)})
 	}
 	l := &loader{calls: map[string]int{}}
-	m := New(context.Background(), chans, l.load, nil, func() time.Time { return t0 })
+	m := quiet(New(context.Background(), chans, l.load, nil, func() time.Time { return t0 }))
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	run(m, m.Init())
 	for _, cur := range []int{0, 3, 5} {
@@ -284,7 +294,7 @@ func TestHeaderKeepsCurrentTabAndState(t *testing.T) {
 			run(m, press(m, "tab"))
 		}
 		h := m.header()
-		if want := "\x1b[7m#" + chans[cur].Name + "\x1b[27m"; !strings.Contains(h, want) {
+		if want := "\x1b[7m#" + chans[cur].Name + "(1)\x1b[27m"; !strings.Contains(h, want) { // (1) は未読の話題の数
 			t.Errorf("cur=%d: 今のタブが無い: %q", cur, h)
 		}
 		if !strings.HasSuffix(h, "   最終 "+t0.Format("15:04")) {
@@ -504,6 +514,9 @@ func TestUnsubscribeAllThenPickAgain(t *testing.T) {
 	if len(m.chans) != 0 || m.quitting || !strings.Contains(strings.Join(m.Lines(), "\n"), "s で購読を選ぶ") {
 		t.Fatalf("全部外した後: タブ %s quitting=%v\n%s", ids(m), m.quitting, strings.Join(m.Lines(), "\n"))
 	}
+	if !strings.Contains(strings.Join(m.Lines(), "\n"), "購読を保存した (0 件)") {
+		t.Errorf("全部外した画面に保存の知らせが出ない (箱を重ねられない画面でも黙らない)")
+	}
 	run(m, press(m, "j")) // 何も無いところでキーを押しても落ちない・終わらない
 	run(m, press(m, "s"))
 	if opened != 2 || m.picker == nil {
@@ -533,21 +546,21 @@ func TestSubscriptionsEdgeCases(t *testing.T) {
 	for _, k := range []string{"j", "x", "enter"} {
 		run(m, press(m, k))
 	}
-	if ids(m) != "C3" || !strings.Contains(m.noteLine(), "購読を保存できなかった") {
-		t.Errorf("保存に失敗した後: タブ %s 注記 %q", ids(m), m.noteLine())
+	if ids(m) != "C3" || !strings.Contains(m.LastToast(), "購読を保存できなかった") {
+		t.Errorf("保存に失敗した後: タブ %s 知らせ %q", ids(m), m.LastToast())
 	}
 
 	m.subs.Open = func(context.Context) (*subs.Picker, error) { return nil, errors.New("slack が応答しない") }
 	run(m, press(m, "s"))
-	if m.picker != nil || !strings.Contains(m.noteLine(), "購読の一覧を読めなかった") {
-		t.Errorf("一覧の読み込みに失敗した後: 注記 %q", m.noteLine())
+	if m.picker != nil || !strings.Contains(m.LastToast(), "購読の一覧を読めなかった") {
+		t.Errorf("一覧の読み込みに失敗した後: 知らせ %q", m.LastToast())
 	}
 
 	bare := newModel(l)
 	run(bare, bare.Init())
 	run(bare, press(bare, "s"))
-	if !strings.Contains(bare.noteLine(), "チャンネルを指定せずに起動したとき") {
-		t.Errorf("購読の画面が無い起動で s: 注記 %q", bare.noteLine())
+	if !strings.Contains(bare.LastToast(), "チャンネルを指定せずに起動したとき") {
+		t.Errorf("購読の画面が無い起動で s: 知らせ %q", bare.LastToast())
 	}
 	if strings.Contains(bare.help(), "s 購読") || !strings.Contains(m.help(), "s 購読") {
 		t.Errorf("キーの案内の s 購読が、購読の画面の有無と合っていない: %q / %q", bare.help(), m.help())

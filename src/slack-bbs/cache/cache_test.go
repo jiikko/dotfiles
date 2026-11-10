@@ -96,3 +96,32 @@ func TestCovers(t *testing.T) {
 		t.Errorf("LLM が単位を落とした分類を使い回さない")
 	}
 }
+
+// 既読の印は読み戻せる。印の値 (最後に読んだ ts) が ReadKeep より古い印は書くときに落とす。単位の ID (スレッドの親の ts) が
+// 古くても、最近読んだ印は残す (古くに始まって今も返信の付くスレッド)。無い・版が違うファイルは空から始める。
+func TestReadRoundTripAndPrune(t *testing.T) {
+	st := Store{Dir: filepath.Join(t.TempDir(), "c")}
+	now := time.Unix(100*24*3600, 0)
+	if r, err := st.LoadRead("C1"); err != nil || len(r) != 0 || r == nil {
+		t.Fatalf("無いとき: %v %v", r, err)
+	}
+	fresh := board.TsOf(now.Add(-ReadKeep + time.Hour).Unix())
+	old := board.TsOf(now.Add(-ReadKeep - time.Hour).Unix())
+	if err := st.SaveRead("C1", map[string]string{old: fresh, "5.000000": old}, now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := st.LoadRead("C1")
+	if err != nil || len(r) != 1 || r[old] != fresh {
+		t.Fatalf("読み戻し: %v %v (古い親のスレッドの新しい印 %s を残し、古い印を落とす)", r, err, fresh)
+	}
+	p, _ := st.path("C1", "read")
+	if err := os.WriteFile(p, []byte(`{"version":99,"units":{"1.000000":"1.000000"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := st.LoadRead("C1"); err != nil || len(r) != 0 {
+		t.Errorf("版が違うとき: %v %v", r, err)
+	}
+	if err := (Store{}).SaveRead("C1", map[string]string{fresh: "1"}, now); err != nil {
+		t.Errorf("置き場が空なら書かない: %v", err)
+	}
+}

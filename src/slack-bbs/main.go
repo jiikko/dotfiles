@@ -622,6 +622,12 @@ func browse(ctx context.Context, o options, d deps) error {
 		return p, nil
 	}
 	m := view.New(ctx, targets, load, d.openURL, d.now)
+	if st.Dir != "" {
+		m.SetReads(&view.Reads{
+			Load: st.LoadRead,
+			Save: func(ch string, read map[string]string) error { return st.SaveRead(ch, read, d.now()) },
+		})
+	}
 	// 購読の画面 (s) は、購読を読む起動のときだけ付ける。チャンネルを引数で渡した起動で開くと、保存したときにタブが購読に
 	// 置き換わり、引数で渡した (購読していない) チャンネルが消える
 	if len(o.channels) == 0 {

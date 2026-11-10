@@ -59,7 +59,7 @@ func (s Store) path(ch, kind string) (string, error) {
 
 // LoadRaw は ch の Raw を読む。無い・版が違うときは ok が偽 (誤りではない)。
 func (s Store) LoadRaw(ch string) (r Raw, ok bool, err error) {
-	ok, err = s.load(ch, "raw", &r, func() int { return r.Version })
+	ok, err = s.load(ch, "raw", &r, func() bool { return r.Version == Version })
 	if ok {
 		if verr := board.ValidateUnits(r.Units); verr != nil {
 			return Raw{}, false, fmt.Errorf("キャッシュの発言の形が壊れている: %w", verr)
@@ -71,11 +71,11 @@ func (s Store) LoadRaw(ch string) (r Raw, ok bool, err error) {
 
 // LoadSummary は ch の Summary を読む。無い・版が違うときは ok が偽 (誤りではない)。
 func (s Store) LoadSummary(ch string) (sum Summary, ok bool, err error) {
-	ok, err = s.load(ch, "summary", &sum, func() int { return sum.Version })
+	ok, err = s.load(ch, "summary", &sum, func() bool { return sum.Version == Version })
 	return sum, ok, err
 }
 
-func (s Store) load(ch, kind string, v any, version func() int) (bool, error) {
+func (s Store) load(ch, kind string, v any, current func() bool) (bool, error) {
 	if s.Dir == "" {
 		return false, nil
 	}
@@ -93,7 +93,7 @@ func (s Store) load(ch, kind string, v any, version func() int) (bool, error) {
 	if err := json.Unmarshal(b, v); err != nil {
 		return false, fmt.Errorf("%s を読めない: %w", p, err)
 	}
-	return version() == Version, nil
+	return current(), nil
 }
 
 // SaveRaw は ch の Raw を書く (Version は書くときに入れる)。
@@ -162,4 +162,42 @@ func (sum Summary) Covers(units []board.Unit, model, me string) bool {
 		}
 	}
 	return true
+}
+
+// ReadVersion は既読のファイルの形の版。Raw・Summary の Version とは別に数える (板の形を変えても、既読を捨てない)。
+const ReadVersion = 1
+
+// ReadKeep は既読の印を残す期間。印の値 (読んだときの単位の最後の発言の ts) がこれより古い印は、書くときに捨てる
+// (動きの無くなった単位は板に戻らないので、残すとファイルが増え続ける)。単位の ID (スレッドの親の ts) で判定しない:
+// -lookback を延ばすと、古くに始まって今も返信の付くスレッドの印を書くたびに捨て、起動のたびに未読へ戻す
+// 受け入れていること: -since を ReadKeep より長くすると、最後の発言が ReadKeep より古い単位の印は書くたびに捨てるので、読んでも
+// 次の起動で未読に戻る。既定の期間 (2 日) では起きない。直すなら印に読んだ時刻を別に持つ (実害の実例を添えて再提起する)
+const ReadKeep = 60 * 24 * time.Hour
+
+// Read は 1 チャンネルの既読の印。Units は単位の ID → 読んだときの単位の最後の発言の ts。
+type Read struct {
+	Version int               `json:"version"`
+	Units   map[string]string `json:"units"`
+}
+
+// LoadRead は ch の既読の印を読む。無い・版が違うときは空 (誤りではない)。
+func (s Store) LoadRead(ch string) (map[string]string, error) {
+	var r Read
+	ok, err := s.load(ch, "read", &r, func() bool { return r.Version == ReadVersion })
+	if err != nil || !ok || r.Units == nil {
+		return map[string]string{}, err
+	}
+	return r.Units, nil
+}
+
+// SaveRead は ch の既読の印を書く。印の値が now から ReadKeep より古い印は落とす。
+func (s Store) SaveRead(ch string, units map[string]string, now time.Time) error {
+	keep := make(map[string]string, len(units))
+	cut := board.TsOf(now.Add(-ReadKeep).Unix())
+	for id, ts := range units {
+		if !board.TsBefore(ts, cut) {
+			keep[id] = ts
+		}
+	}
+	return s.save(ch, "read", Read{Version: ReadVersion, Units: keep})
 }

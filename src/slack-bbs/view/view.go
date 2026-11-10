@@ -14,8 +14,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"slack-bbs/board"
 	"slack-bbs/render"
 	"slack-bbs/subs"
@@ -31,24 +33,32 @@ type chanState struct {
 	loading  bool
 	gen      int // 最後に頼んだ読み直しの通し番号 (Model.seq)。結果はこの値と照合する
 	loadedAt time.Time
-	stale    bool        // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
-	hl       highlighter // page の本文の色付け (page を置き換えるたびに作り直す)
+	stale    bool              // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
+	hl       highlighter       // page の本文の色付け (page を置き換えるたびに作り直す)
+	rows     []row             // 左の一覧の行 (日付の見出しと話題。page を置き換えるたびに作り直す)
+	read     map[string]string // 既読の印 (単位の ID → 読んだときの単位の最後の発言の ts)
 }
 
 // Model は画面の状態。
 type Model struct {
-	ctx      context.Context
-	load     Loader
-	open     func(url string) error
-	now      func() time.Time
-	chans    []chanState
-	cur      int
-	list     listnav.List
-	pager    listnav.Pager
-	body     bool // 右の欄を操作しているか
-	w, h     int
-	notice   string // 1 回だけ出す知らせ (開けなかった等)
+	ctx   context.Context
+	load  Loader
+	open  func(url string) error
+	now   func() time.Time
+	chans []chanState
+	cur   int
+	list  listnav.List
+	pager listnav.Pager
+	body  bool // 右の欄を操作しているか
+	w, h  int
+	// toast は右下に数秒出す知らせ (開けなかった・読み込み中で読み直せない等)。ShowInfo は使わない: 中立の知らせは水色で、背景が青い
+	// 端末で沈む (highlight.go の色の約束)。成否の色 (緑の ✓・赤の ✗) で出す
+	toast   toast.Stack
+	ticking bool // toast を動かす tick を張っている
+	// after は d 後に Msg を返す Cmd を作る (既定は tea.Tick。テストは待たずに捨てる)
+	after    func(d time.Duration, f func(time.Time) tea.Msg) tea.Cmd
 	quitting bool
+	reads    *Reads
 	// seq は読み直しの通し番号。チャンネルごとに数えると、購読から外して付け直したチャンネルで、外す前の読み直しの結果を
 	// 付け直した後の読み直しの結果と取り違える
 	seq     int
@@ -66,9 +76,9 @@ type Subscriptions struct {
 
 // New は画面を作る。chans は 1 つ以上。
 func New(ctx context.Context, chans []subs.Channel, load Loader, open func(string) error, now func() time.Time) *Model {
-	m := &Model{ctx: ctx, load: load, open: open, now: now, w: 100, h: 30}
+	m := &Model{ctx: ctx, load: load, open: open, now: now, w: 100, h: 30, after: tea.Tick}
 	for _, c := range chans {
-		m.chans = append(m.chans, chanState{ch: c})
+		m.chans = append(m.chans, chanState{ch: c, read: map[string]string{}})
 	}
 	return m
 }
@@ -81,8 +91,13 @@ func (m *Model) Preload(i int, p render.Page, at time.Time) {
 	if i < 0 || i >= len(m.chans) {
 		return
 	}
-	c := &m.chans[i]
-	c.page, c.loadedAt, c.stale, c.hl = &p, at, true, newHighlighter(p)
+	m.chans[i].setPage(p, at, true)
+}
+
+// setPage は板を p に置き換える (色付けと一覧の行も作り直す)。
+func (c *chanState) setPage(p render.Page, at time.Time, stale bool) {
+	c.page, c.err, c.loadedAt, c.stale, c.hl = &p, nil, at, stale, newHighlighter(p)
+	c.rows = buildRows(p.Topics, time.Local)
 }
 
 // loadedMsg は読み直しの結果。チャンネルは番号でなく ID で指す (購読を変えるとタブの番号がずれる)。
@@ -132,21 +147,49 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pickerMsg:
 		m.picking = false
 		if msg.err != nil {
-			m.notice = "購読の一覧を読めなかった: " + msg.err.Error()
-			return m, nil
+			m.toast.Show("購読の一覧を読めなかった: "+msg.err.Error(), false)
+			break
 		}
 		m.picker = msg.p
 	case tea.KeyPressMsg:
+		var cmd tea.Cmd
 		if m.picker != nil {
-			return m, m.pickKey(msg.String())
+			cmd = m.pickKey(msg.String())
+		} else {
+			cmd = m.key(msg.String())
 		}
-		cmd := m.key(msg.String())
 		if m.quitting {
 			return m, tea.Quit
 		}
-		return m, cmd
+		return m, tea.Batch(append(m.toastCmds(), cmd)...)
+	case toast.Msg:
+		m.toast.StartLeaving(msg)
+	case tickMsg:
+		m.ticking = false
 	}
-	return m, nil
+	return m, tea.Batch(m.toastCmds()...)
+}
+
+// LastToast は最後に出した知らせの文 (出していなければ空)。
+func (m *Model) LastToast() string { return m.toast.Text() }
+
+// tickMsg は toast を動かす描き直しの合図。
+type tickMsg struct{}
+
+// frameInterval は toast が滑り込む・滑り出る間の描き直しの周期。
+const frameInterval = 16 * time.Millisecond
+
+// toastCmds は toast を 1 コマ進め、退場の時計と、動いている間の tick を張る。
+func (m *Model) toastCmds() []tea.Cmd {
+	var cmds []tea.Cmd
+	for _, t := range m.toast.Advance() {
+		cmds = append(cmds, m.after(t.After, func(time.Time) tea.Msg { return t.Msg }))
+	}
+	if m.toast.Animating() && !m.ticking {
+		m.ticking = true
+		cmds = append(cmds, m.after(frameInterval, func(time.Time) tea.Msg { return tickMsg{} }))
+	}
+	return cmds
 }
 
 func (m *Model) loaded(msg loadedMsg) {
@@ -169,19 +212,24 @@ func (m *Model) loaded(msg loadedMsg) {
 			keep = t.Units[0].ID
 		}
 	}
-	p := msg.page
-	c.page, c.err, c.loadedAt, c.stale, c.hl = &p, nil, msg.at, false, newHighlighter(p)
+	c.setPage(msg.page, msg.at, false)
 	if idx == m.cur {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
-		for i, t := range p.Topics {
-			if slices.ContainsFunc(t.Units, func(u board.Unit) bool { return u.ID == keep }) {
-				m.list.Cursor = i
+		found := false
+		for i, r := range c.rows {
+			if !r.header() && slices.ContainsFunc(c.page.Topics[r.topic].Units, func(u board.Unit) bool { return u.ID == keep }) {
+				m.list.Cursor, found = i, true
 				break
 			}
 		}
-		m.list.Fit(len(p.Topics), m.listRows())
+		m.fitList(1)
 		m.pager.Reset()
+		if m.body && !found {
+			m.body = false // 読んでいた話題が消えた: 黙って別の話題の本文に替えない (替えると、選んでいない話題を読んだことになる)
+		}
+		// 読み直しは既読にしない (本文の欄に出ていても): 欄は先頭へ戻り、付いた返信は欄の外にありうる。小さい端末・購読の画面の裏では
+		// 欄が描かれていない。読んでいる最中に付いた返信は、選び直すまで ● で出す
 	}
 }
 
@@ -201,15 +249,18 @@ func (m *Model) topics() []board.Topic {
 }
 
 func (m *Model) selected() (board.Topic, bool) {
-	ts := m.topics()
-	if len(ts) == 0 {
+	rows := m.rows()
+	if len(rows) == 0 {
 		return board.Topic{}, false
 	}
-	return ts[min(m.list.Cursor, len(ts)-1)], true
+	r := rows[min(max(m.list.Cursor, 0), len(rows)-1)]
+	if r.header() {
+		return board.Topic{}, false // 描く前 (fitList の前) に見出しに乗っている
+	}
+	return m.topics()[r.topic], true
 }
 
 func (m *Model) key(k string) tea.Cmd {
-	m.notice = ""
 	switch k {
 	case "q", "ctrl+c":
 		m.quitting = true
@@ -220,18 +271,32 @@ func (m *Model) key(k string) tea.Cmd {
 	if len(m.chans) == 0 {
 		return nil // 購読を全部外した後は、s で選び直すか q で終わる
 	}
+	// カーソルを見出しから話題へ逃がすのは描画 (leftLines) だけではない: 小さい端末の画面は一覧を描かないので、
+	// タブを替えた直後のカーソルが見出しに残り、l / o / u が効かなくなる
+	m.fitList(1)
 	switch k {
 	case "r":
 		if m.chans[m.cur].loading {
-			return nil // 走っている読み直しを待つ (連打で claude を何本も起こさない)
+			// 走っている読み直しを待つ (連打で claude を何本も起こさない)
+			m.toast.Show("#"+m.chans[m.cur].ch.Name+" は読み込み中なので、読み直せない (終わってからもう一度押す)", false)
+			return nil
 		}
 		return m.reload(m.cur)
 	case "R":
 		var cmds []tea.Cmd
+		busy := 0
 		for i := range m.chans {
-			if !m.chans[i].loading {
-				cmds = append(cmds, m.reload(i))
+			if m.chans[i].loading {
+				busy++
+				continue
 			}
+			cmds = append(cmds, m.reload(i))
+		}
+		switch {
+		case busy == len(m.chans):
+			m.toast.Show("どのチャンネルも読み込み中なので、読み直せない (終わってからもう一度押す)", false)
+		case busy > 0:
+			m.toast.Show(fmt.Sprintf("読み込み中の %d チャンネルは飛ばした", busy), true)
 		}
 		return tea.Batch(cmds...)
 	case "tab", "shift+tab":
@@ -242,6 +307,9 @@ func (m *Model) key(k string) tea.Cmd {
 		return m.switchTo(listnav.Cycle(m.cur, d, len(m.chans)))
 	case "o":
 		m.openSelected()
+		return nil
+	case "u":
+		m.toggleRead()
 		return nil
 	}
 	if m.body {
@@ -260,12 +328,22 @@ func (m *Model) key(k string) tea.Cmd {
 	case "l", "right", "enter":
 		if _, ok := m.selected(); ok {
 			m.body = true
+			m.setRead(true)
 		}
 		return nil
 	}
 	if mo := listnav.MotionOf(k); mo != listnav.None {
-		if m.list.Move(mo, len(m.topics()), m.listRows(), 0) {
+		m.fitList(1)
+		from := m.list.Cursor
+		m.list.Move(mo, len(m.rows()), m.listRows(), 0)
+		dir := 1
+		if mo == listnav.Up || mo == listnav.HalfUp || mo == listnav.Top {
+			dir = -1
+		}
+		m.fitList(dir)
+		if m.list.Cursor != from {
 			m.pager.Reset()
+			m.setRead(true) // 選んだ話題は右の欄に中身が出る = 読んだ (起動・読み直しで先頭に乗っただけでは既読にしない)
 		}
 	}
 	return nil
@@ -288,7 +366,7 @@ func (m *Model) switchTo(i int) tea.Cmd {
 // openPicker は購読の画面を開く (一覧は画面の外で読む)。読んでいる間に s を重ねても 1 回だけ読む。
 func (m *Model) openPicker() tea.Cmd {
 	if m.subs == nil {
-		m.notice = "購読の画面は、チャンネルを指定せずに起動したときに開ける (slack-bbs sub でも選べる)"
+		m.toast.Show("購読の画面は、チャンネルを指定せずに起動したときに開ける (slack-bbs sub でも選べる)", false)
 		return nil
 	}
 	if m.picking {
@@ -315,7 +393,7 @@ func (m *Model) pickKey(k string) tea.Cmd {
 	}
 	sel := p.Selected()
 	if err := m.subs.Save(sel); err != nil {
-		m.notice = "購読を保存できなかった: " + err.Error()
+		m.toast.Show("購読を保存できなかった: "+err.Error(), false)
 		return nil
 	}
 	return m.setChannels(sel)
@@ -337,14 +415,14 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	next := make([]chanState, 0, len(sel))
 	for _, ch := range sel {
 		c, ok := old[ch.ID]
-		if !ok {
-			c = chanState{}
-		}
 		c.ch = ch
 		next = append(next, c)
+		if !ok {
+			defer m.loadRead(len(next) - 1) // m.chans を next に置き換えた後に読む
+		}
 	}
 	m.chans = next
-	m.notice = fmt.Sprintf("購読を保存した (%d 件)", len(next))
+	m.toast.Show(fmt.Sprintf("購読を保存した (%d 件)", len(next)), true)
 	if i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID }); i >= 0 {
 		m.cur = i
 		return nil
@@ -376,12 +454,14 @@ func (m *Model) openSelected() {
 	}
 	url := p.URL(last.Last(), last)
 	if url == "" {
-		m.notice = "リンクを組めない (ワークスペースの URL が分からない)"
+		m.toast.Show("リンクを組めない (ワークスペースの URL が分からない)", false)
 		return
 	}
 	if err := m.open(url); err != nil {
-		m.notice = "開けなかった: " + err.Error()
+		m.toast.Show("開けなかった: "+err.Error(), false)
+		return
 	}
+	m.setRead(true) // 開けなかったら既読にしない (Slack で読めていない)
 }
 
 // 画面の割り振り: 1 行目はチャンネルと状態、2 行目は注記、最後の行はキーの案内、残りが 2 つの枠 (上下の枠線で 2 行)。
@@ -443,8 +523,16 @@ const (
 	MinHeight = 8
 )
 
-// Lines は画面の行。
+// Lines は画面の行。toast は右下 (キーの案内の上) に重ねる。
 func (m *Model) Lines() []string {
+	lines := m.screen()
+	if box := m.toast.BoxLines(true, max(len(lines)-2, 1), m.w); len(box) > 0 && len(lines) > len(box)+1 {
+		lines = layout.OverlayRight(lines, box, m.w, true, len(lines)-1-len(box))
+	}
+	return lines
+}
+
+func (m *Model) screen() []string {
 	if m.picker != nil {
 		m.picker.Resize(m.w, m.h)
 		return m.picker.Lines()
@@ -454,8 +542,9 @@ func (m *Model) Lines() []string {
 		if m.picking {
 			lines = append(lines, "購読の一覧を読んでいます…")
 		}
-		if m.notice != "" {
-			lines = append(lines, termsafe.PlainLine(m.notice))
+		if m.toast.Visible() {
+			// 行が少なく箱を重ねられないので、知らせの文を行で出す (保存できなかった・一覧を読めなかったを黙らせない)
+			lines = append(lines, termwidth.Truncate(termsafe.PlainLine(m.toast.Text()), max(m.w, 1), "…"))
 		}
 		return lines
 	}
@@ -477,6 +566,9 @@ func (m *Model) header() string {
 	names := make([]string, len(m.chans))
 	for i, c := range m.chans {
 		names[i] = "#" + termsafe.PlainLine(c.ch.Name)
+		if n := m.unreadCount(i); n > 0 {
+			names[i] += fmt.Sprintf("(%d)", n)
+		}
 	}
 	tail := ""
 	if s := m.state(); s != "" {
@@ -577,8 +669,6 @@ func (m *Model) noteLine() string {
 	c := m.chans[m.cur]
 	var s string
 	switch {
-	case m.notice != "":
-		s = m.notice
 	case m.picking:
 		s = "購読の一覧を読んでいます…"
 	case c.err != nil && c.page != nil:
@@ -623,47 +713,6 @@ func box(title string, body []string, w, rows int, active bool) []string {
 	return append(out, edge("└", "┘", ""))
 }
 
-func (m *Model) leftLines() []string {
-	ts := m.topics()
-	m.list.Fit(len(ts), m.listRows())
-	var rows []string
-	end := min(m.list.Offset+m.listRows(), len(ts))
-	for i := m.list.Offset; i < end; i++ {
-		t := ts[i]
-		cur := " "
-		if i == m.list.Cursor {
-			cur = "▶"
-		}
-		count := fmt.Sprintf(" %d", render.Count(t))
-		text := firstMark(t) + " " + termsafe.PlainLine(t.Title)
-		room := max(m.leftWidth()-2-1-termwidth.Of(count), 1)
-		text = termwidth.Truncate(text, room, "…")
-		line := cur + text + termwidth.PadSpaces(room-termwidth.Of(text)) + count
-		if i == m.list.Cursor && !m.body {
-			line = "\x1b[7m" + line + "\x1b[27m"
-		}
-		rows = append(rows, line)
-	}
-	return box("話題", rows, m.leftWidth(), m.listRows(), !m.body)
-}
-
-// firstMark は一覧に出す印 1 つ (要対応 → 必読 → 状態の順で最初に当てはまるもの)。どの印も表示幅は 2。
-func firstMark(t board.Topic) string {
-	switch {
-	case t.Has(board.KindAction):
-		return "🔴"
-	case t.Has(board.KindMustRead):
-		return "📌"
-	case t.Unclassified:
-		return "⚪"
-	case t.State == board.StateDecided:
-		return "🟢"
-	case t.State == board.StateOpen:
-		return "🟡"
-	}
-	return "⚪"
-}
-
 func (m *Model) rightLines() []string {
 	title := ""
 	if t, ok := m.selected(); ok {
@@ -688,9 +737,9 @@ func (m *Model) help() string {
 		s = "  s 購読"
 	}
 	if m.body {
-		return " j/k スクロール  h 話題へ  o Slack で開く  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
+		return " j/k 送る  h 話題へ  o Slack  u 既読  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
 	}
-	return " j/k 話題  l 本文へ  o Slack で開く  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
+	return " j/k 話題  l 本文  o Slack  u 既読  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
 }
 
 // View は画面を出す。
