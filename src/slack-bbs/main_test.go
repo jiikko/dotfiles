@@ -29,7 +29,7 @@ type fakeSlack struct {
 	calls   [][]string
 	history string
 	threads map[string]string
-	warn    string // history の stderr (slack-cli が途中で切れたときの警告を模す)
+	warn    string // history の stderr (slack-cli の案内の行と、途中で切れたときの警告の行を模す)
 	failTh  bool   // thread を全部失敗させる (消えたスレッド・認証切れを模す)
 }
 
@@ -496,15 +496,20 @@ func TestPrepareLeavesNothingWhenNoChannel(t *testing.T) {
 	}
 }
 
-// slack-cli が stderr に出した警告 (途中で切れた等。rc=0 のまま) は、板の注記に出す。
+// slack-cli が stderr に出した警告 (途中で切れた等。rc=0 のまま) は板の注記に出し、毎回出る案内の行は出さない。
 func TestSlackCLIWarningBecomesNote(t *testing.T) {
-	sl := &fakeSlack{history: `[]`, warn: "slack: 取得が途中で切れた\n"}
+	// 本物の slack-cli の stderr の形: 案内 (→ workspace: / キャッシュ) と「警告: 」で始まる警告が混ざる。
+	// 打ち切りの警告は字下げした続きの行 (結果は不完全・回避策) を持つ (slack-cli の TruncatedError.Error)。
+	sl := &fakeSlack{history: `[]`, warn: "→ workspace: ws (Team / me)\n警告: 取得が途中で切れた\n  結果は不完全です。\n  -n を減らしてください\nチャンネル一覧はキャッシュ（3 分前に取得）を使いました\n  字下げした案内\n"}
 	var out, errb bytes.Buffer
 	if rc := run(context.Background(), []string{"C1"}, &out, &errb, newDeps(t, sl, &fakeClaude{})); rc != 0 {
 		t.Fatalf("rc=%d %s", rc, errb.String())
 	}
-	if !strings.Contains(out.String(), "slack-cli の警告 (history): slack: 取得が途中で切れた") {
-		t.Errorf("警告が板に出ていない:\n%s", out.String())
+	if !strings.Contains(out.String(), "slack-cli の警告 (history): 警告: 取得が途中で切れた 結果は不完全です。 -n を減らしてください\n") {
+		t.Errorf("警告 (続きの行を含む) が 1 行で板に出ていない:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "workspace") || strings.Contains(out.String(), "キャッシュ") || strings.Contains(out.String(), "字下げした案内") {
+		t.Errorf("案内の行が警告として板に出た:\n%s", out.String())
 	}
 }
 

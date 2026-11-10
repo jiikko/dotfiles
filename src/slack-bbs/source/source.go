@@ -133,7 +133,32 @@ func (c Client) decode(ctx context.Context, v any, args ...string) (string, erro
 	if err := json.Unmarshal(out, v); err != nil {
 		return "", fmt.Errorf("slack %s の JSON を読めない: %w", args[0], err)
 	}
-	return strings.TrimSpace(string(errb)), nil
+	return warnings(errb), nil
+}
+
+// slackCLIWarnPrefix は slack-cli が警告の行に付ける印 (~/src/slack-cli の cmd/slack/main.go splitListErrTo・internal/config/config.go)。
+// slack-cli は同じ stderr に案内 (internal/slack/resolve.go の「→ workspace:」・チャンネル一覧のキャッシュ・ローカル設定) も毎回出すので、
+// stderr を丸ごと警告にすると板の注記が呼び出しの数だけ案内で埋まる。slack-cli が警告の印を変えたら、ここも合わせる。
+const slackCLIWarnPrefix = "警告:"
+
+// warnings は slack-cli の stderr から警告だけを取り出し、1 つの警告を 1 行にして「 / 」でつなぐ (無ければ空)。
+// 警告は字下げした続きの行を持つ (打ち切りの「結果は不完全です。」と回避策。slack-cli の internal/slack/api.go TruncatedError.Error)。
+// 続きを落とすと回避策が板から消えるので、警告の直後の字下げした行は同じ警告に足す。
+func warnings(errb []byte) string {
+	var ws []string
+	in := false
+	for _, raw := range strings.Split(string(errb), "\n") {
+		l := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(l, slackCLIWarnPrefix):
+			ws, in = append(ws, l), true
+		case in && l != "" && (strings.HasPrefix(raw, " ") || strings.HasPrefix(raw, "\t")):
+			ws[len(ws)-1] += " " + l
+		default:
+			in = false
+		}
+	}
+	return strings.Join(ws, " / ")
 }
 
 // Whoami は接続中のユーザーとワークスペースを返す。
@@ -173,7 +198,7 @@ func (c Client) Channels(ctx context.Context) ([]Channel, error) {
 	return chs, err
 }
 
-// Fetched は history / thread の結果。Truncated は件数の上限に届いたこと、Warning は slack-cli の stderr (途中で切れた等。空なら無し)。
+// Fetched は history / thread の結果。Truncated は件数の上限に届いたこと、Warning は slack-cli の stderr のうち警告の行 (途中で切れた等。空なら無し)。
 // MaybeOld は history の親が 1 つもスレッドの動きを持たなかったこと (OldSlackCLINote)。
 type Fetched struct {
 	Msgs      []Message
