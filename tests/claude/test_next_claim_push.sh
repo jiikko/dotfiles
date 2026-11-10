@@ -217,7 +217,7 @@ done
 
 # --- 返すイベント名: PostToolUseFailure から呼ばれたら同じ名前で返す (違う名前の注入は捨てられうる) ---
 ev=$( ( cd "$FIRE_REPO" && jq -n '{hook_event_name:"PostToolUseFailure", tool_input:{command:"ln -s ../186-x.md issues/next/186-x.md"}}' |
-  runtimeout "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null ) | jq -r '.hookSpecificOutput.hookEventName // ""')
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null ) | jq -r '.hookSpecificOutput.hookEventName // ""')
 if [ "$ev" = PostToolUseFailure ]; then
   ok=$((ok + 1))
 else
