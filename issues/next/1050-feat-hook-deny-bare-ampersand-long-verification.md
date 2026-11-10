@@ -1,0 +1,1 @@
+../1050-feat-hook-deny-bare-ampersand-long-verification.md
