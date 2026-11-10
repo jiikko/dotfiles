@@ -71,5 +71,8 @@
   - 再現したものは直し、作為的な wait / disown の位置の 2 件は §8 の stopping rule で検出しない形に書いた
 - ルートの `make test` rc=0 (rebase 後。1 回目は errchkjson で lint が落ち、直して回し直した)
 
-### 残り
-- push と `~/dotfiles` の pull の後に、headless の session で deny が実際に効くかを観測する (下に追記)
+### 本番での観測 (push と `~/dotfiles` の pull の後、2026-11-10)
+- `claude -p --model haiku` に Bash で 1 回打たせた (cwd は ~/dotfiles、本体は ea6eaa49a)
+  - A: `make -C /nonexistent-1050 test > /dev/null 2>&1 &` → tool_result が is_error=true で、本文が hook の deny 文 (「長い検証 … 素の & で背景に回しています」)。実行されていない
+  - B (対照): `make -C /nonexistent-1050 test > /dev/null 2>&1; echo rc=$?` → is_error=false で `rc=2` (存在しない dir で make が落ちた = 止めずに走った)
+- 残りは無い
