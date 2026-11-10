@@ -20,7 +20,8 @@ const wrapPrefix = "serial-run -- "
 // (2.1.308 で実測: 元のコマンドへの deny は素通りし、書き換えた後への deny は効いた)。丸ごと包むと
 // `make test && git push --force` の `git push` への deny が効かなくなる。重い 1 つの単純コマンドの前にだけ差し込めば、
 // 他の部分は元の字面のまま判定される。
-// 🚨 どんな失敗でも tool を止めない (何も出さずに rc=0)。直列化は便宜であって、止める理由にならない
+// 🚨 どんな失敗でも tool を止めない (何も出さずに rc=0)。直列化は便宜であって、止める理由にならない。
+// 止めるのは、長い検証を素の `&` で背景に回す形を読み切れたときだけ (backgroundDenial。読み切れなければ止めない)
 func runHook(stdin io.Reader, stdout io.Writer) int {
 	var in struct {
 		ToolName  string         `json:"tool_name"`
@@ -32,6 +33,15 @@ func runHook(stdin io.Reader, stdout io.Writer) int {
 	}
 	cmd, ok := in.ToolInput["command"].(string)
 	if !ok {
+		return 0
+	}
+	if reason := backgroundDenial(cmd); reason != "" {
+		logHookDecision(cmd, false, "denied:background")
+		_ = json.NewEncoder(stdout).Encode(map[string]any{"hookSpecificOutput": map[string]any{
+			"hookEventName":            "PreToolUse",
+			"permissionDecision":       "deny",
+			"permissionDecisionReason": reason,
+		}})
 		return 0
 	}
 	wrapped, changed, skip := wrapCommand(cmd)
@@ -390,12 +400,45 @@ type scanner struct {
 	pipeNewline  bool // `|` の後で改行したか (コメントの後の改行を含む。bash は同じパイプラインとして続ける)
 	closer       bool // 直前の語が複合コマンドを閉じた (`)` `}` `done` `fi`)
 	afterPipe    bool // 直前が | だった
+
+	// 背景に回す形の検出 (backgroundDenial)。frames は入れ子 (サブシェル・{ }・制御構文) ごとの段で、末尾が今の段
+	frames   []bgFrame
+	bgHeavy  bool // 長い検証を含む単位を素の & で背景に回した
+	detached bool // nohup / setsid / disown がコマンドの位置にあった
+}
+
+// bgFrame は入れ子の 1 段。unit は今の単位 (; と改行で切れ、&& / || / | では切れない。bash は `a && b &` を丸ごと背景に回す) が
+// 長い検証を含むか、any はこの段のどこかが含むか (段が閉じたら外の単位へ持ち上げる)
+type bgFrame struct {
+	paren     bool // ( … ) の段 (でなければ { } / if / while / until / for / select の段)
+	unit, any bool
+}
+
+func (s *scanner) top() *bgFrame { return &s.frames[len(s.frames)-1] }
+
+// popFrame は段を閉じ、中に長い検証があれば外の今の単位へ持ち上げる。外の段が無ければ何もしない (閉じの数の食い違いは読み流す)
+func (s *scanner) popFrame() {
+	if len(s.frames) < 2 {
+		return
+	}
+	f := s.frames[len(s.frames)-1]
+	s.frames = s.frames[:len(s.frames)-1]
+	if f.any {
+		s.top().unit, s.top().any = true, true
+	}
 }
 
 // endSimple は単純コマンドの終わり。pipe は、次がパイプの続き (`|`) か
 func (s *scanner) endSimple(pipe bool) {
 	// 1 つのパイプラインで包むのは最初の重い段 1 つだけ (両端を包むと、互いの札を待って待ちの上限まで止まる)
 	if s.cmdAt >= 0 {
+		if longVerification(s.words) {
+			s.top().unit, s.top().any = true, true
+		}
+		switch filepath.Base(s.words[0]) {
+		case "nohup", "setsid", "disown":
+			s.detached = true
+		}
 		switch {
 		case isSerialRun(s.words):
 			s.manual = true
@@ -418,6 +461,7 @@ func (s *scanner) endSimple(pipe bool) {
 
 func (s *scanner) scan() ([]int, bool) {
 	s.cmdAt, s.pipeHeavy = -1, -1
+	s.frames = []bgFrame{{paren: true}}
 	depth := 0 // サブシェル ( … ) の深さ
 	src := s.src
 	for s.i < len(src) {
@@ -465,8 +509,16 @@ func (s *scanner) scan() ([]int, bool) {
 			}
 		case c == '\\' && s.i+1 < len(src) && src[s.i+1] == '\n':
 			s.i += 2 // 行の継ぎ (空白と同じ)
+		case c == '&' && s.i+1 < len(src) && src[s.i+1] == '&':
+			s.endSimple(false) // `&&` (今の単位は続く)
+			s.closer, s.afterPipe = false, false
+			s.i += 2
 		case c == '\n' || c == ';' || c == '&':
 			s.endSimple(false)
+			if c == '&' && s.top().unit {
+				s.bgHeavy = true
+			}
+			s.top().unit = false
 			s.closer, s.afterPipe = false, false
 			s.i++
 		case c == '(':
@@ -479,6 +531,7 @@ func (s *scanner) scan() ([]int, bool) {
 			s.afterPipe = false
 			depth++
 			s.endSimple(false)
+			s.frames = append(s.frames, bgFrame{paren: true})
 			s.i++
 		case c == ')':
 			if depth == 0 {
@@ -486,6 +539,10 @@ func (s *scanner) scan() ([]int, bool) {
 			}
 			depth--
 			s.endSimple(false)
+			for len(s.frames) > 1 && !s.top().paren {
+				s.popFrame() // 閉じ損ねた { } / 制御構文の段
+			}
+			s.popFrame()
 			s.closer, s.afterPipe = true, false
 			s.i++
 		case c == '>' || c == '<':
@@ -532,6 +589,11 @@ func (s *scanner) scan() ([]int, bool) {
 				}
 				if s.afterPipe && compoundOpeners[w] {
 					s.compoundPipe = true
+				}
+				if compoundOpeners[w] {
+					s.frames = append(s.frames, bgFrame{})
+				} else if compoundClosers[w] && !s.top().paren {
+					s.popFrame()
 				}
 				if w == "time" || w == "!" {
 					continue // | の直後のまま (zsh は `| time (…)` を受ける)

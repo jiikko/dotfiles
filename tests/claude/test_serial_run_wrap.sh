@@ -28,7 +28,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # HOME は差し替えない (serial-run の入口のビルドが Go のキャッシュを HOME の下に持つ)。置き場の決め方は SERIAL_RUN_STATE_DIR が先
 export SERIAL_RUN_STATE_DIR="$TMP_DIR/state" XDG_STATE_HOME="$TMP_DIR/xdg"
 
-# rewritten <コマンド> [env…]: hook が返した command (書き換えなしなら空) を出す。hook の rc≠0 は失敗にする
+# rewritten <コマンド> [env…]: hook が返した command (書き換えなしなら空、deny なら DENY:deny) を出す。hook の rc≠0 は失敗にする
 rewritten() {
   local cmd="$1" out rc
   shift
@@ -39,7 +39,8 @@ rewritten() {
   set -e
   [ "$rc" -eq 0 ] || { echo "HOOK-RC-$rc"; return; }
   [ -n "$out" ] || return 0
-  printf '%s' "$out" | jq -r '.hookSpecificOutput.updatedInput.command + " timeout=" + (.hookSpecificOutput.updatedInput.timeout|tostring)'
+  printf '%s' "$out" | jq -r '.hookSpecificOutput | if .permissionDecision then "DENY:" + .permissionDecision
+    else .updatedInput.command + " timeout=" + (.updatedInput.timeout|tostring) end'
 }
 
 expect() {  # $1=期待 $2=説明 $3=コマンド [env…]
@@ -83,6 +84,13 @@ expect "serial-run -- make test timeout=1234" "jq が使えなくても包む" "
 for c in "make test" "gmake lint" "go test ./..." "go -C src/x test ./..." "swift build" "xcodebuild -scheme X build" "mutate-verify --file x" "mutate-verify-list l" "bin/runtimeout 600 make test"; do
   expect "serial-run -- $c timeout=1234" "入口を通り抜ける: $c" "$c" "$P"
 done
+
+# 長い検証を素の & で背景に回す形は deny する (判定の規則そのものは src/serialrun/background_test.go)。入口を通り抜けて Go まで届くことを見る
+for c in '( make -C src/x lint test > log 2>&1; echo $? > rc ) &' "go test ./... > log &" "bin/skill-eval dupscan > log &" "bash tests/claude/test_x.sh &"; do
+  expect "DENY:deny" "素の & で背景に回す長い検証を止める: $c" "$c" "$P"
+done
+expect "serial-run -- nohup make test > log 2>&1 & timeout=1234" "nohup で detach する形は止めずに包む" "nohup make test > log 2>&1 &" "$P"
+expect "" "SERIAL_RUN_HOOK_DISABLE=1 なら背景に回す形も止めない" "make test &" "$P" SERIAL_RUN_HOOK_DISABLE=1
 
 if [ "$FAIL_COUNT" -gt 0 ]; then
   echo "✗ $FAIL_COUNT 件失敗 ($PASS_COUNT 件通過)"
