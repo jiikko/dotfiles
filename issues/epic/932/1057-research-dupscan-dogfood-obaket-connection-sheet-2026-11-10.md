@@ -61,3 +61,7 @@ obaket の接続の編集モーダルで「保存したら閉じる」を直す�
 ## 直していないもの
 
 - なし。
+
+## 検証 (2026-11-11)
+
+`make -C src/dupscan test lint` は rc 0。root の `make test` は他の重い検査と同時に回して落ちた (`test_claude_bin`・`test_dangling_symlinks`・`test_warn_invisible_chars_in_tool_input`・`src/mac-lan-manager` の `TestStaticIPLock`・`src/pro-con/ui` の `TestPopupGivesUpOnHungTmux`・`src/ratelimit/usage` の `TestFetch*`)。単独で回し直すと dangling symlink 以外は通った。dangling symlink は手元の link の残骸で、この変更とは関係ない。dupscan の検査は root でも通っていた。
