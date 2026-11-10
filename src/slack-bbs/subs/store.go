@@ -1,6 +1,6 @@
 // Package subs は購読するチャンネルの一覧 (~/.config/slack-bbs/subscriptions.json) と、それを選ぶ画面を持つ。
 //
-// 保存するのはチャンネルの ID と名前だけで、会話の本文は保存しない (706 の「保存しない」の範囲)。
+// 保存するのはチャンネルの ID と名前だけで、会話の本文は保存しない (本文は cache package が別の置き場に残す)。
 package subs
 
 import (

@@ -19,11 +19,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"time"
 
 	"atomicfile"
 	"slack-bbs/board"
+	"slack-bbs/source"
 )
 
 // Version は依頼の形の版。形を変えたら上げる (古い prepare の依頼を新しい show が読み違えない)。
@@ -74,9 +74,6 @@ func (m Manifest) mac(key []byte) (string, error) {
 
 const manifestName = "manifest.json"
 
-// チャンネル ID はファイル名に使うので、Slack の ID の形 (英大文字と数字) に限る (パスの区切りを含む値で外へ書かない)。
-var channelID = regexp.MustCompile(`^[A-Z0-9]+$`)
-
 // RequestPath / PromptPath / ResponsePath はチャンネルのファイルの置き場。
 func RequestPath(dir, ch string) string  { return filepath.Join(dir, ch+".request.json") }
 func PromptPath(dir, ch string) string   { return filepath.Join(dir, ch+".prompt.txt") }
@@ -115,7 +112,7 @@ func Open(dir string) (Manifest, string, error) {
 // Add はチャンネルの依頼と分類する側へ渡す文面を書き、一覧に足して書き直す (途中で止まっても、書いた依頼は一覧に載っていて
 // show や後始末から見える)。前の応答が残っていれば消す。
 func Add(dir string, m *Manifest, r Request, prompt []byte) error {
-	if !channelID.MatchString(r.Channel) {
+	if !source.IsChannelID(r.Channel) {
 		return fmt.Errorf("チャンネル ID %q はファイル名に使えない形", r.Channel)
 	}
 	r.Version = Version
@@ -169,7 +166,7 @@ func ReadManifest(dir, key string) (Manifest, error) {
 		return m, fmt.Errorf("依頼の版 %d を読めない (この slack-bbs は %d)。prepare からやり直す", m.Version, Version)
 	}
 	for _, ch := range m.Channels {
-		if !channelID.MatchString(ch) {
+		if !source.IsChannelID(ch) {
 			return m, fmt.Errorf("%s のチャンネル ID %q がファイル名に使えない形", manifestName, ch)
 		}
 	}

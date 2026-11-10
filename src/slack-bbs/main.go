@@ -8,8 +8,9 @@
 //
 // 取得は slack-cli (読み取り専用)、分類は claude -p か、2 段 (prepare → 外で分類 → show) なら呼び出した側 (GUI の Claude のセッション)。LLM に任せるのは話題への分け方・見出し・要点・ラベルだけで、
 // 本文は原文を並べる。スレッドは親が古くても期間内に返信が付いていれば「続いている」話題として出す。
-// 1 段の実行は会話の本文をどこにも保存しない (設定に残すのは購読するチャンネルの ID と名前だけ)。2 段の実行は prepare のディレクトリに
-// 本文を書き、show が出し切ったら消す。
+// 1 段の実行は、取得した発言と分類をチャンネルごとにキャッシュ (~/.cache/slack-bbs) に残し、次の起動で前回の板をすぐ出す・
+// 新しい発言が無ければ分類し直さないのに使う (cache package)。2 段の実行は prepare のディレクトリに本文を書き、show が出し切ったら消す
+// (キャッシュは読み書きしない)。
 package main
 
 import (
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"slack-bbs/board"
+	"slack-bbs/cache"
 	"slack-bbs/job"
 	"slack-bbs/llm"
 	"slack-bbs/render"
@@ -36,6 +38,7 @@ import (
 	"slack-bbs/subs"
 	"slack-bbs/view"
 	"subproc"
+	"userdirs"
 )
 
 const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに組み直して読む
@@ -58,8 +61,10 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
   -dry-run          LLM を呼ばず、送る件数と文字数だけを出す
   -json             話題に組んだ結果 (中間表現) を JSON で出す
   -md               端末でも読む画面を開かず、Markdown を出す (パイプの先では既定で Markdown)
+  -no-cache         キャッシュを読まない (前回の板を出さず、新しい発言が無くても分類し直す)。書くのは続ける
 
-読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。r で今のチャンネル、R で全部を読み直す (claude -p で分類し直す)。
+読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。前回の板 (キャッシュ) があればすぐ出して、裏で読み直す。
+  r で今のチャンネル、R で全部を読み直す (取り直して、新しい発言・編集された発言があれば claude -p で分類し直す)。
   j/k: 移動  l/Enter: 本文へ  h/Esc: 一覧へ  Tab: チャンネル  o: Slack で開く  q: 終わる
 
 環境変数:
@@ -67,6 +72,7 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
   SLACK_BBS_CLAUDE  claude のパス (既定 claude)
 
 🚨 分類のために、期間内の発言と文脈の発言の本文が claude -p (Anthropic) へ送られる。送る前に -dry-run で量を見られる。
+   取得した発言の本文と分類は、チャンネルごとに ~/.cache/slack-bbs (XDG_CACHE_HOME があればその下) に残る。消すならそのディレクトリを消す。
    2 段の実行では、本文は prepare が書くディレクトリ (既定は一時ディレクトリ) を経て、分類する側のセッションへ渡る。
 `
 
@@ -79,6 +85,7 @@ type deps struct {
 	tty      func() bool // stdout が端末か (端末なら読む画面を開く)
 	browse   func(*view.Model) error
 	openURL  func(string) error
+	cacheDir func() (string, error) // キャッシュの置き場。nil ならキャッシュしない
 }
 
 func main() {
@@ -94,6 +101,7 @@ func main() {
 		openURL: func(url string) error {
 			return subproc.Command("open", url).Run()
 		},
+		cacheDir: func() (string, error) { return userdirs.CacheDir("slack-bbs") },
 	})
 	stop()
 	os.Exit(rc)
@@ -192,6 +200,7 @@ type options struct {
 	max             int
 	dryRun, json    bool
 	md              bool   // 端末でも読む画面を開かず Markdown を出す
+	noCache         bool   // キャッシュを読まない (書くのは続ける)
 	sinceFixed      bool   // -since を日付で渡した (読み直しでずらさない)
 	out             string // prepare の書き先 (空なら一時ディレクトリを作る)
 	channels        []string
@@ -208,6 +217,7 @@ func parseFlags(args []string, now time.Time, stderr io.Writer) (options, error)
 	fs.BoolVar(&o.json, "json", false, "")
 	fs.StringVar(&o.out, "out", "", "")
 	fs.BoolVar(&o.md, "md", false, "")
+	fs.BoolVar(&o.noCache, "no-cache", false, "")
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
@@ -319,6 +329,7 @@ func cmdSubs(d deps, stdout io.Writer) error {
 
 // collected は 1 チャンネルから集めて単位にまとめ直したもの。
 type collected struct {
+	me      string // 読み手 (自分の user ID)
 	page    render.Page
 	units   []board.Unit
 	sent    int // LLM へ送る発言の数 (文脈の発言を含む)
@@ -370,6 +381,7 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		return browse(ctx, o, d)
 	}
 	var pages []render.Page
+	st := openStore(d, stderr)
 	err := eachChannel(ctx, o, d, stderr, func(c collected) error {
 		if o.dryRun {
 			fmt.Fprintf(stdout, "#%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
@@ -379,12 +391,15 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		if err := checkMax(c, o.max); err != nil {
 			return err
 		}
-		p, dropped, use, err := classify(ctx, o, d, c)
+		p, dropped, use, err := classify(ctx, o, d, st, c)
 		if err != nil {
 			return err
 		}
-		if use != nil {
+		switch {
+		case use != nil:
 			fmt.Fprintf(stderr, "slack-bbs: #%s: claude へ発言 %d 件 (約 %d トークン) を送った ($%.4f)\n", clean(p.ChannelName), c.sent, use.InputTokens, use.CostUSD)
+		case len(c.units) > 0:
+			fmt.Fprintf(stderr, "slack-bbs: #%s: 新しい発言が無いので、%s の分類を使った (-no-cache で分類し直す)\n", clean(p.ChannelName), p.ClassifiedAt.Format("01/02 15:04"))
 		}
 		warnDropped(stderr, p.ChannelName, dropped)
 		if o.json {
@@ -408,19 +423,84 @@ func checkMax(c collected, limit int) error {
 	return nil
 }
 
-// classify は集めた単位を claude -p で分類させ、検査して話題に組んだ板を返す。単位が無ければ claude を呼ばない (use は nil)。
-func classify(ctx context.Context, o options, d deps, c collected) (render.Page, board.Dropped, *llm.Usage, error) {
+// classify は集めた単位を分類させ、検査して話題に組んだ板を返す。
+// キャッシュの分類が今の単位にそのまま使えれば (cache.Summary.Covers) claude を呼ばずにそれを使い、使えなければ claude -p で分類させて
+// キャッシュに書く。claude を呼ばなかったときは use が nil (単位が無いときも)。キャッシュの読み書きの失敗では止めず、板の注記に出す。
+//
+// 取得の結果 (Raw) は、その単位を覆う分類が決まってから書く。先に書くと、分類の前に閉じた・分類に失敗したときに Raw だけが新しくなり、
+// 次の起動で Raw と分類が合わず、前回の板 (前の Raw と分類の組) まで出せなくなる。
+func classify(ctx context.Context, o options, d deps, st cache.Store, c collected) (render.Page, board.Dropped, *llm.Usage, error) {
 	p := c.page
+	saveRaw := func() {
+		if err := st.SaveRaw(p.Channel, cache.Raw{SavedAt: d.now(), Me: c.me, Page: c.page, Units: c.units}); err != nil {
+			p.Notes = append(p.Notes, "取得した発言をキャッシュに書けなかった: "+err.Error())
+		}
+	}
 	if len(c.units) == 0 {
+		saveRaw()
 		return p, board.Dropped{}, nil, nil
+	}
+	var dropped board.Dropped
+	if !o.noCache {
+		sum, ok, err := st.LoadSummary(p.Channel)
+		if err != nil {
+			p.Notes = append(p.Notes, "キャッシュの分類を読めなかった (分類し直した): "+err.Error())
+		}
+		if ok && sum.Covers(c.units, o.model, c.me) {
+			p.Topics, dropped = board.Assemble(c.units, board.Prune(sum.Resp, c.units))
+			p.ClassifiedAt = sum.SavedAt
+			saveRaw()
+			return p, dropped, nil, nil
+		}
 	}
 	resp, use, err := llm.Classify(ctx, d.claude, o.model, p.ChannelName, c.units)
 	if err != nil {
 		return p, board.Dropped{}, nil, err
 	}
-	var dropped board.Dropped
 	p.Topics, dropped = board.Assemble(c.units, resp)
+	p.ClassifiedAt = d.now()
+	sum := cache.Summary{SavedAt: p.ClassifiedAt, Model: o.model, Me: c.me, Basis: cache.MsgKeys(c.units), Resp: resp}
+	if err := st.SaveSummary(p.Channel, sum); err != nil {
+		p.Notes = append(p.Notes, "分類をキャッシュに書けなかった: "+err.Error())
+	} else {
+		saveRaw() // 分類を書けないなら Raw も書かない (前の組を残す)
+	}
 	return p, dropped, &use, nil
+}
+
+// openStore はキャッシュの置き場を開く。置き場が決まらなければ、warn を出してキャッシュせずに続ける。
+func openStore(d deps, stderr io.Writer) cache.Store {
+	if d.cacheDir == nil {
+		return cache.Store{}
+	}
+	dir, err := d.cacheDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "slack-bbs: 🚨 キャッシュの置き場が決まらないので、キャッシュせずに読む: %s\n", clean(err.Error()))
+		return cache.Store{}
+	}
+	return cache.Store{Dir: dir}
+}
+
+// cachedPage はキャッシュから ch の前回の板を組む。発言と分類の両方があり、分類が発言をすべて覆うときだけ ok が真 (発言が無ければ分類は要らない)。
+// 読み手は Raw に残した前回の読み手で照合する (起動の時点では whoami を待たない。今の読み手との照合は、すぐ後の読み直しの classify がする)。
+// 読めないキャッシュは黙って使わない: 読む画面の中では stderr が見えない。分類のキャッシュが読めなければ、すぐ後の読み直しの
+// classify が同じファイルを読んで板の注記に出す。発言のキャッシュはその読み直しで書き直される。
+func cachedPage(st cache.Store, ch, model string) (p render.Page, at time.Time, ok bool) {
+	raw, ok, err := st.LoadRaw(ch)
+	if err != nil || !ok {
+		return p, at, false
+	}
+	p = raw.Page
+	if len(raw.Units) == 0 {
+		return p, raw.SavedAt, true
+	}
+	sum, ok, err := st.LoadSummary(ch)
+	if err != nil || !ok || !sum.Covers(raw.Units, model, raw.Me) {
+		return render.Page{}, at, false
+	}
+	p.Topics, _ = board.Assemble(raw.Units, board.Prune(sum.Resp, raw.Units))
+	p.ClassifiedAt = sum.SavedAt
+	return p, raw.SavedAt, true
 }
 
 // assemble は分類を検査して話題に組み、捨てたものがあれば warn で出す。
@@ -436,6 +516,12 @@ func warnDropped(stderr io.Writer, name string, dropped board.Dropped) {
 	}
 }
 
+// identity は読み直しで使う、自分とユーザーの名前 (slack-cli の whoami と users)。
+type identity struct {
+	me    source.Me
+	names map[string]string
+}
+
 // browse は読む画面を開く。読み直しのたびに取得から分類までをやり直す (分類は claude -p)。画面の中では stderr が見えないので、
 // slack-cli の警告と分類から捨てたものは板の注記に載せる。
 func browse(ctx context.Context, o options, d deps) error {
@@ -443,14 +529,30 @@ func browse(ctx context.Context, o options, d deps) error {
 	if err != nil {
 		return err
 	}
+	st := openStore(d, io.Discard)
 	cli := source.Client{R: source.Quiet(d.slack)}
-	me, err := cli.Whoami(ctx)
-	if err != nil {
-		return err
-	}
-	names, err := cli.Names(ctx)
-	if err != nil {
-		return err
+	// 自分とユーザーの名前は最初の読み直しの中で 1 回だけ取る (取れなければ次の読み直しで取り直す)。画面を開く前に取ると、
+	// キャッシュの前回の板を出せるのに slack-cli の 2 回の呼び出し (数秒) のあいだ画面が空になる。
+	// lock を持ったまま slack-cli を待つので、R の読み直しは 1 本ずつ並ぶ (同じ呼び出しを並べて打たない。取り消しは各本の ctx で効く)。
+	var (
+		identMu sync.Mutex
+		ident   *identity
+	)
+	identify := func(ctx context.Context) (source.Me, map[string]string, error) {
+		identMu.Lock()
+		defer identMu.Unlock()
+		if ident == nil {
+			me, err := cli.Whoami(ctx)
+			if err != nil {
+				return source.Me{}, nil, err
+			}
+			names, err := cli.Names(ctx)
+			if err != nil {
+				return source.Me{}, nil, err
+			}
+			ident = &identity{me, names}
+		}
+		return ident.me, ident.names, nil
 	}
 	// 画面を閉じたら、走っている読み直し (slack-cli と claude -p) を止め、終わるのを待ってから戻る。
 	// 待たないと、戻った直後の os.Exit で子を止める前にこのプロセスが終わり、claude が走り続けて費用がかかる。
@@ -484,6 +586,10 @@ func browse(ctx context.Context, o options, d deps) error {
 		} else {
 			o.until = now
 		}
+		me, names, err := identify(ctx)
+		if err != nil {
+			return render.Page{}, err
+		}
 		c, err := collect(ctx, o, cli, me, names, ch)
 		if err != nil {
 			return render.Page{}, err
@@ -491,7 +597,7 @@ func browse(ctx context.Context, o options, d deps) error {
 		if err := checkMax(c, o.max); err != nil {
 			return render.Page{}, err
 		}
-		p, dropped, _, err := classify(ctx, o, d, c)
+		p, dropped, _, err := classify(ctx, o, d, st, c)
 		if err != nil {
 			return render.Page{}, err
 		}
@@ -500,7 +606,15 @@ func browse(ctx context.Context, o options, d deps) error {
 		}
 		return p, nil
 	}
-	return d.browse(view.New(ctx, targets, load, d.openURL, d.now))
+	m := view.New(ctx, targets, load, d.openURL, d.now)
+	if !o.noCache {
+		for i, ch := range targets {
+			if p, at, ok := cachedPage(st, ch.ID, o.model); ok {
+				m.Preload(i, p, at)
+			}
+		}
+	}
+	return d.browse(m)
 }
 
 func writeMarkdown(w io.Writer, p render.Page) error {
@@ -701,7 +815,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, na
 	if err != nil {
 		return collected{}, err
 	}
-	c := collected{units: units, threads: len(threads), page: render.Page{
+	c := collected{me: me.UserID, units: units, threads: len(threads), page: render.Page{
 		Channel: ch.ID, ChannelName: ch.Name, Since: o.since, Until: o.until, Lookback: o.lookback, Base: me.URL,
 	}}
 	for _, u := range units {

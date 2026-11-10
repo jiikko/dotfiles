@@ -122,6 +122,7 @@
 - `src/serialrun` (`serialrun`) — serial-run — 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにし、同時には 1 本だけ走らせる。 (main)
 - `src/slack-bbs` (`slack-bbs`) — slack-bbs は購読した Slack のチャンネルの会話を、話題ごとに組み直して掲示板風に読むコマンド。 (main)
 - `src/slack-bbs/board` (`slack-bbs/board`) — Package board は会話の発言を「単位」(スレッド 1 本、またはスレッド外の発言 1 件) にまとめ直し、LLM の分類を検査して 話題ごとの板 (Board) に組む。
+- `src/slack-bbs/cache` (`slack-bbs/cache`) — Package cache はチャンネルごとに 2 つを残す: 取得してまとめ直した発言 (Raw) と、LLM の分類 (Summary)。
 - `src/slack-bbs/job` (`slack-bbs/job`) — Package job は 2 段の実行 (prepare → 分類 → show) の間で受け渡すファイルを読み書きする。
 - `src/slack-bbs/llm` (`slack-bbs/llm`) — Package llm は単位の列を claude -p に渡し、話題への分類 (board.Response) を返させる。
 - `src/slack-bbs/render` (`slack-bbs/render`) — Package render は板 (話題の列) を掲示板風の Markdown にする。

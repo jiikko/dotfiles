@@ -345,3 +345,48 @@ func TestHeaderShowsFirstLoadError(t *testing.T) {
 		t.Errorf("見出しに失敗が出ていない: %q", h)
 	}
 }
+
+// キャッシュの前回の板は、読み直せるまで出して「キャッシュ」と分かるようにし、開いたチャンネルは読み直す (前回の板のまま止めない)。
+func TestPreloadedBoardIsShownThenReloaded(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	m := newModel(l)
+	at := time.Date(2026, 11, 9, 8, 30, 0, 0, time.Local)
+	for i, ch := range []string{"C1", "C2"} {
+		m.Preload(i, page(ch, "前回-"+ch), at)
+	}
+	cmd := m.Init()
+	if h := m.header(); !strings.Contains(h, "11/09 08:30 のキャッシュを出している") {
+		t.Errorf("読み直し中にキャッシュと分からない: %q", h)
+	}
+	if !strings.Contains(strings.Join(m.Lines(), "\n"), "前回-C1") {
+		t.Errorf("読み直しを待たずに前回の板を出していない")
+	}
+	run(m, cmd)
+	if h := m.header(); !strings.Contains(h, "最終 ") || strings.Contains(h, "キャッシュ") {
+		t.Errorf("読み直した後もキャッシュと出ている: %q", h)
+	}
+	run(m, press(m, "tab"))
+	if l.calls["C2"] != 1 {
+		t.Errorf("キャッシュしか無いチャンネルを開いても読み直さない (C2 %d 回)", l.calls["C2"])
+	}
+	run(m, press(m, "tab"))
+	run(m, press(m, "tab"))
+	if l.calls["C2"] != 1 {
+		t.Errorf("読み直した後のチャンネルを、開くたびに読み直した (C2 %d 回)", l.calls["C2"])
+	}
+}
+
+// 前回の分類を使い回した板は、分類した時刻を見出しに添える (取得は新しくても、見出しやラベルは古い)。
+func TestHeaderShowsReusedClassificationTime(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, func(ctx context.Context, ch subs.Channel) (render.Page, error) {
+		p, err := l.load(ctx, ch)
+		p.ClassifiedAt = t0.Add(-3 * time.Hour)
+		return p, err
+	}, nil, func() time.Time { return t0 })
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	run(m, m.Init())
+	if h, want := m.header(), "(分類は "+t0.Add(-3*time.Hour).Format("01/02 15:04")+")"; !strings.Contains(h, want) {
+		t.Errorf("見出し %q に %q が無い", h, want)
+	}
+}

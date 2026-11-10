@@ -291,3 +291,25 @@ func TestMentionClearedByMyLaterReply(t *testing.T) {
 		t.Errorf("返した後の名指しに要対応が付いた: %+v", ls)
 	}
 }
+
+// Prune は今は無い単位・根拠を外し、空になった話題・要点・ラベルを外す。絞った分類で組むと、外したものを「捨てたもの」に数えない。
+func TestPruneDropsVanishedUnits(t *testing.T) {
+	keepU := Unit{ID: "2.000000", Msgs: []Msg{{Ts: "2.000000", Text: "残る", New: true}}}
+	resp := Response{Topics: []RespTopic{
+		{Title: "消える", State: StateInfo, Members: []string{"1.000000"}, Points: []RespPoint{{Text: "p", Refs: []string{"1.000000"}}}},
+		{Title: "残る", State: StateOpen, Members: []string{"1.000000", "2.000000"},
+			Points: []RespPoint{{Text: "古い", Refs: []string{"1.000000"}}, {Text: "新しい", Refs: []string{"1.000000", "2.000000"}}},
+			Labels: []RespLabel{{Kind: KindMustRead, Reason: "r", Refs: []string{"1.000000"}}}},
+	}}
+	got := Prune(resp, []Unit{keepU})
+	if len(got.Topics) != 1 || got.Topics[0].Title != "残る" {
+		t.Fatalf("話題: %+v", got.Topics)
+	}
+	tp := got.Topics[0]
+	if len(tp.Members) != 1 || len(tp.Points) != 1 || tp.Points[0].Text != "新しい" || len(tp.Points[0].Refs) != 1 || len(tp.Labels) != 0 {
+		t.Errorf("絞り方: %+v", tp)
+	}
+	if _, d := Assemble([]Unit{keepU}, got); d.Any() {
+		t.Errorf("外したものを捨てたものに数えた: %s", d)
+	}
+}

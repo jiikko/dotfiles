@@ -279,3 +279,39 @@ func mechanicalLabels(us []Unit) []Label {
 func tsIn(u Unit, ts string) bool {
 	return slices.ContainsFunc(u.Msgs, func(m Msg) bool { return m.Ts == ts })
 }
+
+// Prune は前回の分類 resp を今の単位 units に当てられる形に絞る: 今は無い単位の ID と根拠の ts を外し、根拠の無くなった要点・ラベルと
+// 単位の無くなった話題を外す。期間が進んで古い発言が外れただけのときに前回の分類を使い回すためで、外れたものを Assemble の
+// 「捨てたもの」(LLM の誤り) に数えない。入力に無い ID を LLM が作った誤りも、ここで外れて数えられなくなるので、
+// LLM を呼んだ直後の応答には当てない (キャッシュから読み戻した応答にだけ当てる)。
+func Prune(resp Response, units []Unit) Response {
+	ids := map[string]bool{}
+	for _, u := range units {
+		ids[u.ID] = true
+	}
+	own := tsSet(units)
+	var out Response
+	for _, rt := range resp.Topics {
+		t := RespTopic{Title: rt.Title, State: rt.State}
+		for _, id := range rt.Members {
+			if ids[id] {
+				t.Members = append(t.Members, id)
+			}
+		}
+		if len(t.Members) == 0 {
+			continue
+		}
+		for _, p := range rt.Points {
+			if refs := keep(p.Refs, own); len(refs) > 0 {
+				t.Points = append(t.Points, RespPoint{Text: p.Text, Refs: refs})
+			}
+		}
+		for _, l := range rt.Labels {
+			if refs := keep(l.Refs, own); len(refs) > 0 {
+				t.Labels = append(t.Labels, RespLabel{Kind: l.Kind, Reason: l.Reason, Refs: refs})
+			}
+		}
+		out.Topics = append(out.Topics, t)
+	}
+	return out
+}

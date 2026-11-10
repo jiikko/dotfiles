@@ -31,6 +31,8 @@ type fakeSlack struct {
 	threads map[string]string
 	warn    string // history の stderr (slack-cli の案内の行と、途中で切れたときの警告の行を模す)
 	failTh  bool   // thread を全部失敗させる (消えたスレッド・認証切れを模す)
+	failWho bool   // whoami を失敗させる (認証切れ・ネットワークが無いを模す)
+	me      string // whoami が返す user ID (空なら ME)
 }
 
 func (f *fakeSlack) Run(_ context.Context, args ...string) ([]byte, []byte, error) {
@@ -45,6 +47,12 @@ func (f *fakeSlack) run(args []string) ([]byte, error) {
 	f.calls = append(f.calls, args)
 	switch args[0] {
 	case "whoami":
+		if f.failWho {
+			return nil, errors.New("slack whoami: exit status 1: not_authed")
+		}
+		if f.me != "" {
+			return []byte(`{"user_id":"` + f.me + `","url":"https://ws.slack.com/"}`), nil
+		}
 		return []byte(`{"user_id":"ME","url":"https://ws.slack.com/"}`), nil
 	case "users":
 		return []byte(`[{"id":"U1","name":"tanaka"},{"id":"ME","name":"me"}]`), nil

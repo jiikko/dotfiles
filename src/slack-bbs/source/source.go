@@ -11,12 +11,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"subproc"
 )
+
+// IsChannelID は id が Slack のチャンネル ID の形 (英大文字と数字) か。チャンネル ID はファイル名に使うので、
+// パスの区切りを含む値で外へ書かないよう、書く側はこれで確かめる。
+func IsChannelID(id string) bool { return channelID.MatchString(id) }
+
+var channelID = regexp.MustCompile(`^[A-Z0-9]+$`)
 
 // Runner は slack-cli を引数 args で 1 回起動し、stdout と stderr を返す。
 //

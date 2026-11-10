@@ -15,20 +15,28 @@ import (
 // ConfigBase は設定の置き場の根 ($XDG_CONFIG_HOME、未設定なら <home>/.config)。home を外から渡す道具 (pro-con) のため。
 // 🚨 相対パスの XDG_CONFIG_HOME は無視する (XDG の仕様どおり)。受け付けると起動した cwd の下へ設定を移してしまい、cwd を変えて
 // 起動すると設定が消えたように見える。
-func ConfigBase(home string) string {
-	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" && filepath.IsAbs(base) {
-		return base
-	}
-	return filepath.Join(home, ".config")
-}
+func ConfigBase(home string) string { return xdgBase("XDG_CONFIG_HOME", home, ".config") }
 
 // ConfigDir は app の設定の置き場 ($XDG_CONFIG_HOME/<app>、未設定なら ~/.config/<app>)。作りはしない。
-func ConfigDir(app string) (string, error) {
+func ConfigDir(app string) (string, error) { return xdgDir("XDG_CONFIG_HOME", ".config", app) }
+
+// CacheDir は app のキャッシュの置き場 ($XDG_CACHE_HOME/<app>、未設定なら ~/.cache/<app>)。作りはしない。
+// 相対パスの XDG_CACHE_HOME は ConfigBase と同じ理由で無視する。
+func CacheDir(app string) (string, error) { return xdgDir("XDG_CACHE_HOME", ".cache", app) }
+
+func xdgBase(env, home, fallback string) string {
+	if base := os.Getenv(env); base != "" && filepath.IsAbs(base) {
+		return base
+	}
+	return filepath.Join(home, fallback)
+}
+
+func xdgDir(env, fallback, app string) (string, error) {
 	home, err := os.UserHomeDir()
-	if err != nil && !filepath.IsAbs(os.Getenv("XDG_CONFIG_HOME")) {
+	if err != nil && !filepath.IsAbs(os.Getenv(env)) {
 		return "", err
 	}
-	return filepath.Join(ConfigBase(home), app), nil
+	return filepath.Join(xdgBase(env, home, fallback), app), nil
 }
 
 // ConfigFile は app の設定ファイル name の置き場。legacy (前の置き場。~ からの相対) が在って新しい置き場に無ければ、1 回だけ移してから返す。

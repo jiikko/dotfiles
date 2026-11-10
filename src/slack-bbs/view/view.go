@@ -31,6 +31,7 @@ type chanState struct {
 	loading  bool
 	gen      int // 読み直しを頼んだ回数。結果はこの値と照合する
 	loadedAt time.Time
+	stale    bool // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
 }
 
 // Model は画面の状態。
@@ -56,6 +57,15 @@ func New(ctx context.Context, chans []subs.Channel, load Loader, open func(strin
 		m.chans = append(m.chans, chanState{ch: c})
 	}
 	return m
+}
+
+// Preload はチャンネル i に前回の板 (キャッシュ) を出しておく。at は前回取得した時刻。読み直せるまで出し、開いたときに読み直す。
+func (m *Model) Preload(i int, p render.Page, at time.Time) {
+	if i < 0 || i >= len(m.chans) {
+		return
+	}
+	c := &m.chans[i]
+	c.page, c.loadedAt, c.stale = &p, at, true
 }
 
 // loadedMsg は読み直しの結果。
@@ -124,7 +134,7 @@ func (m *Model) loaded(msg loadedMsg) {
 		}
 	}
 	p := msg.page
-	c.page, c.err, c.loadedAt = &p, nil, msg.at
+	c.page, c.err, c.loadedAt, c.stale = &p, nil, msg.at, false
 	if msg.idx == m.cur {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
@@ -229,8 +239,8 @@ func (m *Model) switchTo(i int) tea.Cmd {
 	m.list = listnav.List{}
 	m.pager.Reset()
 	c := &m.chans[i]
-	if c.page == nil && !c.loading && c.err == nil {
-		return m.reload(i) // まだ読んでいないチャンネルは開いたときに読む
+	if (c.page == nil || c.stale) && !c.loading && c.err == nil {
+		return m.reload(i) // まだ読んでいない (キャッシュの板しか無い) チャンネルは開いたときに読む
 	}
 	return nil
 }
@@ -356,16 +366,27 @@ const minTab = 12
 func (m *Model) state() string {
 	c := m.chans[m.cur]
 	switch {
+	case c.loading && c.stale:
+		return "読み直し中… (" + c.loadedAt.Format("01/02 15:04") + " のキャッシュを出している)"
 	case c.loading && c.page != nil:
 		return "読み直し中… (前の板を出している)"
 	case c.loading:
 		return "読んでいます…"
+	case c.err != nil && c.stale:
+		return "🚨 読み直しに失敗 (" + c.loadedAt.Format("01/02 15:04") + " のキャッシュを出している)"
 	case c.err != nil && c.page != nil:
 		return "🚨 読み直しに失敗 (前の板を出している)"
 	case c.err != nil:
 		return "🚨 読めなかった (r で読み直す)"
+	case c.stale:
+		return c.loadedAt.Format("01/02 15:04") + " のキャッシュ"
 	case c.page != nil:
-		return "最終 " + c.loadedAt.Format("15:04")
+		s := "最終 " + c.loadedAt.Format("15:04")
+		// 新しい発言が無くて前回の分類を使い回したときは、分類した時刻を添える (ラベルや見出しが古いと分かるように)
+		if at := c.page.ClassifiedAt; !at.IsZero() && at.Before(c.loadedAt.Add(-time.Minute)) {
+			s += " (分類は " + at.Format("01/02 15:04") + ")"
+		}
+		return s
 	}
 	return ""
 }

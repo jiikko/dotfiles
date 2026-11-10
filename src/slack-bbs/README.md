@@ -6,7 +6,7 @@
 ```sh
 slack-bbs sub                 # 購読するチャンネルを一覧から選ぶ (Space / x で切り替え、/ で絞り込み、Enter で保存)
 slack-bbs -dry-run            # LLM を呼ばず、送る件数と文字数だけを見る
-slack-bbs                     # 読む画面 (TUI) を開く。購読しているチャンネルの直近 2 日分。r で今のチャンネル、R で全部を読み直す
+slack-bbs                     # 読む画面 (TUI) を開く。購読しているチャンネルの直近 2 日分。前回の板 (キャッシュ) をすぐ出して裏で読み直す。r で今のチャンネル、R で全部を読み直す
 slack-bbs -md -since 12h C0123456789 | less -R   # 画面を開かず Markdown で出す (パイプの先では既定で Markdown)
 slack-bbs -json > board.json  # 話題に組んだ結果 (中間表現)
 ```
@@ -43,7 +43,11 @@ slack-bbs show -key <key> <dir>                               # 検査して板�
 
 - 🚨 **期間内の発言と、その文脈の発言の本文が `claude -p` (Anthropic) へ送られる**。プライベートチャンネルを購読すれば、その本文も送られる。
   送る前に `-dry-run` で量を見られる。1 チャンネルで送る発言が `-max` (既定 500) を超えたら送らずに止める
-- 1 段の実行 (`slack-bbs`) は会話の本文をどこにも保存しない。`~/.config/slack-bbs/subscriptions.json` に残すのは購読するチャンネルの ID と名前だけ
+- 🚨 1 段の実行 (`slack-bbs`) は、**取得した発言の本文と分類をチャンネルごとに `~/.cache/slack-bbs/` (`$XDG_CACHE_HOME` があればその下) に残す**
+  (`<チャンネル ID>.raw.json` と `.summary.json`。ディレクトリ 0700・ファイル 0600)。読む画面は起動したらこれで前回の板をすぐ出し、裏で取り直す。
+  取り直した発言がすべて前回に分類済み (新しい発言・編集された発言が無い。期間から外れただけは含む) なら、claude を呼ばずに前回の分類を使う。
+  `-no-cache` で読まずに分類し直す (書くのは続ける)。消すならそのディレクトリを消す。購読をやめたチャンネルのファイルは残る
+- `~/.config/slack-bbs/subscriptions.json` に残すのは購読するチャンネルの ID と名前だけ
 - 2 段の実行 (`prepare` → 分類 → `show`) は、本文を prepare のディレクトリ (既定は一時ディレクトリ) に書く。show は全チャンネルを出せたら
   prepare と分類する側が書いたファイルだけを消し、ディレクトリは prepare が作ったときだけ消す。出せなかったときは残す (残った場所を出す)
 - `claude -p` は `--no-session-persistence` (セッションを残さない)・`--setting-sources ""` (hooks と CLAUDE.md を読まない)・
@@ -67,3 +71,4 @@ slack-bbs show -key <key> <dir>                               # 検査して板�
 | `subs` | 購読の一覧の保存と、選ぶ画面 |
 | `view` | 読む画面 (TUI)。読み直しは別の goroutine で走らせ、結果を世代で照合して古い結果を捨てる |
 | `job` | 2 段の実行のファイル (依頼・応答・一覧) の読み書きと後始末 |
+| `cache` | チャンネルごとの取得の結果 (Raw) と分類 (Summary) のキャッシュ。分類を使い回せるかの判定 (`Summary.Covers`) |

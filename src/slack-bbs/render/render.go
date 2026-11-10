@@ -25,6 +25,8 @@ type Page struct {
 	Topics      []board.Topic `json:"topics"`
 	Base        string        `json:"-"` // permalink の根 (https://<workspace>.slack.com/)
 	Notes       []string      `json:"notes,omitempty"`
+	// ClassifiedAt は話題に分けた時刻。新しい発言が無くて前回の分類を使い回したときは、取得より前になる (ゼロは分類していない)
+	ClassifiedAt time.Time `json:"classified_at"`
 }
 
 var stateMark = map[string]string{

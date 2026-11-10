@@ -79,6 +79,20 @@ func TestConfigFileMovesLegacy(t *testing.T) {
 }
 
 // 相対パスの XDG_CONFIG_HOME は無視する (cwd の下へ設定を移さない)。
+func TestCacheDir(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", "/x/cache")
+	if d, err := CacheDir("tool"); err != nil || d != "/x/cache/tool" {
+		t.Fatalf("XDG あり: %q %v", d, err)
+	}
+	t.Setenv("HOME", "/h")
+	for _, v := range []string{"", "rel"} { // 未設定と相対パスは ~/.cache
+		t.Setenv("XDG_CACHE_HOME", v)
+		if d, err := CacheDir("tool"); err != nil || d != "/h/.cache/tool" {
+			t.Fatalf("XDG_CACHE_HOME=%q: %q %v", v, d, err)
+		}
+	}
+}
+
 func TestConfigBaseIgnoresRelativeXDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "rel")
 	if b := ConfigBase("/h"); b != "/h/.config" {
