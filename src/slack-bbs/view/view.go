@@ -29,9 +29,10 @@ type chanState struct {
 	page     *render.Page // 最後に読めた板 (読み直しに失敗しても残す)
 	err      error        // 最後の読み直しの誤り
 	loading  bool
-	gen      int // 読み直しを頼んだ回数。結果はこの値と照合する
+	gen      int // 最後に頼んだ読み直しの通し番号 (Model.seq)。結果はこの値と照合する
 	loadedAt time.Time
-	stale    bool // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
+	stale    bool        // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
+	hl       highlighter // page の本文の色付け (page を置き換えるたびに作り直す)
 }
 
 // Model は画面の状態。
@@ -48,6 +49,19 @@ type Model struct {
 	w, h     int
 	notice   string // 1 回だけ出す知らせ (開けなかった等)
 	quitting bool
+	// seq は読み直しの通し番号。チャンネルごとに数えると、購読から外して付け直したチャンネルで、外す前の読み直しの結果を
+	// 付け直した後の読み直しの結果と取り違える
+	seq     int
+	subs    *Subscriptions
+	picker  *subs.Picker // 購読の画面を開いている間だけ非 nil
+	picking bool         // 購読の画面の一覧を読んでいる
+}
+
+// Subscriptions は読む画面から購読を変える口 (s で開く画面)。nil なら s は効かない。
+type Subscriptions struct {
+	// Open は全チャンネルと今の購読から選ぶ画面を作る (slack-cli でチャンネルの一覧を取る。画面の外の goroutine で呼ばれる)
+	Open func(ctx context.Context) (*subs.Picker, error)
+	Save func([]subs.Channel) error // 選んだ購読を保存する
 }
 
 // New は画面を作る。chans は 1 つ以上。
@@ -59,33 +73,44 @@ func New(ctx context.Context, chans []subs.Channel, load Loader, open func(strin
 	return m
 }
 
+// SetSubscriptions は s で購読の画面を開けるようにする。
+func (m *Model) SetSubscriptions(s *Subscriptions) { m.subs = s }
+
 // Preload はチャンネル i に前回の板 (キャッシュ) を出しておく。at は前回取得した時刻。読み直せるまで出し、開いたときに読み直す。
 func (m *Model) Preload(i int, p render.Page, at time.Time) {
 	if i < 0 || i >= len(m.chans) {
 		return
 	}
 	c := &m.chans[i]
-	c.page, c.loadedAt, c.stale = &p, at, true
+	c.page, c.loadedAt, c.stale, c.hl = &p, at, true, newHighlighter(p)
 }
 
-// loadedMsg は読み直しの結果。
+// loadedMsg は読み直しの結果。チャンネルは番号でなく ID で指す (購読を変えるとタブの番号がずれる)。
 type loadedMsg struct {
-	idx, gen int
-	page     render.Page
-	err      error
-	at       time.Time
+	ch   string
+	gen  int
+	page render.Page
+	err  error
+	at   time.Time
+}
+
+// pickerMsg は購読の画面の一覧を読んだ結果。
+type pickerMsg struct {
+	p   *subs.Picker
+	err error
 }
 
 // reload はチャンネル i の読み直しを頼む。返す Cmd は画面の状態を触らない (Loader と照合用の値だけを持つ)。
 func (m *Model) reload(i int) tea.Cmd {
 	c := &m.chans[i]
-	c.gen++
+	m.seq++
+	c.gen = m.seq
 	c.loading = true
 	c.err = nil // 前の失敗は、この読み直しの結果で決め直す
 	gen, ch, load, ctx, now := c.gen, c.ch, m.load, m.ctx, m.now
 	return func() tea.Msg {
 		p, err := load(ctx, ch)
-		return loadedMsg{idx: i, gen: gen, page: p, err: err, at: now()}
+		return loadedMsg{ch: ch.ID, gen: gen, page: p, err: err, at: now()}
 	}
 }
 
@@ -104,7 +129,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.w, m.h = msg.Width, msg.Height
 	case loadedMsg:
 		m.loaded(msg)
+	case pickerMsg:
+		m.picking = false
+		if msg.err != nil {
+			m.notice = "購読の一覧を読めなかった: " + msg.err.Error()
+			return m, nil
+		}
+		m.picker = msg.p
 	case tea.KeyPressMsg:
+		if m.picker != nil {
+			return m, m.pickKey(msg.String())
+		}
 		cmd := m.key(msg.String())
 		if m.quitting {
 			return m, tea.Quit
@@ -115,10 +150,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) loaded(msg loadedMsg) {
-	if msg.idx < 0 || msg.idx >= len(m.chans) {
-		return
+	idx := slices.IndexFunc(m.chans, func(c chanState) bool { return c.ch.ID == msg.ch })
+	if idx < 0 {
+		return // 読んでいる間に購読から外した
 	}
-	c := &m.chans[msg.idx]
+	c := &m.chans[idx]
 	if msg.gen != c.gen {
 		return // 後から頼んだ読み直しに追い越された
 	}
@@ -128,14 +164,14 @@ func (m *Model) loaded(msg loadedMsg) {
 		return
 	}
 	var keep string
-	if msg.idx == m.cur {
+	if idx == m.cur {
 		if t, ok := m.selected(); ok {
 			keep = t.Units[0].ID
 		}
 	}
 	p := msg.page
-	c.page, c.err, c.loadedAt, c.stale = &p, nil, msg.at, false
-	if msg.idx == m.cur {
+	c.page, c.err, c.loadedAt, c.stale, c.hl = &p, nil, msg.at, false, newHighlighter(p)
+	if idx == m.cur {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
 		for i, t := range p.Topics {
@@ -174,14 +210,17 @@ func (m *Model) selected() (board.Topic, bool) {
 
 func (m *Model) key(k string) tea.Cmd {
 	m.notice = ""
-	if len(m.chans) == 0 {
-		m.quitting = true
-		return nil
-	}
 	switch k {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return nil
+	case "s":
+		return m.openPicker()
+	}
+	if len(m.chans) == 0 {
+		return nil // 購読を全部外した後は、s で選び直すか q で終わる
+	}
+	switch k {
 	case "r":
 		if m.chans[m.cur].loading {
 			return nil // 走っている読み直しを待つ (連打で claude を何本も起こさない)
@@ -212,7 +251,8 @@ func (m *Model) key(k string) tea.Cmd {
 			return nil
 		}
 		if mo := listnav.MotionOf(k); mo != listnav.None {
-			m.pager.Move(mo, len(m.bodyLines()), m.bodyRows(), 0)
+			lines, _ := m.bodyLines()
+			m.pager.Move(mo, len(lines), m.bodyRows(), 0)
 		}
 		return nil
 	}
@@ -241,6 +281,82 @@ func (m *Model) switchTo(i int) tea.Cmd {
 	c := &m.chans[i]
 	if (c.page == nil || c.stale) && !c.loading && c.err == nil {
 		return m.reload(i) // まだ読んでいない (キャッシュの板しか無い) チャンネルは開いたときに読む
+	}
+	return nil
+}
+
+// openPicker は購読の画面を開く (一覧は画面の外で読む)。読んでいる間に s を重ねても 1 回だけ読む。
+func (m *Model) openPicker() tea.Cmd {
+	if m.subs == nil {
+		m.notice = "購読の画面は、チャンネルを指定せずに起動したときに開ける (slack-bbs sub でも選べる)"
+		return nil
+	}
+	if m.picking {
+		return nil
+	}
+	m.picking = true
+	open, ctx := m.subs.Open, m.ctx
+	return func() tea.Msg {
+		p, err := open(ctx)
+		return pickerMsg{p: p, err: err}
+	}
+}
+
+// pickKey は購読の画面を開いている間のキー。保存したら画面を閉じずにタブを入れ替える。
+func (m *Model) pickKey(k string) tea.Cmd {
+	p := m.picker
+	p.Key(k)
+	if !p.Done() {
+		return nil
+	}
+	m.picker = nil
+	if !p.Saved() {
+		return nil
+	}
+	sel := p.Selected()
+	if err := m.subs.Save(sel); err != nil {
+		m.notice = "購読を保存できなかった: " + err.Error()
+		return nil
+	}
+	return m.setChannels(sel)
+}
+
+// setChannels はタブを購読 sel に合わせる。残るチャンネルは読んだ板と読み直しの状態をそのまま持ち (走っている読み直しの結果も
+// ID で照合して受け取る)、新しいチャンネルは開いたときに読む。見ていたチャンネルが残れば、そのまま見続ける。
+func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
+	curID := ""
+	if len(m.chans) > 0 {
+		curID = m.chans[m.cur].ch.ID
+	}
+	old := map[string]chanState{}
+	for _, c := range m.chans {
+		old[c.ch.ID] = c
+	}
+	// 外したチャンネルで走っている読み直し (claude -p) は止めない: 結果は ID の照合で捨てる。止めるには読み直しごとの
+	// 取り消しを持つ必要があり、外す操作は稀なので費用 (1 回分の分類) を受け入れる
+	next := make([]chanState, 0, len(sel))
+	for _, ch := range sel {
+		c, ok := old[ch.ID]
+		if !ok {
+			c = chanState{}
+		}
+		c.ch = ch
+		next = append(next, c)
+	}
+	m.chans = next
+	m.notice = fmt.Sprintf("購読を保存した (%d 件)", len(next))
+	if i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID }); i >= 0 {
+		m.cur = i
+		return nil
+	}
+	m.cur, m.body = 0, false
+	m.list = listnav.List{}
+	m.pager.Reset()
+	if len(next) == 0 {
+		return nil
+	}
+	if c := &m.chans[0]; (c.page == nil || c.stale) && !c.loading && c.err == nil {
+		return m.reload(0)
 	}
 	return nil
 }
@@ -276,25 +392,28 @@ func (m *Model) leftWidth() int { return min(max(m.w*3/10, 24), 44) }
 func (m *Model) bodyWidth() int { return max(m.w-m.leftWidth()-4, 10) }
 
 // bodyLines は右の欄の行 (枠の幅で折り返した後)。
-func (m *Model) bodyLines() []string {
+// first[i] は lines[i] が元の行の 1 行目か (折り返しの続きでないか)。見出し・発言の頭の色は 1 行目にだけ付ける
+// (続きの行は、狭い端末では字下げ無しで始まり、本文の「▍」や「時刻 名前: 」が行の頭へ来うる)。
+func (m *Model) bodyLines() (lines []string, first []bool) {
 	c := m.chans[m.cur]
 	if c.page == nil {
 		switch {
 		case c.err != nil:
-			return wrap(termsafe.PlainLine("読めなかった: "+c.err.Error()), m.bodyWidth())
+			return wrap(termsafe.PlainLine("読めなかった: "+c.err.Error()), m.bodyWidth()), nil
 		default:
-			return []string{"読んでいます…"}
+			return []string{"読んでいます…"}, nil
 		}
 	}
 	t, ok := m.selected()
 	if !ok {
-		return []string{"期間内の発言はありません。"}
+		return []string{"期間内の発言はありません。"}, nil
 	}
-	var out []string
 	for _, l := range c.page.Body(t, false) {
-		out = append(out, wrap(l, m.bodyWidth())...)
+		for i, w := range wrap(l, m.bodyWidth()) { // 色は rightLines が、折り返した後の画面に出す行にだけ付ける
+			lines, first = append(lines, w), append(first, i == 0)
+		}
 	}
-	return out
+	return lines, first
 }
 
 // wrap は行を幅 w で折り返す。2 行目からは元の行の字下げに 2 桁足して揃える (原文の続きが左端へ戻って、誰の発言か追えなくならない)。
@@ -326,8 +445,19 @@ const (
 
 // Lines は画面の行。
 func (m *Model) Lines() []string {
+	if m.picker != nil {
+		m.picker.Resize(m.w, m.h)
+		return m.picker.Lines()
+	}
 	if len(m.chans) == 0 {
-		return []string{"読むチャンネルがありません"}
+		lines := []string{"読むチャンネルがありません (s で購読を選ぶ・q で終わる)"}
+		if m.picking {
+			lines = append(lines, "購読の一覧を読んでいます…")
+		}
+		if m.notice != "" {
+			lines = append(lines, termsafe.PlainLine(m.notice))
+		}
+		return lines
 	}
 	if m.w < MinWidth || m.h < MinHeight {
 		return []string{termwidth.Truncate(fmt.Sprintf("端末が小さすぎる (%dx%d 以上にする)", MinWidth, MinHeight), max(m.w, 1), "")}
@@ -449,6 +579,8 @@ func (m *Model) noteLine() string {
 	switch {
 	case m.notice != "":
 		s = m.notice
+	case m.picking:
+		s = "購読の一覧を読んでいます…"
 	case c.err != nil && c.page != nil:
 		s = "🚨 " + c.err.Error()
 	case c.page != nil:
@@ -540,17 +672,25 @@ func (m *Model) rightLines() []string {
 			title = mk + ": " + title
 		}
 	}
-	lines := m.bodyLines()
+	lines, first := m.bodyLines()
 	m.pager.Clamp(len(lines), m.bodyRows())
 	off := m.pager.DrawOffset(len(lines), m.bodyRows())
+	// 色付けは画面に出す行だけ (全行を毎回の描画で照合すると、長い話題で名前の数 × 字数の手間が描画のたびにかかる)
+	for i := off; i < min(off+m.bodyRows(), len(first)); i++ {
+		lines[i] = m.chans[m.cur].hl.line(lines[i], first[i])
+	}
 	return box(title, lines[min(off, len(lines)):], m.w-m.leftWidth(), m.bodyRows(), m.body)
 }
 
 func (m *Model) help() string {
-	if m.body {
-		return " j/k スクロール  h 話題へ  o Slack で開く  r 読み直す  R 全部  Tab チャンネル  q 終わる"
+	s := ""
+	if m.subs != nil {
+		s = "  s 購読"
 	}
-	return " j/k 話題  l 本文へ  o Slack で開く  r 読み直す  R 全部  Tab チャンネル  q 終わる"
+	if m.body {
+		return " j/k スクロール  h 話題へ  o Slack で開く  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
+	}
+	return " j/k 話題  l 本文へ  o Slack で開く  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
 }
 
 // View は画面を出す。

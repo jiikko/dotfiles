@@ -2,14 +2,18 @@ package main
 
 import (
 	"bytes"
+
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"slack-bbs/subs"
 	"slack-bbs/view"
 )
 
@@ -20,8 +24,8 @@ func cacheFixture(t *testing.T) (*fakeSlack, *fakeClaude, deps, string) {
 	a, b := ts(since+100), ts(since+200)
 	sl := &fakeSlack{history: fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"リリース"},{"ts":%q,"user":"U1","text":"障害"}]`, b, a)}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[
-		{"title":"話題A","state":"info","members":[%q],"points":[{"text":"a","refs":[%q]}],"labels":[]},
-		{"title":"話題B","state":"decided","members":[%q],"points":[],"labels":[]}]}`, a, a, b))}
+		{"title":"話題A","state":"info","members":[%q],"background":[{"text":"a","refs":[%q]}],"labels":[]},
+		{"title":"話題B","state":"decided","members":[%q],"background":[],"labels":[]}]}`, a, a, b))}
 	d := newDeps(t, sl, cl)
 	dir := filepath.Join(t.TempDir(), "cache")
 	d.cacheDir = func() (string, error) { return dir, nil }
@@ -192,4 +196,63 @@ func TestOtherReaderReclassifies(t *testing.T) {
 	if cl.calls != 2 {
 		t.Errorf("別の読み手で前回の分類を使い回した (claude %d 回)", cl.calls)
 	}
+}
+
+// 指示文の違う版 (古い形) で作った分類は、発言が同じでも使い回さない (分類のしかたの名前が違う)。
+func TestOldClassifierSummaryIsNotReused(t *testing.T) {
+	_, cl, d, dir := cacheFixture(t)
+	readMD(t, d, "C1")
+	p := filepath.Join(dir, "C1.summary.json")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := regexp.MustCompile(`"model":"[^"]*"`).ReplaceAll(b, []byte(`"model":"sonnet"`))
+	if err := os.WriteFile(p, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	readMD(t, d, "C1")
+	if cl.calls != 2 {
+		t.Errorf("古い分類のしかたの分類を使い回した (claude %d 回)", cl.calls)
+	}
+}
+
+// チャンネルを引数で渡した起動では購読の画面を付けない (保存するとタブが購読に置き換わり、引数のチャンネルが消える)。
+// 購読を読む起動では付ける。
+func TestBrowseSubscriptionsOnlyWithoutArgs(t *testing.T) {
+	_, _, d, _ := cacheFixture(t)
+	d.tty = func() bool { return true }
+	for _, c := range []struct {
+		args []string
+		bare bool
+	}{{[]string{"C1"}, true}, {nil, false}} {
+		var note string
+		d.browse = func(m *view.Model) error {
+			m.Update(m.Init()())
+			m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+			note = strings.Join(m.Lines(), "\n")
+			return nil
+		}
+		if c.args == nil {
+			if err := subs.Save(mustSubsPath(t, d), []subs.Channel{{ID: "C1", Name: "dev"}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var out, errb bytes.Buffer
+		if rc := run(context.Background(), c.args, &out, &errb, d); rc != 0 {
+			t.Fatalf("rc=%d %s", rc, errb.String())
+		}
+		if got := strings.Contains(note, "チャンネルを指定せずに起動したとき"); got != c.bare {
+			t.Errorf("引数 %v: 購読の画面が無い知らせ %v (want %v)\n%s", c.args, got, c.bare, note)
+		}
+	}
+}
+
+func mustSubsPath(t *testing.T, d deps) string {
+	t.Helper()
+	p, err := d.subsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

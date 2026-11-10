@@ -41,7 +41,7 @@ type Raw struct {
 type Summary struct {
 	Version int            `json:"version"`
 	SavedAt time.Time      `json:"saved_at"`
-	Model   string         `json:"model"`
+	Model   string         `json:"model"` // 分類のしかた (llm.Classifier。モデルと指示文のハッシュ)
 	Me      string         `json:"me"`
 	Basis   []string       `json:"basis"`
 	Resp    board.Response `json:"response"`

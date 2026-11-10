@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slack-bbs/board"
 	"slack-bbs/render"
+	"slack-bbs/source"
 	"slack-bbs/subs"
 )
 
@@ -388,5 +390,185 @@ func TestHeaderShowsReusedClassificationTime(t *testing.T) {
 	run(m, m.Init())
 	if h, want := m.header(), "(分類は "+t0.Add(-3*time.Hour).Format("01/02 15:04")+")"; !strings.Contains(h, want) {
 		t.Errorf("見出し %q に %q が無い", h, want)
+	}
+}
+
+// 本文の行は色付けしてから出す (見出しの行に色が付く)。
+func TestBodyLinesAreHighlighted(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	m := newModel(l)
+	run(m, m.Init())
+	if s := strings.Join(m.Lines(), "\n"); !strings.Contains(s, sgrHeading+render.HeadingMark+"原文") {
+		t.Errorf("本文の見出しに色が付いていない:\n%q", s)
+	}
+}
+
+// subsModel は C1 (dev)・C2 (ops) を読む画面に、C1〜C3 から選べる購読の画面を付ける。saved に保存した購読を入れる。
+func subsModel(l *loader, saved *[][]subs.Channel, opened *int) *Model {
+	m := newModel(l)
+	all := []source.Channel{{ID: "C1", Name: "dev", IsMember: true}, {ID: "C2", Name: "ops", IsMember: true}, {ID: "C3", Name: "qa", IsMember: true}}
+	m.SetSubscriptions(&Subscriptions{
+		Open: func(context.Context) (*subs.Picker, error) {
+			*opened++
+			cur := []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}
+			if len(*saved) > 0 {
+				cur = (*saved)[len(*saved)-1]
+			}
+			return subs.NewPicker(all, cur), nil
+		},
+		Save: func(sel []subs.Channel) error { *saved = append(*saved, sel); return nil },
+	})
+	return m
+}
+
+func ids(m *Model) string {
+	var out []string
+	for _, c := range m.chans {
+		out = append(out, c.ch.ID)
+	}
+	return strings.Join(out, ",")
+}
+
+// s で購読の画面を開き、保存したら閉じずにタブを入れ替える。残るチャンネルは読んだ板をそのまま持ち (読み直さない)、
+// 外したチャンネルの読み込み中の結果は捨てる。
+func TestSubscriptionsPickerReplacesTabs(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	m := subsModel(l, &saved, &opened)
+	run(m, m.Init())
+	pending := press(m, "tab") // C2 を読み始める (結果はまだ渡さない)
+	run(m, press(m, "tab"))    // C1 へ戻る
+	run(m, press(m, "s"))
+	if !strings.Contains(strings.Join(m.Lines(), "\n"), "購読するチャンネルを選ぶ") {
+		t.Fatalf("購読の画面が開いていない:\n%s", strings.Join(m.Lines(), "\n"))
+	}
+	// 並びは dev・ops・qa。ops を外して qa を付ける
+	for _, k := range []string{"j", "x", "j", "x", "enter"} {
+		run(m, press(m, k))
+	}
+	if len(saved) != 1 || ids(m) != "C1,C3" {
+		t.Fatalf("保存 %v / タブ %s (want C1,C3)", saved, ids(m))
+	}
+	if m.chans[m.cur].ch.ID != "C1" || m.chans[m.cur].page == nil || l.calls["C1"] != 1 {
+		t.Errorf("見ていた C1 の板を持ち続けていない (cur=%s calls=%d)", m.chans[m.cur].ch.ID, l.calls["C1"])
+	}
+	run(m, pending) // 外した C2 の結果
+	if ids(m) != "C1,C3" || m.chans[1].page != nil {
+		t.Errorf("外したチャンネルの結果を受け取った: %s", ids(m))
+	}
+	if !strings.Contains(m.header(), "#qa") {
+		t.Errorf("見出しに新しいタブが無い: %q", m.header())
+	}
+}
+
+// 外して付け直したチャンネルでは、外す前に頼んだ読み直しの結果を、付け直した後の読み直しの結果と取り違えない。
+func TestResubscribedChannelDropsOldResult(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	m := subsModel(l, &saved, &opened)
+	run(m, m.Init())
+	old := press(m, "tab") // C2 の 1 回目 (渡さない)
+	run(m, press(m, "tab"))
+	run(m, press(m, "s"))
+	for _, k := range []string{"j", "x", "enter"} { // ops を外す
+		run(m, press(m, k))
+	}
+	run(m, press(m, "s"))
+	for _, k := range []string{"j", "x", "enter"} { // ops を付け直す
+		run(m, press(m, k))
+	}
+	fresh := press(m, "tab") // 付け直した C2 を読む
+	run(m, old)
+	if c := m.chans[m.cur]; c.ch.ID != "C2" || c.page != nil || !c.loading {
+		t.Fatalf("外す前の読み直しの結果を受け取った: %+v", c)
+	}
+	run(m, fresh)
+	if c := m.chans[m.cur]; c.page == nil || c.loading {
+		t.Errorf("付け直した後の読み直しの結果を受け取っていない")
+	}
+}
+
+// 購読を全部外しても終わらず、s で選び直せる。
+func TestUnsubscribeAllThenPickAgain(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	m := subsModel(l, &saved, &opened)
+	run(m, m.Init())
+	run(m, press(m, "s"))
+	for _, k := range []string{"x", "j", "x", "enter"} {
+		run(m, press(m, k))
+	}
+	if len(m.chans) != 0 || m.quitting || !strings.Contains(strings.Join(m.Lines(), "\n"), "s で購読を選ぶ") {
+		t.Fatalf("全部外した後: タブ %s quitting=%v\n%s", ids(m), m.quitting, strings.Join(m.Lines(), "\n"))
+	}
+	run(m, press(m, "j")) // 何も無いところでキーを押しても落ちない・終わらない
+	run(m, press(m, "s"))
+	if opened != 2 || m.picker == nil {
+		t.Errorf("選び直せない (開いた回数 %d)", opened)
+	}
+}
+
+// 見ていたチャンネルを外したら先頭のチャンネルへ移り、まだ読んでいなければ読む。保存・一覧の読み込みに失敗したら、
+// タブを変えずに知らせる。購読の画面が付いていない起動 (チャンネルを引数で渡した) では、s で理由を知らせる。
+func TestSubscriptionsEdgeCases(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	m := subsModel(l, &saved, &opened)
+	run(m, m.Init())
+	run(m, press(m, "tab")) // C2 を見る (読む)
+	run(m, press(m, "s"))
+	for _, k := range []string{"x", "j", "x", "j", "x", "enter"} { // dev を外し ops を外し qa を付ける
+		run(m, press(m, k))
+	}
+	if ids(m) != "C3" || m.cur != 0 || l.calls["C3"] != 1 {
+		t.Errorf("見ていたチャンネルを外した後: タブ %s cur=%d C3 を読んだ回数 %d", ids(m), m.cur, l.calls["C3"])
+	}
+
+	m.subs.Save = func([]subs.Channel) error { return errors.New("書けない") }
+	run(m, press(m, "s"))
+	for _, k := range []string{"j", "x", "enter"} {
+		run(m, press(m, k))
+	}
+	if ids(m) != "C3" || !strings.Contains(m.noteLine(), "購読を保存できなかった") {
+		t.Errorf("保存に失敗した後: タブ %s 注記 %q", ids(m), m.noteLine())
+	}
+
+	m.subs.Open = func(context.Context) (*subs.Picker, error) { return nil, errors.New("slack が応答しない") }
+	run(m, press(m, "s"))
+	if m.picker != nil || !strings.Contains(m.noteLine(), "購読の一覧を読めなかった") {
+		t.Errorf("一覧の読み込みに失敗した後: 注記 %q", m.noteLine())
+	}
+
+	bare := newModel(l)
+	run(bare, bare.Init())
+	run(bare, press(bare, "s"))
+	if !strings.Contains(bare.noteLine(), "チャンネルを指定せずに起動したとき") {
+		t.Errorf("購読の画面が無い起動で s: 注記 %q", bare.noteLine())
+	}
+	if strings.Contains(bare.help(), "s 購読") || !strings.Contains(m.help(), "s 購読") {
+		t.Errorf("キーの案内の s 購読が、購読の画面の有無と合っていない: %q / %q", bare.help(), m.help())
+	}
+}
+
+// 狭い端末で原文の続きの行が字下げ無しで折り返され、続きが「▍」で始まっても、見出しの色を付けない。
+func TestNarrowWrapDoesNotFakeHeading(t *testing.T) {
+	u := board.Unit{ID: "1.000000", Msgs: []board.Msg{{Ts: "1.000000", Name: "tanaka", Text: "本文\nabcdef▍見出しのふり", New: true}}}
+	p := render.Page{Channel: "C1", ChannelName: "dev", Since: t0, Until: t0, Lookback: t0,
+		Topics: []board.Topic{{Title: "t", State: board.StateInfo, Units: []board.Unit{u}}}}
+	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, func(context.Context, subs.Channel) (render.Page, error) {
+		return p, nil
+	}, nil, func() time.Time { return t0 })
+	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: 40}) // 本文の欄の幅 12: 続きの行「      abcdef」の後で折れる
+	run(m, m.Init())
+	s := strings.Join(m.Lines(), "\n")
+	if plain := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, ""); !strings.Contains(plain, "│▍見出し") {
+		t.Fatalf("狙った折り返しになっていない:\n%s", plain)
+	}
+	if strings.Contains(s, sgrHeading+"▍見出し") {
+		t.Errorf("折り返しの続きを見出しにした")
 	}
 }

@@ -128,8 +128,8 @@ func TestReadEndToEnd(t *testing.T) {
 			{"ts":%q,"thread_ts":%q,"user":"U1","text":"キャッシュを見ます"}]`, ts(parent), ts(parent), ts(since+50), ts(parent))},
 	}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[
-		{"title":"CI","state":"open","members":[%q],"points":[{"text":"キャッシュを調べる","refs":[%q]}],"labels":[]},
-		{"title":"リリース","state":"decided","members":[%q],"points":[],"labels":[]}]}`, ts(parent), ts(since+50), ts(since+200)))}
+		{"title":"CI","state":"open","members":[%q],"background":[{"text":"キャッシュを調べる","refs":[%q]}],"labels":[]},
+		{"title":"リリース","state":"decided","members":[%q],"background":[],"labels":[]}]}`, ts(parent), ts(since+50), ts(since+200)))}
 	var out, errb bytes.Buffer
 	rc := run(context.Background(), []string{"C1"}, &out, &errb, newDeps(t, sl, cl))
 	if rc != 0 {
@@ -292,7 +292,7 @@ func TestPrepareThenShow(t *testing.T) {
 			t.Errorf("分類する側への文面に %q が無い", want)
 		}
 	}
-	resp := fmt.Sprintf(`{"topics":[{"title":"レビュー","state":"open","members":[%q],"points":[],"labels":[]}]}`, ts(since+2))
+	resp := fmt.Sprintf(`{"topics":[{"title":"レビュー","state":"open","members":[%q],"background":[],"labels":[]}]}`, ts(since+2))
 	if err := os.WriteFile(c.Response, []byte(resp), 0o600); err != nil {
 		t.Fatal(err)
 	}

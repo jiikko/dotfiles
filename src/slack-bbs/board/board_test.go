@@ -2,6 +2,7 @@ package board
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"slack-bbs/source"
@@ -143,8 +144,8 @@ func TestAssembleEveryUnitExactlyOnce(t *testing.T) {
 func TestAssembleKeepsOnlyGroundedPointsAndLabels(t *testing.T) {
 	resp := Response{Topics: []RespTopic{
 		{Title: "x", State: "weird", Members: []string{"b"},
-			Points: []RespPoint{{Text: "ok", Refs: []string{"b2", "zzz"}}, {Text: "他の話題の発言", Refs: []string{"a"}}},
-			Labels: []RespLabel{{Kind: KindMustRead, Reason: "r", Refs: []string{"b"}}, {Kind: "urgent", Reason: "r", Refs: []string{"b"}}, {Kind: KindAction, Reason: "r", Refs: []string{"c"}}}},
+			Background: []RespPoint{{Text: "ok", Refs: []string{"b2", "zzz"}}, {Text: "他の話題の発言", Refs: []string{"a"}}},
+			Labels:     []RespLabel{{Kind: KindMustRead, Reason: "r", Refs: []string{"b"}}, {Kind: "urgent", Reason: "r", Refs: []string{"b"}}, {Kind: KindAction, Reason: "r", Refs: []string{"c"}}}},
 		{Title: "y", State: StateInfo, Members: []string{"a", "c"}},
 	}}
 	topics, d := Assemble(units3(), resp)
@@ -296,20 +297,47 @@ func TestMentionClearedByMyLaterReply(t *testing.T) {
 func TestPruneDropsVanishedUnits(t *testing.T) {
 	keepU := Unit{ID: "2.000000", Msgs: []Msg{{Ts: "2.000000", Text: "残る", New: true}}}
 	resp := Response{Topics: []RespTopic{
-		{Title: "消える", State: StateInfo, Members: []string{"1.000000"}, Points: []RespPoint{{Text: "p", Refs: []string{"1.000000"}}}},
-		{Title: "残る", State: StateOpen, Members: []string{"1.000000", "2.000000"},
-			Points: []RespPoint{{Text: "古い", Refs: []string{"1.000000"}}, {Text: "新しい", Refs: []string{"1.000000", "2.000000"}}},
-			Labels: []RespLabel{{Kind: KindMustRead, Reason: "r", Refs: []string{"1.000000"}}}},
+		{Title: "消える", State: StateInfo, Members: []string{"1.000000"}, Background: []RespPoint{{Text: "p", Refs: []string{"1.000000"}}}},
+		{Title: "残る", State: StateOpen, Members: []string{"1.000000", "2.000000"}, Conclusion: RespPoint{Text: "古い結論", Refs: []string{"1.000000"}},
+			Background: []RespPoint{{Text: "古い", Refs: []string{"1.000000"}}, {Text: "新しい", Refs: []string{"1.000000", "2.000000"}}},
+			Labels:     []RespLabel{{Kind: KindMustRead, Reason: "r", Refs: []string{"1.000000"}}}},
 	}}
 	got := Prune(resp, []Unit{keepU})
 	if len(got.Topics) != 1 || got.Topics[0].Title != "残る" {
 		t.Fatalf("話題: %+v", got.Topics)
 	}
 	tp := got.Topics[0]
-	if len(tp.Members) != 1 || len(tp.Points) != 1 || tp.Points[0].Text != "新しい" || len(tp.Points[0].Refs) != 1 || len(tp.Labels) != 0 {
+	if len(tp.Members) != 1 || tp.Conclusion.Text != "" || len(tp.Background) != 1 || tp.Background[0].Text != "新しい" || len(tp.Background[0].Refs) != 1 || len(tp.Labels) != 0 {
 		t.Errorf("絞り方: %+v", tp)
 	}
 	if _, d := Assemble([]Unit{keepU}, got); d.Any() {
 		t.Errorf("外したものを捨てたものに数えた: %s", d)
+	}
+}
+
+// 要約の欄ごとに根拠を検査し、欄の名前を付けて結論 → 経緯 → 次の動きの順に並べる。空の結論は「無し」として数えない。
+func TestAssembleSections(t *testing.T) {
+	u := Unit{ID: "1.000000", Msgs: []Msg{{Ts: "1.000000", New: true}}}
+	resp := Response{Topics: []RespTopic{{Title: "t", State: StateOpen, Members: []string{u.ID},
+		Next:       []RespPoint{{Text: "次", Refs: []string{u.ID}}, {Text: "根拠なし", Refs: []string{"9.000000"}}},
+		Background: []RespPoint{{Text: "経緯", Refs: []string{u.ID}}},
+		Conclusion: RespPoint{Text: "結論", Refs: []string{u.ID}}}}}
+	topics, d := Assemble([]Unit{u}, resp)
+	var got []string
+	for _, p := range topics[0].Points {
+		got = append(got, p.Section+":"+p.Text)
+	}
+	if strings.Join(got, ",") != "conclusion:結論,background:経緯,next:次" || d.Points != 1 {
+		t.Errorf("欄: %v / 捨てた要約 %d (want 1: 根拠なし だけ)", got, d.Points)
+	}
+}
+
+// 本文の無い結論は、根拠があっても「無し」として扱い、捨てたものに数えない。
+func TestEmptyConclusionIsNone(t *testing.T) {
+	u := Unit{ID: "1.000000", Msgs: []Msg{{Ts: "1.000000", New: true}}}
+	topics, d := Assemble([]Unit{u}, Response{Topics: []RespTopic{{Title: "t", State: StateInfo, Members: []string{u.ID},
+		Conclusion: RespPoint{Refs: []string{u.ID}}}}})
+	if len(topics[0].Points) != 0 || d.Any() {
+		t.Errorf("空の結論: %+v / %s", topics[0].Points, d)
 	}
 }

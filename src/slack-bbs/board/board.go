@@ -12,16 +12,49 @@ type Response struct {
 	Topics []RespTopic `json:"topics"`
 }
 
-// RespTopic は LLM が返した話題 1 つ。
+// RespTopic は LLM が返した話題 1 つ。要約は欄 (結論・経緯・次の動き) に分けて返させる。
 type RespTopic struct {
-	Title   string      `json:"title"`
-	State   string      `json:"state"`
-	Members []string    `json:"members"` // 単位の ID
-	Points  []RespPoint `json:"points"`
-	Labels  []RespLabel `json:"labels"`
+	Title      string      `json:"title"`
+	State      string      `json:"state"`
+	Members    []string    `json:"members"`    // 単位の ID
+	Conclusion RespPoint   `json:"conclusion"` // 1 項目 (空なら無し)
+	Background []RespPoint `json:"background"`
+	Next       []RespPoint `json:"next"`
+	Labels     []RespLabel `json:"labels"`
 }
 
-// RespPoint は要点 1 つと根拠の発言の ts。
+// 要約の欄。並びは表示の順。
+const (
+	SectionConclusion = "conclusion" // 結論 (今どうなっているか・何が決まったか)
+	SectionBackground = "background" // 経緯
+	SectionNext       = "next"       // 次の動き (誰が何をするか・答えの出ていない問い)
+)
+
+// Sections は要約の欄を表示の順に並べたもの。
+var Sections = []string{SectionConclusion, SectionBackground, SectionNext}
+
+// sectioned は欄の名前を付けた項目。
+type sectioned struct {
+	section string
+	RespPoint
+}
+
+// points は要約の項目を欄の順に並べる。本文の無い結論は「無し」として出さない (根拠があっても「捨てたもの」に数えない)。
+func (rt RespTopic) points() []sectioned {
+	var out []sectioned
+	if c := rt.Conclusion; c.Text != "" {
+		out = append(out, sectioned{SectionConclusion, c})
+	}
+	for _, p := range rt.Background {
+		out = append(out, sectioned{SectionBackground, p})
+	}
+	for _, p := range rt.Next {
+		out = append(out, sectioned{SectionNext, p})
+	}
+	return out
+}
+
+// RespPoint は要約の項目 1 つと根拠の発言の ts。
 type RespPoint struct {
 	Text string   `json:"text"`
 	Refs []string `json:"refs"`
@@ -54,10 +87,11 @@ const (
 	SourceLLM     = "llm"
 )
 
-// Point は検査を通った要点。
+// Point は検査を通った要約の項目。Section はどの欄か (Sections のどれか)。
 type Point struct {
-	Text string   `json:"text"`
-	Refs []string `json:"refs"`
+	Section string   `json:"section"`
+	Text    string   `json:"text"`
+	Refs    []string `json:"refs"`
 }
 
 // Label は検査を通ったラベル。
@@ -165,9 +199,9 @@ func Assemble(units []Unit, resp Response) ([]Topic, Dropped) {
 			t.State = StateOpen
 		}
 		own := tsSet(t.Units)
-		for _, p := range rt.Points {
+		for _, p := range rt.points() {
 			if refs := keep(p.Refs, own); len(refs) > 0 && p.Text != "" {
-				t.Points = append(t.Points, Point{Text: p.Text, Refs: refs})
+				t.Points = append(t.Points, Point{Section: p.section, Text: p.Text, Refs: refs})
 				continue
 			}
 			d.Points++
@@ -301,9 +335,21 @@ func Prune(resp Response, units []Unit) Response {
 		if len(t.Members) == 0 {
 			continue
 		}
-		for _, p := range rt.Points {
-			if refs := keep(p.Refs, own); len(refs) > 0 {
-				t.Points = append(t.Points, RespPoint{Text: p.Text, Refs: refs})
+		prune := func(p RespPoint) (RespPoint, bool) {
+			refs := keep(p.Refs, own)
+			return RespPoint{Text: p.Text, Refs: refs}, len(refs) > 0
+		}
+		if c, ok := prune(rt.Conclusion); ok {
+			t.Conclusion = c
+		}
+		for _, p := range rt.Background {
+			if p, ok := prune(p); ok {
+				t.Background = append(t.Background, p)
+			}
+		}
+		for _, p := range rt.Next {
+			if p, ok := prune(p); ok {
+				t.Next = append(t.Next, p)
 			}
 		}
 		for _, l := range rt.Labels {

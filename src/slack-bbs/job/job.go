@@ -27,7 +27,7 @@ import (
 )
 
 // Version は依頼の形の版。形を変えたら上げる (古い prepare の依頼を新しい show が読み違えない)。
-const Version = 3
+const Version = 4
 
 // Request は 1 チャンネルの依頼。Units が分類の対象で、ページの見出しに要る値も持つ。
 type Request struct {

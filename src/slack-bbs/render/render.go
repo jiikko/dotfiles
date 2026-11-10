@@ -115,12 +115,22 @@ func Head(t board.Topic) string {
 	return fmt.Sprintf("%s%s (%d 件, 最終 %s)", head, clean(t.Title), Count(t), stamp(tsTime(t.Last())))
 }
 
-// Body は話題の中身の行 (ラベル・要点・原文)。links が真なら根拠の発言への Markdown のリンクを添える。
+// HeadingMark は読む画面で欄の見出し (結論・経緯・次の動き・原文) の頭に置く印。読む画面はこれで見出しの行を見分けて色を付ける。
+const HeadingMark = "▍"
+
+var sectionName = map[string]string{
+	board.SectionConclusion: "結論",
+	board.SectionBackground: "経緯",
+	board.SectionNext:       "次の動き",
+}
+
+// Body は話題の中身の行 (ラベル・要約の欄・原文)。md が真なら Markdown の形 (見出しは太字、根拠の発言へのリンクを添える)、
+// 偽なら読む画面の形 (見出しは HeadingMark で始める)。欄の間には空行を入れる。
 // 行は折り返さない (画面の幅で折り返すのは読む側)。外から来た文字列は無害化してある。
-func (p Page) Body(t board.Topic, links bool) []string {
+func (p Page) Body(t board.Topic, md bool) []string {
 	var out []string
 	ref := func(refs []string) string {
-		if !links {
+		if !md {
 			return ""
 		}
 		if l := p.links(refs, t); l != "" {
@@ -128,15 +138,48 @@ func (p Page) Body(t board.Topic, links bool) []string {
 		}
 		return ""
 	}
+	heading := func(s string) string {
+		if md {
+			return "**" + s + "**"
+		}
+		return HeadingMark + s
+	}
 	for _, l := range t.Labels {
 		out = append(out, fmt.Sprintf("- %s: %s%s", labelName(l), clean(l.Reason), ref(l.Refs)))
 	}
-	for _, pt := range t.Points {
-		out = append(out, fmt.Sprintf("- %s%s", clean(pt.Text), ref(pt.Refs)))
-	}
-	for _, u := range t.Units {
+	if len(t.Labels) > 0 {
 		out = append(out, "")
-		out = append(out, p.unit(u, links)...)
+	}
+	for _, sec := range board.Sections {
+		first := true
+		for _, pt := range t.Points {
+			if pt.Section != sec {
+				continue
+			}
+			// 頭の空白を落とす: LLM の文が空白で始まると字下げが原文の発言の行 (4 桁) と同じになり、読む画面が発言の頭として色を付ける
+			pt.Text = strings.TrimSpace(pt.Text)
+			if first {
+				out, first = append(out, heading(sectionName[sec])), false
+			}
+			switch {
+			case md:
+				out = append(out, fmt.Sprintf("- %s%s", clean(pt.Text), ref(pt.Refs)))
+			case sec == board.SectionConclusion:
+				out = append(out, "  "+clean(pt.Text))
+			default:
+				out = append(out, "  • "+clean(pt.Text))
+			}
+		}
+		if !first {
+			out = append(out, "")
+		}
+	}
+	out = append(out, heading("原文"))
+	for i, u := range t.Units {
+		if md || i > 0 { // Markdown は見出しの直後に字下げの行を続けると段落の続きと読まれるので、空行で区切る
+			out = append(out, "")
+		}
+		out = append(out, p.unit(u, md)...)
 	}
 	return out
 }

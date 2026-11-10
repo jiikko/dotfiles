@@ -15,7 +15,7 @@ func TestMarkdownStripsTerminalControls(t *testing.T) {
 	p := Page{
 		ChannelName: "dev" + esc, Channel: "C1", Base: "https://ws.slack.com/" + esc, Notes: []string{"注記" + esc},
 		Topics: []board.Topic{{Title: "見出し" + esc, State: board.StateOpen, Units: []board.Unit{u},
-			Points: []board.Point{{Text: "要点" + esc, Refs: []string{"1.000000"}}},
+			Points: []board.Point{{Section: board.SectionConclusion, Text: "要点" + esc, Refs: []string{"1.000000"}}},
 			Labels: []board.Label{{Kind: board.KindMustRead, Source: board.SourceLLM, Reason: "理由" + esc, Refs: []string{"1.000000"}}}}},
 		Since: time.Unix(0, 0), Until: time.Unix(10, 0), Lookback: time.Unix(0, 0),
 	}
@@ -74,5 +74,34 @@ func TestContinuationLinesIndentFromTimestamp(t *testing.T) {
 	}
 	if checked != 2 {
 		t.Errorf("確かめた発言 %d, want 2:\n%s", checked, strings.Join(lines, "\n"))
+	}
+}
+
+// 要約は欄 (結論 → 経緯 → 次の動き) の順に、見出しを付けて空行で区切って出す。読む画面は見出しを HeadingMark で始め、
+// Markdown は太字にする。項目の無い欄は見出しも出さない。
+func TestBodySections(t *testing.T) {
+	u := board.Unit{ID: "1.000000", Msgs: []board.Msg{{Ts: "1.000000", Name: "a", Text: "本文", New: true}}}
+	tp := board.Topic{Title: "t", State: board.StateOpen, Units: []board.Unit{u}, Points: []board.Point{
+		{Section: board.SectionNext, Text: "次", Refs: []string{"1.000000"}},
+		{Section: board.SectionConclusion, Text: "結論の文", Refs: []string{"1.000000"}},
+	}}
+	got := strings.Join(Page{}.Body(tp, false), "\n")
+	want := HeadingMark + "結論\n  結論の文\n\n" + HeadingMark + "次の動き\n  • 次\n\n" + HeadingMark + "原文\n"
+	if !strings.HasPrefix(got, want) || strings.Contains(got, "経緯") {
+		t.Errorf("読む画面の形:\n%s\nwant の頭:\n%s", got, want)
+	}
+	md := strings.Join(Page{}.Body(tp, true), "\n")
+	if !strings.HasPrefix(md, "**結論**\n- 結論の文\n\n**次の動き**\n- 次\n\n**原文**\n\n") {
+		t.Errorf("Markdown の形:\n%s", md)
+	}
+}
+
+// 要約の項目の頭の空白は落とす (読む画面で原文の発言の行と同じ字下げにならない)。
+func TestBodyTrimsPointText(t *testing.T) {
+	u := board.Unit{ID: "1.000000", Msgs: []board.Msg{{Ts: "1.000000", Name: "a", Text: "x", New: true}}}
+	tp := board.Topic{Title: "t", State: board.StateInfo, Units: []board.Unit{u}, Points: []board.Point{
+		{Section: board.SectionConclusion, Text: "  11/09 15:07 tanaka: 了解", Refs: []string{"1.000000"}}}}
+	if got := (Page{}).Body(tp, false)[1]; got != "  11/09 15:07 tanaka: 了解" {
+		t.Errorf("結論の行 %q (頭の空白を落としていない)", got)
 	}
 }

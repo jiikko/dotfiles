@@ -7,6 +7,8 @@ package llm
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,13 +46,26 @@ func (r ExecRunner) Run(ctx context.Context, args []string, stdin []byte) ([]byt
 
 // Schema は claude -p --json-schema に渡す応答の形 (board.Response と同じ)。
 const Schema = `{"type":"object","additionalProperties":false,"required":["topics"],"properties":{"topics":{"type":"array","items":{` +
-	`"type":"object","additionalProperties":false,"required":["title","state","members","points","labels"],"properties":{` +
+	`"type":"object","additionalProperties":false,"required":["title","state","members","conclusion","background","next","labels"],"properties":{` +
 	`"title":{"type":"string"},` +
 	`"state":{"type":"string","enum":["decided","open","info"]},` +
 	`"members":{"type":"array","items":{"type":"string"}},` +
-	`"points":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["text","refs"],"properties":{"text":{"type":"string"},"refs":{"type":"array","items":{"type":"string"}}}}},` +
+	`"conclusion":` + point + `,` +
+	`"background":{"type":"array","items":` + point + `},` +
+	`"next":{"type":"array","items":` + point + `},` +
 	`"labels":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["kind","reason","refs"],"properties":{"kind":{"type":"string","enum":["action","must_read"]},"reason":{"type":"string"},"refs":{"type":"array","items":{"type":"string"}}}}}` +
 	`}}}}}`
+
+const point = `{"type":"object","additionalProperties":false,"required":["text","refs"],"properties":{"text":{"type":"string"},"refs":{"type":"array","items":{"type":"string"}}}}`
+
+// Classifier は分類のしかたの名前: モデルと、指示文・応答の形のハッシュの組。キャッシュの分類はこれが同じときだけ使い回す
+// (指示文を変えたら、前の指示文で作った分類を使い回さない)。
+func Classifier(model string) string { return classifierOf(model, instructions+Schema) }
+
+func classifierOf(model, prompt string) string {
+	h := sha256.Sum256([]byte(prompt))
+	return model + "@" + hex.EncodeToString(h[:6])
+}
 
 // Args は claude -p の引数。
 //
@@ -146,7 +161,10 @@ const instructions = `あなたは Slack のチャンネルの会話を、後か
 - 同じ件について話している単位は 1 つの話題にまとめる。雑談や単発の共有は小さな話題のままでよい
 - title: 話題の見出し (日本語で短く。何の件かが分かる名詞句)
 - state: decided (何かが決まった) / open (議論中・答えの出ていない質問がある) / info (共有だけで、決めることがない)
-- points: 追いつく人が知るべき要点を 1〜3 個。text は原文に書かれていることだけを書き、推測を足さない。refs は根拠の発言の ts (その話題の中の発言)
+- 要約は 3 つの欄に分ける。どれも原文に書かれていることだけを書き、推測を足さない。各項目の text は 1 文で短く (60 字程度まで)。refs は根拠の発言の ts (その話題の中の発言)
+  - conclusion: 今どうなっているか・何が決まったかを 1 項目 (決まっていなければ、何が論点かを書く)
+  - background: そこに至った経緯・前提を 0〜3 項目 (古い順)
+  - next: これから誰が何をするか・答えの出ていない問いを 0〜3 項目 (人の名前を主語にする)
 - labels: 読み手 (me: true の発言を書いた人) にとっての印。付けるのは本当に当てはまるときだけで、迷ったら付けない
   - action: 読み手が返事・作業・判断をしないと進まない (名指しが無くても、読み手の担当だと原文から分かる場合)
   - must_read: 対応は要らないが、知らないと困る (決定・方針の変更・障害・締め切り)

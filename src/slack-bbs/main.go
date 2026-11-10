@@ -6,7 +6,7 @@
 //	slack-bbs prepare [オプション] [-out <dir>] [<チャンネルID>...]   分類の依頼を書く (2 段の 1 段目)
 //	slack-bbs show -key <鍵> [-json] [-keep] <dir>                  依頼と応答から板を出す (2 段の 2 段目)
 //
-// 取得は slack-cli (読み取り専用)、分類は claude -p か、2 段 (prepare → 外で分類 → show) なら呼び出した側 (GUI の Claude のセッション)。LLM に任せるのは話題への分け方・見出し・要点・ラベルだけで、
+// 取得は slack-cli (読み取り専用)、分類は claude -p か、2 段 (prepare → 外で分類 → show) なら呼び出した側 (GUI の Claude のセッション)。LLM に任せるのは話題への分け方・見出し・要約 (結論・経緯・次の動き)・ラベルだけで、
 // 本文は原文を並べる。スレッドは親が古くても期間内に返信が付いていれば「続いている」話題として出す。
 // 1 段の実行は、取得した発言と分類をチャンネルごとにキャッシュ (~/.cache/slack-bbs) に残し、次の起動で前回の板をすぐ出す・
 // 新しい発言が無ければ分類し直さないのに使う (cache package)。2 段の実行は prepare のディレクトリに本文を書き、show が出し切ったら消す
@@ -65,7 +65,7 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
 
 読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。前回の板 (キャッシュ) があればすぐ出して、裏で読み直す。
   r で今のチャンネル、R で全部を読み直す (取り直して、新しい発言・編集された発言があれば claude -p で分類し直す)。
-  j/k: 移動  l/Enter: 本文へ  h/Esc: 一覧へ  Tab: チャンネル  o: Slack で開く  q: 終わる
+  j/k: 移動  l/Enter: 本文へ  h/Esc: 一覧へ  Tab: チャンネル  o: Slack で開く  s: 購読を選ぶ  q: 終わる
 
 環境変数:
   SLACK_BBS_SLACK   slack-cli のパス (既定 slack)
@@ -279,20 +279,28 @@ func parseSpan(s string) (time.Duration, error) {
 	return d, nil
 }
 
-func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
+// newPicker は今の購読と全チャンネル (slack-cli) から購読を選ぶ画面を作り、購読の置き場と一緒に返す。
+func newPicker(ctx context.Context, d deps, cli source.Client) (*subs.Picker, string, error) {
 	path, err := d.subsPath()
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	cur, err := subs.Load(path)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
-	all, err := source.Client{R: d.slack}.Channels(ctx)
+	all, err := cli.Channels(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	return subs.NewPicker(all, cur), path, nil
+}
+
+func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
+	p, path, err := newPicker(ctx, d, source.Client{R: d.slack})
 	if err != nil {
 		return err
 	}
-	p := subs.NewPicker(all, cur)
 	if err := d.pick(p); err != nil {
 		return err
 	}
@@ -446,7 +454,7 @@ func classify(ctx context.Context, o options, d deps, st cache.Store, c collecte
 		if err != nil {
 			p.Notes = append(p.Notes, "キャッシュの分類を読めなかった (分類し直した): "+err.Error())
 		}
-		if ok && sum.Covers(c.units, o.model, c.me) {
+		if ok && sum.Covers(c.units, llm.Classifier(o.model), c.me) {
 			p.Topics, dropped = board.Assemble(c.units, board.Prune(sum.Resp, c.units))
 			p.ClassifiedAt = sum.SavedAt
 			saveRaw()
@@ -459,7 +467,7 @@ func classify(ctx context.Context, o options, d deps, st cache.Store, c collecte
 	}
 	p.Topics, dropped = board.Assemble(c.units, resp)
 	p.ClassifiedAt = d.now()
-	sum := cache.Summary{SavedAt: p.ClassifiedAt, Model: o.model, Me: c.me, Basis: cache.MsgKeys(c.units), Resp: resp}
+	sum := cache.Summary{SavedAt: p.ClassifiedAt, Model: llm.Classifier(o.model), Me: c.me, Basis: cache.MsgKeys(c.units), Resp: resp}
 	if err := st.SaveSummary(p.Channel, sum); err != nil {
 		p.Notes = append(p.Notes, "分類をキャッシュに書けなかった: "+err.Error())
 	} else {
@@ -569,15 +577,22 @@ func browse(ctx context.Context, o options, d deps) error {
 		cancel()
 		inflight.Wait()
 	}()
-	load := func(ctx context.Context, ch subs.Channel) (render.Page, error) {
+	// start は画面の外で子 (slack-cli・claude -p) を起こす仕事の前に呼び、終わったら返す関数を呼ぶ。閉じた後は false を返す。
+	start := func() (func(), bool) {
 		mu.Lock()
+		defer mu.Unlock()
 		if closed {
-			mu.Unlock()
-			return render.Page{}, context.Canceled
+			return nil, false
 		}
 		inflight.Add(1)
-		mu.Unlock()
-		defer inflight.Done()
+		return inflight.Done, true
+	}
+	load := func(ctx context.Context, ch subs.Channel) (render.Page, error) {
+		done, ok := start()
+		if !ok {
+			return render.Page{}, context.Canceled
+		}
+		defer done()
 		o := o
 		if now := d.now(); !o.sinceFixed && o.until.Before(now) {
 			// 読み直しは押した時点までを読む (期間の長さは保つ)。日付で渡した -since はずらさない
@@ -607,9 +622,31 @@ func browse(ctx context.Context, o options, d deps) error {
 		return p, nil
 	}
 	m := view.New(ctx, targets, load, d.openURL, d.now)
+	// 購読の画面 (s) は、購読を読む起動のときだけ付ける。チャンネルを引数で渡した起動で開くと、保存したときにタブが購読に
+	// 置き換わり、引数で渡した (購読していない) チャンネルが消える
+	if len(o.channels) == 0 {
+		m.SetSubscriptions(&view.Subscriptions{
+			Open: func(ctx context.Context) (*subs.Picker, error) {
+				done, ok := start()
+				if !ok {
+					return nil, context.Canceled
+				}
+				defer done()
+				p, _, err := newPicker(ctx, d, cli)
+				return p, err
+			},
+			Save: func(sel []subs.Channel) error {
+				path, err := d.subsPath()
+				if err != nil {
+					return err
+				}
+				return subs.Save(path, sel)
+			},
+		})
+	}
 	if !o.noCache {
 		for i, ch := range targets {
-			if p, at, ok := cachedPage(st, ch.ID, o.model); ok {
+			if p, at, ok := cachedPage(st, ch.ID, llm.Classifier(o.model)); ok {
 				m.Preload(i, p, at)
 			}
 		}

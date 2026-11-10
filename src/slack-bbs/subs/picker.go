@@ -29,7 +29,7 @@ type Picker struct {
 	save      bool
 }
 
-// NewPicker は一覧を作る。並びは 参加しているチャンネル → 参加していないチャンネル (それぞれ名前順)。
+// NewPicker は一覧を作る。並びは 購読中 → 参加しているチャンネル → 参加していないチャンネル (それぞれ名前順)。切り替えても並べ直さない。
 // アーカイブ済みは出さない (購読していれば出して外せるようにする)。購読しているのに一覧に無いチャンネル
 // (抜けた・消えた) も、外せるように先頭に出す。
 func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
@@ -47,6 +47,9 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 		p.items = append(p.items, item{ch: c, on: on[c.ID]})
 	}
 	sort.SliceStable(p.items, func(i, j int) bool {
+		if p.items[i].on != p.items[j].on {
+			return p.items[i].on // 購読中を先に (数百のチャンネルの中から、外したいものを探さずに済む)
+		}
 		a, b := p.items[i].ch, p.items[j].ch
 		if a.IsMember != b.IsMember {
 			return a.IsMember
