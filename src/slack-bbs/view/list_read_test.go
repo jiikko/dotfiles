@@ -310,6 +310,7 @@ func TestReloadWhileReadingShowsNewReplyUnread(t *testing.T) {
 		return []board.Topic{tp}
 	})
 	press(m, "l")
+	m.Lines() // キーの合間に描く (タブの未読の数を覚えた状態で読み直す)
 	reply = true
 	run(m, press(m, "r"))
 	if m.unreadCount(0) != 1 {
@@ -444,5 +445,43 @@ func TestReloadStartAndFinishToasts(t *testing.T) {
 	m.Update(old())
 	if got := len(m.toast.Entries()); got != before {
 		t.Errorf("追い越された古い結果を知らせた (%d 枚 → %d 枚)", before, got)
+	}
+}
+
+// 本文の欄の折り返しの覚えは、読み直した板・幅・選んだ話題が変わったら作り直す。色は写しに付ける (2 回描いても同じ画面)。
+func TestBodyCacheFollowsPageWidthAndTopic(t *testing.T) {
+	text := "最初の本文で「確認」した"
+	m := datedModel(t, func() []board.Topic {
+		a := topicAt("a", day0)
+		a.Units[0].Msgs[0].Text = text
+		return []board.Topic{a, topicAt("b", day0.Add(-time.Hour))}
+	})
+	screen := func() string { // 本文を見る (重なる知らせは消してから)
+		m.toast.Clear()
+		return sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), "")
+	}
+	first := strings.Join(m.Lines(), "\n")
+	if again := strings.Join(m.Lines(), "\n"); again != first {
+		t.Fatal("2 回目の描画が 1 回目と違う (覚えた行に色を重ねた)")
+	}
+	text = "読み直した本文"
+	run(m, press(m, "r"))
+	if !strings.Contains(screen(), "読み直した本文") {
+		t.Fatalf("読み直した板の本文が出ない:\n%s", screen())
+	}
+	press(m, "j")
+	if s := screen(); strings.Contains(s, "読み直した本文") {
+		t.Fatalf("話題を替えても前の話題の本文が出ている:\n%s", s)
+	}
+	press(m, "k")
+	text = strings.Repeat("長い本文を折り返す。", 8)
+	run(m, press(m, "r"))
+	m.Lines()
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	lines, _ := m.bodyLines()
+	for _, l := range lines {
+		if termwidth.Of(l) > m.bodyWidth() {
+			t.Fatalf("幅を縮めた後も前の幅の折り返しのまま (枠で切れる): %q", l)
+		}
 	}
 }

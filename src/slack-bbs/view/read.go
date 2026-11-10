@@ -33,6 +33,7 @@ func (m *Model) loadRead(i int) {
 	if read != nil {
 		c.read = read
 	}
+	c.unread = nil
 }
 
 // unitUnread は単位に、印より後の他人の期間内の発言があるか。自分の発言と、文脈として出した期間前の発言は数えない
@@ -58,9 +59,12 @@ func topicUnread(t board.Topic, read map[string]string) bool {
 
 // unreadCount はチャンネル i の未読の話題の数 (まだ読めていなければ 0)。
 func (m *Model) unreadCount(i int) int {
-	c := m.chans[i]
+	c := &m.chans[i]
 	if c.page == nil {
 		return 0
+	}
+	if c.unread != nil {
+		return *c.unread
 	}
 	n := 0
 	for _, t := range c.page.Topics {
@@ -68,6 +72,7 @@ func (m *Model) unreadCount(i int) int {
 			n++
 		}
 	}
+	c.unread = &n
 	return n
 }
 
@@ -91,7 +96,11 @@ func (m *Model) setRead(read bool) {
 			changed = true
 		}
 	}
-	if !changed || m.reads == nil {
+	if !changed {
+		return
+	}
+	c.unread = nil
+	if m.reads == nil {
 		return
 	}
 	if err := m.reads.Save(c.ch.ID, c.read); err != nil {

@@ -37,6 +37,8 @@ type chanState struct {
 	hl       highlighter       // page の本文の色付け (page を置き換えるたびに作り直す)
 	rows     []row             // 左の一覧の行 (日付の見出しと話題。page を置き換えるたびに作り直す)
 	read     map[string]string // 既読の印 (単位の ID → 読んだときの単位の最後の発言の ts)
+	// unread は未読の話題の数の覚え (タブに出す。描くたびに全チャンネルの全発言を数え直さない)。page か read を変えたら捨てる
+	unread *int
 }
 
 // Model は画面の状態。
@@ -59,6 +61,7 @@ type Model struct {
 	after    func(d time.Duration, f func(time.Time) tea.Msg) tea.Cmd
 	quitting bool
 	reads    *Reads
+	body1    bodyCache // 本文の欄の折り返しの覚え (bodyLines)
 	// seq は読み直しの通し番号。チャンネルごとに数えると、購読から外して付け直したチャンネルで、外す前の読み直しの結果を
 	// 付け直した後の読み直しの結果と取り違える
 	seq     int
@@ -99,6 +102,7 @@ func (m *Model) Preload(i int, p render.Page, at time.Time) {
 func (c *chanState) setPage(p render.Page, at time.Time, stale bool) {
 	c.page, c.err, c.loadedAt, c.stale, c.hl = &p, nil, at, stale, newHighlighter(p)
 	c.rows = buildRows(p.Topics, time.Local)
+	c.unread = nil
 }
 
 // loadedMsg は読み直しの結果。チャンネルは番号でなく ID で指す (購読を変えるとタブの番号がずれる)。
@@ -269,15 +273,24 @@ func (m *Model) topics() []board.Topic {
 }
 
 func (m *Model) selected() (board.Topic, bool) {
+	i, ok := m.selectedIndex()
+	if !ok {
+		return board.Topic{}, false
+	}
+	return m.topics()[i], true
+}
+
+// selectedIndex は選んだ話題の page.Topics の添字。
+func (m *Model) selectedIndex() (int, bool) {
 	rows := m.rows()
 	if len(rows) == 0 {
-		return board.Topic{}, false
+		return 0, false
 	}
 	r := rows[min(max(m.list.Cursor, 0), len(rows)-1)]
 	if r.header() {
-		return board.Topic{}, false // 描く前 (fitList の前) に見出しに乗っている
+		return 0, false // 描く前 (fitList の前) に見出しに乗っている
 	}
-	return m.topics()[r.topic], true
+	return r.topic, true
 }
 
 func (m *Model) key(k string) tea.Cmd {
@@ -507,16 +520,36 @@ func (m *Model) bodyLines() (lines []string, first []bool) {
 			return []string{"読んでいます…"}, nil
 		}
 	}
-	t, ok := m.selected()
+	ti, ok := m.selectedIndex()
 	if !ok {
 		return []string{"期間内の発言はありません。"}, nil
 	}
-	for _, l := range c.page.Body(t, false) {
+	key := bodyKey{page: c.page, topic: ti, width: m.bodyWidth()}
+	if m.body1.key == key {
+		return m.body1.lines, m.body1.first
+	}
+	for _, l := range c.page.Body(c.page.Topics[ti], false) {
 		for i, w := range wrap(l, m.bodyWidth()) { // 色は rightLines が、折り返した後の画面に出す行にだけ付ける
 			lines, first = append(lines, w), append(first, i == 0)
 		}
 	}
+	m.body1 = bodyCache{key: key, lines: lines, first: first}
 	return lines, first
+}
+
+// bodyKey は本文の欄の折り返しの覚えの鍵。板 (読み直すと別の値になる)・話題・幅が同じなら同じ行になる。
+type bodyKey struct {
+	page  *render.Page
+	topic int
+	width int
+}
+
+// bodyCache は最後に折り返した本文の欄の行。描くたびに話題の全文を折り返し直さない (発言が数百ある話題で、知らせが動く間の
+// 1 秒 60 回の描画が 1 回 2.5ms かかっていた)。🚨 lines は共有するので、呼び出し側は書き換えない (色は写しに付ける)
+type bodyCache struct {
+	key   bodyKey
+	lines []string
+	first []bool
 }
 
 // wrap は行を幅 w で折り返す。2 行目からは元の行の字下げに 2 桁足して揃える (原文の続きが左端へ戻って、誰の発言か追えなくならない)。
@@ -746,12 +779,16 @@ func (m *Model) rightLines() []string {
 	}
 	lines, first := m.bodyLines()
 	m.pager.Clamp(len(lines), m.bodyRows())
-	off := m.pager.DrawOffset(len(lines), m.bodyRows())
-	// 色付けは画面に出す行だけ (全行を毎回の描画で照合すると、長い話題で名前の数 × 字数の手間が描画のたびにかかる)
-	for i := off; i < min(off+m.bodyRows(), len(first)); i++ {
-		lines[i] = m.chans[m.cur].hl.line(lines[i], first[i])
+	off := min(m.pager.DrawOffset(len(lines), m.bodyRows()), len(lines))
+	// 色付けは画面に出す行だけ (全行を毎回の描画で照合すると、長い話題で名前の数 × 字数の手間が描画のたびにかかる)。
+	// 写しに付ける: lines は bodyCache と共有している
+	shown := slices.Clone(lines[off:min(off+m.bodyRows(), len(lines))])
+	for i := range shown {
+		if off+i < len(first) {
+			shown[i] = m.chans[m.cur].hl.line(shown[i], first[off+i])
+		}
 	}
-	return box(title, lines[min(off, len(lines)):], m.w-m.leftWidth(), m.bodyRows(), m.body)
+	return box(title, shown, m.w-m.leftWidth(), m.bodyRows(), m.body)
 }
 
 func (m *Model) help() string {
