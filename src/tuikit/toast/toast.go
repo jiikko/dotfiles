@@ -77,6 +77,7 @@ type item struct {
 	pinned bool
 	phase  Phase
 	shadow string // 落ち影の SGR 色 (積んだときの Stack.Shadow)
+	infoC  string // 中立の知らせの色 (積んだときの Stack.InfoColor。空ならシアン)
 	// frame はスライドの進捗 (入場 0→N / 退場 N→0)。見せるカラム数は描画時に easedShown(frame, 箱幅) で求める。
 	// 🚨 カラム数を状態に持たない: 箱幅は描画時の画面幅 (折り返し) で変わるので、進めた時点の幅で
 	// 決めたカラム数は窓の幅が変わると箱幅とずれる。
@@ -85,8 +86,8 @@ type item struct {
 
 // reset は 1 枚を「これから滑り込む状態」に作り直す (スタックが積むときに使う)。seq は世代管理
 // (退場タイマーの有効性判定) に使うのでスタック側が採番して渡す。
-func (t *item) reset(text string, ok, info bool, seq int, shadow string) {
-	t.seq, t.shadow = seq, shadow
+func (t *item) reset(text string, ok, info bool, seq int, shadow, infoC string) {
+	t.seq, t.shadow, t.infoC = seq, shadow, infoC
 	t.text, t.ok, t.info = text, ok, info
 	t.pinned = false
 	t.phase = Entering
@@ -142,6 +143,9 @@ func (t *item) fullBox(colored bool, maxWidth, textLines int) []string {
 	switch {
 	case t.info:
 		mark, color = "", sgr.Cyan // 中立の知らせは印を付けず色だけ (… だと文が切れた印に見える。2026-09-27 のユーザーの指定)
+		if t.infoC != "" {
+			color = t.infoC
+		}
 	case !t.ok:
 		mark, color = "✗ ", sgr.Red
 	}
@@ -315,6 +319,9 @@ type Stack struct {
 	seqGen int // 世代の採番 (退場タイマーの取り違え防止。枚数に依らず単調増加)
 	// Shadow は箱の落ち影の SGR 色 (アプリのテーマの近黒など)。空なら layout.Panel の既定
 	Shadow string
+	// InfoColor は中立の知らせ (ShowInfo) の文と枠の SGR 色。空ならシアン。背景が青い端末で読ませたいアプリは
+	// 端末の文字色 ("\x1b[39m") を渡す (シアンは青い背景に沈む)
+	InfoColor string
 }
 
 // Show は新しい通知を最上段に積む (ok=true は成功 ✓緑、false は失敗 ✗赤)。呼び出し側で tick を回すこと (Animating)。
@@ -367,7 +374,7 @@ func (s *Stack) push(text string, ok, info bool) {
 		s.older = append([]item{s.item}, s.older...)
 	}
 	var top item
-	top.reset(text, ok, info, s.seqGen, s.Shadow)
+	top.reset(text, ok, info, s.seqGen, s.Shadow, s.InfoColor)
 	s.item = top // 最上段を新しい 1 枚に差し替える
 	if len(s.older) > StackMax-1 {
 		s.older = evictOne(s.older)
@@ -620,8 +627,7 @@ func (s *Stack) Entries() []Entry {
 
 // Clear は積んでいる通知をすべて消す (アニメなしで即座に)。
 func (s *Stack) Clear() {
-	shadow, seq := s.Shadow, s.seqGen
-	*s = Stack{Shadow: shadow, seqGen: seq} // 世代は巻き戻さない (消す前の退場タイマーが後の通知を消さないように)
+	*s = Stack{Shadow: s.Shadow, InfoColor: s.InfoColor, seqGen: s.seqGen} // 世代は巻き戻さない (消す前の退場タイマーが後の通知を消さないように)。見た目の設定は残す
 }
 
 // Seq は最新の 1 枚の世代 (Msg.Seq と比べて、その退場タイマーが今の通知のものかを見る)。

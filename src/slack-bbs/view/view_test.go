@@ -145,7 +145,7 @@ func TestFirstLoadErrorIsSanitized(t *testing.T) {
 		t.Errorf("行の数 = %d, want 20", len(lines))
 	}
 	for _, ln := range lines {
-		if strings.ContainsAny(ln, "\n\x1b") && !strings.Contains(ln, "\x1b[7m") && !strings.Contains(ln, "\x1b[27m") {
+		if strings.ContainsAny(sgrRe.ReplaceAllString(ln, ""), "\n\x1b") { // 色 (SGR) のほかの制御文字 (画面消去など)
 			t.Errorf("制御文字・改行が出た: %q", ln)
 		}
 	}

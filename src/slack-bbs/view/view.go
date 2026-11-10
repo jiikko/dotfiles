@@ -51,8 +51,8 @@ type Model struct {
 	pager listnav.Pager
 	body  bool // 右の欄を操作しているか
 	w, h  int
-	// toast は右下に数秒出す知らせ (開けなかった・読み込み中で読み直せない等)。ShowInfo は使わない: 中立の知らせは水色で、背景が青い
-	// 端末で沈む (highlight.go の色の約束)。成否の色 (緑の ✓・赤の ✗) で出す
+	// toast は右下に数秒出す知らせ (読み直しの始まりと終わり・開けなかった・読み込み中で読み直せない等)。中立の知らせ (ShowInfo) は
+	// 既定の水色が背景が青い端末で沈むので (highlight.go の色の約束)、端末の文字色 (toastInfoColor) で出す
 	toast   toast.Stack
 	ticking bool // toast を動かす tick を張っている
 	// after は d 後に Msg を返す Cmd を作る (既定は tea.Tick。テストは待たずに捨てる)
@@ -77,6 +77,7 @@ type Subscriptions struct {
 // New は画面を作る。chans は 1 つ以上。
 func New(ctx context.Context, chans []subs.Channel, load Loader, open func(string) error, now func() time.Time) *Model {
 	m := &Model{ctx: ctx, load: load, open: open, now: now, w: 100, h: 30, after: tea.Tick}
+	m.toast.InfoColor = toastInfoColor
 	for _, c := range chans {
 		m.chans = append(m.chans, chanState{ch: c, read: map[string]string{}})
 	}
@@ -115,9 +116,18 @@ type pickerMsg struct {
 	err error
 }
 
-// reload はチャンネル i の読み直しを頼む。返す Cmd は画面の状態を触らない (Loader と照合用の値だけを持つ)。
+// toastInfoColor は中立の知らせ (読み直しの始まり) の色: 端末の文字色。
+const toastInfoColor = "\x1b[39m"
+
+// reload はチャンネル i の読み直しを頼み、始めたことを知らせる (終わりは loaded が知らせる)。返す Cmd は画面の状態を触らない
+// (Loader と照合用の値だけを持つ)。
 func (m *Model) reload(i int) tea.Cmd {
 	c := &m.chans[i]
+	verb := "読み直しています…"
+	if c.page == nil {
+		verb = "読んでいます…"
+	}
+	m.toast.ShowInfo("#" + c.ch.Name + " を" + verb)
 	m.seq++
 	c.gen = m.seq
 	c.loading = true
@@ -204,6 +214,11 @@ func (m *Model) loaded(msg loadedMsg) {
 	c.loading = false
 	if msg.err != nil {
 		c.err = msg.err
+		verb := "読み直せなかった"
+		if c.page == nil {
+			verb = "読めなかった"
+		}
+		m.toast.Show("#"+c.ch.Name+" を"+verb+": "+msg.err.Error(), false)
 		return
 	}
 	var keep string
@@ -212,7 +227,12 @@ func (m *Model) loaded(msg loadedMsg) {
 			keep = t.Units[0].ID
 		}
 	}
+	verb := "読み直した"
+	if c.page == nil {
+		verb = "読んだ"
+	}
 	c.setPage(msg.page, msg.at, false)
+	m.toast.Show(fmt.Sprintf("#%s を%s (未読 %d)", c.ch.Name, verb, m.unreadCount(idx)), true)
 	if idx == m.cur {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
@@ -292,11 +312,14 @@ func (m *Model) key(k string) tea.Cmd {
 			}
 			cmds = append(cmds, m.reload(i))
 		}
+		// 始めたことはチャンネルごとでなく 1 枚で知らせる (reload が出した 1 枚ずつの知らせは、中立の知らせが次の知らせで退くので残らない)
 		switch {
 		case busy == len(m.chans):
 			m.toast.Show("どのチャンネルも読み込み中なので、読み直せない (終わってからもう一度押す)", false)
 		case busy > 0:
-			m.toast.Show(fmt.Sprintf("読み込み中の %d チャンネルは飛ばした", busy), true)
+			m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています… (読み込み中の %d チャンネルは飛ばした)", len(cmds), busy))
+		default:
+			m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています…", len(cmds)))
 		}
 		return tea.Batch(cmds...)
 	case "tab", "shift+tab":

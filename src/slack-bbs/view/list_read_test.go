@@ -169,16 +169,15 @@ func TestReadStoreErrorsAreToasted(t *testing.T) {
 	}
 }
 
-// R は読み込み中のチャンネルを飛ばしたことを、全部が読み込み中なら読み直せないことを知らせる。
+// R は始めたことを 1 枚で知らせ、読み込み中のチャンネルを飛ばしたらその数を添える。全部が読み込み中なら読み直せないと知らせる。
 func TestReloadAllToasts(t *testing.T) {
 	l := &loader{calls: map[string]int{}}
 	m := newModel(l)
 	pending := m.Init() // C1 は読み込み中
-	run(m, press(m, "R"))
-	if !strings.Contains(m.LastToast(), "読み込み中の 1 チャンネルは飛ばした") {
-		t.Errorf("一部が読み込み中の R の知らせ = %q", m.LastToast())
+	press(m, "R")       // C2 を読み直す。結果を渡さないので、C1 も C2 も読み込み中のまま
+	if got := m.LastToast(); got != "1 チャンネルを読み直しています… (読み込み中の 1 チャンネルは飛ばした)" {
+		t.Errorf("一部が読み込み中の R の知らせ = %q", got)
 	}
-	press(m, "R") // C2 を読み直す。結果を渡さないので、C1 も C2 も読み込み中のまま
 	press(m, "R")
 	if !strings.Contains(m.LastToast(), "どのチャンネルも読み込み中なので、読み直せない") {
 		t.Errorf("全部が読み込み中の R の知らせ = %q", m.LastToast())
@@ -226,6 +225,7 @@ func TestScreenAvoidsBlueAndBackgrounds(t *testing.T) {
 	})
 	m.chans[0].page.Base = "https://ws.slack.com/"
 	press(m, "u")
+	press(m, "r") // 読み直しを始めた中立の知らせ (結果は渡さない) も色を検査する
 	for range 20 {
 		m.Update(tickMsg{})
 	}
@@ -402,5 +402,47 @@ func TestToggleUnreadableKeepsMarks(t *testing.T) {
 	press(m, "u")
 	if _, ok := m.chans[0].read[id]; !ok || !strings.Contains(m.LastToast(), "未読にできない") {
 		t.Errorf("未読にできない u で印を消した: %v %q", m.chans[0].read, m.LastToast())
+	}
+}
+
+// 読み直しは始めたとき (中立の知らせ) と終わったとき (成功 ✓ / 失敗 ✗) に知らせる。追い越された古い結果は知らせない。
+func TestReloadStartAndFinishToasts(t *testing.T) {
+	l := &loader{calls: map[string]int{}, err: map[string]error{}}
+	m := newModel(l)
+	l.err["C1"] = errors.New("slack が応答しない")
+	run(m, m.Init())
+	if got := m.LastToast(); got != "#dev を読めなかった: slack が応答しない" {
+		t.Fatalf("最初の読み込みの失敗の知らせ = %q", got)
+	}
+	delete(l.err, "C1")
+	m.chans[0].err = nil
+	cmd := m.Init()
+	if got := m.LastToast(); got != "#dev を読んでいます…" || !m.toast.Info() {
+		t.Fatalf("最初の読み込みを始めた知らせ = %q info=%v", got, m.toast.Info())
+	}
+	run(m, cmd)
+	if got := m.LastToast(); got != "#dev を読んだ (未読 1)" || !m.toast.OK() {
+		t.Fatalf("読み終えた知らせ = %q", got)
+	}
+	cmd = press(m, "r")
+	if got := m.LastToast(); got != "#dev を読み直しています…" {
+		t.Fatalf("読み直しを始めた知らせ = %q", got)
+	}
+	run(m, cmd)
+	if got := m.LastToast(); got != "#dev を読み直した (未読 1)" {
+		t.Fatalf("読み直した知らせ = %q", got)
+	}
+	l.err["C1"] = errors.New("claude が落ちた")
+	run(m, press(m, "r"))
+	if got := m.LastToast(); got != "#dev を読み直せなかった: claude が落ちた" || m.toast.OK() {
+		t.Fatalf("読み直せなかった知らせ = %q ok=%v", got, m.toast.OK())
+	}
+	delete(l.err, "C1")
+	old := m.reload(0)
+	run(m, m.reload(0))
+	before := len(m.toast.Entries())
+	m.Update(old())
+	if got := len(m.toast.Entries()); got != before {
+		t.Errorf("追い越された古い結果を知らせた (%d 枚 → %d 枚)", before, got)
 	}
 }

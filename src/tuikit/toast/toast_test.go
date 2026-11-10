@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"github.com/charmbracelet/x/ansi"
@@ -826,5 +827,27 @@ func TestToastPinnedReleasedWhileEntering(t *testing.T) {
 	}
 	if to.Visible() {
 		t.Fatal("引き返して消える")
+	}
+}
+
+// InfoColor を渡すと中立の知らせはその色で出る (渡さなければシアン)。Clear しても残る。
+func TestToastInfoColor(t *testing.T) {
+	const fg = "\x1b[39m"
+	s := Stack{InfoColor: fg}
+	s.ShowInfo("読み直しています")
+	advanceToHolding(&s)
+	box := strings.Join(s.BoxLines(true, 10, 80), "\n")
+	if strings.Contains(box, sgr.Cyan) || !strings.Contains(box, fg) {
+		t.Errorf("InfoColor が効いていない: %q", box)
+	}
+	s.Clear()
+	if s.InfoColor != fg {
+		t.Error("Clear で InfoColor が消えた")
+	}
+	var plain Stack
+	plain.ShowInfo("x")
+	advanceToHolding(&plain)
+	if !strings.Contains(strings.Join(plain.BoxLines(true, 10, 80), "\n"), sgr.Cyan) {
+		t.Error("InfoColor を渡さないときシアンでない")
 	}
 }

@@ -84,22 +84,43 @@ func (p *Picker) Selected() []Channel {
 	return out
 }
 
+// visible は検索に一致するチャンネルの添字。検索語は空白で区切った語のすべてを名前に含むもの (大文字と小文字・先頭の # は問わない)。
 func (p *Picker) visible() []int {
+	var words []string
+	for _, w := range strings.Fields(strings.ToLower(p.filter)) {
+		if w = strings.TrimLeft(w, "#"); w != "" {
+			words = append(words, w)
+		}
+	}
 	var out []int
-	f := strings.ToLower(p.filter)
 	for i, it := range p.items {
-		if f == "" || strings.Contains(strings.ToLower(it.ch.Name), f) {
+		name := strings.ToLower(it.ch.Name)
+		if !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(name, w) }) {
 			out = append(out, i)
 		}
 	}
 	return out
 }
 
+// rows は 1 ページの行数 (見出し 2 行・空行・案内の 1 行を除いた残り)。
 func (p *Picker) rows() int { return max(p.h-4, 1) }
+
+// page は今のページの先頭の添字 (visible の中)。窓はページの区切りで動かす (1 行ずつ流さない): 数百のチャンネルを j で送ると、
+// 画面が毎行動いて今どこにいるか追えない
+func (p *Picker) page() int { return p.list.Cursor / p.rows() * p.rows() }
+
+// pages は visible の件数 n のページの数 (0 件でも 1)。
+func (p *Picker) pages(n int) int { return max((n+p.rows()-1)/p.rows(), 1) }
 
 // Key はキー 1 つを処理する。
 func (p *Picker) Key(k string) {
 	if p.filtering {
+		before := p.filter
+		defer func() {
+			if p.filter != before {
+				p.list.Cursor, p.list.Offset = 0, 0 // 一致が変わったら先頭から (Enter・Esc で語が変わらなければ今のページに留まる)
+			}
+		}()
 		switch k {
 		case "enter":
 			p.filtering = false
@@ -116,7 +137,6 @@ func (p *Picker) Key(k string) {
 				p.filter += k
 			}
 		}
-		p.list.Cursor, p.list.Offset = 0, 0
 		return
 	}
 	vis := p.visible()
@@ -129,6 +149,14 @@ func (p *Picker) Key(k string) {
 		return
 	case "/":
 		p.filtering = true
+		return
+	case "n", "right", "l":
+		if len(vis) > 0 {
+			p.list.Cursor = min(p.page()+p.rows(), len(vis)-1) // 次のページの先頭 (最後のページなら末尾)
+		}
+		return
+	case "p", "left", "h":
+		p.list.Cursor = max(p.page()-p.rows(), 0)
 		return
 	case "enter":
 		p.done, p.save = true, true
@@ -152,20 +180,22 @@ func (p *Picker) Lines() []string {
 			n++
 		}
 	}
-	lines := []string{fmt.Sprintf("購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", n, len(p.items))}
+	pageNo := fmt.Sprintf("ページ %d/%d", p.page()/p.rows()+1, p.pages(len(vis)))
+	lines := []string{termwidth.Truncate(fmt.Sprintf("%s  購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", pageNo, n, len(p.items)), p.w, "…")}
 	switch {
 	case p.filtering:
-		lines = append(lines, "絞り込み: "+termsafe.PlainLine(p.filter)+"▏")
+		lines = append(lines, termwidth.Truncate(fmt.Sprintf("検索: %s▏ (%d 件)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
 	case p.filter != "":
-		lines = append(lines, "絞り込み: "+termsafe.PlainLine(p.filter)+" (/ で変える)")
+		lines = append(lines, termwidth.Truncate(fmt.Sprintf("検索: %s (%d 件。/ で変える)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
 	default:
-		lines = append(lines, "")
+		lines = append(lines, termwidth.Truncate("/ で検索 (名前の一部。空白で区切ると全部を含むもの)", p.w, "…"))
 	}
-	end := min(p.list.Offset+p.rows(), len(vis))
-	for row, i := range vis[p.list.Offset:end] {
+	off := p.page()
+	end := min(off+p.rows(), len(vis))
+	for row, i := range vis[min(off, len(vis)):end] {
 		it := p.items[i]
 		cur := "  "
-		if p.list.Offset+row == p.list.Cursor {
+		if off+row == p.list.Cursor {
 			cur = "▶ "
 		}
 		box := "[ ]"
@@ -194,9 +224,9 @@ func (p *Picker) Lines() []string {
 	for len(lines) < p.rows()+2 {
 		lines = append(lines, "")
 	}
-	help := "Space / x: 切り替え  /: 絞り込み  Enter: 保存して終わる  q: 保存せずに終わる"
+	help := "Space/x 切り替え  n/p ページ  / 検索  Enter 保存して終わる  q 保存せずに終わる"
 	if p.filtering {
-		help = "文字: 絞り込む  Enter: 決める  Esc: 絞り込みを消す"
+		help = "文字: 検索する  Enter: 決める  Esc: 検索を消す"
 	}
 	return append(lines, "", termwidth.Truncate(help, p.w, "…"))
 }
