@@ -22,6 +22,7 @@ func link(ch, ts string) string {
 // 板の発言へのリンクを貼った発言を、話題の「この話題への言及」に出す。自分の発言が引用されたものは「あなたの発言」と書く。
 // 板に無い発言へのリンク・同じ単位の中で自分の単位を指すリンクは言及にしない。スレッドだけを指すリンク (板に無い返信) でも
 // スレッドが板にあれば、その話題に付ける。期間の始まりより前の候補まで読んだら、次のページを頼まない。
+// ボットの投稿 (user の無いもの・is_bot のユーザー・Slackbot) は言及にしない。
 func TestMentionsAreCollectedPerTopic(t *testing.T) {
 	since := now.Add(-48 * time.Hour).Unix()
 	mine, other, parent := ts(since+100), ts(since+200), ts(since+300)
@@ -39,6 +40,9 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 				found("C9", "random", ts(since+900), "U1", "これどう思う? "+link("C1", mine)),
 				found("C9", "random", ts(since+800), "U1", "関係ない "+link("C1", ts(since-99999))),
 				found("C9", "random", ts(since+850), "U1", "別のチャンネルの同じ ts "+link("C7", mine)),
+				found("C5", "kudos", ts(since+860), "", "リアクションで流れた "+link("C1", mine)),
+				found("C5", "kudos", ts(since+870), "B1", "ボットが要約した "+link("C1", mine)),
+				found("C5", "kudos", ts(since+880), "USLACKBOT", "リマインダー "+link("C1", mine)),
 				found("C1", "dev", ts(since+310), "U1", "上を見て "+link("C1", parent)),
 				found("C8", "ops", ts(since+700), "ME", "共有 <https://ws.slack.com/archives/C1/p"+strings.ReplaceAll(ts(since+305), ".", "")+"?thread_ts="+parent+"&cid=C1>"),
 			}, ",") + "]",
@@ -75,8 +79,8 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 	if !strings.Contains(outage, "この話題への言及 (1 件)") || !strings.Contains(outage, "[#ops] 共有") || strings.Contains(outage, "[#dev]") {
 		t.Errorf("スレッドへの言及 (板に無い返信へのリンク) が出ない・同じスレッドの中のリンクを言及にした:\n%s", outage)
 	}
-	if strings.Contains(md, "関係ない") || strings.Contains(md, "読まないはず") || strings.Contains(md, "別のチャンネルの同じ ts") || strings.Contains(md, "期間の前の引用") {
-		t.Errorf("板に無い発言・別のチャンネルの発言への言及、期間より前まで読んだ後の候補を出した:\n%s", md)
+	if strings.Contains(md, "関係ない") || strings.Contains(md, "読まないはず") || strings.Contains(md, "別のチャンネルの同じ ts") || strings.Contains(md, "期間の前の引用") || strings.Contains(md, "kudos") {
+		t.Errorf("板に無い発言・別のチャンネルの発言への言及、期間より前まで読んだ後の候補、ボットの投稿を出した:\n%s", md)
 	}
 	pages := 0
 	for _, c := range sl.calls {

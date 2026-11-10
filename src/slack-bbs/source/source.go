@@ -109,6 +109,7 @@ type user struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	RealName string `json:"real_name"`
+	IsBot    bool   `json:"is_bot"`
 	Profile  struct {
 		RealName    string `json:"real_name"`
 		DisplayName string `json:"display_name"`
@@ -180,22 +181,41 @@ func (c Client) Whoami(ctx context.Context) (Me, error) {
 	return me, nil
 }
 
-// Names は user ID から表示名への表。ボットと無効化済みのユーザーも含める (含めないと退職者・ボットの発言が ID のまま出る)。
-func (c Client) Names(ctx context.Context) (map[string]string, error) {
+// Users はワークスペースのユーザー。Names は user ID から表示名への表で、ボットと無効化済みのユーザーも含める
+// (含めないと退職者・ボットの発言が ID のまま出る)。Bots はボットの user ID の集合。
+type Users struct {
+	Names map[string]string
+	Bots  map[string]bool
+}
+
+// slackbotID は Slackbot の user ID。users.list は Slackbot の is_bot を偽で返すので、ボットの集合へ名指しで足す。
+const slackbotID = "USLACKBOT"
+
+// Users はワークスペースのユーザーを読む。
+func (c Client) Users(ctx context.Context) (Users, error) {
 	var us []user
 	if _, err := c.decode(ctx, &us, "users", "-json", "-bots", "-deleted"); err != nil {
-		return nil, err
+		return Users{}, err
 	}
-	names := make(map[string]string, len(us))
+	r := Users{Names: make(map[string]string, len(us)), Bots: map[string]bool{slackbotID: true}}
 	for _, u := range us {
+		if u.IsBot {
+			r.Bots[u.ID] = true
+		}
 		for _, n := range []string{u.Profile.DisplayName, u.RealName, u.Profile.RealName, u.Name} {
 			if n != "" {
-				names[u.ID] = n
+				r.Names[u.ID] = n
 				break
 			}
 		}
 	}
-	return names, nil
+	return r, nil
+}
+
+// IsBot は search の 1 件 f がボットの投稿かを返す。user の無い投稿 (Reacji Channeler・incoming webhook などの
+// 古い形のボット) もボットに数える。search.messages は bot_id を返さない (実測 2026-11-11: 6 チャンネル 1,200 件で 0 件)。
+func (us Users) IsBot(f Found) bool {
+	return f.User == "" || us.Bots[f.User]
 }
 
 // Channels はワークスペースのチャンネルの一覧。

@@ -358,14 +358,14 @@ func eachChannel(ctx context.Context, o options, d deps, stderr io.Writer, fn fu
 	if err != nil {
 		return err
 	}
-	names, err := cli.Names(ctx)
+	us, err := cli.Users(ctx)
 	if err != nil {
 		return err
 	}
 	var failed []string
 	for _, ch := range targets {
 		err := func() error {
-			c, err := collect(ctx, o, cli, me, names, ch)
+			c, err := collect(ctx, o, cli, me, us, ch)
 			if err != nil {
 				return err
 			}
@@ -528,8 +528,8 @@ func warnDropped(stderr io.Writer, name string, dropped board.Dropped) {
 
 // identity は読み直しで使う、自分とユーザーの名前 (slack-cli の whoami と users)。
 type identity struct {
-	me    source.Me
-	names map[string]string
+	me source.Me
+	us source.Users
 }
 
 // browse は読む画面を開く。読み直しのたびに取得から分類までをやり直す (分類は claude -p)。画面の中では stderr が見えないので、
@@ -548,21 +548,21 @@ func browse(ctx context.Context, o options, d deps) error {
 		identMu sync.Mutex
 		ident   *identity
 	)
-	identify := func(ctx context.Context) (source.Me, map[string]string, error) {
+	identify := func(ctx context.Context) (source.Me, source.Users, error) {
 		identMu.Lock()
 		defer identMu.Unlock()
 		if ident == nil {
 			me, err := cli.Whoami(ctx)
 			if err != nil {
-				return source.Me{}, nil, err
+				return source.Me{}, source.Users{}, err
 			}
-			names, err := cli.Names(ctx)
+			us, err := cli.Users(ctx)
 			if err != nil {
-				return source.Me{}, nil, err
+				return source.Me{}, source.Users{}, err
 			}
-			ident = &identity{me, names}
+			ident = &identity{me, us}
 		}
-		return ident.me, ident.names, nil
+		return ident.me, ident.us, nil
 	}
 	// 画面を閉じたら、走っている読み直し (slack-cli と claude -p) を止め、終わるのを待ってから戻る。
 	// 待たないと、戻った直後の os.Exit で子を止める前にこのプロセスが終わり、claude が走り続けて費用がかかる。
@@ -603,11 +603,11 @@ func browse(ctx context.Context, o options, d deps) error {
 		} else {
 			o.until = now
 		}
-		me, names, err := identify(ctx)
+		me, us, err := identify(ctx)
 		if err != nil {
 			return render.Page{}, err
 		}
-		c, err := collect(ctx, o, cli, me, names, ch)
+		c, err := collect(ctx, o, cli, me, us, ch)
 		if err != nil {
 			return render.Page{}, err
 		}
@@ -820,7 +820,7 @@ func channelsToRead(o options, d deps) ([]subs.Channel, error) {
 // maxThreadErrNotes は、読めなかったスレッドを 1 本ずつ注記に出す上限。
 const maxThreadErrNotes = 3
 
-func collect(ctx context.Context, o options, cli source.Client, me source.Me, names map[string]string, ch subs.Channel) (collected, error) {
+func collect(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel) (collected, error) {
 	sinceTs := board.TsOf(o.since.Unix())
 	hist, err := cli.History(ctx, ch.ID, board.TsOf(o.lookback.Unix()))
 	if err != nil {
@@ -856,7 +856,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, na
 	if failed > maxThreadErrNotes {
 		notes = append(notes, fmt.Sprintf("ほか %d 本のスレッドも読めなかった", failed-maxThreadErrNotes))
 	}
-	units, err := board.Build(board.Input{History: hist.Msgs, Threads: threads, Since: sinceTs, Me: me.UserID, Names: names})
+	units, err := board.Build(board.Input{History: hist.Msgs, Threads: threads, Since: sinceTs, Me: me.UserID, Names: us.Names})
 	if err != nil {
 		return collected{}, err
 	}
@@ -876,7 +876,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, na
 		// 言及の検索の失敗ではチャンネルを止めない (板は出し、注記で知らせる)。取り消しは止める
 		// after: は日付で、その日を含まず、日の境はローカルの日付とずれる (実測 2026-11-11: after:11-09 の最も古い結果が 11-09 23:49 UTC)。
 		// 2 日の余裕を取り、期間の始まりより前の結果は findMentions が捨てる
-		ms, truncated, err := findMentions(ctx, cli, ch, sinceTs, o.since.AddDate(0, 0, -2).Format("2006-01-02"), units, me.UserID, names)
+		ms, truncated, err := findMentions(ctx, cli, ch, sinceTs, o.since.AddDate(0, 0, -2).Format("2006-01-02"), units, me.UserID, us)
 		if err != nil && ctx.Err() != nil {
 			return collected{}, err
 		}

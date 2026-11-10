@@ -58,7 +58,7 @@ func (f *fakeSlack) run(args []string) ([]byte, error) {
 		}
 		return []byte(`{"user_id":"ME","url":"https://ws.slack.com/"}`), nil
 	case "users":
-		return []byte(`[{"id":"U1","name":"tanaka"},{"id":"ME","name":"me"}]`), nil
+		return []byte(`[{"id":"U1","name":"tanaka"},{"id":"ME","name":"me"},{"id":"B1","name":"ai-bot","is_bot":true}]`), nil
 	case "channels":
 		return []byte(`[{"id":"C1","name":"dev","is_member":true}]`), nil
 	case "history":
