@@ -28,6 +28,8 @@ obaket の Box 対応の子 issue (epic `box`) を反証レビューの指摘で
 - 実際: rc=0、「呼び出しなし」。素の `validate` (30,950 B) には該当の呼び出しがある。`callers DropboxPKCE.generate` も 0 件で、素の `generate` なら 4 件。
 - 種類: 見逃し (不存在の誤答)。`refs` は同じ形を rc=2 で拒否済みだった。
 - 対応: `callers` も rc=2 で拒否し、単独名で探し直す `next_action` を出すようにした。判定を `parseQualifiedQuery` に寄せた。
+- 対応 commit: `fix(dupscan): callers に Type.member を渡したら、呼び出しなしと答えず拒否する`。
+- 確かめたこと: obaket の repo root と `Storage/HTTP` の両方の起点で、直す前は rc=0 で 0 件、直した後は rc=2 で stdout 空。変異 4 種 (拒否を外す、`-selector` を next_action から落とす、ラベルを落とす、点の演算子を拒否する) で red を確認した。`-selector` の変異は最初に緑で通り、fixture に同名の別の `Join` を足して red にした。
 
 ### F2 `index -name` は型の名前を引かず、0 件のときに `def` へ案内しない
 
@@ -65,6 +67,20 @@ obaket の Box 対応の子 issue (epic `box`) を反証レビューの指摘で
 - 実際: Bash 269 回のうち dupscan は 0 回。grep の案内の hook は 3 本で 1 回ずつ出たが、その後も grep が続いた。
 - 種類: 入口。
 - 提案: 指示で「使ってよい」と書くだけでは使われない。Swift の定義と呼び出し元を確かめる作業の指示は、最初の手段として dupscan を名指しする形にする。
+
+## 検証の結果
+
+`make -C src/dupscan test lint` は rc=0。ルートの `make test` は rc=2 で赤のまま push した。
+
+- 赤の内訳: Go の 3 パッケージ (`mac-lan-manager/setup`、`pro-con/ui`、`ratelimit/usage`) と、シェルのテスト 4 本 (`test_claude_bin`、`test_dangling_symlinks`、`test_ratelimit_warn`、`test_tmux`)。
+- 変更は `src/dupscan` だけで、3 パッケージの go.mod は dupscan を参照しない。
+- Go の 3 パッケージと `test_claude_bin`、`test_ratelimit_warn`、`test_tmux` は、単独で流し直すと通った (実行時の load average は 17 前後)。
+- `test_dangling_symlinks` は手元の壊れたリンク 2 本で落ちたまま (`~/.claude/rules/ping-poing-immediate-reply.md`、`~/.config/nvim/coc-settings.json`)。
+
+## 残タスク
+
+- 未着手: F2〜F6。F2 と F3 は別のセッションが同じファイルを修正中なので、その後に見る。
+- 未調査: `MoveReconcileExecutor.swift` が読めない原因。
 
 ## 関連
 
