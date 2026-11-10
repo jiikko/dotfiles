@@ -166,8 +166,18 @@ OUT=$(CLAUDE_CONFIG_DIR="$CFG" PATH="$CFG/shim:$PATH" "$HOOK" 2>"$CFG/stderr"); 
 set -e
 [ "$RC" -eq 1 ] || ng "14: rc=$RC (jq の rc=2 は 1 に丸めるべき)"
 
+# --- 15. 追跡している _claude/settings.json が、この hook の不動点である --------
+# 🚨 正規化前の形 (鍵の並びが崩れた・揮発キー入り) を commit すると、本体の checkout で次の SessionStart / ConfigChange が
+#    書き直して dirty になり、scripts/pull_main_checkout.sh の pull が止まる (2026-11-09 に skillOverrides を足した commit で起きた)。
+#    判定は hook そのものを通す (jq -S を写すと、hook が揮発キーや並べ方を変えたときに検査だけが古い規則で緑になる)。
+fixture case15; cat "$ROOT_DIR/_claude/settings.json" > "$SETTINGS"
+run
+[ "$RC" -eq 0 ] || ng "15: rc=$RC"
+cmp -s "$SETTINGS" "$ROOT_DIR/_claude/settings.json" \
+  || ng "15: _claude/settings.json が正規化後の形ではない。_claude/hooks/normalize-settings.sh を通した形で commit する (CLAUDE_CONFIG_DIR に写しを置いて走らせ、結果で置き換える)"
+
 if [ "$fails" -eq 0 ]; then
-  echo "OK: normalize-settings.sh (14 ケース)"
+  echo "OK: normalize-settings.sh (15 ケース)"
 else
   echo "✗ normalize-settings.sh: $fails 件の失敗"
   exit 1
