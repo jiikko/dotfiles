@@ -62,6 +62,22 @@ func runCallers(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
+	// 呼び出しの記録は末尾の名前だけを持つので、Type.member のまま照合すると、呼び出しがあっても 0 件になる。
+	// 黙って末尾の名前へ読み替えない: 同名の別の型の呼び出しを、指定した型のものとして読ませるため。
+	if qualified, ok, err := parseQualifiedQuery(rest[0]); err != nil {
+		return fail(err)
+	} else if ok {
+		fmt.Fprintf(stderr, "dupscan callers: %q は非対応の問い合わせ。Type.memberでは型を解決して絞れない。単独名で探すと同名の別型も含む近似になる (Go は -typed で型を解決できる)\n", rest[0])
+		var flags []string
+		if *selector != "" {
+			flags = []string{"-selector", *selector}
+		}
+		bare := callQueryText(report.CallQuery{Name: qualified.Name, Labels: qualified.Labels})
+		if err := writeNextAction(stderr, queryNextAction(sc, "callers", bare, "型で絞らず単独名の呼び出しを探す", flags...)); err != nil {
+			return fail(err)
+		}
+		return 2
+	}
 	got, err := scanSource(repo.Worktree{Scope: sc, Exts: exts}, true, analysisPlan{Options: lang.Options{Calls: true}})
 	if err != nil {
 		if q.Selector != "" {

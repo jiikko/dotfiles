@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -87,5 +90,78 @@ func TestCallersNamesEnclosingUnitAndOrdersProdFirst(t *testing.T) {
 	}
 	if _, out, _ := callers(t, "send(to:retry:)", root); len(lines(out)) != 2 || !strings.Contains(out, "Feed.swift:6 ") {
 		t.Errorf("send(to:retry:) は 1 件 (後置クロージャの無い send(to:) は、ラベルが足りないので外す): %q", out)
+	}
+}
+
+func TestQualifiedCallersRejectsFalseAbsenceAndOffersScopedRetry(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"one space[1]/A.swift": "struct Worker { func run(x: Int) {} }\nfunc use(_ w: Worker) { w.run(x: 1) }\n",
+		"outside/A.swift":      "func outside(_ w: Worker) { w.run(x: 2) }\n",
+	})
+	scope := filepath.Join(root, "one space[1]")
+	for _, tc := range []struct{ name, query, format, retry string }{
+		{"text", "Worker.run", "text", "run"},
+		{"json", "Worker.run", "json", "run"},
+		{"labels", "Worker.run(x:)", "text", "run(x:)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rc, out, errs := callers(t, tc.query, "-format", tc.format, scope)
+			if rc != 2 || out != "" || !strings.Contains(errs, "非対応の問い合わせ") || !strings.Contains(errs, "同名の別型") {
+				t.Fatalf("a qualified query must not answer no callers: rc=%d stdout=%q stderr=%q", rc, out, errs)
+			}
+			_, actionJSON, ok := strings.Cut(errs, "next_action: ")
+			if !ok {
+				t.Fatalf("missing retry: %q", errs)
+			}
+			var action nextAction
+			if err := json.Unmarshal([]byte(actionJSON), &action); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(action.Argv, tc.retry) {
+				t.Errorf("retry must query %q: %v", tc.retry, action.Argv)
+			}
+			rc, out, errs = runReport(t, action.Argv[1:]...)
+			if rc != 0 || !strings.Contains(out, "w.run(x: 1)") || strings.Contains(out, "w.run(x: 2)") {
+				t.Errorf("retry must find the call in exactly the original scope: argv=%v rc=%d stdout=%q stderr=%q", action.Argv, rc, out, errs)
+			}
+		})
+	}
+}
+
+func TestQualifiedCallersRetryKeepsSelector(t *testing.T) {
+	root := repoWith(t, map[string]string{
+		"go.mod": "module m\n\ngo 1.22\n",
+		"a.go":   "package m\n\nimport \"strings\"\n\ntype other struct{}\n\nfunc (other) Join() {}\n\nfunc use() string { other{}.Join(); return strings.Join(nil, \"\") }\n",
+	})
+	rc, out, errs := callers(t, "-selector", "strings.Join", "strings.Join", root)
+	if rc != 2 || out != "" {
+		t.Fatalf("rc=%d stdout=%q stderr=%q", rc, out, errs)
+	}
+	_, actionJSON, ok := strings.Cut(errs, "next_action: ")
+	if !ok {
+		t.Fatalf("missing retry: %q", errs)
+	}
+	var action nextAction
+	if err := json.Unmarshal([]byte(actionJSON), &action); err != nil {
+		t.Fatal(err)
+	}
+	rc, out, errs = runReport(t, action.Argv[1:]...)
+	if rc != 0 || !strings.Contains(out, "a.go:9") || strings.Count(out, "a.go:9") != 1 {
+		t.Errorf("retry must keep -selector and find the call: argv=%v rc=%d stdout=%q stderr=%q", action.Argv, rc, out, errs)
+	}
+}
+
+func TestCallersKeepsBareUnicodeEscapedAndOperatorNames(t *testing.T) {
+	root := repoWith(t, map[string]string{"A.swift": "func use() { 日本語(); `repeat`() }\n"})
+	for _, tc := range []struct {
+		query string
+		found bool
+	}{{"日本語", true}, {"`repeat`", true}, {".+.", false}, {"missing", false}} {
+		t.Run(tc.query, func(t *testing.T) {
+			rc, out, errs := callers(t, tc.query, root)
+			if rc != 0 || strings.Contains(errs, "非対応の問い合わせ") || strings.Contains(out, "呼び出しなし") == tc.found {
+				t.Errorf("bare-name semantics unchanged: rc=%d found=%v stdout=%q stderr=%q", rc, tc.found, out, errs)
+			}
+		})
 	}
 }

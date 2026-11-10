@@ -9,9 +9,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"dupscan/internal/langs"
 	"dupscan/internal/repo"
+	"dupscan/internal/report"
 	"dupscan/internal/tree"
 )
 
@@ -49,6 +52,21 @@ type nextAction struct {
 	Kind   string   `json:"kind"`
 	Reason string   `json:"reason"`
 	Argv   []string `json:"argv"`
+}
+
+// parseQualifiedQuery は識別子で始まる Type.member の問い合わせを読む。ok が false なら素の名前として扱う
+// (`.+.` のような点の演算子は、点を含んでも正しい素の名前)。
+func parseQualifiedQuery(query string) (q report.DefQuery, ok bool, err error) {
+	first, _ := utf8.DecodeRuneInString(query)
+	identifierLed := unicode.IsLetter(first) || first == '_' || first == '`'
+	if !identifierLed || !strings.Contains(query, ".") {
+		return report.DefQuery{}, false, nil
+	}
+	q, err = report.ParseDefQuery(query)
+	if err != nil {
+		return report.DefQuery{}, false, err
+	}
+	return q, q.Type != "", nil
 }
 
 func queryNextAction(sc repo.Scope, command, query, reason string, flags ...string) nextAction {
