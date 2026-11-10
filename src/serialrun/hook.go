@@ -37,11 +37,15 @@ func runHook(stdin io.Reader, stdout io.Writer) int {
 	}
 	if reason := backgroundDenial(cmd); reason != "" {
 		logHookDecision(cmd, false, "denied:background")
-		_ = json.NewEncoder(stdout).Encode(map[string]any{"hookSpecificOutput": map[string]any{
+		deny := map[string]map[string]string{"hookSpecificOutput": {
 			"hookEventName":            "PreToolUse",
 			"permissionDecision":       "deny",
 			"permissionDecisionReason": reason,
-		}})
+		}}
+		if err := json.NewEncoder(stdout).Encode(deny); err != nil {
+			// 書けないと deny は届かず、コマンドはそのまま走る。黙らせず hook.log に残す
+			logHookDecision(cmd, false, "deny を書けない: "+err.Error())
+		}
 		return 0
 	}
 	wrapped, changed, skip := wrapCommand(cmd)
