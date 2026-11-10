@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
-# PostToolUse(Bash) フック: git commit / push の直後に「実際の git state」を
+# PostToolUse(Bash) と PostToolUseFailure(Bash) のフック: git commit / push の直後に「実際の git state」を
 # モデルのコンテキストへ注入する。
+# 🚨 PostToolUse はコマンドが rc≠0 で終わると走らない (失敗は PostToolUseFailure だけが受ける。2.1.321 で実測)。
+#    push が弾かれた・commit が空振りした = 実 state を見せたい場面ほど失敗側に来るので、両方に配線する。
 #
 # なぜ: コミット/プッシュ成功を、ヘルパー関数や heredoc の出力（壊れていても
 # 「成功」と表示されうる）ではなく ground truth で検証させるため。誤った成功報告を
@@ -89,13 +91,22 @@ report_repo() {
   elif [ -z "$(git remote 2>/dev/null)" ]; then
     printf '(判定不能: remote が設定されていない — push 先が無いので「push 済み」とは言えない)\n'
   else
-    unpushed=$(git log HEAD --branches --not --remotes --oneline 2>/dev/null || true)
+    # 🚨 一覧は HEAD から辿れる分だけにする。`--branches` を混ぜると、今いない他のローカルブランチの未 push が同じ一覧に並び、
+    #    今 push したものが載ったかを読めない (ローカルブランチの多い repo では「push 済み」が二度と出ない)。
+    #    他のブランチの分は件数だけを別の行に出す (claim の hook が --branches を使うのは、今いないブランチの claim も拾うため。用途が違う)
+    unpushed=$(git log HEAD --not --remotes --oneline 2>/dev/null || true)
     if [ -n "$unpushed" ]; then
       printf '%s\n' "$unpushed" | head -20
       [ "$(printf '%s\n' "$unpushed" | wc -l | tr -d ' ')" -gt 20 ] && printf '(以下略)\n'
     else
-      printf '(none — すべて push 済み)\n'
+      printf '(none — HEAD はすべて push 済み)\n'
     fi
+    local others
+    others=$(git rev-list --count --branches --not --remotes HEAD 2>/dev/null || true)
+    case "$others" in
+      '' | 0) : ;;
+      *) printf '(ほかのローカルブランチに未 push の commit が %s 件ある。HEAD とは別なので上の一覧には含めない)\n' "$others" ;;
+    esac
   fi
   # 🚨 末尾の `[ 件数 -gt 20 ] && printf` の rc を返さない。呼び出し側は rc≠0 を「行き先に入れない」と読むので、
   # 未 push が 20 件以下の行き先に誤った判定不能が付く
@@ -160,10 +171,10 @@ state=$(
 # 何も取れなければ（git リポジトリ外など）注入しない
 [ -n "$state" ] || exit 0
 
-jq -n --arg ctx "$state" '{
+jq -n --arg ctx "$state" --arg ev "$(hook_event_name PostToolUse)" '{
   hookSpecificOutput: {
-    hookEventName: "PostToolUse",
-    additionalContext: ("git commit/push 直後の実 git state（成功報告の前にこれで検証すること）:\n" + $ctx)
+    hookEventName: $ev,
+    additionalContext: ((if $ev == "PostToolUseFailure" then "コマンドは失敗した (rc≠0)。commit / push のどこまで通ったかを、次の実 git state で確かめること:\n" else "git commit/push 直後の実 git state（成功報告の前にこれで検証すること）:\n" end) + $ctx)
   },
   suppressOutput: true
 }'

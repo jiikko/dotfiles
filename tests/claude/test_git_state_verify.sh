@@ -168,6 +168,14 @@ else
 fi
 
 # --- ③ 未 push 判定 (この hook の入口から固定する) ---------------------
+printf '\n## 失敗したコマンド (PostToolUseFailure)\n'
+# rc≠0 の Bash は PostToolUseFailure にしか来ない。返す hookEventName が入力のイベントと違うと注入が捨てられうる
+new_repo
+ev=$( ( cd "$REPO" && jq -n '{hook_event_name:"PostToolUseFailure", tool_input:{command:"git push origin HEAD:master"}}' | "$HOOK" 2>/dev/null ) | jq -r '.hookSpecificOutput.hookEventName // ""')
+[ "$ev" = PostToolUseFailure ] && pass "PostToolUseFailure には同じイベント名で返す" || bad "PostToolUseFailure に hookEventName=$ev で返した"
+ev=$(run_hook 'git push origin HEAD:master' | jq -r '.hookSpecificOutput.hookEventName // ""')
+[ "$ev" = PostToolUse ] && pass "イベント名の無い入力には PostToolUse で返す" || bad "イベント名の無い入力に hookEventName=$ev で返した"
+
 printf '\n## 未 push 判定\n'
 
 # detached worktree で commit → 「未 push」**の節に**出ること
@@ -191,6 +199,39 @@ if grep -q 'すべて push 済み' <<< "$sec"; then
   bad "未 push があるのに「すべて push 済み」と言った (積極的な偽の全クリア)"
 else
   pass "未 push があるとき「すべて push 済み」とは言わない"
+fi
+
+# HEAD を push し終えた後、今いない別のローカルブランチの未 push は一覧に混ぜず、件数だけを別に出す
+# (混ぜると、ローカルブランチの多い repo では push が通っても「push 済み」が出ず、成否を読めない)
+oth=$(mktemp -d "$TMP_ROOT/oth.XXXXXX")
+( git init -q --bare "$oth/remote.git" && git init -q "$oth/main" &&
+  cd "$oth/main" && : > f.txt && git add -A &&
+  git -c user.email=t@t -c user.name=t commit -qm init &&
+  git remote add origin "$oth/remote.git" && git push -q origin HEAD:master &&
+  git switch -q -c side && : > s.txt && git add -A &&
+  git -c user.email=t@t -c user.name=t commit -qm 'unpushed on side' &&
+  git switch -q - ) >/dev/null 2>&1
+sec=$(section "$(body_of 'git push origin HEAD:master' "$oth/main")" '--- unpushed commits')
+if grep -q 'unpushed on side' <<< "$sec"; then
+  bad "今いない別ブランチの未 push を HEAD の一覧に混ぜた"
+  printf '%s\n' "$sec"
+elif ! grep -q 'HEAD はすべて push 済み' <<< "$sec"; then
+  bad "HEAD を push し終えたのに「push 済み」が出ない"
+  printf '%s\n' "$sec"
+elif ! grep -q 'ほかのローカルブランチに未 push の commit が 1 件' <<< "$sec"; then
+  bad "別ブランチの未 push の件数を出していない"
+  printf '%s\n' "$sec"
+else
+  pass "別ブランチの未 push は HEAD の一覧に混ぜず、件数だけ出す"
+fi
+# HEAD 自身にも未 push があるとき、それを「ほかのブランチ」の件数に二重に数えない
+( cd "$oth/main" && : > h.txt && git add -A && git -c user.email=t@t -c user.name=t commit -qm 'unpushed on head' ) >/dev/null 2>&1
+sec=$(section "$(body_of 'git commit -m x' "$oth/main")" '--- unpushed commits')
+if grep -q 'unpushed on head' <<< "$sec" && grep -q 'ほかのローカルブランチに未 push の commit が 1 件' <<< "$sec"; then
+  pass "HEAD の未 push を別ブランチの件数に数えない"
+else
+  bad "HEAD の未 push の扱いが違う (HEAD の一覧に出ない / 別ブランチの件数に混ざった)"
+  printf '%s\n' "$sec"
 fi
 
 # 🚨 **判定不能を「push 済み」に丸めない**。remote が無い repo は「どこにも push していない」が

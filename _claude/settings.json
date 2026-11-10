@@ -75,6 +75,23 @@
         "matcher": "Write|Edit"
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/git-state-verify.sh",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/next-claim-push.sh",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
     "PreToolUse": [
       {
         "hooks": [

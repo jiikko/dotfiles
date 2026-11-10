@@ -201,11 +201,27 @@ else
 fi
 
 # --- 配線: hook 本体が正しくても settings.json から消えれば防御はゼロ ---
-if jq -e '[.hooks.PostToolUse[] | select(.matcher == "Bash") | .hooks[].command] | any(test("next-claim-push"))' \
-     "$ROOT_DIR/_claude/settings.json" >/dev/null 2>&1; then
+# rc≠0 で終わった Bash は PostToolUse に来ず PostToolUseFailure にだけ来る (claim の commit / push が失敗した場面ほど促しが要る)。
+# git-state-verify も同じ 2 つに配線する
+for ev in PostToolUse PostToolUseFailure; do
+  for h in next-claim-push git-state-verify; do
+    if jq -e --arg ev "$ev" --arg h "$h" '[.hooks[$ev][]? | select(.matcher == "Bash") | .hooks[].command] | any(test($h))' \
+         "$ROOT_DIR/_claude/settings.json" >/dev/null 2>&1; then
+      ok=$((ok + 1))
+    else
+      echo "✗ _claude/settings.json の $ev(Bash) に $h.sh が配線されていない"
+      fail=$((fail + 1))
+    fi
+  done
+done
+
+# --- 返すイベント名: PostToolUseFailure から呼ばれたら同じ名前で返す (違う名前の注入は捨てられうる) ---
+ev=$( ( cd "$FIRE_REPO" && jq -n '{hook_event_name:"PostToolUseFailure", tool_input:{command:"ln -s ../186-x.md issues/next/186-x.md"}}' |
+  runtimeout "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null ) | jq -r '.hookSpecificOutput.hookEventName // ""')
+if [ "$ev" = PostToolUseFailure ]; then
   ok=$((ok + 1))
 else
-  echo "✗ _claude/settings.json の PostToolUse(Bash) に next-claim-push.sh が配線されていない"
+  echo "✗ PostToolUseFailure の入力に hookEventName=$ev で返した"
   fail=$((fail + 1))
 fi
 

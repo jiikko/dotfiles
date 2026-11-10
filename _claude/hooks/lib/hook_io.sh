@@ -14,6 +14,15 @@ hook_read_bash_command() {
   HOOK_CMD=$(printf '%s' "$HOOK_INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || return 1
 }
 
+# hook_event_name <既定>: hook_read_bash_command が読んだ入力の .hook_event_name を出す (無い・読めないなら <既定>)。
+# 同じ script を PostToolUse と PostToolUseFailure (ツールが失敗したときだけ走る。PostToolUse は走らない) の両方に配線したとき、
+# 返す hookSpecificOutput.hookEventName を入力のイベントに合わせるために使う。
+hook_event_name() {
+  local ev
+  ev=$(printf '%s' "${HOOK_INPUT:-}" | jq -r '.hook_event_name // empty' 2>/dev/null)
+  printf '%s' "${ev:-$1}"
+}
+
 # hook_deny <理由>: PreToolUse で permissionDecision=deny を返して終わる (exit 0。deny は JSON で伝える)。
 hook_deny() {
   jq -n --arg reason "$1" '{

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# PostToolUse(Bash) フック: issue の目印を `issues/next/` または `issues/epic/<name>/next/` に置いた
+# PostToolUse(Bash) と PostToolUseFailure(Bash) のフック (rc≠0 で終わったコマンドは後者だけが受ける): issue の目印を `issues/next/` または `issues/epic/<name>/next/` に置いた
 # (symlink を張った / 旧運用で移した = 着手を claim した) 直後に、
 # 「その claim を単独で commit して push したか」をモデルのコンテキストへ注入する。
 #
@@ -103,9 +103,9 @@ state=$(
 # 何も取れなければ (git リポジトリ外など) 注入しない
 [ -n "$state" ] || exit 0
 
-jq -n --arg ctx "$state" '{
+jq -n --arg ctx "$state" --arg ev "$(hook_event_name PostToolUse)" '{
   hookSpecificOutput: {
-    hookEventName: "PostToolUse",
+    hookEventName: $ev,
     additionalContext: (
       "issues/next/ または issues/epic/<name>/next/ への移動 (= 着手の claim) を検出した。claim は push されて初めて他マシンから見える。\n" +
       "次の順で閉じること (規範: _claude/issue-rules.d/claim-issue-in-next-and-push.md):\n" +
