@@ -1,10 +1,8 @@
 # 1057 (research): obaket の接続の sheet の修正で dupscan を使った所見
 
-> 🚨 **担当中: Mac (glogx)**（2026-11-11〜）
-
 起票日: 2026-11-10
 
-所属: [932](932-epic-dupscan-accuracy.md)
+所属: [932](../932-epic-dupscan-accuracy.md)
 
 ## 概要
 
