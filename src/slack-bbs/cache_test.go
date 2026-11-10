@@ -154,7 +154,7 @@ func TestBrowseShowsCacheBeforeSlack(t *testing.T) {
 	if rc := run(context.Background(), []string{"C1"}, &out, &errb, d); rc != 0 {
 		t.Fatalf("rc=%d %s", rc, errb.String())
 	}
-	if !opened || !page || !strings.Contains(lines, "読み直しに失敗 (") || !strings.Contains(lines, "のキャッシュを出している)") || !strings.Contains(lines, "話題A") {
+	if !opened || !page || !strings.Contains(lines, "読み直しに失敗 (") || !strings.Contains(lines, "に読んだ板を表示中)") || !strings.Contains(lines, "話題A") {
 		t.Errorf("slack-cli の失敗で前回の板を出せなかった: opened=%v page=%v\n%s", opened, page, lines)
 	}
 }
@@ -242,7 +242,7 @@ func TestBrowseSubscriptionsOnlyWithoutArgs(t *testing.T) {
 		if rc := run(context.Background(), c.args, &out, &errb, d); rc != 0 {
 			t.Fatalf("rc=%d %s", rc, errb.String())
 		}
-		if got := strings.Contains(note, "チャンネルを指定せずに起動したとき"); got != c.bare {
+		if got := strings.Contains(note, "チャンネルを指定しないで起動したとき"); got != c.bare {
 			t.Errorf("引数 %v: 購読の画面が無い知らせ %v (want %v)\n%s", c.args, got, c.bare, note)
 		}
 	}

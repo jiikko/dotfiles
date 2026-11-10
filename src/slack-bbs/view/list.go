@@ -130,7 +130,7 @@ func (m *Model) leftLines() []string {
 		}
 		out = append(out, line)
 	}
-	return box("話題", out, m.leftWidth(), m.listRows(), !m.body)
+	return box("話題の一覧", out, m.leftWidth(), m.listRows(), !m.body)
 }
 
 // headerLine は日付の見出しの行 (「─ 11/10 (月) 今日 ────」)。罫線は薄く、日付は太字に下線で出す。

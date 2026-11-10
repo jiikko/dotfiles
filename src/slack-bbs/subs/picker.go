@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slack-bbs/source"
@@ -184,11 +185,11 @@ func (p *Picker) Lines() []string {
 	lines := []string{termwidth.Truncate(fmt.Sprintf("%s  購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", pageNo, n, len(p.items)), p.w, "…")}
 	switch {
 	case p.filtering:
-		lines = append(lines, termwidth.Truncate(fmt.Sprintf("検索: %s▏ (%d 件)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
+		lines = append(lines, termwidth.Truncate(fmt.Sprintf("名前で検索: %s▏ (%d 件が一致)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
 	case p.filter != "":
-		lines = append(lines, termwidth.Truncate(fmt.Sprintf("検索: %s (%d 件。/ で変える)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
+		lines = append(lines, termwidth.Truncate(fmt.Sprintf("名前で検索: %s (%d 件が一致。/ で検索の語を変える)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
 	default:
-		lines = append(lines, termwidth.Truncate("/ で検索 (名前の一部。空白で区切ると全部を含むもの)", p.w, "…"))
+		lines = append(lines, termwidth.Truncate("/ でチャンネルの名前を検索 (名前の一部。空白で区切ると全部を含むもの)", p.w, "…"))
 	}
 	off := p.page()
 	end := min(off+p.rows(), len(vis))
@@ -210,7 +211,7 @@ func (p *Picker) Lines() []string {
 		case it.ch.IsArchived:
 			notes = append(notes, "一覧に無い・アーカイブ済み")
 		case !it.ch.IsMember:
-			notes = append(notes, "未参加")
+			notes = append(notes, "自分は未参加")
 		}
 		line := cur + box + " #" + termsafe.PlainLine(it.ch.Name)
 		if len(notes) > 0 {
@@ -224,11 +225,17 @@ func (p *Picker) Lines() []string {
 	for len(lines) < p.rows()+2 {
 		lines = append(lines, "")
 	}
-	help := "Space/x 切り替え  n/p ページ  / 検索  Enter 保存して終わる  q 保存せずに終わる"
+	// キーの案内の 2 行 (1 行目は一覧の操作、2 行目は閉じ方)。語は略さない。幅に入らない項目は hintfit が優先度の低い方から落とす
+	ops := []hintfit.Item{{Prio: 2, Text: "Space/x 購読を付け外し"}, {Prio: 3, Text: "n/p 次・前のページ"}, {Prio: 2, Text: "/ 名前で検索"}}
+	closing := []hintfit.Item{{Prio: 1, Text: "Enter 保存して閉じる"}, {Prio: 1, Text: "q 保存せずに閉じる"}}
 	if p.filtering {
-		help = "文字: 検索する  Enter: 決める  Esc: 検索を消す"
+		ops = []hintfit.Item{{Prio: 2, Text: "文字を打つと名前で検索"}}
+		closing = []hintfit.Item{{Prio: 1, Text: "Enter 検索の語を決める"}, {Prio: 1, Text: "Esc 検索を消す"}}
 	}
-	return append(lines, "", termwidth.Truncate(help, p.w, "…"))
+	for _, items := range [][]hintfit.Item{ops, closing} {
+		lines = append(lines, termwidth.Truncate(hintfit.Fit(p.w, "  ", items), p.w, "…"))
+	}
+	return lines
 }
 
 type program struct{ p *Picker }

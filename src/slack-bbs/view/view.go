@@ -14,6 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
@@ -161,7 +162,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pickerMsg:
 		m.picking = false
 		if msg.err != nil {
-			m.toast.Show("購読の一覧を読めなかった: "+msg.err.Error(), false)
+			m.toast.Show("チャンネルの一覧を読めなかった: "+msg.err.Error(), false)
 			break
 		}
 		m.picker = msg.p
@@ -236,7 +237,7 @@ func (m *Model) loaded(msg loadedMsg) {
 		verb = "読んだ"
 	}
 	c.setPage(msg.page, msg.at, false)
-	m.toast.Show(fmt.Sprintf("#%s を%s (未読 %d)", c.ch.Name, verb, m.unreadCount(idx)), true)
+	m.toast.Show(fmt.Sprintf("#%s を%s (未読の話題 %d 件)", c.ch.Name, verb, m.unreadCount(idx)), true)
 	if idx == m.cur {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
@@ -330,7 +331,7 @@ func (m *Model) key(k string) tea.Cmd {
 		case busy == len(m.chans):
 			m.toast.Show("どのチャンネルも読み込み中なので、読み直せない (終わってからもう一度押す)", false)
 		case busy > 0:
-			m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています… (読み込み中の %d チャンネルは飛ばした)", len(cmds), busy))
+			m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています… (読み込み中の %d チャンネルは読み直さない)", len(cmds), busy))
 		default:
 			m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています…", len(cmds)))
 		}
@@ -402,7 +403,7 @@ func (m *Model) switchTo(i int) tea.Cmd {
 // openPicker は購読の画面を開く (一覧は画面の外で読む)。読んでいる間に s を重ねても 1 回だけ読む。
 func (m *Model) openPicker() tea.Cmd {
 	if m.subs == nil {
-		m.toast.Show("購読の画面は、チャンネルを指定せずに起動したときに開ける (slack-bbs sub でも選べる)", false)
+		m.toast.Show("購読するチャンネルを選ぶ画面は、チャンネルを指定しないで起動したときだけ開ける (端末の slack-bbs sub でも選べる)", false)
 		return nil
 	}
 	if m.picking {
@@ -429,7 +430,7 @@ func (m *Model) pickKey(k string) tea.Cmd {
 	}
 	sel := p.Selected()
 	if err := m.subs.Save(sel); err != nil {
-		m.toast.Show("購読を保存できなかった: "+err.Error(), false)
+		m.toast.Show("購読するチャンネルを保存できなかった: "+err.Error(), false)
 		return nil
 	}
 	return m.setChannels(sel)
@@ -458,7 +459,7 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 		}
 	}
 	m.chans = next
-	m.toast.Show(fmt.Sprintf("購読を保存した (%d 件)", len(next)), true)
+	m.toast.Show(fmt.Sprintf("購読するチャンネルを保存した (%d 件)", len(next)), true)
 	if i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID }); i >= 0 {
 		m.cur = i
 		return nil
@@ -490,18 +491,18 @@ func (m *Model) openSelected() {
 	}
 	url := p.URL(last.Last(), last)
 	if url == "" {
-		m.toast.Show("リンクを組めない (ワークスペースの URL が分からない)", false)
+		m.toast.Show("Slack のリンクを組めない (ワークスペースの URL が分からない)", false)
 		return
 	}
 	if err := m.open(url); err != nil {
-		m.toast.Show("開けなかった: "+err.Error(), false)
+		m.toast.Show("Slack で開けなかった: "+err.Error(), false)
 		return
 	}
 	m.setRead(true) // 開けなかったら既読にしない (Slack で読めていない)
 }
 
-// 画面の割り振り: 1 行目はチャンネルと状態、2 行目は注記、最後の行はキーの案内、残りが 2 つの枠 (上下の枠線で 2 行)。
-func (m *Model) paneRows() int  { return max(m.h-3, 3) }
+// 画面の割り振り: 1 行目はチャンネルと状態、2 行目は注記、最後の helpRows 行はキーの案内、残りが 2 つの枠 (上下の枠線で 2 行)。
+func (m *Model) paneRows() int  { return max(m.h-2-helpRows, 3) }
 func (m *Model) listRows() int  { return max(m.paneRows()-2, 1) }
 func (m *Model) bodyRows() int  { return max(m.paneRows()-2, 1) }
 func (m *Model) leftWidth() int { return min(max(m.w*3/10, 24), 44) }
@@ -582,8 +583,8 @@ const (
 // Lines は画面の行。toast は右下 (キーの案内の上) に重ねる。
 func (m *Model) Lines() []string {
 	lines := m.screen()
-	if box := m.toast.BoxLines(true, max(len(lines)-2, 1), m.w); len(box) > 0 && len(lines) > len(box)+1 {
-		lines = layout.OverlayRight(lines, box, m.w, true, len(lines)-1-len(box))
+	if box := m.toast.BoxLines(true, max(len(lines)-1-helpRows, 1), m.w); len(box) > 0 && len(lines) > len(box)+helpRows {
+		lines = layout.OverlayRight(lines, box, m.w, true, len(lines)-helpRows-len(box)) // キーの案内の上
 	}
 	return lines
 }
@@ -594,9 +595,9 @@ func (m *Model) screen() []string {
 		return m.picker.Lines()
 	}
 	if len(m.chans) == 0 {
-		lines := []string{"読むチャンネルがありません (s で購読を選ぶ・q で終わる)"}
+		lines := []string{"読むチャンネルがありません (s で購読するチャンネルを選ぶ・q で終わる)"}
 		if m.picking {
-			lines = append(lines, "購読の一覧を読んでいます…")
+			lines = append(lines, "チャンネルの一覧を読んでいます…")
 		}
 		if m.toast.Visible() {
 			// 行が少なく箱を重ねられないので、知らせの文を行で出す (保存できなかった・一覧を読めなかったを黙らせない)
@@ -613,7 +614,7 @@ func (m *Model) screen() []string {
 	for i := range m.paneRows() {
 		lines = append(lines, left[i]+right[i])
 	}
-	return append(lines, termwidth.Truncate(m.help(), m.w, "…"))
+	return append(lines, m.helpLines()...)
 }
 
 // header はチャンネルのタブと、今のチャンネルの状態。幅に収まらないときは今のタブと状態を残し、今のタブから遠いタブを「…」に畳む
@@ -623,7 +624,7 @@ func (m *Model) header() string {
 	for i, c := range m.chans {
 		names[i] = "#" + termsafe.PlainLine(c.ch.Name)
 		if n := m.unreadCount(i); n > 0 {
-			names[i] += fmt.Sprintf("(%d)", n)
+			names[i] += fmt.Sprintf(" (未読 %d)", n)
 		}
 	}
 	tail := ""
@@ -645,24 +646,24 @@ func (m *Model) state() string {
 	c := m.chans[m.cur]
 	switch {
 	case c.loading && c.stale:
-		return "読み直し中… (" + c.loadedAt.Format("01/02 15:04") + " のキャッシュを出している)"
+		return "読み直し中… (" + c.loadedAt.Format("01/02 15:04") + " に読んだ板を表示中)"
 	case c.loading && c.page != nil:
-		return "読み直し中… (前の板を出している)"
+		return "読み直し中… (前に読んだ板を表示中)"
 	case c.loading:
 		return "読んでいます…"
 	case c.err != nil && c.stale:
-		return "🚨 読み直しに失敗 (" + c.loadedAt.Format("01/02 15:04") + " のキャッシュを出している)"
+		return "🚨 読み直しに失敗 (" + c.loadedAt.Format("01/02 15:04") + " に読んだ板を表示中)"
 	case c.err != nil && c.page != nil:
-		return "🚨 読み直しに失敗 (前の板を出している)"
+		return "🚨 読み直しに失敗 (前に読んだ板を表示中)"
 	case c.err != nil:
 		return "🚨 読めなかった (r で読み直す)"
 	case c.stale:
-		return c.loadedAt.Format("01/02 15:04") + " のキャッシュ"
+		return c.loadedAt.Format("01/02 15:04") + " に読んだ板 (まだ読み直していない)"
 	case c.page != nil:
-		s := "最終 " + c.loadedAt.Format("15:04")
+		s := c.loadedAt.Format("15:04") + " に読んだ"
 		// 新しい発言が無くて前回の分類を使い回したときは、分類した時刻を添える (ラベルや見出しが古いと分かるように)
 		if at := c.page.ClassifiedAt; !at.IsZero() && at.Before(c.loadedAt.Add(-time.Minute)) {
-			s += " (分類は " + at.Format("01/02 15:04") + ")"
+			s += " (話題の分け方は " + at.Format("01/02 15:04") + " のまま)"
 		}
 		return s
 	}
@@ -726,12 +727,12 @@ func (m *Model) noteLine() string {
 	var s string
 	switch {
 	case m.picking:
-		s = "購読の一覧を読んでいます…"
+		s = "チャンネルの一覧を読んでいます…"
 	case c.err != nil && c.page != nil:
 		s = "🚨 " + c.err.Error()
 	case c.page != nil:
 		// 期間の行は注記があっても隠さない (注記は後ろへ足す)
-		s = fmt.Sprintf("%s 〜 %s / %s より前に始まったスレッドは見ていない",
+		s = fmt.Sprintf("読んだ期間 %s 〜 %s / %s より前に始まったスレッドは含まない",
 			c.page.Since.Format("01/02 15:04"), c.page.Until.Format("01/02 15:04"), c.page.Lookback.Format("01/02"))
 		if len(c.page.Notes) > 0 {
 			s += " / 🚨 " + c.page.Notes[0]
@@ -803,16 +804,34 @@ func (m *Model) rightLines() []string {
 	return box(title, shown, m.w-m.leftWidth(), m.bodyRows(), m.body)
 }
 
-func (m *Model) help() string {
-	s := ""
-	if m.subs != nil {
-		s = "  s 購読"
-	}
+// helpLines はキーの案内の 2 行 (1 行目は話題と本文の操作とチャンネルの切り替え、2 行目は読み直し・購読と終わる)。語は略さずに書き
+// (「s 購読」では何の画面か伝わらなかった)、幅に入らない項目は hintfit が優先度の低い方から落とす。q は最後まで残す
+func (m *Model) helpLines() []string {
+	var pane []hintfit.Item
 	if m.body {
-		return " j/k 送る  h 話題へ  o Slack  u 既読  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
+		pane = []hintfit.Item{{Prio: 2, Text: "j/k 本文を送る"}, {Prio: 2, Text: "h 話題の一覧へ戻る"}}
+	} else {
+		pane = []hintfit.Item{{Prio: 2, Text: "j/k 話題を選ぶ"}, {Prio: 2, Text: "l 本文を読む"}}
 	}
-	return " j/k 話題  l 本文  o Slack  u 既読  r 読み直す  R 全部  Tab チャンネル" + s + "  q 終わる"
+	pane = append(pane, hintfit.Item{Prio: 3, Text: "o Slack で開く"}, hintfit.Item{Prio: 3, Text: "u 既読と未読を切り替える"},
+		hintfit.Item{Prio: 4, Text: "Tab 次のチャンネル"}) // 2 行目に置くと幅 100 に収まらない
+	chans := []hintfit.Item{
+		{Prio: 3, Text: "r 今のチャンネルを読み直す"},
+		{Prio: 4, Text: "R 全チャンネルを読み直す"},
+	}
+	if m.subs != nil {
+		chans = append(chans, hintfit.Item{Prio: 3, Text: "s 購読するチャンネルを選ぶ"})
+	}
+	chans = append(chans, hintfit.Item{Prio: 1, Text: "q 終わる"})
+	out := make([]string, 0, helpRows)
+	for _, items := range [][]hintfit.Item{pane, chans} {
+		out = append(out, termwidth.Truncate(" "+hintfit.Fit(max(m.w-1, 1), "  ", items), m.w, "…"))
+	}
+	return out
 }
+
+// helpRows はキーの案内の行数。
+const helpRows = 2
 
 // View は画面を出す。
 func (m *Model) View() tea.View {

@@ -117,7 +117,7 @@ func (m *Model) toggleRead() {
 	c := &m.chans[m.cur]
 	if topicUnread(t, c.read) {
 		m.setRead(true)
-		m.toast.Show("既読にした", true)
+		m.toast.Show("この話題を既読にした", true)
 		return
 	}
 	if !topicUnread(t, nil) { // 印を消しても未読にならないなら、印は消さない (後で付いた返信の判定に要る)
@@ -125,5 +125,5 @@ func (m *Model) toggleRead() {
 		return
 	}
 	m.setRead(false)
-	m.toast.Show("未読に戻した", true)
+	m.toast.Show("この話題を未読に戻した", true)
 }

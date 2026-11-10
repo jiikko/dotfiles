@@ -73,7 +73,7 @@ slack-bbs show -key <key> <dir>                               # 検査して板�
 | `board` | 単位へのまとめ直し (`Build`)・LLM の応答の検査と並べ替え (`Assemble`)・機械で確かめるラベル |
 | `llm` | `claude -p` の引数・入力 (指示と単位の JSON)・応答の読み取り |
 | `render` | 掲示板風の Markdown |
-| `subs` | 購読の一覧の保存と、選ぶ画面 |
+| `subs` | 購読するチャンネルの一覧の保存と、それを選ぶ画面 |
 | `view` | 読む画面 (TUI)。読み直しは別の goroutine で走らせ、結果を世代で照合して古い結果を捨てる |
 | `job` | 2 段の実行のファイル (依頼・応答・一覧) の読み書きと後始末 |
 | `cache` | チャンネルごとの取得の結果 (Raw) と分類 (Summary) のキャッシュ、既読の印 (Read)。分類を使い回せるかの判定 (`Summary.Covers`) |

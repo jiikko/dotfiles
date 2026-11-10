@@ -84,7 +84,7 @@ func TestPickerSearch(t *testing.T) {
 		p.Key(k)
 	}
 	lines := strings.Join(p.Lines(), "\n")
-	if !strings.Contains(lines, "#team-dev-core") || strings.Contains(lines, "#team-ops") || strings.Contains(lines, "#Dev-random") || !strings.Contains(lines, "(1 件)") {
+	if !strings.Contains(lines, "#team-dev-core") || strings.Contains(lines, "#team-ops") || strings.Contains(lines, "#Dev-random") || !strings.Contains(lines, "(1 件が一致)") {
 		t.Errorf("「#DEV team」の検索:\n%s", lines)
 	}
 	p.Key("esc")
@@ -93,7 +93,7 @@ func TestPickerSearch(t *testing.T) {
 	}
 }
 
-// 案内とページ番号は幅 80 に収まる (q で保存せずに終わる操作を切らない)。検索の Enter / Esc で語が変わらなければページに留まる。
+// 案内とページ番号は幅 80 に収まる (q で保存せずに閉じる操作を切らない)。検索の Enter / Esc で語が変わらなければページに留まる。
 func TestPickerFitsWidthAndKeepsPage(t *testing.T) {
 	var all []source.Channel
 	for i := range 25 {
@@ -107,7 +107,7 @@ func TestPickerFitsWidthAndKeepsPage(t *testing.T) {
 			t.Errorf("%d 行目が幅 80 で切れた: %q", i, l)
 		}
 	}
-	if !strings.Contains(lines[len(lines)-1], "q 保存せずに終わる") {
+	if !strings.Contains(lines[len(lines)-1], "q 保存せずに閉じる") || !strings.Contains(lines[len(lines)-1], "Enter 保存して閉じる") {
 		t.Errorf("案内に q が無い: %q", lines[len(lines)-1])
 	}
 	p.Key("n")
@@ -119,5 +119,15 @@ func TestPickerFitsWidthAndKeepsPage(t *testing.T) {
 	p.Resize(30, 14)
 	if !strings.HasPrefix(p.Lines()[0], "ページ 2/3") {
 		t.Errorf("狭い端末でページ番号が先に切れた: %q", p.Lines()[0])
+	}
+}
+
+// 幅 40 の端末でも、購読の画面の閉じ方 (保存して閉じる・保存せずに閉じる) は両方とも案内に出る。
+func TestPickerClosingHintsAt40(t *testing.T) {
+	p := NewPicker([]source.Channel{{ID: "C1", Name: "a", IsMember: true}}, nil)
+	p.Resize(40, 10)
+	last := p.Lines()[len(p.Lines())-1]
+	if !strings.Contains(last, "Enter 保存して閉じる") || !strings.Contains(last, "q 保存せずに閉じる") {
+		t.Errorf("幅 40 の閉じ方の案内: %q", last)
 	}
 }

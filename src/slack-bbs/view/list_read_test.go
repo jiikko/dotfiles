@@ -115,7 +115,7 @@ func TestReadMarks(t *testing.T) {
 	if n := m.unreadCount(0); n != 3 {
 		t.Fatalf("開いた直後の未読 = %d, want 3", n)
 	}
-	if !strings.Contains(m.header(), "#dev(3)") {
+	if !strings.Contains(m.header(), "#dev (未読 3)") {
 		t.Errorf("タブに未読の数が無い: %q", m.header())
 	}
 	press(m, "j") // b を選ぶ
@@ -175,7 +175,7 @@ func TestReloadAllToasts(t *testing.T) {
 	m := newModel(l)
 	pending := m.Init() // C1 は読み込み中
 	press(m, "R")       // C2 を読み直す。結果を渡さないので、C1 も C2 も読み込み中のまま
-	if got := m.LastToast(); got != "1 チャンネルを読み直しています… (読み込み中の 1 チャンネルは飛ばした)" {
+	if got := m.LastToast(); got != "1 チャンネルを読み直しています… (読み込み中の 1 チャンネルは読み直さない)" {
 		t.Errorf("一部が読み込み中の R の知らせ = %q", got)
 	}
 	press(m, "R")
@@ -344,16 +344,33 @@ func TestTinyTerminalKeysAfterTabSwitch(t *testing.T) {
 	}
 }
 
-// キーの案内は幅 90 の端末に収まる (購読の画面があっても、最後の q 終わるが切れない)。
-func TestHelpFitsWidth90(t *testing.T) {
+// キーの案内は略さない語で書き、幅 100 の端末では全部の項目が入る。狭い端末では項目を落としても q 終わるは残す。
+func TestHelpIsUnabbreviatedAndFits(t *testing.T) {
 	l := &loader{calls: map[string]int{}}
 	var saved [][]subs.Channel
 	opened := 0
 	m := subsModel(l, &saved, &opened)
 	for _, body := range []bool{false, true} {
 		m.body = body
-		if w := termwidth.Of(m.help()); w > 90 {
-			t.Errorf("body=%v: 案内の幅 %d > 90: %q", body, w, m.help())
+		m.w = 100
+		help := strings.Join(m.helpLines(), "\n")
+		for _, want := range []string{"o Slack で開く", "u 既読と未読を切り替える", "r 今のチャンネルを読み直す", "R 全チャンネルを読み直す", "Tab 次のチャンネル", "s 購読するチャンネルを選ぶ", "q 終わる"} {
+			if !strings.Contains(help, want) || strings.Contains(help, "…") {
+				t.Errorf("body=%v: 幅 100 の案内に %q が無い・切れた:\n%s", body, want, help)
+			}
+		}
+		m.w = 40
+		for _, l := range m.helpLines() {
+			if termwidth.Of(l) > 40 {
+				t.Errorf("body=%v: 幅 40 で案内がはみ出した: %q", body, l)
+			}
+		}
+		if !strings.Contains(m.helpLines()[1], "q 終わる") {
+			t.Errorf("body=%v: 幅 40 で q 終わるが落ちた: %q", body, m.helpLines()[1])
+		}
+		m.w = 30 // r (26 桁) と q は並べて入らない幅: q を先に採る
+		if l := m.helpLines()[1]; !strings.Contains(l, "q 終わる") {
+			t.Errorf("body=%v: 幅 30 で q 終わるが落ちた: %q", body, l)
 		}
 	}
 }
@@ -422,7 +439,7 @@ func TestReloadStartAndFinishToasts(t *testing.T) {
 		t.Fatalf("最初の読み込みを始めた知らせ = %q info=%v", got, m.toast.Info())
 	}
 	run(m, cmd)
-	if got := m.LastToast(); got != "#dev を読んだ (未読 1)" || !m.toast.OK() {
+	if got := m.LastToast(); got != "#dev を読んだ (未読の話題 1 件)" || !m.toast.OK() {
 		t.Fatalf("読み終えた知らせ = %q", got)
 	}
 	cmd = press(m, "r")
@@ -430,7 +447,7 @@ func TestReloadStartAndFinishToasts(t *testing.T) {
 		t.Fatalf("読み直しを始めた知らせ = %q", got)
 	}
 	run(m, cmd)
-	if got := m.LastToast(); got != "#dev を読み直した (未読 1)" {
+	if got := m.LastToast(); got != "#dev を読み直した (未読の話題 1 件)" {
 		t.Fatalf("読み直した知らせ = %q", got)
 	}
 	l.err["C1"] = errors.New("claude が落ちた")
@@ -505,7 +522,7 @@ func TestActivePaneIsEmphasized(t *testing.T) {
 			t.Errorf("%s: 操作中の欄が太い枠でない: 左 %q 右 %q", when, l, r)
 		}
 		raw := m.Lines()[2]
-		title := " 話題 "
+		title := " 話題の一覧 "
 		if !leftActive {
 			title = " ⚪ 共有: a "
 		}
