@@ -140,6 +140,7 @@
 - **主張は証拠ではない**。自分 / codex / エージェントの「対応済み」「テスト green」は、diff・実行結果・外部基準で裏を取ってから受け入れる。取れないものは「未検証」と報告する
   - 🚨 **「N 箇所すべてに対応した」と書くなら N を機械で数えてから** (`git show --stat` / `grep -c`)
   - 🚨 **「等価」「挙動は変わらない」も書く前に compiler / テストで確かめる**。自分の書き換えは疑われにくい
+  - **compaction の要約にある事実 (回数・件数・どの道具が何を見つけたか) も主張**。issue・文書へ写す前に、一次の記録 (transcript・ログ) で裏を取る
 - 自分で新設した安全機構は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)、防御を外すときは [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)
 - **敵対レビューの出力こそ無検閲で採用しない**。発火条件が具体的で再現できたものだけ直し、再現しないものは記録、示せないものは「未確認リスク」として issue / 観測ポイントに落とす。推測で防御コードを足さない (作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」)
   - **「A より B が悪い」という指摘は、A が現状 (status quo) かを確かめてから採る**。レビュワーは理想と比べることがあり、事実が正しく再現できても、現状より悪化するとは限らない
