@@ -1,0 +1,48 @@
+# 1057 (research): obaket の接続の sheet の修正で dupscan を使った所見
+
+起票日: 2026-11-10
+
+所属: [932](932-epic-dupscan-accuracy.md)
+
+## 概要
+
+obaket の接続の編集モーダルで「保存したら閉じる」を直す作業 (dupscan-dogfood) で使った所見。観察の記録で、仕様や設計の主張ではないので反証レビューは省略した。既存の issue との重複照合はしていない。
+
+## 集計
+
+- 摩擦 3 件 (使い方が分かりにくい 1 / 見逃し 1 / 雑音 1)。提案は摩擦の項に 1 行ずつ添えた。
+- dupscan を打った回数 24 (def 12 / index 7 / refs 2 / gate 2 / capabilities 1)。識別子の grep に戻した回数 3 (F2 の理由 1 / 習慣で grep した 2。うち 1 回は案内の直後)。
+- 役に立った場面 2:
+  - `dupscan gate` が、テストに書いた host の写し 2 本 (`TextFieldHost.init` と `SecureFieldHost.init`) を commit 後の検査で止め、1 つの generic な host に寄せた。
+  - `dupscan def ConnectionSheetFooter` が型のメンバーを行番号つきで 2,386 byte で返し、save の入口にそのまま行けた。所要は 6.9 秒 (`time` の total)。
+
+## F1 `index -name` に `|` を渡すと、案内なしで 0 件になる
+
+- 場面: `dupscan index -name 'save|Save|dismiss|Dismiss|onSaved|close' -limit 40 shared/Sources/ObaketPresentation/Connections`
+- 期待: どれかの語に当たる単位か、`|` は使えないという案内。
+- 実際: `当たる単位なし (単位 497)`、rc 0、275 byte。`-name dismiss` は同じ実行で 22 行、4,278 byte 返った。`-name` は部分一致で、`|` を文字として探している (usage の「名前の一部」どおり)。
+- その後: 語を 1 つにして引き直した。grep の癖で `|` を書くと「無い」に見える。
+- 種類: 使い方が分かりにくい
+- 対応: 下の「直したもの」。
+
+## F2 `refs` が closure のプロパティの実装の場所 (呼び出しの引数ラベル) を出さない
+
+- 場面: `dupscan refs onSaved` (`let onSaved: (StorageConnection) async -> Void` の中身を探した)
+- 期待: `ConnectionSheetView.swift:245` の `onSaved: { connection in ... }`。保存の後に何が走るかはここに書いてある。
+- 実際: 呼び出し 1 件 (`await onSaved(connection)`) だけ、353 byte、rc 0。
+- その後: `git grep onSaved` に戻して見つけた。
+- 種類: 見逃し
+- 提案 (出力の中身): closure の型を持つプロパティの `refs` には、同じ型の初期化の引数ラベルも `[引数ラベル]` として出す。`refs ConnectionSheetFooter` の行には `ConnectionSheetFooter(` が出ていて、呼び出しの位置は分かっている。
+
+## F3 `index -returns` の 1 画面目に、戻り型が完全に一致する fixture が出ない
+
+- 場面: `dupscan index -returns StorageConnection -limit 15 macOS/ObaketTests` (テストの接続の fixture を探した)
+- 期待: `StorageFixtures.connection(...)` が先頭付近に出る。
+- 実際: 100 件中 15 件で 2,940 byte。先頭は `makeViewModel() -> StorageConnectionsViewModel` (部分一致で当たった別の型)。`StorageFixtures` は `-limit 0` で 29 行目が最初だった。
+- その後: 対象のテストの中の既存のプロパティを読んだ。
+- 種類: 雑音
+- 提案 (精度向上): 戻り型が語と完全に一致する単位 (`?` の有無を除く) を、部分一致より先に並べる。
+
+## 直したもの
+
+作業中に記入する。
