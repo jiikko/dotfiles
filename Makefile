@@ -177,7 +177,14 @@ endef
 
 # runner が起動する各テストへ空で渡す、runner 自身の集計先。テストの中で runner をわざと落とす make
 # (tests/scripts/test_test_fail_ledger.sh) が受け継ぐと、偽の失敗が外側の全腕合計と本物の記録に混ざる。
-TEST_CHILD_ENV := TEST_FAIL_LEDGER= TEST_FAILS_SUMMARY= TEST_SKIPS_SUMMARY=
+TEST_CHILD_ENV := TEST_FAIL_LEDGER= TEST_FAILS_SUMMARY= TEST_SKIPS_SUMMARY= PATH="$$TEST_PATH"
+
+# TEST_CHILD_ENV の PATH を用意する。bin にしか無い道具を素の名前で呼ぶと、手元でも CI と同じく rc=127 で落ちる
+# (CI の PATH には dotfiles の bin/ が無い。仕組みと検出しない形は scripts/test_bare_bin_guard.sh の冒頭)。
+# 並列版は sh -c の中で展開するので export する。作れないときは止める (空の PATH で走らせると全部が 127 になる)。
+define bare_bin_guard
+TEST_PATH=$$(./scripts/test_bare_bin_guard.sh "$(CURDIR)" "$(1)") && [ -n "$$TEST_PATH" ] || { echo "✗ テストへ渡す PATH を作れない (scripts/test_bare_bin_guard.sh)" >&2; exit 1; }; export TEST_PATH
+endef
 
 # 落ちたテストの一覧 $(2) (1 行 1 名前) を、種類 $(1) で落ちたテストの記録 (scripts/test_fail_ledger.sh) へ足す。
 # runner ごとに 1 回だけ呼ぶ: 全腕合計で書くと単独の target の失敗が漏れ、腕と合計の両方で書くと 2 重になる。
@@ -258,6 +265,7 @@ tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); 
 fails=$$(mktemp); skips=$$(mktemp); \
 suite_td=$$(mktemp -d) && [ -n "$$suite_td" ] || { echo "✗ 使い捨て TMPDIR を作れない (mktemp -d 失敗)。隔離なしで走らせない" >&2; exit 1; }; \
 trap 'rm -rf "$$suite_td"' EXIT; $(call record_interrupt_trap,rm -rf "$$suite_td"); \
+$(call bare_bin_guard,$$suite_td/bare-bin-stubs); \
 i=0; \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; \
 	i=$$((i+1)); td="$$suite_td/$$i"; mkdir -p "$$td"; \
@@ -297,6 +305,7 @@ tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); 
 fails=$$(mktemp); skips=$$(mktemp); ran=$$(mktemp); exp=$$(mktemp); miss=$$(mktemp); xrc=0; rc=0; \
 suite_td=$$(mktemp -d) && [ -n "$$suite_td" ] || { echo "✗ 使い捨て TMPDIR を作れない (mktemp -d 失敗)。隔離なしで走らせない" >&2; exit 1; }; \
 trap 'rm -rf "$$suite_td"' EXIT; $(call record_interrupt_trap,rm -rf "$$suite_td"); \
+$(call bare_bin_guard,$$suite_td/bare-bin-stubs); \
 printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" RAN="$$ran" SUITE_TD="$$suite_td" xargs -P $(NPROC) -n 1 sh -c \
 	'out=$$(mktemp); td=$$(mktemp -d "$$SUITE_TD/XXXXXX") || exit 1; $(TEST_CHILD_ENV) TMPDIR="$$td" "$$0" >"$$out" 2>&1; rc=$$?; \
 	rm -rf "$$td"; echo "$$0" >> "$$RAN"; \
@@ -499,7 +508,8 @@ test-zshrc:
 # 🚨 bats の stdin は /dev/null にする (while の stdin はテストの一覧。読むと後ろの .bats が黙って走らない。run_tests の注記と同じ)
 test-bats:
 	@if command -v bats >/dev/null 2>&1; then \
-		fails=$$(mktemp); $(call record_interrupt_trap,:); \
+		fails=$$(mktemp); stubs=$$(mktemp -d) || exit 1; trap 'rm -rf "$$stubs"' EXIT; $(call record_interrupt_trap,rm -rf "$$stubs"); \
+		$(call bare_bin_guard,$$stubs); \
 		find tests -type f -name '*.bats' ! -name '*helper*' | sort | \
 			while IFS= read -r t; do echo "[run] $$t"; $(TEST_CHILD_ENV) bats "$$t" </dev/null || echo "$$t" >> "$$fails"; done; \
 		$(call record_failed_tests,bats,$$fails); \

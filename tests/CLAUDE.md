@@ -154,6 +154,10 @@ userland は同じ。GNU 方言を要求する検査・ラッパーは置かな�
 - BSD の書き方で構わない。「GNU でも動くように」だけを理由に分岐を足さない
 - 🚨 **残っているのは「版」の差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow が brew の bash を PATH 先頭に出して揃えている (下の節)
+- 🚨 **PATH の差**: 開発機の PATH には `~/dotfiles/bin` があり、CI には無い。テストから bin の道具を呼ぶときはパスで呼ぶ
+  (`"$ROOT_DIR/bin/<名前>"`。`runtimeout` は `bin/lib/runtimeout.sh` の `runtimeout_resolve` が入れる `"$RUNTIMEOUT"`)。
+  make の runner は、bin にしか無い道具を素の名前で呼ぶと案内を出して rc=127 で落とす stub を PATH の先頭に置く
+  (`scripts/test_bare_bin_guard.sh`。検出しない形はその冒頭)。runner を通さない直接実行では落ちない
 
 ## 新品チェックアウトとの差 (`make test-fresh`)
 
