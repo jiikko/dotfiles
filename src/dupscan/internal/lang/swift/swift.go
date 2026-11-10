@@ -746,6 +746,7 @@ func (w *walker) definitions(root *sitter.Node) ([]lang.Definition, []lang.TypeD
 						defs = append(defs, definitionFromUnit(u, c.insideCallable))
 					} else {
 						addDefinition(n, c, name, string(tree.KindProperty), w.storedPropertySignature(n, name), nil)
+						defs[len(defs)-1].Stored = true
 					}
 				}
 			}
@@ -967,14 +968,20 @@ func (w *walker) references(root *sitter.Node) []lang.Reference {
 		pos := n.StartPosition()
 		if k == "simple_identifier" && !c.declarationName && !isGenericParameterName(parent, n, field) {
 			role := w.nameRole(parent, field, c.binding, c.afterDot)
-			if (role != tree.RoleDecl || isOptionalBindingShorthand(parent, n, field)) && role != tree.RoleLabel {
+			// 呼び出しの引数ラベル (`Foo(onSaved: …)`) は別の種類で出す。refs が、関数型の stored property の実装の場所として選んで使う
+			label := role == tree.RoleLabel && kindOf(parent) == "value_argument_label"
+			if label || (role != tree.RoleDecl || isOptionalBindingShorthand(parent, n, field)) && role != tree.RoleLabel {
+				kind := "expression_position"
+				if label {
+					kind = "argument_label"
+				}
 				row := int(pos.Row)
 				text := ""
 				if row >= 0 && row < len(lines) {
 					text = strings.TrimSpace(lines[row])
 				}
 				out = append(out, lang.Reference{
-					Name: w.text(n), Kind: "expression_position", File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
+					Name: w.text(n), Kind: kind, File: w.file, Line: row + 1, Col: int(pos.Column) + 1,
 					Text: text, Test: c.inTest, Enclosing: c.typeEnclosing, TestOwner: c.testOwner,
 				})
 			}

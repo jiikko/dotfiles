@@ -161,8 +161,16 @@ struct Box<TOnly> {
 		t.Fatal(err)
 	}
 	counts := map[string]int{}
+	labels := map[string]int{}
 	for _, r := range got.References {
+		if r.Kind == "argument_label" {
+			labels[r.Name]++
+			continue
+		}
 		counts[r.Name]++
+	}
+	if labels["labelOnly"] != 1 || len(labels) != 1 {
+		t.Errorf("呼び出しの引数ラベルは argument_label の種類で 1 件だけ出す (宣言側の externalOnly は出さない): %v", labels)
 	}
 	wants := map[string]int{
 		"AliasOnly": 1, "AssociatedOnly": 1, "TOnly": 1,

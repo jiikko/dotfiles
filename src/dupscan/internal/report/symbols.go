@@ -404,13 +404,20 @@ func ReferencesTextMore(w io.Writer, s ReferencesSummary, limit int, more string
 		if e.Test {
 			test = " [test]"
 		}
-		kind := "式の位置"
-		if e.Kind == "type_position" {
-			kind = "型の位置"
-		}
-		fmt.Fprintf(w, "%s:%d %s%s [%s] | %s\n", e.File, e.Line, caller, test, kind, e.Text)
+		fmt.Fprintf(w, "%s:%d %s%s [%s] | %s\n", e.File, e.Line, caller, test, referenceRole(e.Kind), e.Text)
 	}
 	return nil
+}
+
+// referenceRole は refs の 1 行に出す、参照の位置の印。
+func referenceRole(kind string) string {
+	switch kind {
+	case "type_position":
+		return "型の位置"
+	case "argument_label":
+		return "引数ラベル"
+	}
+	return "式の位置"
 }
 
 // resultPos は callers / def / refs の結果を並べる位置。col を持たない結果は 0 を入れる。

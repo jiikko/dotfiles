@@ -19,11 +19,7 @@ func ReferencesTextGrouped(w io.Writer, s ReferencesSummary, limit int, more str
 	}
 	rows := make([]groupedSymbolRow, 0, len(s.Entries))
 	for _, e := range s.Entries {
-		role := "式の位置"
-		if e.Kind == "type_position" {
-			role = "型の位置"
-		}
-		rows = append(rows, groupedSymbolRow{file: e.File, line: e.Line, col: e.Col, owner: e.Enclosing, test: e.Test, role: role, text: e.Text})
+		rows = append(rows, groupedSymbolRow{file: e.File, line: e.Line, col: e.Col, owner: e.Enclosing, test: e.Test, role: referenceRole(e.Kind), text: e.Text})
 	}
 	writeGroupedSymbols(w, rows, s.Matches, limit, more)
 	return nil

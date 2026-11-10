@@ -10,6 +10,7 @@ import (
 	"dupscan/internal/langs"
 	"dupscan/internal/repo"
 	"dupscan/internal/report"
+	"dupscan/internal/tree"
 )
 
 func runRefs(args []string, stdout, stderr io.Writer) int {
@@ -50,7 +51,7 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	got, err := scanSource(src, true, analysisPlan{Options: lang.Options{Refs: true}})
+	got, err := scanSource(src, true, analysisPlan{Options: lang.Options{Refs: true, Defs: true}})
 	if err != nil {
 		return fail(withNote(err, note))
 	}
@@ -80,11 +81,26 @@ func runRefs(args []string, stdout, stderr io.Writer) int {
 
 // buildReferences は走査の結果から name の参照を組み立てる (refs と context が同じ当て方を使う)。
 func buildReferences(name string, got scanned) report.ReferencesSummary {
+	labels := isClosureProperty(name, got.definitions)
 	references := make([]report.ReferenceRecord, 0, len(got.references))
 	for _, r := range got.references {
+		if r.Kind == "argument_label" && !labels {
+			continue // ラベルは普通の語 (path: など) で雑音になる。関数型の stored property の名前を引いたときだけ出す
+		}
 		references = append(references, report.ReferenceRecord{
 			Name: r.Name, Kind: r.Kind, File: r.File, Line: r.Line, Col: r.Col, Text: r.Text, Test: r.Test, Enclosing: r.Enclosing, TestOwner: r.TestOwner,
 		})
 	}
 	return report.BuildReferences(name, references, got.units, langs.IsTestPath)
+}
+
+// isClosureProperty は name が、型に -> を含む (関数型の) Swift の stored property として定義されているか。
+// 呼び出しの引数ラベル (`Foo(onSaved: { … })`) が、その closure の実装の場所になる。
+func isClosureProperty(name string, defs []lang.Definition) bool {
+	for _, d := range defs {
+		if d.Stored && tree.MatchName(d.Name) == tree.MatchName(name) && strings.Contains(d.Signature, "->") {
+			return true
+		}
+	}
+	return false
 }

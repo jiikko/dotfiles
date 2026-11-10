@@ -65,6 +65,8 @@ type Definition struct {
 	Nested     bool
 	Visibility string
 	Doc        string
+	// Stored は Swift の stored property (computed でも protocol の要件でもない)。refs が、関数型の stored property の実装の場所を出すか決めるのに読む
+	Stored bool
 	// DocStart / DocEnd は doc comment の行の範囲 (無ければ 0)。evidence が doc の後半の語から定義へ辿る
 	DocStart, DocEnd int
 }
@@ -88,7 +90,7 @@ type TypeDeclaration struct {
 	DocEnd     int
 }
 
-// Reference は refs 用の識別子の出現。Kind は type_position または expression_position。
+// Reference は refs 用の識別子の出現。Kind は type_position・expression_position・argument_label (Swift の呼び出しの引数ラベル)。
 type Reference struct {
 	Name      string
 	Kind      string
