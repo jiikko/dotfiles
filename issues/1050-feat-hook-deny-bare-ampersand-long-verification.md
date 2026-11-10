@@ -37,3 +37,39 @@
 - `_claude/rules/verify-execution-not-just-exit-code.md` の「非同期・background の完了も「成果物」で判定する」
 - retro 1030 (規範の起源)・retro 1049 (2 回目)・issue 1041 (make test の途中で木が変わったことの報告)
 - `_claude/hooks/deny-piped-push-then-destroy.sh` (同じ作りの hook)・`_claude/hooks/serial-run-wrap.sh` (同じ語を見て書き換える hook)
+
+## 進捗 (2026-11-10)
+
+### 実装: 別の hook を足さず、serial-run の hook に deny を足した
+- 「長い検証か」の判定を、`isHeavy` (src/serialrun/hook.go) が既に持っている。そのため、PreToolUse(Bash) の `serial-run hook` が scanner で「背景に回す単位が長い検証を含むか」を数え、素の `&` なら書き換えずに deny を返す (src/serialrun/background.go の `backgroundDenial`)
+  - 語の一覧を別の hook に写さずに済む
+  - 書き換え (updatedInput) と deny を同じ 1 本が出すので、対応方針 (案) の「hook 間の順番を headless の session で測る」は不要になった
+- 長い検証: `isHeavy` の対象 (make test/lint・go test・swift build/test・xcodebuild・mutate-verify(-list)) に `bin/skill-eval` と `tests/` の下の `.sh` を足したもの (`longVerification`)。直列化の対象は変えていない
+- 🚨 単位は zsh の規則で切る。Bash ツールの shell が zsh (`/opt/homebrew/bin/zsh`) だから
+  - zsh の `a && b &` は b だけを背景に回す (`sleep 2 && true &` の後の `$SECONDS` が zsh -f で 2、bash で 0)
+  - そのため `make test && echo ok &` は止めない
+- 止めない形:
+  - 長い検証のコマンド自身の nohup / setsid、直後の disown、zsh の `&|` / `&!`
+  - 後ろに wait がある形
+  - `2>&1` / `&>` / `|&`、引用や heredoc の中
+- 検出しない形は background.go の冒頭に書いた (引用で包んだ `bash -c "make test" &`、一覧に無い前置き、wait / disown の位置の作為的な形 等)
+- 入口: `_claude/hooks/serial-run-wrap.sh` の速い経路に `skill-eval` と `tests/` を足した。rule (verify-execution-not-just-exit-code.md) の該当の行と serialrun の README に hook が止めることを書いた
+- commit:
+  - feat(serial-run): 長い検証を素の & で背景に回す Bash を hook で deny する
+  - 以下の fix 4 本と README の追随
+
+### 検証
+- 変異: mutate-verify-list で 20 本すべて red
+  - 単位の切り方 (&& / ; / | の後の改行)、段の持ち上げ、制御構文の段
+  - detach の判定 (単位ごと・引数の nohup・serial-run -- を剥がす)、disown / wait
+  - skill-eval、-o の値、runHook の deny
+- 入口: 入口の速い経路の語を外す変異で tests/claude/test_serial_run_wrap.sh が red
+- 敵対的レビュー (opus) は 3 周:
+  - 1 周目: zsh と bash の違いによる誤検出 (P2) と、素通り 5 件
+  - 2 周目: `& wait` / `&|` の誤検出、パイプの空行、引数の nohup、サブシェル越しの disown
+  - 3 周目: hook が書き換えた `serial-run -- nohup … &` を止める不整合
+  - 再現したものは直し、作為的な wait / disown の位置の 2 件は §8 の stopping rule で検出しない形に書いた
+- ルートの `make test` rc=0 (rebase 後。1 回目は errchkjson で lint が落ち、直して回し直した)
+
+### 残り
+- push と `~/dotfiles` の pull の後に、headless の session で deny が実際に効くかを観測する (下に追記)
