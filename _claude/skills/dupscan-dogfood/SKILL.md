@@ -30,6 +30,9 @@ description: dupscan を実際に使って開発タスクをこなし、使っ�
 ## 0. 始める前に (3 分)
 
 1. **dotfiles の epic 932 の現状を読む**: `issues/epic/932/932-epic-dupscan-accuracy.md` の表と、直近の `946` / `948` の末尾。経緯をつかむための読み物で、ここで読んだ内容との重複照合は義務ではない (3 節)。
+   - **同じ module を前に dogfood した issue があれば (`grep -rl '<module のパス>' ~/dotfiles/issues/epic/932/`のうち名前に `dogfood` を含むもの。done/ も含む)、その issue が「寄せなかった」組の理由を、今の go.mod と実装で確かめ直す**。
+     理由は書いた時点の判断で、確かめずに書かれていることがある。成り立たなければ、その組を今回の寄せる候補に戻し、元の issue に訂正を入れる (担当中なら担当のセッションへ知らせる)
+     (2026-11-09 の tuikit: 1047 の「tuikit にテストだけの依存が増える」は、tuikit が既に testwait を取り込んでいて成り立たず、同じ日に寄せた。issue 1048)
 2. **作業 dir を作る**: **開発タスクの repo に cd してから** `d="$(skill-tmpdir dupscan-dogfood)"` (`<本体 checkout>/tmp/dupscan-dogfood/<session-id>/`)。`skill-tmpdir` は cwd の repo で場所を決めるので、起動した cwd がタスクと別の repo だと、別の repo に作業 dir ができる (2026-10-29: SAC の作業で obaket の下にでき、作り直した)。摩擦と提案のメモは `$d/friction.md` に書く。
 3. **dupscan が動くか 1 回確かめる**: `dupscan capabilities` (build に時間がかかる初回は待つ)。動かないこと自体が最初の不満になる。
 4. **他に dupscan を触っているセッションがいないか**: `src/dupscan` を直すのは 1 セッションだけ (衝突を避ける)。
