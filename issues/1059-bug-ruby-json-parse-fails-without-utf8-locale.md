@@ -16,6 +16,8 @@ UTF-8 を指定すれば通るので、lint の対象のコードとは無関係
   どれも US-ASCII の印が付いた文字列になり、日本語のバイトは不正な字になる
 - json 2.13.2 (rbenv の Ruby 3.2.2。dotfiles には `.ruby-version` が無く global の版) の `JSON.parse` は、入力を UTF-8 へ `encode` してから読むので、
   そこで Encoding::InvalidByteSequenceError になる。json 2.7.2 (Ruby 3.3.12) は同じ入力で落ちない
+- 直す前の golangci_ruleguard_key.rb を Ruby の版ごとに通すと、3.2.0・3.2.2・3.4.11 で落ち、2.6.6・2.7.8・3.0.x・3.1.x・3.3.4・3.3.12 では落ちない
+  (反証レビューで RBENV_VERSION を替えて測った。macOS の /usr/bin/ruby は 2.6.10 / json 2.1.0 で落ちない)
 - 合成した golangci-lint の設定には、モジュールの `.golangci.local.yml` の日本語の値が入る。日本語を持つモジュールだけが落ちる
 
 ### 落ちる所・落ちない所 (dotfiles の下で、LANG・LC_ALL・LC_CTYPE を外して測った)
@@ -28,7 +30,7 @@ UTF-8 を指定すれば通るので、lint の対象のコードとは無関係
 | `scripts/golangci_config.rb` | `File.read` → `YAML.safe_load` → JSON を書く | 落ちない (YAML の読み込みは通る。`tests/scripts/test_golangci_config.sh` が緑) |
 | Makefile の YAML の確かめ (`ruby -ryaml -e "YAML.safe_load(File.read(...))"`) | YAML | 落ちない (上と同じ読み方) |
 
-CI では落ちていない (同じ lint が CI で緑)。CI のシェルが UTF-8 なのか、json が古いのかは確かめていない。
+CI では落ちていない (同じ lint が CI で緑)。CI のシェルが UTF-8 なのか、CI の Ruby の json が古いのかは確かめていない (runner は xcode-27)。
 
 ### 測るときの罠
 
@@ -43,7 +45,10 @@ rbenv は `ruby <スクリプトのパス>` では、cwd ではなくスクリ�
 - `tests/scripts/test_golangci_parallel_runners.sh` の `ruby -rjson -e` に `-E UTF-8` を付ける
 - `scripts/golangci_config.rb` は変えない (落ちない)。今の挙動を下のテストで固定する
 - テスト: `test_golangci_ruleguard_key.sh` と `test_golangci_config.sh` に、LANG・LC_ALL・LC_CTYPE を外して日本語を含む設定を通す場合を足した
-  (CI のシェルは UTF-8 なので、外さないと見えない)
+  (CI のシェルは UTF-8 なので、外さないと見えない)。ruleguard_key のテストは、落ちるかではなく、`JSON.parse` に渡る文字列が UTF-8 かを
+  `JSON.parse` を包む補助 (`ruby -r`) で見る。落ちるかは json の版で決まり、3.3 系では直しを外しても緑になっていた (反証レビューの指摘)
+- テストに直接書いた `ruby -rjson -e` (golangci の 3 本のテストで 9 か所) に `-E UTF-8` を付けた。今落ちるのは parallel_runners の 1 か所 (日本語を含む合成の設定を読む) で、
+  ほかは入力が ASCII だけ。この `-E` を外す退行を見る検査は無い (CI のシェルは UTF-8 で、テストは LANG を外さない。LANG が空のシェルで回すと落ちる形でだけ見える)
 - 入口: `scripts/CLAUDE.md` に Ruby のスクリプトの節を足した (default_external・`-E UTF-8`・rbenv の版の選び方)
 
 ### 採らなかったもの
@@ -62,5 +67,6 @@ rbenv は `ruby <スクリプトのパス>` では、cwd ではなくスクリ�
 
 - [x] 直した (commit: Ruby のスクリプトが LANG の空のシェルで日本語の JSON を読めずに落ちるのを直す)
 - 検証: LANG が空のシェルで `src/zundamon-kaisetsu` の `make lint` が 0 issues。テスト 4 本 (golangci_*) が LANG が空でも UTF-8 でも緑。
-  変異 3 本が狙ったテストで red (golangci_ruleguard_key.rb の default_external を外す・golangci_config.rb の読み込みに `encode(UTF_8)` を足す・
-  parallel_runners の `-E UTF-8` を外す)。measure.rb はテストが無く、同じ読み方の再現で直す前の rc=1・直した後の rc=0 を見た
+  変異が狙ったテストで red: golangci_ruleguard_key.rb の default_external を外す (Ruby 3.2.2 と 3.3.12 の両方で。呼び出し元の RUBYOPT=-EUTF-8 を引き継いでも)・
+  読み込みを US-ASCII からの置き換えで UTF-8 にして日本語を `?` に化けさせる・golangci_config.rb の読み込みに
+  `encode(UTF_8)` を足す・parallel_runners の `-E UTF-8` を外す (LANG が空のこのシェルで)。measure.rb はテストが無く、同じ読み方の再現で直す前の rc=1・直した後の rc=0 を見た
