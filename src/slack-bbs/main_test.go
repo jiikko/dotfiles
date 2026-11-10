@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,10 +30,12 @@ type fakeSlack struct {
 	calls   [][]string
 	history string
 	threads map[string]string
-	warn    string // history の stderr (slack-cli の案内の行と、途中で切れたときの警告の行を模す)
-	failTh  bool   // thread を全部失敗させる (消えたスレッド・認証切れを模す)
-	failWho bool   // whoami を失敗させる (認証切れ・ネットワークが無いを模す)
-	me      string // whoami が返す user ID (空なら ME)
+	warn    string         // history の stderr (slack-cli の案内の行と、途中で切れたときの警告の行を模す)
+	failTh  bool           // thread を全部失敗させる (消えたスレッド・認証切れを模す)
+	failWho bool           // whoami を失敗させる (認証切れ・ネットワークが無いを模す)
+	search  map[int]string // search のページ番号 → 返す JSON (無いページは空の結果)
+	failSe  bool           // search を失敗させる
+	me      string         // whoami が返す user ID (空なら ME)
 }
 
 func (f *fakeSlack) Run(_ context.Context, args ...string) ([]byte, []byte, error) {
@@ -65,6 +68,20 @@ func (f *fakeSlack) run(args []string) ([]byte, error) {
 			return nil, errors.New("slack thread: exit status 1: thread_not_found")
 		}
 		if s, ok := f.threads[args[len(args)-1]]; ok {
+			return []byte(s), nil
+		}
+		return []byte(`[]`), nil
+	case "search":
+		if f.failSe {
+			return nil, errors.New("slack search: exit status 1: ratelimited")
+		}
+		page := 0
+		for i, a := range args {
+			if a == "-page" {
+				page, _ = strconv.Atoi(args[i+1])
+			}
+		}
+		if s, ok := f.search[page]; ok {
 			return []byte(s), nil
 		}
 		return []byte(`[]`), nil

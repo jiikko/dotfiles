@@ -43,6 +43,8 @@ type chanState struct {
 	read     map[string]string // 既読の印 (単位の ID → 読んだときの単位の最後の発言の ts)
 	// unread は未読の話題の数の覚え (タブに出す。描くたびに全チャンネルの全発言を数え直さない)。page か read を変えたら捨てる
 	unread *int
+	// mentions は単位の ID → その単位の発言への言及 (page を置き換えるたびに作り直す。未読と既読の印に使う)
+	mentions map[string][]render.Mention
 }
 
 // Model は画面の状態。
@@ -110,6 +112,10 @@ func (m *Model) Preload(i int, p render.Page, at time.Time) {
 func (c *chanState) setPage(p render.Page, at time.Time, stale bool) {
 	c.page, c.err, c.loadedAt, c.stale, c.hl = &p, nil, at, stale, newHighlighter(p)
 	c.rows = buildRows(p.Topics, time.Local)
+	c.mentions = map[string][]render.Mention{}
+	for _, mn := range p.Mentions {
+		c.mentions[mn.Unit] = append(c.mentions[mn.Unit], mn)
+	}
 	c.unread = nil
 }
 

@@ -2,6 +2,7 @@ package view
 
 import (
 	"slack-bbs/board"
+	"slack-bbs/render"
 )
 
 // Reads は既読の印を残す口。印はチャンネルごとに「単位の ID → 読んだときの単位の最後の発言の ts」。nil なら印は画面を閉じるまでしか残らない。
@@ -36,21 +37,37 @@ func (m *Model) loadRead(i int) {
 	}
 }
 
-// unitUnread は単位に、印より後の他人の期間内の発言があるか。自分の発言と、文脈として出した期間前の発言は数えない
-// (自分が返信しただけのスレッドを未読にしない)。
-func unitUnread(u board.Unit, read map[string]string) bool {
+// unitUnread は単位に、印より後の他人の期間内の発言か、印より後の他人の言及 (ms。別のチャンネルでこの単位の発言のリンクを貼った発言) があるか。
+// 自分の発言・自分の言及と、文脈として出した期間前の発言は数えない (自分が返信しただけのスレッドを未読にしない)。
+func unitUnread(u board.Unit, read map[string]string, ms []render.Mention) bool {
 	mark, ok := read[u.ID]
 	for _, msg := range u.Msgs {
 		if msg.New && !msg.Mine && (!ok || board.TsBefore(mark, msg.Ts)) {
 			return true
 		}
 	}
+	for _, mn := range ms {
+		if !mn.Mine && (!ok || board.TsBefore(mark, mn.Ts)) {
+			return true
+		}
+	}
 	return false
 }
 
-func topicUnread(t board.Topic, read map[string]string) bool {
+// unitLast は単位を読んだ印に書く ts: 単位の最後の発言か、それより後の言及。
+func unitLast(u board.Unit, ms []render.Mention) string {
+	last := u.Last()
+	for _, mn := range ms {
+		if board.TsBefore(last, mn.Ts) {
+			last = mn.Ts
+		}
+	}
+	return last
+}
+
+func topicUnread(t board.Topic, read map[string]string, mentions map[string][]render.Mention) bool {
 	for _, u := range t.Units {
-		if unitUnread(u, read) {
+		if unitUnread(u, read, mentions[u.ID]) {
 			return true
 		}
 	}
@@ -68,7 +85,7 @@ func (m *Model) unreadCount(i int) int {
 	}
 	n := 0
 	for _, t := range c.page.Topics {
-		if topicUnread(t, c.read) {
+		if topicUnread(t, c.read, c.mentions) {
 			n++
 		}
 	}
@@ -87,8 +104,9 @@ func (m *Model) setRead(read bool) {
 	for _, u := range t.Units {
 		if read {
 			// 印は進めるだけ (前回のキャッシュの古い板の上で選んでも、後の返信まで読んだ印を戻さない)
-			if mark, had := c.read[u.ID]; !had || board.TsBefore(mark, u.Last()) {
-				c.read[u.ID] = u.Last()
+			last := unitLast(u, c.mentions[u.ID])
+			if mark, had := c.read[u.ID]; !had || board.TsBefore(mark, last) {
+				c.read[u.ID] = last
 				changed = true
 			}
 		} else if _, had := c.read[u.ID]; had {
@@ -115,12 +133,12 @@ func (m *Model) toggleRead() {
 		return
 	}
 	c := &m.chans[m.cur]
-	if topicUnread(t, c.read) {
+	if topicUnread(t, c.read, c.mentions) {
 		m.setRead(true)
 		m.toast.Show("この話題を既読にした", true)
 		return
 	}
-	if !topicUnread(t, nil) { // 印を消しても未読にならないなら、印は消さない (後で付いた返信の判定に要る)
+	if !topicUnread(t, nil, c.mentions) { // 印を消しても未読にならないなら、印は消さない (後で付いた返信の判定に要る)
 		m.toast.Show("この話題には期間内の他の人の発言が無いので、未読にできない", false)
 		return
 	}

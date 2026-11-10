@@ -247,3 +247,30 @@ func (c Client) Thread(ctx context.Context, channel, parentTs string) (Fetched, 
 	f.Truncated, f.Warning = len(f.Msgs) >= ThreadLimit, warn
 	return f, nil
 }
+
+// Found は slack-cli の search の -json の 1 件 (使う欄だけ)。search.messages は channel をオブジェクトで返す。
+type Found struct {
+	Ts        string `json:"ts"`
+	User      string `json:"user"`
+	Username  string `json:"username"`
+	Text      string `json:"text"`
+	Permalink string `json:"permalink"`
+	Channel   struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"channel"`
+}
+
+// SearchCount は search の 1 ページの件数 (search.messages の count の上限)。
+const SearchCount = 100
+
+// Search は query に一致する発言の page ページ目 (新しい順)。
+//
+// 🚨 返る件数で終わりを判定しない: search.messages は権限で見えない発言を落としてから返すので、続きがあるページでも count より
+// 少なく返り (実測 2026-11-11: 1 ページ目が 65 件で 2 ページ目が 100 件)、範囲より後ろのページを頼んでも空にならない
+// (50 ページ目も 100 件)。終わりは呼び出し側が発言の時刻で決める。
+func (c Client) Search(ctx context.Context, query string, page int) ([]Found, error) {
+	var fs []Found
+	_, err := c.decode(ctx, &fs, "search", "-json", "-n", strconv.Itoa(SearchCount), "-page", strconv.Itoa(page), query)
+	return fs, err
+}

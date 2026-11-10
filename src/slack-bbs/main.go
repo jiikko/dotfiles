@@ -710,7 +710,7 @@ func prepare(ctx context.Context, o options, dir string, d deps, stdout, stderr 
 			return err
 		}
 		req := job.Request{Channel: id, ChannelName: c.page.ChannelName, Since: c.page.Since, Until: c.page.Until,
-			Lookback: c.page.Lookback, Base: c.page.Base, Notes: c.page.Notes, Units: c.units}
+			Lookback: c.page.Lookback, Base: c.page.Base, Notes: c.page.Notes, Units: c.units, Mentions: c.page.Mentions}
 		if err := job.Add(dir, &m, req, prompt); err != nil {
 			return err
 		}
@@ -751,7 +751,7 @@ func show(dir, key string, asJSON, keep bool, stdout, stderr io.Writer) error {
 			continue
 		}
 		p := render.Page{Channel: r.Channel, ChannelName: r.ChannelName, Since: r.Since, Until: r.Until, Lookback: r.Lookback,
-			Base: r.Base, Notes: r.Notes}
+			Base: r.Base, Notes: r.Notes, Mentions: r.Mentions}
 		if len(r.Units) > 0 {
 			p.Topics = assemble(stderr, r.ChannelName, r.Units, resp)
 		}
@@ -871,6 +871,17 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, na
 	}
 	if hist.Truncated {
 		c.page.Notes = append(c.page.Notes, fmt.Sprintf("history が上限 %d 件で切れた。-lookback を短くする", source.HistoryLimit))
+	}
+	if len(units) > 0 {
+		// 言及の検索の失敗ではチャンネルを止めない (板は出し、注記で知らせる)。取り消しは止める
+		ms, truncated, err := findMentions(ctx, cli, ch, sinceTs, o.since.AddDate(0, 0, -1).Format("2006-01-02"), units, me.UserID, names)
+		if err != nil && ctx.Err() != nil {
+			return collected{}, err
+		}
+		c.page.Mentions = ms
+		if n := mentionNote(truncated, err); n != "" {
+			notes = append(notes, n)
+		}
 	}
 	c.page.Notes = append(c.page.Notes, notes...)
 	return c, nil

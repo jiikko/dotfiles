@@ -23,6 +23,7 @@ import (
 
 	"atomicfile"
 	"slack-bbs/board"
+	"slack-bbs/render"
 	"slack-bbs/source"
 )
 
@@ -40,6 +41,8 @@ type Request struct {
 	Base        string       `json:"base"`
 	Notes       []string     `json:"notes,omitempty"`
 	Units       []board.Unit `json:"units"`
+	// Mentions は板の発言への言及 (分類する側には渡さない。show が板に付ける)
+	Mentions []render.Mention `json:"mentions,omitempty"`
 }
 
 // Manifest は prepare が書いたチャンネルの一覧。show はここに載ったファイルだけを読み、消す。

@@ -1,6 +1,7 @@
 package view
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"slack-bbs/board"
+	"slack-bbs/render"
 	"slack-bbs/subs"
 )
 
@@ -230,5 +232,49 @@ func TestPickerAndTinyTerminalFollowTUIGuide(t *testing.T) {
 	press(tiny, "q")
 	if !tiny.quitting {
 		t.Error("小さい端末で、本文の欄を開いたまま q を押しても終わらない")
+	}
+}
+
+// 板の発言への言及は本文の「この話題への言及」に出る。既読にした話題でも、その後に他の人の言及が付けば未読に戻り、選べば既読になる。
+// 自分の言及では未読にしない。
+func TestMentionsMakeTopicUnread(t *testing.T) {
+	a := topicAt("a", day0)
+	var mentions []render.Mention
+	load := func(context.Context, subs.Channel) (render.Page, error) {
+		return render.Page{Channel: "C1", ChannelName: "dev", Since: day0, Until: day0, Lookback: day0,
+			Topics: []board.Topic{a, topicAt("b", day0.Add(-time.Hour))}, Mentions: mentions}, nil
+	}
+	m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, load, nil, func() time.Time { return day0 }))
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+	run(m, m.Init())
+	press(m, "l") // a を既読にする
+	press(m, "h")
+	if n := m.unreadCount(0); n != 1 {
+		t.Fatalf("前提: 未読 %d, want 1 (b だけ)", n)
+	}
+	mention := func(ts time.Time, mine bool) render.Mention {
+		return render.Mention{Unit: a.Units[0].ID, Target: a.Units[0].ID, TargetName: "me", TargetMine: true, Ts: tsAt(ts),
+			Name: "sato", Mine: mine, ChannelName: "random", Text: "これどう思う?"}
+	}
+	mentions = []render.Mention{mention(day0.Add(time.Minute), true)}
+	run(m, press(m, "r"))
+	if n := m.unreadCount(0); n != 1 {
+		t.Errorf("自分の言及で未読になった: 未読 %d", n)
+	}
+	mentions = append(mentions, mention(day0.Add(2*time.Minute), false))
+	run(m, press(m, "r"))
+	if n := m.unreadCount(0); n != 2 {
+		t.Fatalf("既読の後に付いた他の人の言及で未読に戻らない: 未読 %d", n)
+	}
+	press(m, "l")
+	m.toast.Clear()
+	body := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), "")
+	for _, want := range []string{"▍この話題への言及 (2 件)", "sato: [#random] これどう思う?", "↳ あなたの発言"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("本文の欄に %q が無い:\n%s", want, body)
+		}
+	}
+	if n := m.unreadCount(0); n != 1 {
+		t.Errorf("言及の付いた話題を開いても既読にならない: 未読 %d", n)
 	}
 }

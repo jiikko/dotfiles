@@ -7,6 +7,7 @@ package render
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,42 @@ type Page struct {
 	Notes       []string      `json:"notes,omitempty"`
 	// ClassifiedAt は話題に分けた時刻。新しい発言が無くて前回の分類を使い回したときは、取得より前になる (ゼロは分類していない)
 	ClassifiedAt time.Time `json:"classified_at"`
+	// Mentions はこの板の発言への言及 (別のチャンネル・別の話題で、発言のリンクを貼った発言)。分類 (LLM) には渡さない
+	Mentions []Mention `json:"mentions,omitempty"`
+}
+
+// Mention は板の発言へのリンクを貼った発言 1 件。Unit は言及された発言の単位 (話題への振り分けと既読の印に使う)。
+type Mention struct {
+	Unit        string `json:"unit"`
+	Target      string `json:"target"`       // 言及された発言の ts (スレッドだけを指すリンクならスレッドの親の ts)
+	TargetName  string `json:"target_name"`  // 言及された発言の書き手
+	TargetMine  bool   `json:"target_mine"`  // 言及された発言が自分のものか
+	Ts          string `json:"ts"`           // 言及した発言の ts
+	Name        string `json:"name"`         // 言及した人
+	Mine        bool   `json:"mine"`         // 言及したのが自分か (自分の言及では未読にしない)
+	ChannelName string `json:"channel_name"` // 言及した発言のチャンネル
+	Text        string `json:"text"`         // mrkdwn をほどいた本文
+	URL         string `json:"url"`          // 言及した発言の permalink
+}
+
+// MentionsOf は話題 t の発言への言及 (古い順)。
+func (p Page) MentionsOf(t board.Topic) []Mention {
+	var out []Mention
+	for _, m := range p.Mentions {
+		if slices.ContainsFunc(t.Units, func(u board.Unit) bool { return u.ID == m.Unit }) {
+			out = append(out, m)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b Mention) int {
+		switch {
+		case board.TsBefore(a.Ts, b.Ts):
+			return -1
+		case board.TsBefore(b.Ts, a.Ts):
+			return 1
+		}
+		return 0
+	})
+	return out
 }
 
 var stateMark = map[string]string{
@@ -181,7 +218,35 @@ func (p Page) Body(t board.Topic, md bool) []string {
 		}
 		out = append(out, p.unit(u, md)...)
 	}
+	if ms := p.MentionsOf(t); len(ms) > 0 {
+		out = append(out, "", heading(fmt.Sprintf("この話題への言及 (%d 件)", len(ms))))
+		for _, m := range ms {
+			if md {
+				out = append(out, "")
+			}
+			out = append(out, mentionLines(m, md)...)
+		}
+	}
 	return out
+}
+
+// mentionLines は言及 1 件の行: 発言と同じ「時刻 名前: 本文」の形 (読む画面が発言の頭として色を付ける) に、チャンネルと
+// 何を引用したか (自分の発言なら「あなたの発言」) を添える。
+func mentionLines(m Mention, md bool) []string {
+	lines := strings.Split(m.Text, "\n")
+	out := []string{fmt.Sprintf("    %s %s: [#%s] %s", tsTime(m.Ts).Format("01/02 15:04"), clean(m.Name), clean(m.ChannelName), clean(lines[0]))}
+	for _, l := range lines[1:] {
+		out = append(out, "      "+clean(l))
+	}
+	whose := clean(m.TargetName) + " の発言"
+	if m.TargetMine {
+		whose = "あなたの発言"
+	}
+	cite := fmt.Sprintf("      ↳ %s (%s) へのリンク", whose, tsTime(m.Target).Format("01/02 15:04"))
+	if md && m.URL != "" {
+		cite += " [↗](" + clean(m.URL) + ")"
+	}
+	return append(out, cite)
 }
 
 func labelName(l board.Label) string {

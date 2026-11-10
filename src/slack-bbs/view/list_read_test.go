@@ -119,16 +119,16 @@ func TestReadMarks(t *testing.T) {
 		t.Errorf("タブに未読の数が無い: %q", m.header())
 	}
 	press(m, "j") // b を選ぶ
-	if n := m.unreadCount(0); n != 2 || topicUnread(topics[1], m.chans[0].read) {
+	if n := m.unreadCount(0); n != 2 || topicUnread(topics[1], m.chans[0].read, nil) {
 		t.Fatalf("j で選んだ b が既読にならない: 未読 %d", n)
 	}
 	press(m, "k") // a へ戻る (選んだので既読)
 	press(m, "u") // a を未読に戻す
-	if !topicUnread(topics[0], m.chans[0].read) || !strings.Contains(m.LastToast(), "未読に戻した") {
+	if !topicUnread(topics[0], m.chans[0].read, nil) || !strings.Contains(m.LastToast(), "未読に戻した") {
 		t.Fatalf("u で未読に戻らない: %q", m.LastToast())
 	}
 	press(m, "u")
-	if topicUnread(topics[0], m.chans[0].read) {
+	if topicUnread(topics[0], m.chans[0].read, nil) {
 		t.Fatal("u で既読にならない")
 	}
 	if len(saved["C1"]) != 2 {
@@ -143,12 +143,12 @@ func TestReadMarks(t *testing.T) {
 	}
 	b := topics[1]
 	b.Units[0].Msgs = append(b.Units[0].Msgs, board.Msg{Ts: tsAt(day0.Add(time.Hour)), Name: "suzuki", Text: "返信", New: true})
-	if !topicUnread(b, m2.chans[0].read) {
+	if !topicUnread(b, m2.chans[0].read, nil) {
 		t.Error("読んだ後に返信が付いた話題が未読にならない")
 	}
 	mine := topics[1]
 	mine.Units = []board.Unit{{ID: b.Units[0].ID, Msgs: append(topics[1].Units[0].Msgs[:1:1], board.Msg{Ts: tsAt(day0.Add(time.Hour)), Text: "自分の返信", New: true, Mine: true})}}
-	if topicUnread(mine, m2.chans[0].read) {
+	if topicUnread(mine, m2.chans[0].read, nil) {
 		t.Error("自分の返信だけで未読になった")
 	}
 }
@@ -247,7 +247,7 @@ func TestScreenAvoidsBlueAndBackgrounds(t *testing.T) {
 func TestOldContextIsNotUnread(t *testing.T) {
 	tp := topicAt("続いているスレッド", day0)
 	tp.Units[0].Msgs[0].New = false
-	if topicUnread(tp, map[string]string{}) {
+	if topicUnread(tp, map[string]string{}, nil) {
 		t.Error("期間前の発言だけの話題が未読になった")
 	}
 }

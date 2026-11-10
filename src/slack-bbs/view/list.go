@@ -112,7 +112,7 @@ func (m *Model) leftLines() []string {
 		if i == m.list.Cursor {
 			cur = "▶"
 		}
-		unread := topicUnread(t, c.read)
+		unread := topicUnread(t, c.read, c.mentions)
 		if unread {
 			dot = "\x1b[1;35m●\x1b[22;39m"
 		}
