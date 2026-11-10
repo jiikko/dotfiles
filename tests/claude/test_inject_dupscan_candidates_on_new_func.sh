@@ -191,6 +191,13 @@ next_session; expect_lacks "Swift: 本体の無い protocol の要件では、�
 
 next_session; expect_has "戻り型の問い合わせが時間切れでも、名前の照合で見つけた候補は出す (例外で全体を黙らせない)" "$(run Write "$REPO/src/foo/slow.go" $'package foo\n\nfunc slowWidget(x int) Widget {\n\treturn Widget{}\n}\n')" "slowWidget(x int) Widget"
 
+# 共有の lib (hooks/lib/session_marks.py) を import しても、hook の置き場に __pycache__ を作らない (本体の checkout に untracked のファイルが残る)
+if [ -e "$ROOT_DIR/_claude/hooks/lib/__pycache__" ]; then
+  echo "✗ hooks/lib に __pycache__ ができた"; fail=$((fail+1))
+else
+  echo "✓ hooks/lib に __pycache__ を作らない"; ok=$((ok+1))
+fi
+
 left=$(find "$TMP_ROOT" -maxdepth 1 -name 'claude-dupscan-inject-*' | wc -l | tr -d ' ')
 if [ "$left" -eq 0 ]; then
   echo "✓ 注入の印を \$TMPDIR に名前ごとのファイルとして作らない"; ok=$((ok+1))

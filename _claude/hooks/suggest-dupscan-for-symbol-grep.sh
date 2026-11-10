@@ -6,7 +6,8 @@
 # skill dupscan の 2 節に「grep の前に」と書いてあっても使われない。grep はコメント・文字列・呼び出し側の行が混ざって返る量が多い。
 #
 # 🚨 **止めない (additionalContext だけ)**。grep は文字列・コメント・設定ファイルを探すのに要る。permissionDecision を返さない。
-# 🚨 **出しすぎない**: 同session/言語ではNUDGE_INTERVAL秒に1回。状態は$TMPDIRに置く (OSが片付ける)。
+# 🚨 **出しすぎない**: 同session/言語ではNUDGE_INTERVAL秒に1回。印は他の hook と共有の lib (hooks/lib/session_marks.py) で
+#    ${XDG_CACHE_HOME:-~/.cache}/claude-dupscan-hooks.marks の 1 ファイルに持つ ($TMPDIR に session ごとのファイルを作らない: macOS では片付かず溜まる)。
 #
 # 判定 (粗い。偽陽性は 1 行の案内で済み、偽陰性は今までどおり grep が走るだけ):
 #   - Bash: コマンドに grep / rg の語が無ければ即座に終わる (毎回の Bash の待ちを増やさない)。あれば heredoc の本文を落とし、
@@ -45,6 +46,7 @@
 #     印は dupscan の語を含む Bash を見るたびに更新する。954 の P8)
 
 set -uo pipefail
+unset CDPATH
 
 NUDGE_INTERVAL=${DUPSCAN_NUDGE_INTERVAL:-900}
 # dupscan を打ってからこの秒数のあいだは案内しない (dupscan を使っている最中の作業を、同じ案内で遮らない)
@@ -54,6 +56,7 @@ ACTIVE_WINDOW=${DUPSCAN_ACTIVE_WINDOW:-600}
 . "$(dirname "$0")/lib/hook_io.sh" 2>/dev/null || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
+marks="$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)/lib/session_marks.py"
 
 input=$(cat)
 tool=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null) || exit 0
@@ -65,7 +68,7 @@ case "$tool" in
     cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null) || exit 0
     # dupscan を打った印。grep が無いコマンドでも残す (その後の grep の案内を黙らせるため)。bash の正規表現 1 回なので毎回の Bash の待ちはほぼ増えない
     if [[ "$cmd" =~ (^|[^A-Za-z0-9_-])dupscan([^A-Za-z0-9_-]|$) ]]; then
-      { printf '%s\n' "$(date +%s)" > "${TMPDIR:-/tmp}/claude-dupscan-used-${session//[^A-Za-z0-9_-]/_}"; } 2>/dev/null || true
+      python3 -I "$marks" put claude-dupscan-hooks.marks "$session" used "$(date +%s)" >/dev/null 2>&1
     fi
     [[ "$cmd" =~ (^|[^A-Za-z0-9_-])(grep|rg)([^A-Za-z0-9_-]|$) ]] || exit 0
     cmd=$(hook_strip_heredocs "$cmd")
@@ -485,27 +488,22 @@ else
 fi
 
 # 直前に dupscan を使っていたら案内しない (使い方を知っている相手に、同じ案内を重ねない)
-used="${TMPDIR:-/tmp}/claude-dupscan-used-${session//[^A-Za-z0-9_-]/_}"
-if [ -f "$used" ]; then
-  used_at=$(cat "$used" 2>/dev/null || echo 0)
+if used_at=$(python3 -I "$marks" last claude-dupscan-hooks.marks "$session" used 2>/dev/null); then
   case "$used_at" in ''|*[!0123456789]*) used_at=0 ;; esac
   [ "${#used_at}" -le 12 ] || used_at=0
   [ $(( $(date +%s) - used_at )) -ge "$ACTIVE_WINDOW" ] || exit 0
 fi
 
-# Goの通知で既存Swift通知の間隔を消費しない。session IDの末尾とも衝突しないnamespaceにする。
-stamp_prefix=claude-dupscan-nudge
-[ "$language" != go ] || stamp_prefix=claude-dupscan-go-nudge
-stamp="${TMPDIR:-/tmp}/${stamp_prefix}-${session//[^A-Za-z0-9_-]/_}"
+# Goの通知で既存Swift通知の間隔を消費しない (種類を言語ごとに分ける)
+kind="nudge-$language"
 now=$(date +%s)
-if [ -f "$stamp" ]; then
-  last=$(cat "$stamp" 2>/dev/null || echo 0)
+if last=$(python3 -I "$marks" last claude-dupscan-hooks.marks "$session" "$kind" 2>/dev/null); then
   case "$last" in ''|*[!0123456789]*) last=0 ;; esac
   [ "${#last}" -le 12 ] || last=0
   [ $((now - last)) -ge "$NUDGE_INTERVAL" ] || exit 0
 fi
-# 書けない TMPDIR でも stderr に漏らさない (`> f 2>/dev/null` の順だと、リダイレクトの失敗は stderr に出る)
-{ printf '%s\n' "$now" > "$stamp"; } 2>/dev/null || true
+# 書けない cache でも stderr に漏らさない (lib が理由を cache の claude-hook-marks.log に残す)
+python3 -I "$marks" put claude-dupscan-hooks.marks "$session" "$kind" "$now" >/dev/null 2>&1
 
 short=${name##*.}
 # 準備済みの dupscan が Go の index / callers を持つかを ready / no / unknown で返す。通知では build もソース解析も起こさない。

@@ -16,7 +16,8 @@ command -v jq >/dev/null 2>&1 || { echo "✗ jq が無い。hook は jq 前提�
 
 ok=0; fail=0
 TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
-export TMPDIR="$TMP_ROOT"   # 出しすぎ防止の状態ファイルをテストの中に閉じる
+export TMPDIR="$TMP_ROOT"
+export XDG_CACHE_HOME="$TMP_ROOT/cache"   # 出しすぎ防止の印 (hooks/lib/session_marks.py) をテストの中に閉じる
 
 # dupscan の代わり (hook は PATH に在るかだけを見る)。本物を起こさない
 FAKE_BIN="$TMP_ROOT/bin"; mkdir -p "$FAKE_BIN"
@@ -90,6 +91,13 @@ if jq -e '[.hooks.PreToolUse[] | select(.matcher == "Write|Edit") | .hooks[].com
   echo "✓ settings.json の PreToolUse(Write|Edit) に配線されている"; ok=$((ok+1))
 else
   echo "✗ settings.json の PreToolUse(Write|Edit) に配線されていない"; fail=$((fail+1))
+fi
+
+left=$(find "$TMP_ROOT" -maxdepth 1 -name 'claude-dupscan-*' | wc -l | tr -d ' ')
+if [ "$left" -eq 0 ] && [ -s "$XDG_CACHE_HOME/claude-dupscan-hooks.marks" ]; then
+  echo "✓ 印を \$TMPDIR に session ごとのファイルとして作らず、cache の 1 ファイルに持つ"; ok=$((ok+1))
+else
+  echo "✗ \$TMPDIR に印のファイルが $left 件残った / cache の印のファイルが空"; fail=$((fail+1))
 fi
 
 echo "---"

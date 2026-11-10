@@ -18,11 +18,13 @@ command -v python3 >/dev/null 2>&1 || { echo "✗ python3 が無い。hook は p
 
 ok=0; fail=0
 TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
-export TMPDIR="$TMP_ROOT"   # 出しすぎ防止の状態ファイルをテストの中に閉じる
+export TMPDIR="$TMP_ROOT"
+export XDG_CACHE_HOME="$TMP_ROOT/cache"   # 出しすぎ防止の印 (hooks/lib/session_marks.py) をテストの中に閉じる
+MARKS="$XDG_CACHE_HOME/claude-dupscan-hooks.marks"
 # Pair the hook with its own no-build companion, independent of the user's installed binary.
 mkdir -p "$TMP_ROOT/tool/_claude/hooks/lib" "$TMP_ROOT/tool/bin"
 cp "$HOOK" "$TMP_ROOT/tool/_claude/hooks/"
-cp "$ROOT_DIR/_claude/hooks/lib/hook_io.sh" "$TMP_ROOT/tool/_claude/hooks/lib/"
+cp "$ROOT_DIR/_claude/hooks/lib/hook_io.sh" "$ROOT_DIR/_claude/hooks/lib/session_marks.py" "$TMP_ROOT/tool/_claude/hooks/lib/"
 HOOK="$TMP_ROOT/tool/_claude/hooks/suggest-dupscan-for-symbol-grep.sh"
 export CAPABILITY_LOG="$TMP_ROOT/capability.log"
 cat > "$TMP_ROOT/tool/bin/dupscan" <<'CLI'
@@ -137,17 +139,18 @@ next_session
 expect_nudge "1 回目は出る" "$(run_bash 'grep -rn "func fooBarBaz" .')" fooBarBaz
 expect_silent "同じ session の 2 回目は出ない" "$(run_bash 'grep -rn "func fooBarBaz" .')"
 next_session; expect_nudge "別の session なら出る" "$(run_bash 'grep -rn "func fooBarBaz" .')" fooBarBaz
-# 状態ファイルが壊れていても (数字でない・桁が多すぎる) 出す側に倒れ、エラーで無出力にならない
-next_session; printf 'abc\n' > "$TMP_ROOT/claude-dupscan-nudge-s$session"
+# 印が壊れていても (数字でない・桁が多すぎる) 出す側に倒れ、エラーで無出力にならない
+mkdir -p "$XDG_CACHE_HOME"
+next_session; printf 's%s\tnudge-swift\tabc\n' "$session" >> "$MARKS"
 expect_nudge "状態ファイルが数字でない" "$(run_bash 'grep -rn "func fooBarBaz" .')" fooBarBaz
-next_session; printf '12345678901234567890\n' > "$TMP_ROOT/claude-dupscan-nudge-s$session"
+next_session; printf 's%s\tnudge-swift\t12345678901234567890\n' "$session" >> "$MARKS"
 expect_nudge "状態ファイルの桁が多すぎる" "$(run_bash 'grep -rn "func fooBarBaz" .')" fooBarBaz
 
-# 書けない TMPDIR: 状態を残せなくても案内は出し、stderr に漏らさない
+# 書けない cache: 印を残せなくても案内は出し、stderr に漏らさない
 next_session
 err=$(jq -n --arg d "$REPO" --arg s "s$session" '{tool_name: "Bash", session_id: $s, cwd: $d, tool_input: {command: "grep -rn \"func fooBarBaz\" ."}}' |
-  TMPDIR=/nonexistent/dir "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>&1 >/dev/null || true)
-if [ -z "$err" ]; then echo "✓ 書けない TMPDIR でも stderr に出さない"; ok=$((ok+1)); else echo "✗ 書けない TMPDIR で stderr に出た: $err"; fail=$((fail+1)); fi
+  XDG_CACHE_HOME=/nonexistent/dir "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>&1 >/dev/null || true)
+if [ -z "$err" ]; then echo "✓ 書けない cache でも stderr に出さない"; ok=$((ok+1)); else echo "✗ 書けない cache で stderr に出た: $err"; fail=$((fail+1)); fi
 
 # .swift が多い repo (ls-files の出力がパイプの buffer を超える) でも出す。head の後に git が SIGPIPE で落ちても黙らない
 REPO=$(mktemp -d "$TMP_ROOT/big.XXXXXX")
@@ -409,6 +412,13 @@ context_bytes=$(printf '%s' "$out" | jq -j '.hookSpecificOutput.additionalContex
 if [ "$context_bytes" -le 1024 ] && printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("長い名前は手動で渡す")' >/dev/null; then
   echo '✓ 長いsymbolでも通知は1024bytes以内'; ok=$((ok+1))
 else echo '✗ 長いsymbolで通知予算を超えた'; fail=$((fail+1)); fi
+
+left=$(find "$TMP_ROOT" -maxdepth 1 -name 'claude-dupscan-*' | wc -l | tr -d ' ')
+if [ "$left" -eq 0 ] && [ -s "$XDG_CACHE_HOME/claude-dupscan-hooks.marks" ]; then
+  echo "✓ 印を \$TMPDIR に session ごとのファイルとして作らず、cache の 1 ファイルに持つ"; ok=$((ok+1))
+else
+  echo "✗ \$TMPDIR に印のファイルが $left 件残った / cache の印のファイルが空"; fail=$((fail+1))
+fi
 
 echo "[suggest-dupscan-for-symbol-grep] $ok passed / $fail failed"
 [ "$fail" -eq 0 ]

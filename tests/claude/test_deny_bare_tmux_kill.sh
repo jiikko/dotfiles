@@ -209,6 +209,108 @@ expect deny  "タブの後の # はコメントとして落とさない" "$(prin
 expect allow "引用符の外の行内コメントの kill は検査しない" "echo 'x' # tmux kill-server"
 expect allow "書式文字列のあとの -L 付きの kill-server は通す" "tmux -L probe list-panes -F '#{a} #{b}'; tmux -L probe kill-server"
 expect deny  "kill トークンより後ろの -L では免除しない" 'tmux kill-session -t x; sort -S 1G /dev/null'
+# 引用符の中の `|` `&&` 改行は区切りではない。区切りとして割ると、後半が `#{b}` で始まって行頭コメントとして kill ごと捨てていた
+expect deny  "書式文字列の中の | の後ろの kill-server" "tmux list-panes -F '#{a}|#{b}'; tmux kill-server"
+expect deny  "書式文字列の中の && の後ろの kill-server" "tmux list-panes -F '#{a}&&#{b}'; tmux kill-server"
+expect deny  "書式文字列の中の改行の後ろの kill-server" "tmux list-panes -F '#{a}
+#{b}'; tmux kill-server"
+# サブシェル・コマンド置換の中の tmux
+expect deny  "サブシェルの中" '(tmux kill-server)'
+expect deny  "コマンド置換 \$(..) の中" 'echo $(tmux kill-server)'
+expect deny  "バッククォートの中" 'echo `tmux kill-server`'
+expect deny  "二重引用符の中のコマンド置換" 'echo "$(tmux kill-server)"'
+expect deny  "& で背景に回した形" 'tmux kill-server & wait'
+# 語の途中の \ と引用符は shell が剥がして繋ぐ
+expect deny  "実行ファイル名の途中の \\" 't\mux kill-server'
+expect deny  "サブコマンドの途中の \\" 'tmux kill-se\rver'
+expect deny  "サブコマンドの途中の \\ (kill の語が崩れる形)" 'tmux kill\-server'
+expect deny  "サブコマンドを引用符で囲む" "tmux 'kill-server'"
+expect deny  "サブコマンドの一部を引用符で囲む" "tmux 'kill'-server"
+expect deny  "bash -c \$'..' の中" "bash -c \$'tmux kill-server'"
+expect deny  "heredoc の本文の行をまたぐ引用符で後ろを飲み込まない" "cat <<EOF
+don't
+EOF
+tmux kill-server
+it's"
+expect deny  "heredoc の本文の中の kill (本文は 1 行ずつコマンドとして読む)" "bash <<EOF
+tmux kill-server
+EOF"
+expect allow "heredoc の本文の -L 付きの kill は通す" "cat <<EOF
+x
+EOF
+tmux -L probe kill-server"
+# --- `${..}`・heredoc・長い語・割り直しの量: 引用符と区切りを追い損ねると素通りする形 -------------------------
+expect deny  "\${..} の中のコマンド置換" 'echo ${x:-$(tmux kill-server)}'
+expect deny  "\${..} の中の引用符の }" "echo \${x:-'}'} ; tmux kill-server ; echo \"'\""
+expect deny  "bash -c の中の \${..} のエスケープした {" "bash -c 'echo \${x:-\{} ; tmux kill-server ; echo a}'"
+expect deny  "二重引用符の中の \${..} のバッククォート" 'echo "${x:-`tmux kill-server`}"'
+expect deny  "算術の << の後の行継続" 'echo $((1<<2))
+tmux \
+kill-server'
+expect deny  "here-string の後の行継続" 'cat <<< hi
+tmux \
+kill-server'
+expect deny  "シェルに渡す heredoc の本文の行継続" "bash <<'EOF'
+tmux \\
+kill-server
+EOF"
+expect deny  "/ を並べた長いパスのシェルの -c" "$(printf '/%.0s' $(seq 300))bin/bash -c 'tmux kill-server'"
+expect deny  "eval を 201 重ねた長い入力 (割り直しの量の上限)" "$(printf 'eval %.0s' $(seq 201))$(head -c 30000 /dev/zero | tr '\0' x) tmux kill-server"
+expect deny  "heredoc の本文の kill の語が 200 行を越える (割り直しの数の上限)" "bash <<EOF
+$(for i in $(seq 201); do echo "bash -c 'echo kill-s$i'"; done)
+EOF"
+# --- 前の版からの穴 -----------------------------------------------------------------------------
+expect deny  "bash -c -- の後の中身" "bash -c -- 'tmux kill-server'"
+expect deny  "bash -c -x の後の中身" "bash -c -x 'tmux kill-server'"
+expect deny  "\$'..' の \\x で隠した kill の語" "tmux \$'kill\\x2dserver'"
+expect deny  "\$'..' の 8 進で隠した tmux" "\$'\\164mux' kill-server"
+expect deny  "\$\"..\" の中のサブコマンド" 'tmux $"kill-server"'
+expect deny  "-S の値の glob (本番の socket に展開されうる)" 'tmux -S /tmp/tmux-501/d* kill-server'
+expect deny  "pkill -f の tmux のパス" 'pkill -f /opt/homebrew/bin/tmux'
+expect deny  "-l (ログインシェル) は -L ではない" 'tmux -l kill-server'
+expect allow "-L の値の大小は default の照合にだけ効く" 'tmux -L Lab kill-server'
+# --- heredoc の本文は、実行されるかを見分けずに割る (見分けると渡し方の数だけ素通りする) ---------------------------------
+expect deny  "パイプで後ろのシェルへ渡す heredoc" "cat <<'EOF' | bash
+tmux kill-server
+EOF"
+expect deny  ". /dev/stdin で読む heredoc" ". /dev/stdin <<'EOF'
+tmux kill-server
+EOF"
+expect deny  "区切りを引用符で囲んだ commit message の本文 (偽陽性として受ける)" "git commit -F - <<'MSGEOF' -- a.sh
+fix: (tmux kill-server) の誤殺を止める
+MSGEOF"
+expect deny  "算術の << の区切りの語が後ろの行にある" 'echo $((1<<2))
+tmux kill-server
+2'
+# --- 語数の 2 乗・$'..' の解き方・まとめたフラグ -----------------------------------------------------
+expect deny  "シェルの名前の語を 16000 並べた後 (語数の 2 乗にしない)" "$(printf 'sh %.0s' $(seq 16000));tmux kill-server"
+expect deny  "\$'..' で囲んだ実行ファイル名" "\$'tmux' kill-server"
+expect deny  "\$'..' の \\u で隠した kill の語" "tmux \$'\\u006bill-server'"
+expect deny  "bash -c の中の \$'..' の \\x" "bash -c \"tmux \$'\\x6b'ill-server\""
+expect deny  "まとめたフラグの -L default (-uL default)" 'tmux -L probe -uL default kill-server'
+expect deny  "まとめたフラグの付属値の -L default (-uLdefault)" 'tmux -L probe -uLdefault kill-server'
+expect allow "まとめたフラグの -L の隔離 (-uL probe)" 'tmux -uL probe kill-server'
+expect deny  "区切りを囲まない本文の \$(..) は実行される" 'cat > x.md <<EOF
+例: $(tmux kill-server)
+EOF'
+# --- `<<` を heredoc として読むか決まらない形・まとめたフラグの値・-c の無いシェルの後ろの eval -----------------------
+expect deny  "算術の << の区切りの語の行が行継続の続き" 'echo $((1<<kill-server))
+tmux \
+kill-server'
+expect deny  "算術の << の後の引用符が行をまたぐ" "echo \$((1<<X))
+echo '
+X
+' ; tmux kill-server ; echo '
+'"
+expect deny  "-S の付属値に c と大文字の L を含むパス" 'tmux -L probe -S/tmp/cL/../tmux-501/default kill-server'
+expect deny  "まとめたフラグの末尾が値を取るフラグ (-uf の値の後の -L default)" 'tmux -L probe -uf /dev/null -L default kill-server'
+expect deny  "まとめたフラグの末尾が -T (値の後の -L default)" 'tmux -L probe -uT 256 -L default kill-server'
+expect allow "まとめたフラグの末尾が値を取るフラグでも、後ろの -L の隔離は通す" 'tmux -uf /dev/null -L probe kill-server'
+expect deny  "-c の無いシェルの語の後ろの eval" "sh x.sh eval 'tmux kill-server'"
+# kill の語の無い入力は、$'..' の escape が多くても割り直しの上限で deny にしない (字を隠せない escape は積まない)
+expect allow "\$'\\t' を 210 行並べた入力 (kill の語なし)" "$(for i in $(seq 210); do printf 'v%s="$(printf $%s)"\n' "$i" "'\\t'"; done)"
+expect allow "ssh の先で走る kill は手元の本番ではない" "ssh h 'tmux kill-server #x'"
+expect allow "二重引用符の中の文字列 (置換なし) は検査しない" 'git commit -m "tmux kill-server を止める"'
 
 # --- allow すべきもの (ソケット明示 / 無関係) -------------------------------------------
 # 🚨 -L default / -S <...>/default はソケット明示でも**本番サーバ**直撃なので deny
@@ -250,8 +352,34 @@ expect deny "大きな入力 (9KB) でも deny を出す" "$(big_payload 200)tmu
 expect deny "大きな入力 (90KB) でも deny を出す" "$(big_payload 2000)tmux kill-server"
 # 360KB: MAX_SCAN_BYTES を超えるので検査を諦めるが、素通りではなく deny へ倒す (fail-closed)
 expect deny "巨大な入力 (360KB) は fail-closed で deny" "$(big_payload 8000)tmux kill-server"
+# 上限は内容に関わらず効く: 中身だけなら allow の入力 (引用符の中の kill の語) でも、上限を越えたら deny、下なら allow
+benign_payload() { printf "echo '%s kill-session'" "$(head -c "$1" /dev/zero | tr '\0' a)"; }
+expect allow "上限 (128KB) の下の、中身が allow の大きな入力" "$(benign_payload 120000)"
+expect deny  "上限 (128KB) を越えた、中身が allow の大きな入力" "$(benign_payload 140000)"
+# awk が無い・失敗したときは deny に倒す (字句解析できないまま通さない)
+NOAWK="$(mktemp -d)"
+for c in bash dirname jq cat mktemp rm; do ln -s "$(command -v "$c")" "$NOAWK/$c"; done
+got_noawk="$(PATH="$NOAWK" decision 'tmux kill-session')"
+rm -rf "$NOAWK"
+[ "$got_noawk" = deny ] || { printf '✗ awk が無いとき deny に倒れない (実際=%s)\n' "$got_noawk"; exit 1; }
+printf '✓ awk が無いとき deny に倒す (deny)\n'
 # kill 系トークンを含まない大入力は前置きフィルタで即 allow (体感レイテンシに乗せない)
 expect allow "kill を含まない大きな入力は素通り" "$(big_payload 2000)echo done"
+# 和文の大入力: 上限未満の長い行が多数。bash の 1 文字ループで引用符を処理していた版は、この形で 10 秒の timeout を越えて無出力になった
+# (2026-11-10 実測。字ごとの部分文字列展開が O(n) で、マルチバイトではさらに遅い)。big_payload は 1 本の巨大な行で、この形を通らない
+jp_payload() {  # $1=行数 → 和文 8000 字を引用符で囲み末尾に kill-session を付けた echo の行
+  local i line out=''
+  line="echo '$(printf '和%.0s' $(seq 8000)) kill-session'"
+  for ((i = 0; i < $1; i++)); do out+="$line"$'\n'; done
+  printf '%s' "$out"
+}
+# 改行は $(..) の外で足す (コマンド置換は末尾の改行を落とし、最後の行の引用符に tmux が繋がって 1 語になる)
+# bash の 1 文字ループで引用符を処理していた版は、この入力で 7.8 秒かかった (今の形は 0.3 秒。2026-11-10)。大きさの上限 (128KB) の内に収まるので、
+# 遅い版でも 10 秒は越えない: 速さは pin せず、大きな和文の入力で判定が正しいことを pin する。
+# 語ごとに長さの 2 乗かかる bash の `${t##*/}` も、上限の内では 1 語で 8 秒弱にしかならず、負荷の無いときは赤にならない (hook のコメントで止める)
+expect deny "和文の大入力 (8000 字 × 5 行) でも deny を出す" "$(jp_payload 5)"$'\n'"tmux kill-server"
+# 1 語が上限近くまで長い入力。語に正規表現の `.*` を当てる処理 (awk の `sub(/.*\//)`) が入ると 28 秒かかった (今の形は 0.7 秒)
+expect deny "120KB の 1 語の後でも deny を出す" "echo '$(head -c 120000 /dev/zero | tr '\0' a) kill-session'"$'\n'"tmux kill-server"
 # 大入力でもソケット明示なら allow のまま (fail-closed を広げすぎていないことの対照)
 expect allow "大きな入力 + ソケット明示は allow" "$(big_payload 200)tmux -L probe kill-server"
 
