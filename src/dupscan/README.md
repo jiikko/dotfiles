@@ -94,8 +94,8 @@ struct / class / enum / protocol / actor / extension は宣言とメンバーの
 同名の定義は全件を候補にし、text は `-limit` の既定 20 件まで出す (`0` は全部)。`-format json` は全件を返す。
 
 `refs` の問い合わせは単独の識別子（`run` など）。`def` と異なり `Type.member` の絞り込みはなく、`refs Worker.run` のような識別子で始まるqualified問い合わせは、text/jsonともrc=2・stdout空で拒否する。stderrに非対応の理由と、同じscopeの単独名を探す`next_action`のargv配列を最大1個返す。型・ラベルを外すと同名の別型も含む近似になり、自動再検索はしない。単独のUnicode名・backtick付き名・dot operatorは一律に拒否しない（operatorの参照収集まで保証するものではない）。単独名のラベル指定など、その他の入力を網羅検証する変更ではない。
-`refs` は識別子の構文上の位置を `file:line 囲む単位 [test] [型の位置|式の位置|引数ラベル] | その行` で出す。これは意味上の型/値判定ではない。`引数ラベル` は、問い合わせの名前が関数型 (型に `->` を含む) の stored property として定義されているときだけ、同名の呼び出しの引数ラベル (`Foo(onSaved: { … })`。closure の実装の場所) を出す。ラベルは `path:` のような普通の語で雑音になるので、定義が見つからない名前・関数型でないプロパティ・computed property・protocol の要件では出さない (定義は型を解決しない名前の一致で選ぶので、同名の別の型のラベルも混ざる)。`Foo(...)` や `Foo.shared` の `Foo` も、構文上は式の位置として出る。
-宣言名・呼び出しの引数ラベル・コメント・文字列本文は含めず、文字列補間の中の識別子は式の位置として数える。prod を test より先に並べる。
+`refs` は識別子の構文上の位置を `file:line 囲む単位 [test] [型の位置|式の位置|引数ラベル] | その行` で出す。これは意味上の型/値判定ではない。`引数ラベル` は、問い合わせの名前が関数型の stored property として定義されているときだけ、同名の呼び出しの引数ラベル (`Foo(onSaved: { … })`。closure の実装の場所) を出す。関数型かどうかは型注釈の形で決め、Optional・括弧・属性つき (`((Int) -> Void)?` `@Sendable () -> Void`) は関数型、`[String: () -> Void]` や `Box<() -> Void>` のように中に含むだけの型と typealias 経由 (`let onSaved: Handler`) は対象外 (typealias の先は解決しない)。ラベルは `path:` のような普通の語で雑音になるので、定義が見つからない名前・関数型でないプロパティ・computed property・protocol の要件では出さない。定義も呼び出しも型を解決しない名前の一致で選ぶので、同名の別の型のラベルも混ざる。引数ラベルを書かない trailing closure (`Foo { … }`) は拾わない。`Foo(...)` や `Foo.shared` の `Foo` も、構文上は式の位置として出る。
+宣言名・コメント・文字列本文と、上の関数型の stored property を引いたとき以外の呼び出しの引数ラベルは含めず、文字列補間の中の識別子は式の位置として数える。prod を test より先に並べる。
 `@Test` / XCTest 関数の中の参照はその関数名を囲む単位として出す。メソッド内の入れ子の `func` は `Type.member` 照合の対象外。
 単位の外でも型の中なら囲む型名を出す。`if let foo` などの省略束縛は外側の値への参照として数え、parameter pack の宣言名は除く。
 text は `-limit` の既定 20 件まで (`0` は全部)、JSON は全件を返す。
@@ -182,7 +182,7 @@ gate は head が作業ツリーのときだけ出す (`-head` の commit は ex
 `index` は名前の付いた単位 (関数・初期化子・computed property・subscript など。クロージャとテスト関数は除く) を
 `file:開始行-終了行 型.署名 [shared,test,private] (呼び出し ~N) // doc の先頭` の 1 行で出す (1 行の単位は `file:行`)。「呼び出し ~N」は名前と引数ラベルで当てた数で、他のファイルから呼べない単位は呼べる範囲だけを数える (Swift の private / fileprivate は同じファイル、Go の小文字は同じ package = 同じ dir。同名の private な写しがファイルごとにあるとき、両方に合計が付かないように。issue 979)。終了行は Read の範囲 (offset / limit) にそのまま使える。grep と違い呼び出し側の行・コメント・文字列は混ざらない。
 text の doc は最初の文まで・100 byte までに縮める (`-doc-bytes N`、0 で縮めない。JSON と `-doc` の絞り込みは全文)。略語 (`e.g.` `Dr.`) の後ろでは切らないが、2 文目に理由や条件がある doc も最初の文で切れる。`-limit` で打ち切ったときは、stderr にも `dupscan index: N 件中 M 件で打ち切り。全件は -limit 0 か -format json` の 1 行を出し (`callers` も同じ。先頭の案内を `| grep` で削っても残る)、先頭に `該当 N 件 (M 件表示 / 全部で約 X)。…rg -n -i -e 名前 -g '*.go' -- dir` の 1 行を出す (`callers` は `呼び出し N 件`)。dupscan が `rg` を実行するのではなく、実行できる 1 行の提示で、構文木の結果ではなく文字列の一致 (コメント・文字列にも当たる) になる。`def` / `context` の型メンバーの行も同じ形 (終了行つき) になる。
-並べ方は名前の一致の強さ (同じ > 前方 > 一部) → `-returns` を渡したときだけ、戻り型が語と完全に一致する単位 (末尾の `?` `!` は除く。`[T]`・`T<U>`・`TViewModel` は部分一致) を前 → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate / unexported (Go の小文字で始まる関数) でないものを前（他module/targetからの利用可否は未解決） → 呼び出しの多いもの → 場所。
+並べ方は名前の一致の強さ (同じ > 前方 > 一部) → `-returns` を渡したときだけ、戻り型が語と完全に一致する単位 (末尾の `?` `!` は除く。`-returns` の語にも同じ整形を当てる。`[T]`・`T<U>`・`TViewModel`・`Module.T`・`any T` は部分一致。Go の `*T` と複数戻り値 `(T, error)` も文字列の完全一致ではないので部分一致で、実物では未確認) を前 → 共通の置き場所 (`.dupscan.json` の `"shared": ["Tests/SharedTestSupport/**"]` のような glob。`[shared]` と出る) を前 → prod を test より前 → private / fileprivate / unexported (Go の小文字で始まる関数) でないものを前（他module/targetからの利用可否は未解決） → 呼び出しの多いもの → 場所。
 `shared`は設定globに一致する置き場所の印であり、可視性と同じく再利用可能性の証明ではない。所属target・依存/import・test-only・条件付きcompile等は別に確認する。
 
 textの先頭には構文近似の説明を1行出す（0件でも同じ）。名前と引数ラベル/個数で照合し、型を解決しないので同名の別定義が混ざりうる。Swiftを読むscopeでは、既定引数を省略した呼び出しの取りこぼしも示す。0件は未使用の証拠ではない。JSONの形式・数値・順序は変えない。

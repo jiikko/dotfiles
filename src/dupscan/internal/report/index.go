@@ -110,8 +110,11 @@ func (q Query) exactReturn(u *tree.Unit) bool {
 	if q.Returns == "" {
 		return false
 	}
-	return strings.TrimRight(strings.TrimSpace(u.ReturnType), "?!") == q.Returns
+	return trimReturn(u.ReturnType) == trimReturn(q.Returns)
 }
+
+// trimReturn は戻り型の比較用に、前後の空白と末尾の ? ! を除く (-returns 側にも同じ整形を当てる)。
+func trimReturn(s string) string { return strings.TrimRight(strings.TrimSpace(s), "?!") }
 
 func (q Query) shared(file string) bool { return q.Shared != nil && q.Shared(file) }
 

@@ -42,7 +42,7 @@ Swift の定義・参照を探すときは grep より先にこちらを使う�
 ```sh
 dupscan def StorageClient                     # 定義を本体つきで (型は宣言とメンバーの一覧: protocol の要件・格納 property・enum の case を含む)
 dupscan def StorageClient.upload              # 型を絞る (generic の引数と where 句は外して照合する)。make(x:_:) で引数ラベルも絞れる
-dupscan refs StorageClient                    # 参照の一覧 ([型の位置] / [式の位置] と、それを囲む関数)。宣言名・引数名・局所の束縛・ラベルは数えない。ただし名前が関数型の stored property (`let onSaved: (X) -> Void`) なら、呼び出しの引数ラベル (`Foo(onSaved: { … })`) を [引数ラベル] で出す (closure の実装の場所)
+dupscan refs StorageClient                    # 参照の一覧 ([型の位置] / [式の位置] と、それを囲む関数)。宣言名・引数名・局所の束縛・ラベルは数えない。ただし名前が関数型の stored property (`let onSaved: (X) -> Void`。typealias 経由は対象外) なら、呼び出しの引数ラベル (`Foo(onSaved: { … })`) を [引数ラベル] で出す (closure の実装の場所。名前だけで当てるので同名の別の型のラベルも混ざり、trailing closure は拾わない)
 dupscan callers 'make(x:_:)'                  # 呼び出しの箇所と、それを囲む関数 (名前だけでも引ける)
 dupscan context StorageClient.upload          # 変更の前に: 上の def・refs・callers を 1 回の走査でまとめて (text だけ。参照・呼び出しは名前だけで当てる)
 dupscan index -file Sources/Foo.swift         # このファイルに何があるか (outline)

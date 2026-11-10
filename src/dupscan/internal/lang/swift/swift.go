@@ -746,7 +746,7 @@ func (w *walker) definitions(root *sitter.Node) ([]lang.Definition, []lang.TypeD
 						defs = append(defs, definitionFromUnit(u, c.insideCallable))
 					} else {
 						addDefinition(n, c, name, string(tree.KindProperty), w.storedPropertySignature(n, name), nil)
-						defs[len(defs)-1].Stored = true
+						defs[len(defs)-1].ClosureProperty = isFunctionTypeAnnotation(w.storedTypeAnnotation(n, name))
 					}
 				}
 			}
@@ -850,17 +850,27 @@ func (w *walker) storedPropertySignature(n *sitter.Node, name string) string {
 	}
 	findKeyword(n)
 	signature := keyword + " " + name
-	var findType func(*sitter.Node) string
-	findType = func(node *sitter.Node) string {
+	if annotation := w.storedTypeAnnotation(n, name); annotation != nil {
+		if typ := collapse(strings.TrimPrefix(w.text(annotation), ":")); typ != "" {
+			signature += ": " + typ
+		}
+	}
+	return signature
+}
+
+// storedTypeAnnotation は name の型注釈 (type_annotation) の節。無ければ nil。
+func (w *walker) storedTypeAnnotation(n *sitter.Node, name string) *sitter.Node {
+	var findType func(*sitter.Node) *sitter.Node
+	findType = func(node *sitter.Node) *sitter.Node {
 		if kindOf(node) == "type_annotation" {
-			return collapse(strings.TrimPrefix(w.text(node), ":"))
+			return node
 		}
 		for i := range node.NamedChildCount() {
-			if value := findType(node.NamedChild(i)); value != "" {
+			if value := findType(node.NamedChild(i)); value != nil {
 				return value
 			}
 		}
-		return ""
+		return nil
 	}
 	typeNode := n
 	if kindOf(n) == "property_declaration" {
@@ -886,12 +896,40 @@ func (w *walker) storedPropertySignature(n *sitter.Node, name string) string {
 			break
 		}
 	}
-	if typeNode != nil {
-		if typ := findType(typeNode); typ != "" {
-			signature += ": " + typ
+	if typeNode == nil {
+		return nil
+	}
+	return findType(typeNode)
+}
+
+// isFunctionTypeAnnotation は型注釈が関数型そのものか。Optional (`T?` `T!`) と括弧は外して見る。
+// `[String: (Int) -> Void]` や `Box<() -> Void>` のように型の中に関数型を含むだけのものは false。typealias の先は解決しない。
+func isFunctionTypeAnnotation(annotation *sitter.Node) bool {
+	if annotation == nil {
+		return false
+	}
+	var inner *sitter.Node
+	for i := range annotation.NamedChildCount() {
+		if ch := annotation.NamedChild(i); kindOf(ch) != "type_modifiers" {
+			inner = ch
 		}
 	}
-	return signature
+	for inner != nil {
+		switch kindOf(inner) {
+		case "function_type":
+			return true
+		case "optional_type":
+			inner = inner.ChildByFieldName("wrapped")
+		case "tuple_type":
+			if inner.NamedChildCount() != 1 || kindOf(inner.NamedChild(0)) != "tuple_type_item" || inner.NamedChild(0).NamedChildCount() != 1 {
+				return false
+			}
+			inner = inner.NamedChild(0).NamedChild(0)
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 func isTypeDeclarationKind(kind string) bool {

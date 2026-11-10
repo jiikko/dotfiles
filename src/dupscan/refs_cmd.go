@@ -94,11 +94,12 @@ func buildReferences(name string, got scanned) report.ReferencesSummary {
 	return report.BuildReferences(name, references, got.units, langs.IsTestPath)
 }
 
-// isClosureProperty は name が、型に -> を含む (関数型の) Swift の stored property として定義されているか。
+// isClosureProperty は name が、関数型の Swift の stored property として定義されているか。
 // 呼び出しの引数ラベル (`Foo(onSaved: { … })`) が、その closure の実装の場所になる。
+// 定義は型を解決しない名前の一致で選ぶので、同名の別の型の引数ラベルも出る (近似)。
 func isClosureProperty(name string, defs []lang.Definition) bool {
 	for _, d := range defs {
-		if d.Stored && tree.MatchName(d.Name) == tree.MatchName(name) && strings.Contains(d.Signature, "->") {
+		if d.ClosureProperty && tree.MatchName(d.Name) == tree.MatchName(name) {
 			return true
 		}
 	}

@@ -65,8 +65,9 @@ type Definition struct {
 	Nested     bool
 	Visibility string
 	Doc        string
-	// Stored は Swift の stored property (computed でも protocol の要件でもない)。refs が、関数型の stored property の実装の場所を出すか決めるのに読む
-	Stored bool
+	// ClosureProperty は Swift の stored property (computed でも protocol の要件でもない) で、型注釈が関数型そのもの (Optional・括弧は外す。
+	// typealias の先は解決しない)。refs が、その closure の実装の場所 (呼び出しの引数ラベル) を出すか決めるのに読む
+	ClosureProperty bool
 	// DocStart / DocEnd は doc comment の行の範囲 (無ければ 0)。evidence が doc の後半の語から定義へ辿る
 	DocStart, DocEnd int
 }

@@ -52,6 +52,12 @@ obaket の接続の編集モーダルで「保存したら閉じる」を直す�
 
 検証: `make -C src/dupscan test lint` が rc 0。実物の `-name 'dismiss|save'` で案内が出ることを確かめた。root の `make test` は別の重い検査と同時に回して失敗した (`test_claude_bin`・`test_dangling_symlinks`・`test_ratelimit_warn`・`test_git_prompt`・`src/pro-con/ui` の `TestPopupGivesUpOnHungTmux`・`src/ratelimit/usage` の `TestFetch*`)。dupscan の検査は通っていた。単独で回し直すと dangling symlink 以外は通った。dangling symlink は `~/.claude/rules` と `~/.config/nvim` の手元の link の残骸で、この変更とは関係ない。
 
+- F2: `refs` が、関数型の Swift の stored property (型注釈が関数型そのもの。Optional・括弧・属性つきを含む) の名前を引いたとき、同名の呼び出しの引数ラベル (`Foo(onSaved: { … })`) を `[引数ラベル]` で出す。obaket の `refs onSaved` は 1 行から 2 行になった (`ConnectionSheetView.swift` の `onSaved:` が増えた)。`refs path` は変更前後で出力が完全に一致した。
+  - 限界 (README と SKILL に書いた): typealias 経由の関数型 (`let onSaved: Handler`) は対象外。名前だけで当てるので同名の別の型のラベルも混ざる。trailing closure は拾わない。
+  - 変異で赤を確認: Optional の枝を外す / 型注釈の形でなく署名の `->` で判定する旧実装に戻す / protocol の要件にも付ける、の 3 本は `TestRefsClosureLabelFollowsTypeAnnotationShape` が落ちた。
+  - 費用: 全ファイルで定義も抽出するようになり、obaket の `refs path` は 1.9〜2.4 秒から 2.5〜2.8 秒 (各 3 回) へ約 0.4 秒増えた。許容した。`context` は元から定義を抽出するので変わらない。
+- F3 の追補 (反証レビューの指摘): `-returns` の語にも末尾の `?` `!` と空白の整形を当てた (`-returns 'StorageConnection?'` で完全一致の優先が効かなかった)。並びの優先 (名前の一致の強さ > 完全一致 > shared) もテストで固定した。Go の `*T`・複数戻り値は完全一致にならず部分一致のままで、Go の実物では未確認 (README に書いた)。
+
 ## 直していないもの
 
-- F2: 出力の形を変えるので、このタスクの範囲では直さず記録した。
+- なし。
