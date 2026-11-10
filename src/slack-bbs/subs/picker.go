@@ -115,8 +115,25 @@ func (p *Picker) page() int { return p.list.Cursor / p.rows() * p.rows() }
 // pages は visible の件数 n のページの数 (0 件でも 1)。
 func (p *Picker) pages(n int) int { return max((n+p.rows()-1)/p.rows(), 1) }
 
-// Key はキー 1 つを処理する。
-func (p *Picker) Key(k string) {
+// Key はキー 1 つを処理する (打った文字はキーの表記から推す。Press を使えるならそちら)。
+func (p *Picker) Key(k string) { p.Press(k, lineedit.KeyText(k)) }
+
+// Paste は貼り付けた文字列を、検索の語を打っている間だけ欄に入れる (改行とタブは空白になる)。それ以外では何もしない
+// (貼った文字をキーとして解釈しない)。
+func (p *Picker) Paste(s string) {
+	if p.filtering {
+		p.filter.Insert(s)
+		p.list.Cursor, p.list.Offset = 0, 0
+	}
+}
+
+// Press はキー 1 つを処理する。text はその打鍵が入力する文字 (KeyPressMsg.Text。絵文字の異体字・ZWJ の並びのように 1 文字が
+// 2 つ以上の rune になる打鍵は、キーの表記からは推せない)。Ctrl-C はどの状態でも保存せずに閉じる。
+func (p *Picker) Press(k, text string) {
+	if k == "ctrl+c" {
+		p.done = true
+		return
+	}
 	if p.filtering {
 		before := p.filter.String()
 		defer func() {
@@ -131,9 +148,12 @@ func (p *Picker) Key(k string) {
 			p.filtering = false
 			p.filter.Reset()
 		default:
-			p.filter.Key(k, lineedit.KeyText(k))
+			p.filter.Key(k, text)
 		}
 		return
+	}
+	if k == "ctrl+f" {
+		k = "right" // TUI ガイド §2: Ctrl-F は → の別名 (検索の欄では編集のキー)
 	}
 	vis := p.visible()
 	switch k {
@@ -157,7 +177,7 @@ func (p *Picker) Key(k string) {
 	case "enter":
 		p.done, p.save = true, true
 		return
-	case "q", "esc", "ctrl+c":
+	case "q", "esc":
 		p.done = true
 		return
 	}
@@ -264,8 +284,10 @@ func (m program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.p.Resize(msg.Width, msg.Height)
+	case tea.PasteMsg:
+		m.p.Paste(msg.Content)
 	case tea.KeyPressMsg:
-		m.p.Key(msg.String())
+		m.p.Press(msg.String(), msg.Text)
 		if m.p.Done() {
 			return m, tea.Quit
 		}

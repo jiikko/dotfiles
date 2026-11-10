@@ -74,6 +74,8 @@ type Model struct {
 	subs    *Subscriptions
 	picker  *subs.Picker // 購読の画面を開いている間だけ非 nil
 	picking bool         // 購読の画面の一覧を読んでいる
+	// pickStarted は購読の画面の一覧を読み始めた時刻 (経過秒を出す)
+	pickStarted time.Time
 }
 
 // Subscriptions は読む画面から購読を変える口 (s で開く画面)。nil なら s は効かない。
@@ -171,11 +173,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.picker = msg.p
+	case tea.PasteMsg:
+		if m.picker != nil {
+			m.picker.Paste(msg.Content) // 読む画面には入力欄が無いので、貼った文字はキーとして解釈しない
+		}
 	case tea.KeyPressMsg:
 		var cmd tea.Cmd
-		if m.picker != nil {
-			cmd = m.pickKey(msg.String())
-		} else {
+		switch {
+		case msg.String() == "ctrl+c":
+			m.quitting = true // どの画面 (購読の画面・検索の欄の中) からでも、すぐ終わる (TUI ガイド §1)
+		case m.picker != nil:
+			cmd = m.pickKey(msg.String(), msg.Text)
+		default:
 			cmd = m.key(msg.String())
 		}
 		if m.quitting {
@@ -320,17 +329,14 @@ func (m *Model) selectedIndex() (int, bool) {
 }
 
 // key は読む画面のキー。語彙は docs/glogx-ui-guide.md (TUI ガイド) に揃える: q は 1 段戻る (本文の欄から一覧へ、一覧なら終わる)・
-// Ctrl-C はすぐ終わる・Enter は本文の欄の開閉・J/K は本文を開いたまま隣の話題へ・Ctrl-F は → の別名。
+// Ctrl-C はすぐ終わる (Update が購読の画面より先に捌く)・Enter は本文の欄の開閉・J/K は本文を開いたまま隣の話題へ・Ctrl-F は → の別名。
 func (m *Model) key(k string) tea.Cmd {
 	if k == "ctrl+f" {
 		k = "right"
 	}
 	switch k {
-	case "ctrl+c":
-		m.quitting = true
-		return nil
 	case "q":
-		if m.body {
+		if m.body && !m.tiny() { // 小さい端末では欄が見えないので、見えない欄を閉じるだけの 1 打にしない
 			m.body = false
 		} else {
 			m.quitting = true
@@ -473,7 +479,7 @@ func (m *Model) openPicker() tea.Cmd {
 	if m.picking {
 		return nil
 	}
-	m.picking = true
+	m.picking, m.pickStarted = true, m.now()
 	open, ctx := m.subs.Open, m.ctx
 	return func() tea.Msg {
 		p, err := open(ctx)
@@ -482,9 +488,9 @@ func (m *Model) openPicker() tea.Cmd {
 }
 
 // pickKey は購読の画面を開いている間のキー。保存したら画面を閉じずにタブを入れ替える。
-func (m *Model) pickKey(k string) tea.Cmd {
+func (m *Model) pickKey(k, text string) tea.Cmd {
 	p := m.picker
-	p.Key(k)
+	p.Press(k, text)
 	if !p.Done() {
 		return nil
 	}
@@ -647,6 +653,9 @@ const (
 	MinHeight = 8
 )
 
+// tiny は枠を描けない小さい端末か。
+func (m *Model) tiny() bool { return m.w < MinWidth || m.h < MinHeight }
+
 // Lines は画面の行。toast は右下 (キーの案内の上) に重ねる。
 func (m *Model) Lines() []string {
 	lines := m.screen()
@@ -664,7 +673,7 @@ func (m *Model) screen() []string {
 	if len(m.chans) == 0 {
 		lines := []string{"読むチャンネルがありません (s で購読するチャンネルを選ぶ・q で終わる)"}
 		if m.picking {
-			lines = append(lines, "チャンネルの一覧を読んでいます…")
+			lines = append(lines, m.spin(m.pickStarted)+" チャンネルの一覧を読んでいます")
 		}
 		if m.toast.Visible() {
 			// 行が少なく箱を重ねられないので、知らせの文を行で出す (保存できなかった・一覧を読めなかったを黙らせない)
@@ -672,8 +681,8 @@ func (m *Model) screen() []string {
 		}
 		return lines
 	}
-	if m.w < MinWidth || m.h < MinHeight {
-		return []string{termwidth.Truncate(fmt.Sprintf("端末が小さすぎる (%dx%d 以上にする)", MinWidth, MinHeight), max(m.w, 1), "")}
+	if m.tiny() {
+		return []string{termwidth.Truncate(fmt.Sprintf("端末が小さすぎる。q で終わる (%dx%d 以上にする)", MinWidth, MinHeight), max(m.w, 1), "")}
 	}
 	lines := []string{m.header(), m.noteLine()}
 	left := m.leftLines()
@@ -799,7 +808,7 @@ func (m *Model) noteLine() string {
 	var s string
 	switch {
 	case m.picking:
-		s = spinner.At(m.now(), spinnerStep) + " チャンネルの一覧を読んでいます"
+		s = m.spin(m.pickStarted) + " チャンネルの一覧を読んでいます"
 	case c.err != nil && c.page != nil:
 		s = "🚨 " + c.err.Error()
 	case c.page != nil:

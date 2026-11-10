@@ -9,6 +9,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"slack-bbs/board"
+	"slack-bbs/subs"
 )
 
 // bodyPlain は右の欄の中身の行 (色と枠の縦線を外す。上下の枠線は除く)。
@@ -188,5 +189,46 @@ func TestReloadShowsSpinnerAndElapsed(t *testing.T) {
 	m.Update(last)
 	if len(armed) != 0 {
 		t.Errorf("読み終わった後も tick を張る: %v", armed)
+	}
+}
+
+// Ctrl-C は購読の画面 (検索の欄の中も) からでもすぐ終わる。検索の欄は貼り付けと、2 つ以上の rune でできた 1 文字を受ける。
+// 購読の一覧を読んでいる間は回る印と経過秒を出す。小さい端末では q ですぐ終わる (見えない本文の欄を閉じるだけにしない)。
+func TestPickerAndTinyTerminalFollowTUIGuide(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	now := t0
+	m := subsModel(l, &saved, &opened)
+	m.now = func() time.Time { return now }
+	run(m, m.Init())
+	cmd := press(m, "s")
+	now = now.Add(7 * time.Second)
+	if n := m.noteLine(); !strings.Contains(n, "7 秒 チャンネルの一覧を読んでいます") {
+		t.Errorf("一覧を読んでいる間の注記に経過秒が無い: %q", n)
+	}
+	run(m, cmd)
+	if m.picker == nil {
+		t.Fatal("前提: 購読の画面が開かない")
+	}
+	press(m, "/")
+	m.Update(tea.PasteMsg{Content: "de\nv"})
+	m.Update(tea.KeyPressMsg{Code: '👍', Text: "👍🏽"})
+	if got := m.picker.Lines()[1]; !strings.Contains(got, "de v👍🏽") {
+		t.Errorf("貼り付けと絵文字が検索の欄に入らない: %q", got)
+	}
+	if _, cmd := m.Update(keyMsg("ctrl+c")); !m.quitting || cmd == nil {
+		t.Error("検索の欄の中の Ctrl-C で終わらない")
+	}
+
+	tiny := datedModel(t, func() []board.Topic { return []board.Topic{topicAt("a", day0)} })
+	press(tiny, "l")
+	tiny.Update(tea.WindowSizeMsg{Width: 30, Height: 6})
+	if !strings.Contains(tiny.Lines()[0], "q で終わる") {
+		t.Errorf("小さい端末の行に抜け方が無い: %q", tiny.Lines()[0])
+	}
+	press(tiny, "q")
+	if !tiny.quitting {
+		t.Error("小さい端末で、本文の欄を開いたまま q を押しても終わらない")
 	}
 }

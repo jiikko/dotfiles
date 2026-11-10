@@ -165,3 +165,21 @@ func TestPickerSearchIsLineEdit(t *testing.T) {
 		t.Errorf("Enter の後: カーソル %v / 一致 %d 件 (dev-ops と design)", p.Cursor(), len(p.visible()))
 	}
 }
+
+// 検索していない購読の画面では、Ctrl-C は保存せずに閉じ、Ctrl-F は → (次のページ) の別名。
+func TestPickerCtrlKeys(t *testing.T) {
+	var all []source.Channel
+	for i := range 25 {
+		all = append(all, source.Channel{ID: fmt.Sprintf("C%02d", i), Name: fmt.Sprintf("ch%02d", i), IsMember: true})
+	}
+	p := NewPicker(all, nil)
+	p.Resize(80, 14)
+	p.Key("ctrl+f")
+	if p.list.Cursor != p.rows() {
+		t.Errorf("Ctrl-F で次のページへ進まない: cursor=%d", p.list.Cursor)
+	}
+	p.Key("ctrl+c")
+	if !p.Done() || p.Saved() {
+		t.Errorf("Ctrl-C: done=%v saved=%v, want 保存せずに閉じる", p.Done(), p.Saved())
+	}
+}
