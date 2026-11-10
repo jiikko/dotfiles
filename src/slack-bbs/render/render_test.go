@@ -47,3 +47,32 @@ func TestMarkdownShowsOmittedAndUnreadable(t *testing.T) {
 		}
 	}
 }
+
+// 複数行の発言の続きの行は、時刻の頭から 2 桁下げる (期間前の発言の「(前)」は全角を含むので、表示幅で揃える)。
+func TestContinuationLinesIndentFromTimestamp(t *testing.T) {
+	u := board.Unit{ID: "1.000000", Thread: true, Msgs: []board.Msg{
+		{Ts: "1.000000", Name: "a", Text: "親\n親の 2 行目"},
+		{Ts: "2.000000", Name: "b", Text: "返信\n返信の 2 行目", New: true},
+	}}
+	lines := Page{}.Body(board.Topic{Title: "t", State: board.StateInfo, Units: []board.Unit{u}}, false)
+	checked := 0
+	for i, l := range lines[:len(lines)-1] {
+		at := strings.Index(l, tsTime("1.000000").Format("01/02"))
+		if at < 0 {
+			continue
+		}
+		next := lines[i+1]
+		got := len(next) - len(strings.TrimLeft(next, " "))
+		want := 6 // "    " の 4 桁 + 2
+		if strings.Contains(l, "(前)") {
+			want = 11 // "    (前) " の表示幅 9 + 2
+		}
+		if got != want {
+			t.Errorf("続きの行の字下げ %d, want %d:\n%q\n%q", got, want, l, next)
+		}
+		checked++
+	}
+	if checked != 2 {
+		t.Errorf("確かめた発言 %d, want 2:\n%s", checked, strings.Join(lines, "\n"))
+	}
+}

@@ -331,28 +331,95 @@ func (m *Model) Lines() []string {
 	return append(lines, termwidth.Truncate(m.help(), m.w, "…"))
 }
 
+// header はチャンネルのタブと、今のチャンネルの状態。幅に収まらないときは今のタブと状態を残し、今のタブから遠いタブを「…」に畳む
+// (行の右端で切ると、後ろの方のチャンネルを開いたときに、どれを見ているかも読み込みの状態も消える)。
 func (m *Model) header() string {
-	var tabs []string
+	names := make([]string, len(m.chans))
 	for i, c := range m.chans {
-		name := "#" + termsafe.PlainLine(c.ch.Name)
-		if i == m.cur {
-			name = "\x1b[7m" + name + "\x1b[27m"
-		}
-		tabs = append(tabs, name)
+		names[i] = "#" + termsafe.PlainLine(c.ch.Name)
 	}
+	tail := ""
+	if s := m.state(); s != "" {
+		tail = "   " + s
+	}
+	// 状態が長くて今のタブが読めなくなるときは、タブに minTab 桁を残して状態の方を詰める (どれを見ているかを先に守る)
+	room := m.w - termwidth.Of(tail)
+	if room < minTab {
+		room = min(minTab, m.w)
+	}
+	return termwidth.Truncate(tabWindow(names, m.cur, room)+tail, m.w, "…")
+}
+
+// minTab は見出しの行で今のタブに必ず残す幅 (「#」とチャンネル名の頭の数文字が読める幅)。
+const minTab = 12
+
+func (m *Model) state() string {
 	c := m.chans[m.cur]
-	state := ""
 	switch {
 	case c.loading && c.page != nil:
-		state = "読み直し中… (前の板を出している)"
+		return "読み直し中… (前の板を出している)"
 	case c.loading:
-		state = "読んでいます…"
+		return "読んでいます…"
 	case c.err != nil && c.page != nil:
-		state = "🚨 読み直しに失敗 (前の板を出している)"
+		return "🚨 読み直しに失敗 (前の板を出している)"
+	case c.err != nil:
+		return "🚨 読めなかった (r で読み直す)"
 	case c.page != nil:
-		state = "最終 " + c.loadedAt.Format("15:04")
+		return "最終 " + c.loadedAt.Format("15:04")
 	}
-	return termwidth.Truncate(strings.Join(tabs, "  ")+"   "+state, m.w, "…")
+	return ""
+}
+
+const (
+	tabGap  = "  "
+	tabMore = "…"
+)
+
+// tabWindow は names を tabGap でつないだ行で、cur を反転して出す。幅 room に収まらなければ cur を含む連続した範囲だけを出し、
+// 外した側に tabMore を置く。cur だけでも収まらないときは、印を付けずに cur の名前を room に縮める
+// (印の分だけ cur が押し出され、呼び出し側が行の右端で切ると状態が消える)。
+func tabWindow(names []string, cur, room int) string {
+	width := func(lo, hi int) int {
+		w := termwidth.Of(tabGap) * (hi - lo)
+		for _, n := range names[lo : hi+1] {
+			w += termwidth.Of(n)
+		}
+		if lo > 0 {
+			w += termwidth.Of(tabMore + tabGap)
+		}
+		if hi < len(names)-1 {
+			w += termwidth.Of(tabGap + tabMore)
+		}
+		return w
+	}
+	lo, hi := cur, cur
+	if width(lo, hi) > room {
+		return "\x1b[7m" + termwidth.Truncate(names[cur], max(room, 1), "…") + "\x1b[27m"
+	}
+	for grew := true; grew; {
+		grew = false
+		if hi+1 < len(names) && width(lo, hi+1) <= room {
+			hi, grew = hi+1, true
+		}
+		if lo > 0 && width(lo-1, hi) <= room {
+			lo, grew = lo-1, true
+		}
+	}
+	var parts []string
+	if lo > 0 {
+		parts = append(parts, tabMore)
+	}
+	for i := lo; i <= hi; i++ {
+		if i == cur {
+			parts = append(parts, "\x1b[7m"+names[i]+"\x1b[27m")
+		} else {
+			parts = append(parts, names[i])
+		}
+	}
+	if hi < len(names)-1 {
+		parts = append(parts, tabMore)
+	}
+	return strings.Join(parts, tabGap)
 }
 
 func (m *Model) noteLine() string {
@@ -384,9 +451,12 @@ func box(title string, body []string, w, rows int, active bool) []string {
 		t = termwidth.Truncate(t, max(inner-1, 0), "…")
 		return l + t + strings.Repeat("─", max(inner-termwidth.Of(t), 0)) + r
 	}
-	top := "─ " + title + " "
+	top := "─"
 	if active {
-		top = "━ " + title + " "
+		top = "━"
+	}
+	if title != "" {
+		top += " " + title + " "
 	}
 	out := []string{edge("┌", "┐", top)}
 	for i := range rows {

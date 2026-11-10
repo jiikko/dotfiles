@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slack-bbs/board"
 )
 
@@ -173,8 +174,9 @@ func (p Page) unit(u board.Unit, links bool) []string {
 		}
 		lines := strings.Split(m.Text, "\n")
 		out = append(out, fmt.Sprintf("%s%s %s: %s", prefix, tsTime(m.Ts).Format("01/02 15:04"), clean(m.Name), clean(lines[0])))
+		// 続きの行は時刻の頭から 2 桁下げる。prefix は全角の「前」を含むので、バイト数ではなく表示幅で数える
 		for _, l := range lines[1:] {
-			out = append(out, strings.Repeat(" ", len(prefix)+2)+clean(l))
+			out = append(out, strings.Repeat(" ", termwidth.Of(prefix)+2)+clean(l))
 		}
 	}
 	if u.Truncated {

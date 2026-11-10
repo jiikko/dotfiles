@@ -265,3 +265,83 @@ func TestOpenSelectedOpensLatestMessage(t *testing.T) {
 		t.Errorf("開いた URL = %q, want %q", opened, want)
 	}
 }
+
+// 狭い端末でも、見出しの行には今のチャンネルのタブと状態が出る (タブの並びの右端を切って、どれを見ているかを消さない)。
+func TestHeaderKeepsCurrentTabAndState(t *testing.T) {
+	var chans []subs.Channel
+	for i := range 6 {
+		// タブの幅 22 (「#」+ 21)。幅 80 から状態の 13 桁を引くと 3 本は入らず、引かなければ 3 本入って状態が切れる
+		chans = append(chans, subs.Channel{ID: fmt.Sprintf("C%d", i), Name: fmt.Sprintf("ch-%d-あいうえおかきく", i)})
+	}
+	l := &loader{calls: map[string]int{}}
+	m := New(context.Background(), chans, l.load, nil, func() time.Time { return t0 })
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	run(m, m.Init())
+	for _, cur := range []int{0, 3, 5} {
+		for m.cur != cur {
+			run(m, press(m, "tab"))
+		}
+		h := m.header()
+		if want := "\x1b[7m#" + chans[cur].Name + "\x1b[27m"; !strings.Contains(h, want) {
+			t.Errorf("cur=%d: 今のタブが無い: %q", cur, h)
+		}
+		if !strings.HasSuffix(h, "   最終 "+t0.Format("15:04")) {
+			t.Errorf("cur=%d: 状態が無い: %q", cur, h)
+		}
+		if cur > 0 && !strings.HasPrefix(h, tabMore+tabGap) {
+			t.Errorf("cur=%d: 畳んだ左のタブの印が無い: %q", cur, h)
+		}
+	}
+	// 幅が足りれば全部のタブを出し、畳んだ印は出さない
+	m.Update(tea.WindowSizeMsg{Width: 300, Height: 20})
+	if h := m.header(); strings.Contains(h, tabMore) || strings.Count(h, "#ch-") != 6 {
+		t.Errorf("広い端末で畳んだ: %q", h)
+	}
+	// 今のタブだけでも状態と並べて入らないときは、タブの名前を縮めて状態を丸ごと残す
+	m.chans[m.cur].ch.Name = strings.Repeat("とても長いチャンネル名", 6)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	h := m.header()
+	if !strings.HasSuffix(h, "\x1b[27m   最終 "+t0.Format("15:04")) || !strings.HasPrefix(h, "\x1b[7m#とても") || termwidth.Of(h) > 60 {
+		t.Errorf("長い名前で状態が切れた (または反転が閉じていない): %q", h)
+	}
+	// 名前だけなら入るが、両側の畳んだ印を足すと入らない今のタブ (中ほど) でも、状態は丸ごと残る
+	for m.cur != 3 {
+		run(m, press(m, "tab"))
+	}
+	m.chans[m.cur].ch.Name = "ch-あいうえおかきくけ" // タブの幅 22。幅 40 から状態の 13 桁を引いた 27 に、印 6 桁を足すと入らない
+	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: 20})
+	if h := m.header(); !strings.HasSuffix(h, "   最終 "+t0.Format("15:04")) || !strings.Contains(h, "\x1b[7m#ch-あ") {
+		t.Errorf("印の分だけ押し出されて状態が切れた: %q", h)
+	}
+	// 状態の文が長くて今のタブの残りが minTab に満たなくても (残りが負・0〜11)、今のタブは頭の数文字を読める幅で残し、状態の方を詰める
+	c := &m.chans[m.cur]
+	for _, st := range []struct {
+		name          string
+		loading, page bool
+		want          string
+	}{
+		{"読み直しに失敗 (残り -1)", false, true, "🚨 読み直し"},
+		{"読み直し中 (残り 5)", true, true, "読み直し中"},
+		{"読めなかった (残り 7)", false, false, "🚨 読めなかった"},
+	} {
+		saved := c.page
+		c.err, c.loading = errors.New("boom"), st.loading
+		if !st.page {
+			c.page = nil
+		}
+		if h := m.header(); !strings.HasPrefix(h, "\x1b[7m#ch-あいう") || !strings.Contains(h, st.want) || termwidth.Of(h) > MinWidth {
+			t.Errorf("%s: 今のタブが読めない: %q", st.name, h)
+		}
+		c.page = saved
+	}
+}
+
+// 最初の読み込みが失敗したら、見出しの行にもそう出す (状態が空だと、読んでいるのか止まったのか分からない)。
+func TestHeaderShowsFirstLoadError(t *testing.T) {
+	l := &loader{calls: map[string]int{}, err: map[string]error{"C1": errors.New("boom")}}
+	m := newModel(l)
+	run(m, m.Init())
+	if h := m.header(); !strings.Contains(h, "読めなかった (r で読み直す)") {
+		t.Errorf("見出しに失敗が出ていない: %q", h)
+	}
+}
