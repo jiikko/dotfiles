@@ -2,6 +2,7 @@ package subs
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"strings"
 	"testing"
 
@@ -107,8 +108,8 @@ func TestPickerFitsWidthAndKeepsPage(t *testing.T) {
 			t.Errorf("%d 行目が幅 80 で切れた: %q", i, l)
 		}
 	}
-	if !strings.Contains(lines[len(lines)-1], "q 保存せずに閉じる") || !strings.Contains(lines[len(lines)-1], "Enter 保存して閉じる") {
-		t.Errorf("案内に q が無い: %q", lines[len(lines)-1])
+	if help := strings.Join(lines[len(lines)-2:], "\n"); !strings.Contains(help, "q: 保存せずに閉じる") || !strings.Contains(help, "Enter: 保存して閉じる") {
+		t.Errorf("案内に閉じ方が無い: %q", help)
 	}
 	p.Key("n")
 	p.Key("/")
@@ -126,8 +127,41 @@ func TestPickerFitsWidthAndKeepsPage(t *testing.T) {
 func TestPickerClosingHintsAt40(t *testing.T) {
 	p := NewPicker([]source.Channel{{ID: "C1", Name: "a", IsMember: true}}, nil)
 	p.Resize(40, 10)
-	last := p.Lines()[len(p.Lines())-1]
-	if !strings.Contains(last, "Enter 保存して閉じる") || !strings.Contains(last, "q 保存せずに閉じる") {
-		t.Errorf("幅 40 の閉じ方の案内: %q", last)
+	lines := p.Lines()
+	help := strings.Join(lines[len(lines)-2:], "\n")
+	if !strings.Contains(help, "Enter: 保存して閉じる") || !strings.Contains(help, "q: 保存せずに閉じる") {
+		t.Errorf("幅 40 の閉じ方の案内: %q", help)
+	}
+}
+
+// 検索の欄は入力欄の編集キー (TUI ガイド §7) で直せ、打っている間だけ端末のカーソルをキャレットに置く (日本語の変換中の文字が欄に出る)。
+func TestPickerSearchIsLineEdit(t *testing.T) {
+	p := NewPicker([]source.Channel{{ID: "C1", Name: "dev-ops", IsMember: true}, {ID: "C2", Name: "design", IsMember: true}}, nil)
+	p.Resize(80, 12)
+	if p.Cursor() != nil {
+		t.Error("検索していないのにカーソルを出す")
+	}
+	for _, k := range []string{"/", "o", "p", "s", "space", "x", "ctrl+w"} { // ctrl+w で後ろの語 (x) を消す
+		p.Key(k)
+	}
+	if got := p.filter.String(); got != "ops " {
+		t.Fatalf("ctrl+w の後の検索の語 = %q, want %q", got, "ops ")
+	}
+	p.Key("left")
+	p.Key("left")
+	c := p.Cursor()
+	if c == nil || c.Y != 1 || c.X != termwidth.Of(searchLabel)+2 {
+		t.Fatalf("キャレットの位置 = %+v, want (%d, 1)", c, termwidth.Of(searchLabel)+2)
+	}
+	if !strings.Contains(p.Lines()[1], searchLabel+"ops ") {
+		t.Errorf("検索の行に語が出ない: %q", p.Lines()[1])
+	}
+	p.Key("ctrl+u") // キャレットの前 (op) を消す
+	if got := p.filter.String(); got != "s " {
+		t.Errorf("ctrl+u の後の検索の語 = %q, want %q", got, "s ")
+	}
+	p.Key("enter")
+	if p.Cursor() != nil || len(p.visible()) != 2 {
+		t.Errorf("Enter の後: カーソル %v / 一致 %d 件 (dev-ops と design)", p.Cursor(), len(p.visible()))
 	}
 }

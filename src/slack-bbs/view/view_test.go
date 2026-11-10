@@ -82,6 +82,10 @@ func keyMsg(k string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyTab}
 	case "enter":
 		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "ctrl+f", "ctrl+c":
+		return tea.KeyPressMsg{Code: rune(k[5]), Mod: tea.ModCtrl}
 	}
 	return tea.KeyPressMsg{Code: rune(k[0]), Text: k}
 }
@@ -563,7 +567,7 @@ func TestSubscriptionsEdgeCases(t *testing.T) {
 		t.Errorf("購読の画面が無い起動で s: 知らせ %q", bare.LastToast())
 	}
 	bareHelp, help := strings.Join(bare.helpLines(), "\n"), strings.Join(m.helpLines(), "\n")
-	if strings.Contains(bareHelp, "s 購読するチャンネルを選ぶ") || !strings.Contains(help, "s 購読するチャンネルを選ぶ") {
+	if strings.Contains(bareHelp, "s: 購読するチャンネルを選ぶ") || !strings.Contains(help, "s: 購読するチャンネルを選ぶ") {
 		t.Errorf("キーの案内の s が、購読の画面の有無と合っていない: %q / %q", bareHelp, help)
 	}
 }

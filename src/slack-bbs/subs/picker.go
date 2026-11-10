@@ -8,7 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slack-bbs/source"
@@ -23,7 +25,7 @@ type item struct {
 type Picker struct {
 	items     []item
 	list      listnav.List
-	filter    string
+	filter    lineedit.Line // 検索の語 (入力欄の編集キーは TUI ガイドの「入力欄の編集キー」)
 	filtering bool
 	w, h      int
 	done      bool
@@ -88,7 +90,7 @@ func (p *Picker) Selected() []Channel {
 // visible は検索に一致するチャンネルの添字。検索語は空白で区切った語のすべてを名前に含むもの (大文字と小文字・先頭の # は問わない)。
 func (p *Picker) visible() []int {
 	var words []string
-	for _, w := range strings.Fields(strings.ToLower(p.filter)) {
+	for _, w := range strings.Fields(strings.ToLower(p.filter.String())) {
 		if w = strings.TrimLeft(w, "#"); w != "" {
 			words = append(words, w)
 		}
@@ -116,9 +118,9 @@ func (p *Picker) pages(n int) int { return max((n+p.rows()-1)/p.rows(), 1) }
 // Key はキー 1 つを処理する。
 func (p *Picker) Key(k string) {
 	if p.filtering {
-		before := p.filter
+		before := p.filter.String()
 		defer func() {
-			if p.filter != before {
+			if p.filter.String() != before {
 				p.list.Cursor, p.list.Offset = 0, 0 // 一致が変わったら先頭から (Enter・Esc で語が変わらなければ今のページに留まる)
 			}
 		}()
@@ -126,17 +128,10 @@ func (p *Picker) Key(k string) {
 		case "enter":
 			p.filtering = false
 		case "esc":
-			p.filtering, p.filter = false, ""
-		case "backspace":
-			if r := []rune(p.filter); len(r) > 0 {
-				p.filter = string(r[:len(r)-1])
-			}
-		case "space":
-			p.filter += " "
+			p.filtering = false
+			p.filter.Reset()
 		default:
-			if len([]rune(k)) == 1 {
-				p.filter += k
-			}
+			p.filter.Key(k, lineedit.KeyText(k))
 		}
 		return
 	}
@@ -185,9 +180,11 @@ func (p *Picker) Lines() []string {
 	lines := []string{termwidth.Truncate(fmt.Sprintf("%s  購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", pageNo, n, len(p.items)), p.w, "…")}
 	switch {
 	case p.filtering:
-		lines = append(lines, termwidth.Truncate(fmt.Sprintf("名前で検索: %s▏ (%d 件が一致)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
-	case p.filter != "":
-		lines = append(lines, termwidth.Truncate(fmt.Sprintf("名前で検索: %s (%d 件が一致。/ で検索の語を変える)", termsafe.PlainLine(p.filter), len(vis)), p.w, "…"))
+		// 語はキャレットが欄に収まるよう前を切って出し、端末のカーソルをキャレットに置く (Cursor。日本語の変換中の文字が欄に出る)
+		text, _ := p.filter.Window(p.filterRoom(len(vis)))
+		lines = append(lines, termwidth.Truncate(searchLabel+termsafe.PlainLine(text)+fmt.Sprintf(searchCount, len(vis)), p.w, "…"))
+	case !p.filter.Empty():
+		lines = append(lines, termwidth.Truncate(fmt.Sprintf(searchLabel+"%s (%d 件が一致。/ で検索の語を変える)", termsafe.PlainLine(p.filter.String()), len(vis)), p.w, "…"))
 	default:
 		lines = append(lines, termwidth.Truncate("/ でチャンネルの名前を検索 (名前の一部。空白で区切ると全部を含むもの)", p.w, "…"))
 	}
@@ -225,17 +222,38 @@ func (p *Picker) Lines() []string {
 	for len(lines) < p.rows()+2 {
 		lines = append(lines, "")
 	}
-	// キーの案内の 2 行 (1 行目は一覧の操作、2 行目は閉じ方)。語は略さない。幅に入らない項目は hintfit が優先度の低い方から落とす
-	ops := []hintfit.Item{{Prio: 2, Text: "Space/x 購読を付け外し"}, {Prio: 3, Text: "n/p 次・前のページ"}, {Prio: 2, Text: "/ 名前で検索"}}
-	closing := []hintfit.Item{{Prio: 1, Text: "Enter 保存して閉じる"}, {Prio: 1, Text: "q 保存せずに閉じる"}}
+	// キーの案内の 2 行。書き方は TUI ガイドの「キー: 説明」で、語は略さない。閉じ方の 2 つ (どちらも抜ける手段 = 優先度 1) は
+	// 1 行に並べると幅 40 に入らないので、1 行ずつ末尾に置く。幅に入らない項目は hintfit が優先度の低い方から落とす
+	line1 := []hintfit.Item{{Prio: 2, Text: "Space/x: 購読を付け外し"}, {Prio: 2, Text: "/: 名前で検索"}, {Prio: 1, Text: "Enter: 保存して閉じる"}}
+	line2 := []hintfit.Item{{Prio: 3, Text: "n/p: 次・前のページ"}, {Prio: 1, Text: "q: 保存せずに閉じる"}}
 	if p.filtering {
-		ops = []hintfit.Item{{Prio: 2, Text: "文字を打つと名前で検索"}}
-		closing = []hintfit.Item{{Prio: 1, Text: "Enter 検索の語を決める"}, {Prio: 1, Text: "Esc 検索を消す"}}
+		line1 = []hintfit.Item{{Prio: 2, Text: "文字を打つと名前で検索"}, {Prio: 1, Text: "Enter: 検索の語を決める"}}
+		line2 = []hintfit.Item{{Prio: 3, Text: "Ctrl-W: 1 語消す"}, {Prio: 3, Text: "Ctrl-U: 前を全部消す"}, {Prio: 1, Text: "Esc: 検索を消す"}}
 	}
-	for _, items := range [][]hintfit.Item{ops, closing} {
+	for _, items := range [][]hintfit.Item{line1, line2} {
 		lines = append(lines, termwidth.Truncate(hintfit.Fit(p.w, "  ", items), p.w, "…"))
 	}
 	return lines
+}
+
+// 検索の行の頭と後ろ。filterRoom と Cursor が同じ値で桁を数える
+const (
+	searchLabel = "名前で検索: "
+	searchCount = "  (%d 件が一致)"
+)
+
+// filterRoom は検索の行で語に使える幅 (頭と件数を除いた残り。最低 1)。
+func (p *Picker) filterRoom(matches int) int {
+	return max(p.w-termwidth.Of(searchLabel)-termwidth.Of(fmt.Sprintf(searchCount, matches)), 1)
+}
+
+// Cursor は端末のカーソル (検索の語を打っている間だけ、検索の行のキャレットに置く。それ以外は nil で隠す)。
+func (p *Picker) Cursor() *tea.Cursor {
+	if !p.filtering {
+		return nil
+	}
+	_, col := p.filter.Window(p.filterRoom(len(p.visible())))
+	return caret.At(termwidth.Of(searchLabel)+col, 1, p.w, p.h)
 }
 
 type program struct{ p *Picker }
@@ -258,6 +276,7 @@ func (m program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m program) View() tea.View {
 	v := tea.NewView(strings.Join(m.p.Lines(), "\n"))
 	v.AltScreen = true
+	v.Cursor = m.p.Cursor()
 	return v
 }
 

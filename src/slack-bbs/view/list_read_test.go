@@ -210,7 +210,7 @@ func TestToastIsDrawnBottomRight(t *testing.T) {
 	if at < 10 || at == len(lines)-1 {
 		t.Errorf("知らせが右下 (キーの案内の上) に無い: %d 行目", at)
 	}
-	if !strings.Contains(lines[len(lines)-1], "q 終わる") {
+	if !strings.Contains(lines[len(lines)-1], "q: 終わる") {
 		t.Errorf("キーの案内が隠れた: %q", lines[len(lines)-1])
 	}
 	run(m, pending)
@@ -344,33 +344,44 @@ func TestTinyTerminalKeysAfterTabSwitch(t *testing.T) {
 	}
 }
 
-// キーの案内は略さない語で書き、幅 100 の端末では全部の項目が入る。狭い端末では項目を落としても q 終わるは残す。
+// キーの案内は「キー: 説明」で略さない語で書き、幅 100 の端末では一覧の全部の項目が入る (本文の欄では Tab だけが落ちる)。
+// 狭い端末では項目を落としても抜ける手段 (一覧では q: 終わる、本文の欄では h/q: 話題の一覧へ戻る) は残す。
 func TestHelpIsUnabbreviatedAndFits(t *testing.T) {
 	l := &loader{calls: map[string]int{}}
 	var saved [][]subs.Channel
 	opened := 0
 	m := subsModel(l, &saved, &opened)
-	for _, body := range []bool{false, true} {
-		m.body = body
+	common := []string{"o: Slack で開く", "u: 既読と未読の切り替え", "r: 今のチャンネルを読み直す", "R: 全チャンネルを読み直す", "s: 購読するチャンネルを選ぶ"}
+	for _, tc := range []struct {
+		body bool
+		want []string
+		exit string // 抜ける手段の項目
+		line int    // exit が出る行
+	}{
+		{false, append([]string{"j/k: 話題を選ぶ", "l/Enter: 本文を読む", "Tab: 次のチャンネル", "q: 終わる"}, common...), "q: 終わる", 1},
+		{true, append([]string{"j/k: 本文を送る", "J/K: 隣の話題へ", "h/q: 話題の一覧へ戻る"}, common...), "h/q: 話題の一覧へ戻る", 0},
+	} {
+		m.body = tc.body
 		m.w = 100
 		help := strings.Join(m.helpLines(), "\n")
-		for _, want := range []string{"o Slack で開く", "u 既読と未読を切り替える", "r 今のチャンネルを読み直す", "R 全チャンネルを読み直す", "Tab 次のチャンネル", "s 購読するチャンネルを選ぶ", "q 終わる"} {
+		for _, want := range tc.want {
 			if !strings.Contains(help, want) || strings.Contains(help, "…") {
-				t.Errorf("body=%v: 幅 100 の案内に %q が無い・切れた:\n%s", body, want, help)
+				t.Errorf("body=%v: 幅 100 の案内に %q が無い・切れた:\n%s", tc.body, want, help)
 			}
 		}
-		m.w = 40
-		for _, l := range m.helpLines() {
-			if termwidth.Of(l) > 40 {
-				t.Errorf("body=%v: 幅 40 で案内がはみ出した: %q", body, l)
+		if tc.body && strings.Contains(help, "q: 終わる") {
+			t.Errorf("本文の欄の q は一覧へ戻るのに、案内が「q: 終わる」: %q", help)
+		}
+		for _, w := range []int{40, 30} { // 30: r (27 桁) と q は並べて入らない幅。抜ける手段を先に採る
+			m.w = w
+			for _, l := range m.helpLines() {
+				if termwidth.Of(l) > w {
+					t.Errorf("body=%v: 幅 %d で案内がはみ出した: %q", tc.body, w, l)
+				}
 			}
-		}
-		if !strings.Contains(m.helpLines()[1], "q 終わる") {
-			t.Errorf("body=%v: 幅 40 で q 終わるが落ちた: %q", body, m.helpLines()[1])
-		}
-		m.w = 30 // r (26 桁) と q は並べて入らない幅: q を先に採る
-		if l := m.helpLines()[1]; !strings.Contains(l, "q 終わる") {
-			t.Errorf("body=%v: 幅 30 で q 終わるが落ちた: %q", body, l)
+			if l := m.helpLines()[tc.line]; !strings.Contains(l, tc.exit) {
+				t.Errorf("body=%v: 幅 %d で %q が落ちた: %q", tc.body, w, tc.exit, l)
+			}
 		}
 	}
 }

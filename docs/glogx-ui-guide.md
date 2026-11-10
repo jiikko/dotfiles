@@ -1,6 +1,6 @@
 # TUI ガイド — 操作感の世界観とキー語彙 (glogx / pro-con と tuikit)
 
-(pro-con もこの語彙に従う。pro-con で意味を変えている字は §8)
+(pro-con もこの語彙に従う。pro-con で意味を変えている字は §8。slack-bbs (`src/slack-bbs`) の読む画面と購読の画面も従う)
 
 glogx の画面 (git log 一覧 / job パネル / diff / issues viewer / status viewer / doctor /
 ratelimit) と pro-con に共通する**操作の考え方**を 1 箇所に置く。ファイル名に glogx が残っているのは
@@ -93,7 +93,8 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `m` | 名前の変更 (move / rename) | treefiler (同じフォルダの中だけ)。mac-lan-manager は台帳の別名 |
 | `c` | この Mac の IP をコピー | mac-lan-manager (選んでいる行に関係なく。板で内部 / メイン / 有線の名前を選ぶ)。**pro-con では「止めた dispatcher を起こす」** (画面ごとに意味が違う。glogx には無い) |
 | `,` | 設定 | treefiler・mac-lan-manager (macOS の ⌘, に合わせた字)。pro-con の設定は `s` |
-| `r` | 再読込 / 再実行 | issues の再読込、job の rerun |
+| `r` | 再読込 / 再実行 | issues の再読込、job の rerun。slack-bbs は今のチャンネルの読み直し (`R` で全チャンネル) |
+| `u` | 既読と未読の切り替え | **slack-bbs だけ** (glogx の `u` は pull。slack-bbs に pull は無い。メールの未読に戻す操作に合わせた) |
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |
 | `n` | next (次にやる目印) | issues の claim。**例外: treefiler では検索 (`t`) の次** (`N` が前。less / vim の検索の語彙) |
 | `N` | 次の番号 | issues の採番コピー |
@@ -292,12 +293,13 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | 本文 (issue の md・PG の応答) | `markdown.Render` | glogx の issues・pro-con の詳細 |
 | 本文の左の行番号の溝 (nvim の number) | `gutter.Width` / `gutter.Format` (番号はソースの行番号。折り返しの続き行は空白) | glogx の issues の本文・treefiler のタイル |
 | diff・コードの色付け | `highlight.Diff` (本文のフェンスコードは `markdown.Render` が中で `highlight.Lang` を通す) | glogx の diff の板・pro-con の差分の板 |
-| 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con |
-| 最下行の案内を幅で落とす (§5) | `hintfit.Fit` (`Item{Text, Prio}`。Prio は小さいほど残す。1 = 抜ける手段) | glogx の全画面 (`term.FitHintItems`)・mac-lan-manager |
-| 入力欄 (§7) | `lineedit` + `caret` | pro-con・glogx (issues の番号の絞り込み・URL ピッカー)。schedkeys は受ける文字を絞るため自前の欄で、§7 の編集キーと語の決め方を揃えている (`src/schedkeys/editor.go`) |
-| 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con |
-| 処理中の回る印 (点字の spinner) | `spinner.Frame` (自前の整数で回す) / `spinner.At` (時刻から選ぶ)。いつ tick し・いつ止めるかは各画面 | glogx・pro-con・treefiler・restartable |
-| 描き直しの tick (動きの間は速く・待つ間は遅く) | `tickchain.Chain` (`Want` で張るかを決め、seq を tick の Msg に載せて `Fired` へ返す)。bool の single-flight にしない (遅い tick が張ってある間に始まった動きが止まる) | treefiler・glogx |
+| 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con・slack-bbs |
+| 本文・一覧が欄に収まらないときの右端のスクロールバー | `layout.Scrollbar` (行は先に `layout.ScrollbarWidth` を引いた幅で組む。収まるときは何も足さない) | glogx の pager・pro-con の詳細・mac-lan-manager・slack-bbs の本文 |
+| 最下行の案内を幅で落とす (§5) | `hintfit.Fit` (`Item{Text, Prio}`。Prio は小さいほど残す。1 = 抜ける手段) | glogx の全画面 (`term.FitHintItems`)・mac-lan-manager・slack-bbs |
+| 入力欄 (§7) | `lineedit` + `caret` | pro-con・glogx (issues の番号の絞り込み・URL ピッカー)・slack-bbs (購読の画面の検索)。schedkeys は受ける文字を絞るため自前の欄で、§7 の編集キーと語の決め方を揃えている (`src/schedkeys/editor.go`) |
+| 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con・slack-bbs (進行中は `InfoColor` で端末の文字色。背景が青い端末で水色が沈むため) |
+| 処理中の回る印 (点字の spinner) | `spinner.Frame` (自前の整数で回す) / `spinner.At` (時刻から選ぶ)。いつ tick し・いつ止めるかは各画面 | glogx・pro-con・treefiler・restartable・slack-bbs |
+| 描き直しの tick (動きの間は速く・待つ間は遅く) | `tickchain.Chain` (`Want` で張るかを決め、seq を tick の Msg に載せて `Fired` へ返す)。bool の single-flight にしない (遅い tick が張ってある間に始まった動きが止まる) | treefiler・glogx・slack-bbs |
 | 行を幅で切る・揃える・折る | `termwidth` (x/ansi の `Hardwrap` / `Wrap` は使わない) | 全部 |
 
 ### 通知: 操作の結果は右下の toast に出す

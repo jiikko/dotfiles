@@ -65,7 +65,9 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
 
 読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。前回の板 (キャッシュ) があればすぐ出して、裏で読み直す。
   r で今のチャンネル、R で全部を読み直す (取り直して、新しい発言・編集された発言があれば claude -p で分類し直す)。
-  j/k: 移動  l/Enter: 本文へ  h/Esc: 一覧へ  Tab: チャンネル  o: Slack で開く  s: 購読を選ぶ  q: 終わる
+  j/k: 移動  l/Enter: 本文を読む  h/q/Esc/Enter: 本文から一覧へ  J/K: 本文を開いたまま隣の話題へ  Tab: 次のチャンネル
+  o: Slack で開く  u: 既読と未読の切り替え  s: 購読するチャンネルを選ぶ  q: 終わる (一覧で)  Ctrl-C: すぐ終わる
+  キーの語彙は dotfiles の docs/glogx-ui-guide.md (TUI ガイド) に揃えている
 
 環境変数:
   SLACK_BBS_SLACK   slack-cli のパス (既定 slack)
