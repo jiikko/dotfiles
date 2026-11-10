@@ -19,7 +19,7 @@ import (
 func runIndex(args []string, stdout, stderr io.Writer) int {
 	fs := commandFlags("dupscan index", stderr)
 	var q report.Query
-	fs.StringVar(&q.Name, "name", "", "名前の一部 (大文字小文字を区別しない)")
+	fs.StringVar(&q.Name, "name", "", "名前の一部 (大文字小文字を区別しない。正規表現ではない)")
 	fs.StringVar(&q.Returns, "returns", "", "戻り値の型の一部")
 	fs.StringVar(&q.ParamType, "param-type", "", "どれかの引数の型の一部")
 	fs.StringVar(&q.Doc, "doc", "", "doc comment の最初の行の語")
@@ -74,6 +74,9 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 				hint.Pattern = regexp.QuoteMeta(q.Name)
 			}
 			err = report.IndexText(stdout, s, report.IndexTextOptions{Limit: *limit, DocBytes: *docBytes, Hint: hint})
+			if s.Matches == 0 && strings.Contains(q.Name, "|") {
+				fmt.Fprintln(stderr, "dupscan index: -name は名前の一部で引く。`|` は語の区切りにならないので、語ごとに引き直す")
+			}
 			if note := report.TruncationNotice("index", *limit, s.Matches); note != "" {
 				fmt.Fprintln(stderr, note)
 			}

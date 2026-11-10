@@ -63,6 +63,19 @@ func TestIndexFindsByNameReturnParamAndDoc(t *testing.T) {
 	}
 }
 
+func TestIndexExplainsPipeInNameWhenNothingMatches(t *testing.T) {
+	root := repoWith(t, map[string]string{"Sources/Helpers.swift": indexed})
+	if _, _, errs := index(t, "-name", "location|bucket", root); !strings.Contains(errs, "`|` は語の区切りにならない") {
+		t.Errorf("0 件で -name に | があれば案内する: %q", errs)
+	}
+	if _, _, errs := index(t, "-name", "nothing", root); strings.Contains(errs, "区切り") {
+		t.Errorf("| が無い 0 件には案内しない: %q", errs)
+	}
+	if _, _, errs := index(t, "-name", "location", root); strings.Contains(errs, "区切り") {
+		t.Errorf("当たったときは案内しない: %q", errs)
+	}
+}
+
 func TestIndexLineShowsDocAndMarks(t *testing.T) {
 	// test のファイルを場所の順で前に置き、並べ方が場所でなく prod / test で決まることを見る。
 	root := repoWith(t, map[string]string{"Sources/Helpers.swift": indexed, "AppTests/TestSupport.swift": indexedTest})
