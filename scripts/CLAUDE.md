@@ -86,6 +86,14 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 (`test-src` に含まれ、CI は `unused.yml`。全 push の lint.yml で Go 解析を回さないため test-lint に入れない)。
 `check_assert_reaches_exit.sh` は `make test-assert-reaches-exit` を棚卸しのときに手で叩く (所要が長く、当面は赤いのが正常。tests/CLAUDE.md)。
 
+## Ruby のスクリプト (golangci_ruleguard_key.rb・nvim/ruby-refs-index/measure.rb ほか)
+
+- 日本語を含む入力を JSON.parse するスクリプトは、冒頭で `Encoding.default_external = Encoding::UTF_8` にする (golangci_config.rb は YAML を読むだけで、落ちないので付けていない)。LANG・LC_ALL が空のシェル
+  (Claude Code の Bash など) では読み込みが US-ASCII になり、json 2.13.2 (rbenv の Ruby 3.2.2) は Encoding::InvalidByteSequenceError で落ちる
+  (json 2.7.2 は落ちない。issue 1059)。テストに直接書く `ruby -rjson -e` も `-E UTF-8` を付ける
+- 🚨 試すときは、再現のスクリプトも dotfiles の下に置く。rbenv は `ruby <スクリプトのパス>` では cwd ではなくスクリプトの置き場所から
+  `.ruby-version` を探す (dotfiles には無く、global の版になる)。別の repo の下に置いた再現は別の Ruby と json で走り、落ちない
+
 ## テスト
 
 - このディレクトリのスクリプトの unit テストは tests/tmux/ に stub 方式 (PATH 先頭に偽

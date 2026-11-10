@@ -30,7 +30,8 @@ for mod in src/*/go.mod; do
   if ! cfg=$(ruby scripts/golangci_config.rb src/.golangci.yml ${locals[@]+"${locals[@]}"}); then
     printf '  ✗ %s: 設定を合成できない\n' "$dir"; fail=1; continue
   fi
-  got=$(printf '%s' "$cfg" | ruby -rjson -e 'r = JSON.parse($stdin.read)["run"] || {}; puts "#{r["allow-parallel-runners"].inspect} #{r["relative-path-mode"].inspect}"')
+  # -E UTF-8: 合成した設定は日本語を含む。LANG・LC_ALL が空のシェルでは Ruby の既定が US-ASCII で、JSON.parse が落ちる
+  got=$(printf '%s' "$cfg" | ruby -E UTF-8 -rjson -e 'r = JSON.parse($stdin.read)["run"] || {}; puts "#{r["allow-parallel-runners"].inspect} #{r["relative-path-mode"].inspect}"')
   if [ "$got" = 'true "gomod"' ]; then
     printf '  ✓ %s\n' "$dir"
   else

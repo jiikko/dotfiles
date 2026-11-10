@@ -16,6 +16,10 @@
 require "digest"
 require "json"
 
+# 読み込みの文字コードを呼び出し元の locale に依らず UTF-8 にする。LANG・LC_ALL が空のシェル (Claude Code の Bash など) では既定が
+# US-ASCII になり、日本語を含む設定 (.golangci.local.yml の値) を JSON.parse が Encoding::InvalidByteSequenceError で落とす
+Encoding.default_external = Encoding::UTF_8
+
 TAG = "dotfiles-rules-"
 
 # 欄の名前は大文字小文字を区別せずに引く (golangci-lint の設定の読み込み (viper) と同じ。`RuleGuard:` でも効くのに鍵が抜けないように)

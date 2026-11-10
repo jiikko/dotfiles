@@ -84,7 +84,7 @@ if [ -x "$sysruby" ]; then
 fi
 
 only=$(ruby "$gen" "$work/base.yml") || ng "差分なしの合成が落ちた"
-printf '%s' "$only" | ruby -rjson -ryaml -e 'exit(JSON.parse($stdin.read) == YAML.load_file(ARGV[0]) ? 0 : 1)' "$work/base.yml" ||
+printf '%s' "$only" | ruby -E UTF-8 -rjson -ryaml -e 'exit(JSON.parse($stdin.read) == YAML.load_file(ARGV[0]) ? 0 : 1)' "$work/base.yml" ||
   ng "差分なしの合成がベースと同じ値にならない"
 
 printf 'version: "3"\n' >"$work/v3.yml"
@@ -116,6 +116,14 @@ reject 'formatters.disable' 'formatters: {disable: [gofmt]}'
 reject '同じ鍵が 2 度' "$(printf 'linters:\n  enable: [c]\nlinters:\n  settings: {y: 1}')"
 reject '入れ子の同じ鍵' "$(printf 'issues:\n  max: 1\n  max: 2')"
 reject '2 つ目の文書' "$(printf 'issues: {max: 1}\n---\nlinters: {enable: [c]}')"
+
+# 呼び出し元の locale に依らず、日本語を含む設定を合成する (LANG・LC_ALL が空のシェルでは Ruby の既定の文字コードが US-ASCII になる)
+printf 'issues:\n  exclude-rules:\n    - text: "日本語の理由"\n' >"$work/ja.yml"
+if ja=$(env -u LANG -u LC_ALL -u LC_CTYPE ruby "$gen" "$work/base.yml" "$work/ja.yml"); then
+  [[ "$ja" == *日本語の理由* ]] || ng "LANG が空のシェルで、日本語の値が合成の結果に残っていない"
+else
+  ng "LANG が空のシェルで、日本語を含む設定を合成できない"
+fi
 
 [ "$fail" -eq 0 ] || { printf '✗ golangci_config.rb の合成の規則が崩れている\n'; exit 1; }
 printf '✓ golangci_config.rb: 鍵の並び・一覧の足し方・同じバイト列 (ruby %s と /usr/bin/ruby)・壊れた入力と共通の塊を外す差分の rc=2\n' "$(ruby -e 'print RUBY_VERSION')"

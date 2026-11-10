@@ -27,6 +27,10 @@ require "prism"
 require "json"
 require "open3"
 
+# 読み込みの文字コードを呼び出し元の locale に依らず UTF-8 にする。LANG・LC_ALL が空のシェルでは既定が US-ASCII になり、
+# rg の出力 (日本語のコメントの行) を JSON.parse が Encoding::InvalidByteSequenceError で落とす
+Encoding.default_external = Encoding::UTF_8
+
 # 呼び出しノードだけを集める。ruby-lsp の ReferenceFinder と同じ粒度 (名前一致) にそろえる:
 # レシーバの型解析はあちらもしていないので、精度を比較する土俵を合わせるため。
 class CallSiteCollector < Prism::Visitor
