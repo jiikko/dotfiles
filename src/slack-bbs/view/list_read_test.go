@@ -485,3 +485,37 @@ func TestBodyCacheFollowsPageWidthAndTopic(t *testing.T) {
 		}
 	}
 }
+
+// 操作中の欄は太い枠 (┏) で、題を反転する。もう一方は細い枠 (┌) を薄く描く。l / h で入れ替わる。
+func TestActivePaneIsEmphasized(t *testing.T) {
+	m := datedModel(t, func() []board.Topic { return []board.Topic{topicAt("a", day0)} })
+	top := func() (left, right string) {
+		l := sgrRe.ReplaceAllString(m.Lines()[2], "")
+		i := strings.IndexAny(l, "┐┓") // 左の枠の右上の角 (先に出る方)
+		return l[:i], l[i:]
+	}
+	check := func(when string, leftActive bool) {
+		t.Helper()
+		l, r := top()
+		active, idle := l, r
+		if !leftActive {
+			active, idle = r, l
+		}
+		if !strings.Contains(active, "┏") || strings.Contains(idle, "┏") || !strings.Contains(idle, "┌") {
+			t.Errorf("%s: 操作中の欄が太い枠でない: 左 %q 右 %q", when, l, r)
+		}
+		raw := m.Lines()[2]
+		title := " 話題 "
+		if !leftActive {
+			title = " ⚪ 共有: a "
+		}
+		if !strings.Contains(raw, "\x1b[7m"+title+"\x1b[27m") {
+			t.Errorf("%s: 操作中の欄の題が反転していない: %q", when, raw)
+		}
+	}
+	check("開いた直後", true)
+	press(m, "l")
+	check("l の後", false)
+	press(m, "h")
+	check("h の後", true)
+}

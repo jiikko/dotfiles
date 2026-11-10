@@ -746,28 +746,40 @@ func (m *Model) noteLine() string {
 // box は幅 w (枠線を含む)・高さ rows+2 の枠に、題 title と中身 body を入れた行。
 func box(title string, body []string, w, rows int, active bool) []string {
 	inner := max(w-2, 1)
-	edge := func(l, r string, t string) string {
-		t = termwidth.Truncate(t, max(inner-1, 0), "…")
-		return l + t + strings.Repeat("─", max(inner-termwidth.Of(t), 0)) + r
-	}
-	top := "─"
+	st := boxIdle
 	if active {
-		top = "━"
+		st = boxActive
 	}
+	line := func(s string) string { return st.sgr + s + "\x1b[22m" }
+	title = termwidth.Truncate(title, max(inner-3, 0), "…")
+	top := line(st.tl + strings.Repeat(st.h, inner) + st.tr)
 	if title != "" {
-		top += " " + title + " "
+		t := " " + title + " "
+		if active {
+			t = "\x1b[7m" + t + "\x1b[27m"
+		}
+		top = line(st.tl+st.h) + t + line(strings.Repeat(st.h, max(inner-1-termwidth.Of(title)-2, 0))+st.tr)
 	}
-	out := []string{edge("┌", "┐", top)}
+	out := []string{top}
 	for i := range rows {
 		s := ""
 		if i < len(body) {
 			s = body[i]
 		}
 		s = termwidth.Truncate(s, inner, "…")
-		out = append(out, "│"+s+termwidth.PadSpaces(inner-termwidth.Of(s))+"│")
+		out = append(out, line(st.v)+s+termwidth.PadSpaces(inner-termwidth.Of(s))+line(st.v))
 	}
-	return append(out, edge("└", "┘", ""))
+	return append(out, line(st.bl+strings.Repeat(st.h, inner)+st.br))
 }
+
+// boxStyle は枠の線と色。操作中の欄は太い線を太字で描き、題を反転する。操作していない欄は細い線を薄く描く。
+// 色 (前景・背景) は使わない: 背景が青い端末で沈む (highlight.go の色の約束)。太さと濃さだけで、どちらの欄にキーが効くかを見分けさせる
+type boxStyle struct{ sgr, tl, tr, bl, br, h, v string }
+
+var (
+	boxActive = boxStyle{sgr: "\x1b[1m", tl: "┏", tr: "┓", bl: "┗", br: "┛", h: "━", v: "┃"}
+	boxIdle   = boxStyle{sgr: "\x1b[2m", tl: "┌", tr: "┐", bl: "└", br: "┘", h: "─", v: "│"}
+)
 
 func (m *Model) rightLines() []string {
 	title := ""
