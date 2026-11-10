@@ -22,6 +22,7 @@ func (m *Model) SetReads(r *Reads) {
 func (m *Model) loadRead(i int) {
 	c := &m.chans[i]
 	c.read = map[string]string{}
+	c.unread = nil // 印を置き換えたら未読の数も数え直す (読めない・口が無くて空から始める道も)
 	if m.reads == nil {
 		return
 	}
@@ -33,7 +34,6 @@ func (m *Model) loadRead(i int) {
 	if read != nil {
 		c.read = read
 	}
-	c.unread = nil
 }
 
 // unitUnread は単位に、印より後の他人の期間内の発言があるか。自分の発言と、文脈として出した期間前の発言は数えない

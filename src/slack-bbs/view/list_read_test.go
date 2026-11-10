@@ -47,12 +47,12 @@ func leftPlain(m *Model) []string {
 	var out []string
 	for _, l := range m.leftLines()[1:] {
 		l = sgrRe.ReplaceAllString(l, "")
-		l = strings.TrimSuffix(strings.TrimPrefix(l, "│"), "│")
+		l = strings.Trim(l, "│┃") // 枠 (操作中は太い線)
 		if strings.TrimSpace(l) != "" {
 			out = append(out, strings.TrimRight(l, " "))
 		}
 	}
-	return out[:len(out)-1] // 下の枠線
+	return out[:len(out)-1] // 下の枠線 (┗━┛ か └─┘)
 }
 
 // 話題は最後の発言の日ごとに見出しの下へ組み、新しい日が上。同じ日の中は板の並び (要対応が先) を保ち、未分類は最後に別の見出しで出す。
