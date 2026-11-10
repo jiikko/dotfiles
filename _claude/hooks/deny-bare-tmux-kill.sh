@@ -102,11 +102,20 @@ SEP_TOKEN=$'\x01'
 # 中に kill トークンを含むもの (bash -c '...') と実行ファイル名そのものを囲んだもの
 # ('tmux' の形) は剥がして検査対象に残す。
 unquote() {
-  local s="$1" out="" ch q="" buf="" i len
+  local s="$1" out="" ch q="" buf="" i len prev=" "
   len=${#s}
   for ((i = 0; i < len; i++)); do
     ch="${s:i:1}"
     if [ -z "$q" ]; then
+      # 引用符の外の「空白 + #」から後ろは行内コメントなので捨てる。落とさないと `# -L probe の後片付け` のような
+      # コメントが -L 免除を誤って与える。🚨 引用符を剥がす前の文字列に `${seg%% #*}` を当てない: `;` は区切りでない印に
+      # 置き換わるので `a '#{x} #{y}'; tmux kill-server` が 1 つのセグメントになり、引用符の中の ` #` から後ろの kill まで消えていた。
+      # 別のループに分けない (1 文字ループは O(n²) で、2 本にすると大入力で timeout 10 秒を越えて deny が出なくなる)
+      [ "$ch" = "#" ] && [ "$prev" = " " ] && break
+      # バックスラッシュの次の 1 文字は引用符にもコメントにもならない (`\tmux` の剥がしは scan_segment が持つので、\ ごと残す)
+      if [ "$ch" = \\ ]; then
+        out+="$ch${s:i+1:1}"; prev=x; i=$((i + 1)); continue  # エスケープした空白 (`a\ #b`) の後の # はコメントではない
+      fi
       case "$ch" in
         \'|\") q="$ch"; buf="" ;;
         *) out+="$ch" ;;
@@ -118,7 +127,9 @@ unquote() {
       # それ以外は Q に潰す。潰さないと tmux へ渡る文字列引数 (send-keys / run-shell の
       # 中身) や、単に文字列として tmux コマンドを含む別コマンド (git log --grep '...')
       # まで検査対象になり、正当な操作を止めてしまう。
-      if [[ "$out" =~ (^|[[:space:]])(sh|bash|zsh|dash|ksh|env)([[:space:]]+[^[:space:]]+)*[[:space:]]+-[^[:space:]]*c[[:space:]]*$ ]] \
+      #   (`/bin/bash -c` のようにパスの付いたシェルと、中身をそのまま実行する eval も同じ扱い)
+      if { [[ "$out" =~ (^|[[:space:]/])(sh|bash|zsh|dash|ksh|env)([[:space:]]+[^[:space:]]+)*[[:space:]]+-[^[:space:]]*c[[:space:]]*$ ]] \
+           || [[ "$out" =~ (^|[[:space:]])eval[[:space:]]*$ ]]; } \
          && [[ "$buf" =~ $KILL_RE ]]; then
         out+=" $buf "
       elif [[ "$buf" =~ ^([^[:space:]]*/)?tmux$ ]]; then
@@ -127,9 +138,13 @@ unquote() {
         out+=" Q "
       fi
       q=""
+    elif [ "$q" = '"' ] && [ "$ch" = \\ ]; then
+      # 二重引用符の中の \" は引用符を閉じない
+      buf+="${s:i+1:1}"; i=$((i + 1))
     else
       buf+="$ch"
     fi
+    prev="$ch"
   done
   [ -n "$q" ] && out+=" $buf "   # 閉じていない引用符は中身を残す (安全側)
   printf '%s' "$out"
@@ -194,9 +209,7 @@ normalized="${normalized//\;/ $SEP_TOKEN }"
 segments=$(printf '%s' "$normalized" | sed -E 's/&&|\|\||[;|]/\n/g')
 
 while IFS= read -r seg; do
-  # 行内コメント (" #" 以降) を落とす。落とさないと `# -L probe の後片付け` のような
-  # コメントが -L 免除を誤って与える (レビューで実証)。行頭コメント行も丸ごと捨てる。
-  seg="${seg%% #*}"
+  # 行頭コメント行は丸ごと捨てる
   case "${seg#"${seg%%[![:space:]]*}"}" in '#'*) continue ;; esac
 
   # 🚨 重い解析はトークンを含むセグメントだけに入れる。unquote は 1 文字ループ + $(...) の
@@ -209,6 +222,9 @@ while IFS= read -r seg; do
     *kill-s* | *pkill* | *killall*) ;;
     *) continue ;;
   esac
+
+  # 行内コメントは unquote の中で落とす。大入力 (unquote を諦める) では落とさずに走査する (コメントの中の kill も検査に入り、deny 側に倒れる)。
+  # pkill / killall の判定も生のセグメントに当て、コメントを落とさない (落とすと引用符の中の ` #` で同じ素通りが起きる)
 
   # pkill / killall で tmux を狙う形は全サーバ無差別なので常に deny
   if [[ "$seg" =~ (^|[[:space:]\;\&\|])(pkill|killall)[[:space:]] ]] \

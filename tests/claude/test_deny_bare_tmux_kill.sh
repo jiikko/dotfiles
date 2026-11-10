@@ -195,6 +195,19 @@ expect deny  "subcommand 略記 kill-sessio" 'tmux kill-sessio -t x'
 expect deny  "行継続で分断された形" 'tmux \
   kill-server'
 expect deny  "コメント内の -L で免除されない" 'tmux kill-server  # -L probe の後片付け'
+# 引用符の中の ` #` はコメントではない。`;` は区切りでない印に置き換わるので、書式文字列の後ろの kill が同じセグメントに入る
+expect deny  "書式文字列の ' #{..}' の後ろの kill-server を落とさない" "/opt/homebrew/bin/tmux list-panes -a -F '#{session_name} #{pane_id}'; /opt/homebrew/bin/tmux kill-server"
+expect deny  "書式文字列の後ろの -L default の kill-server を落とさない" "tmux -L default list-panes -F '#{a} #{b}'; tmux -L default kill-server"
+expect deny  "二重引用符の中の ' #' の後ろの kill-session を落とさない" 'echo "a # b" ; tmux kill-session -t x'
+expect deny  "二重引用符の中のエスケープした引用符の後の ' #' でも落とさない" 'echo "a\" #" ; tmux kill-server'
+# 区切りは「空白 1 文字 + #」だけ。タブ + # は bash ではコメントだが、引用符の追い方が bash と違う形 ($'..'・${X:-..}) で
+# 素通りを作るので、コメントとして落とさない (deny 側に倒す)
+expect deny  "エスケープした空白の後の # はコメントではない" 'echo a\ #b; tmux kill-server'
+expect deny  "パスの付いたシェルの -c の中の kill (中に ' #' があっても)" '/bin/bash -c "tmux kill-server #x"'
+expect deny  "eval に渡した文字列の中の kill" 'eval "tmux kill-server #x"'
+expect deny  "タブの後の # はコメントとして落とさない" "$(printf 'echo ${X:-\t#} ; tmux kill-server')"
+expect allow "引用符の外の行内コメントの kill は検査しない" "echo 'x' # tmux kill-server"
+expect allow "書式文字列のあとの -L 付きの kill-server は通す" "tmux -L probe list-panes -F '#{a} #{b}'; tmux -L probe kill-server"
 expect deny  "kill トークンより後ろの -L では免除しない" 'tmux kill-session -t x; sort -S 1G /dev/null'
 
 # --- allow すべきもの (ソケット明示 / 無関係) -------------------------------------------
