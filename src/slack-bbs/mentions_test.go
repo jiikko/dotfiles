@@ -38,6 +38,7 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 			1: "[" + strings.Join([]string{
 				found("C9", "random", ts(since+900), "U1", "これどう思う? "+link("C1", mine)),
 				found("C9", "random", ts(since+800), "U1", "関係ない "+link("C1", ts(since-99999))),
+				found("C9", "random", ts(since+850), "U1", "別のチャンネルの同じ ts "+link("C7", mine)),
 				found("C1", "dev", ts(since+310), "U1", "上を見て "+link("C1", parent)),
 				found("C8", "ops", ts(since+700), "ME", "共有 <https://ws.slack.com/archives/C1/p"+strings.ReplaceAll(ts(since+305), ".", "")+"?thread_ts="+parent+"&cid=C1>"),
 			}, ",") + "]",
@@ -74,8 +75,8 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 	if !strings.Contains(outage, "この話題への言及 (1 件)") || !strings.Contains(outage, "[#ops] 共有") || strings.Contains(outage, "[#dev]") {
 		t.Errorf("スレッドへの言及 (板に無い返信へのリンク) が出ない・同じスレッドの中のリンクを言及にした:\n%s", outage)
 	}
-	if strings.Contains(md, "関係ない") || strings.Contains(md, "読まないはず") {
-		t.Errorf("板に無い発言への言及・期間より前まで読んだ後の候補を出した:\n%s", md)
+	if strings.Contains(md, "関係ない") || strings.Contains(md, "読まないはず") || strings.Contains(md, "別のチャンネルの同じ ts") {
+		t.Errorf("板に無い発言・別のチャンネルの発言への言及、期間より前まで読んだ後の候補を出した:\n%s", md)
 	}
 	pages := 0
 	for _, c := range sl.calls {
