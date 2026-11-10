@@ -51,7 +51,7 @@ serial-run -h                                                       # usage (rc=
 - 前に誰かいるときは、差し込むと同時に LLM へ「順番待ちに入る・前に N 本・先頭の持ち主・`serial-run status`」を `additionalContext` で知らせる
   (待っている間は Bash の出力が返らないので、固まったと読ませない)。誰もいなければ何も添えない
 - 長い検証 (`isHeavy` の対象に `bin/skill-eval`・`tests/` の下の `.sh` を足したもの) を Bash 1 回の中の素の `&` で背景に回すコマンドは、書き換えずに deny し、
-  `run_in_background` へ案内する (完了の通知が来ず、TaskStop も効かない)。`nohup` / `setsid` / `disown` を付けた detach は止めない。
+  `run_in_background` へ案内する (完了の通知が来ず、TaskStop も効かない)。長い検証のコマンド自身に付けた `nohup` / `setsid`、直後の `disown`、zsh の `&|` / `&!` (detach) と、後ろに `wait` がある形は止めない。単位は zsh の規則で切る (`make test && echo ok &` は make test を前面で走らせるので止めない)。
   規則と検出しない形は `background.go` の `backgroundDenial`。書き換えと deny を同じ hook が出すので、別の hook との順番に依らない
 - 止め方: Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1` (背景に回す形の deny も止まる)
 
