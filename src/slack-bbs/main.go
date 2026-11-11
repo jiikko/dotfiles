@@ -398,11 +398,14 @@ func eachChannel(ctx context.Context, o options, d deps, stderr io.Writer, fn fu
 
 // read は 1 段で読む: 集めて claude -p で分類し、組んで出す。
 func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) error {
+	st := openStore(d, stderr)
+	if _, err := st.Expire(d.now()); err != nil {
+		fmt.Fprintf(stderr, "slack-bbs: 🚨 古いキャッシュを消せなかった (読むのは続ける): %s\n", clean(err.Error()))
+	}
 	if !o.json && !o.dryRun && !o.md && d.tty() {
-		return browse(ctx, o, d)
+		return browse(ctx, o, d, st)
 	}
 	var pages []render.Page
-	st := openStore(d, stderr)
 	err := eachChannel(ctx, o, d, stderr, func(c collected) error {
 		if o.dryRun {
 			fmt.Fprintf(stdout, "#%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
@@ -545,12 +548,11 @@ type identity struct {
 
 // browse は読む画面を開く。読み直しのたびに取得から分類までをやり直す (分類は claude -p)。画面の中では stderr が見えないので、
 // slack-cli の警告と分類から捨てたものは板の注記に載せる。
-func browse(ctx context.Context, o options, d deps) error {
+func browse(ctx context.Context, o options, d deps, st cache.Store) error {
 	targets, err := channelsToRead(o, d)
 	if err != nil {
 		return err
 	}
-	st := openStore(d, io.Discard)
 	cli := source.Client{R: source.Quiet(d.slack)}
 	// 自分とユーザーの名前は最初の読み直しの中で 1 回だけ取る (取れなければ次の読み直しで取り直す)。画面を開く前に取ると、
 	// キャッシュの前回の板を出せるのに slack-cli の 2 回の呼び出し (数秒) のあいだ画面が空になる。

@@ -125,3 +125,46 @@ func TestReadRoundTripAndPrune(t *testing.T) {
 		t.Errorf("置き場が空なら書かない: %v", err)
 	}
 }
+
+// Expire は書き換えの無いまま期間を過ぎたファイルだけを消す: raw と summary は CacheKeep、既読の印は ReadKeep。
+// キャッシュの形でないファイル (slack-cli の lock・知らない拡張子) と、期間の内のファイルには触らない。
+func TestExpire(t *testing.T) {
+	dir := t.TempDir()
+	st := Store{Dir: dir}
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	age := map[string]time.Duration{
+		"COLD.raw.json":     CacheKeep + time.Hour, // 消す
+		"COLD.summary.json": CacheKeep + time.Hour, // 消す
+		"COLD.read.json":    CacheKeep + time.Hour, // 既読は ReadKeep まで残す
+		"OLD.read.json":     ReadKeep + time.Hour,  // 消す
+		"WARM.raw.json":     CacheKeep - time.Hour,
+		"slack-cli.lock":    ReadKeep * 2,
+		"notes.json":        ReadKeep * 2,
+		"x.y.json":          ReadKeep * 2, // ID の形でない
+	}
+	for name, a := range age {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, now.Add(-a), now.Add(-a)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := st.Expire(now)
+	if err != nil || n != 3 {
+		t.Fatalf("Expire = %d, %v; want 3 件", n, err)
+	}
+	var left []string
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		left = append(left, e.Name())
+	}
+	want := "COLD.read.json,WARM.raw.json,notes.json,slack-cli.lock,x.y.json"
+	if got := strings.Join(left, ","); got != want {
+		t.Errorf("残ったファイル: %s, want %s", got, want)
+	}
+	if n, err := (Store{Dir: filepath.Join(dir, "none")}).Expire(now); n != 0 || err != nil {
+		t.Errorf("置き場が無いとき: %d, %v", n, err)
+	}
+}

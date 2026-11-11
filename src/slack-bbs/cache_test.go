@@ -293,3 +293,26 @@ func TestBrowseKeepsReadMarksInCache(t *testing.T) {
 		t.Errorf("開き直した後の未読の印 = %d, want 1 (前回の既読が戻る)", unread)
 	}
 }
+
+// 読む起動は、まず期間を過ぎた古いキャッシュのファイル (購読をやめたチャンネルのものなど) を消してから読む。
+func TestReadExpiresOldCache(t *testing.T) {
+	_, _, d, dir := cacheFixture(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(dir, "C9.raw.json")
+	if err := os.WriteFile(old, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(-15 * 24 * time.Hour)
+	if err := os.Chtimes(old, at, at); err != nil {
+		t.Fatal(err)
+	}
+	readMD(t, d, "C1")
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("15 日前のキャッシュが残った: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "C1.raw.json")); err != nil {
+		t.Errorf("今読んだチャンネルのキャッシュが無い: %v", err)
+	}
+}

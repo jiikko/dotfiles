@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"atomicfile"
@@ -200,4 +201,58 @@ func (s Store) SaveRead(ch string, units map[string]string, now time.Time) error
 		}
 	}
 	return s.save(ch, "read", Read{Version: ReadVersion, Units: keep})
+}
+
+// CacheKeep は取得の結果 (Raw) と分類 (Summary) のファイルを残す期間 (ユーザーの決定 2026-11-11: 2 週間ほどで捨ててよい)。
+// 書き換えの無いまま過ぎたファイル (購読をやめたチャンネル・開いていないチャンネル) を Expire が消す。既読の印のファイルは
+// ReadKeep で数える: 印は -lookback (既定 30 日) の間返信の付きうるスレッドを覚えるので、14 日で消すと読み直しのたびに未読へ戻る。
+const CacheKeep = 14 * 24 * time.Hour
+
+// Expire は置き場の中で、書き換えの無いまま残す期間を過ぎたキャッシュのファイル (<ID>.raw.json・.summary.json は CacheKeep、
+// .read.json は ReadKeep) を消し、消した数を返す。この形でないファイル (slack-cli の lock など) には触らない。
+// 1 つ消せなくても残りは続け、消せなかったものをまとめて返す。
+func (s Store) Expire(now time.Time) (int, error) {
+	if s.Dir == "" {
+		return 0, nil
+	}
+	ents, err := os.ReadDir(s.Dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	keep := map[string]time.Duration{"raw": CacheKeep, "summary": CacheKeep, "read": ReadKeep}
+	n := 0
+	var errs []error
+	for _, e := range ents {
+		base, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || !e.Type().IsRegular() {
+			continue
+		}
+		dot := strings.LastIndexByte(base, '.')
+		if dot < 0 {
+			continue
+		}
+		d, known := keep[base[dot+1:]]
+		if !known || !source.IsChannelID(base[:dot]) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		if now.Sub(info.ModTime()) <= d {
+			continue
+		}
+		if err := os.Remove(filepath.Join(s.Dir, e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, err)
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
 }
