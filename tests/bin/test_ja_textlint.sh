@@ -54,6 +54,12 @@ Go の版を上げる。
 潰さないように書く。
 x ** 2 を計算する。
 効かない設定。
+別版を出す。
+準備ができ次第
+版を上げる。
+第百版を読む。
+この変更は全
+版に当てる。
 EOF
 
 rc=0
@@ -83,9 +89,12 @@ want="3 4 ja-ai-vocabulary 1
 27 4 ja-ai-vocabulary 1
 28 1 ja-ai-vocabulary 1
 29 3 ja-bold-not-rendered 2
-30 1 ja-ai-vocabulary 1"
+30 1 ja-ai-vocabulary 1
+31 2 ja-ai-vocabulary 1
+33 1 ja-ai-vocabulary 1
+36 1 ja-ai-vocabulary 1"
 if [ "$(sort <<<"$got")" = "$(sort <<<"$want")" ]; then
-  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (16 件)"
+  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (19 件)"
 else
   fail "指摘が期待と違う。got:
 $got"
@@ -117,6 +126,14 @@ if grep -qF 'ja-ai-vocabulary' "$work/t.out" && ! grep -qF 'ja-bold-not-rendered
   ok ".txt では太字の規則を走らせない (語彙の規則は走る = ファイルは検査されている)"
 else
   fail ".txt で太字の規則が出た (rc=$rc): $(cat "$work/t.out")"
+fi
+printf 'ただし**「x」**と書く。\n' >"$work/k.mkd"
+rc=0
+"$BIN" "$work/k.mkd" >"$work/k.out" 2>&1 || rc=$?
+if grep -qF 'ja-bold-not-rendered' "$work/k.out"; then
+  ok "markdown plugin が受ける別の拡張子 (.mkd) でも太字の規則を走らせる"
+else
+  fail ".mkd で太字の規則が出ない (rc=$rc): $(cat "$work/k.out")"
 fi
 rc=0
 printf 'ただし**「x」**と書く。\n' | "$BIN" --stdin --stdin-filename x.md >"$work/s.out" 2>&1 || rc=$?

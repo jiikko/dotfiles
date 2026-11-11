@@ -8,8 +8,9 @@
 
 module.exports = function (context) {
   const { Syntax, RuleError, report, getSource, locator, getFilePath } = context;
-  // Markdown のファイルだけを見る。text plugin (.txt・コミットメッセージ) は段落全体を 1 つの Str にするので、表示される太字の ** まで当たる
-  if (!/\.(?:md|markdown)$/iu.test(getFilePath() || "")) {
+  // Markdown のファイルだけを見る。text plugin (.txt・コミットメッセージ) は段落全体を 1 つの Str にするので、表示される太字の ** まで当たる。
+  // 拡張子は @textlint/textlint-plugin-markdown が受けるものに揃える (.ron は Markdown ではないので入れない)
+  if (!/\.(?:md|markdown|mdown|mkdn|mkd|mdwn|mkdown)$/iu.test(getFilePath() || "")) {
     return {};
   }
   return {
