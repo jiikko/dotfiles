@@ -239,7 +239,7 @@ const CacheKeep = 14 * 24 * time.Hour
 //   - <ID>.raw.json と .summary.json は組で数え、新しい方の時刻から CacheKeep を過ぎたら両方消す。summary だけで数えない:
 //     分類を使い回した読み直し (main.go の classify) は raw だけを書き直すので、毎日読んでいるチャンネルの summary も古い時刻のまま残る
 //   - <ID>.read.json と .hidden.json は ReadKeep
-//   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>) は CacheKeep
+//   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>。チャンネルの一覧 channels.json のものも) は CacheKeep
 //
 // この形でないファイル (slack-cli の lock など) には触らない。消す直前に時刻を取り直す (並んで起動した別の slack-bbs が
 // 書き直したばかりのファイルを、先に読んだ古い時刻で消さない。組のどれかが新しくなっていたら組ごと残す。窓は残る)。1 つ消せなくても残りは続け、消せなかったものをまとめて返す。
@@ -326,7 +326,7 @@ func (g *expiring) touched(now time.Time, mtime func(string) (time.Time, bool)) 
 // expireGroup はキャッシュのファイル名を、まとめて期限を数える組の鍵と残す期間にする。キャッシュの形でなければ ok が偽。
 func expireGroup(name string) (key string, keep time.Duration, ok bool) {
 	if atomicfile.IsTemp(name) {
-		if id, _, found := strings.Cut(name, "."); found && source.IsBoardID(id) {
+		if id, _, found := strings.Cut(name, "."); (found && source.IsBoardID(id)) || strings.HasPrefix(name, channelsFile+".") {
 			return "tmp:" + name, CacheKeep, true
 		}
 		return "", 0, false
@@ -361,7 +361,7 @@ type Channels struct {
 	Channels []source.Channel `json:"channels"`
 }
 
-// channelsFile はチャンネルの一覧の置き場。名前が ID の形でないので Expire は触らない (購読の画面を開くたびに書き直す)。
+// channelsFile はチャンネルの一覧の置き場。一覧そのものは Expire が消さない (購読の画面を開くたびに書き直す。書きかけの一時ファイルは消す)。
 const channelsFile = "channels.json"
 
 // LoadChannels は最後に取ったチャンネルの一覧を読む。無い・版が違うときは ok が偽 (誤りではない)。
