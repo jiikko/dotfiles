@@ -163,3 +163,35 @@ func TestStreamKeepsSelectionAndReloadsChangedGroups(t *testing.T) {
 		t.Error("新着のタブにいるのに、メンバーを変えたグループを読み直さない")
 	}
 }
+
+// 新着のタブで最後の話題を隠したら、見出しだけを残さない。+N は話題の中の発言から貼られた言及を 2 回数えない。
+// 新着のタブにいる間に足したタブも、すぐ読み始める。
+func TestStreamRound2(t *testing.T) {
+	loads := map[string]int{}
+	m := streamModel(t, []board.Topic{topicAt("a", day0)}, nil, loads)
+	run(m, press(m, "tab"))
+	run(m, press(m, "tab")) // 新着: 未読 a (ops は話題なし)
+	press(m, "x")
+	for _, r := range m.rows() {
+		if r.header() {
+			t.Errorf("話題の無い見出しが残った: %+v", m.rows())
+		}
+	}
+
+	tp := topicAt("q", day0.Add(-time.Hour))
+	reply := board.Unit{ID: tsAt(day0), Msgs: []board.Msg{{Ts: tsAt(day0), Name: "sato", Text: "これ", New: true}}}
+	tp.Units = append(tp.Units, reply)
+	ms := map[string][]render.Mention{tp.Units[0].ID: {{Unit: tp.Units[0].ID, Ts: reply.Msgs[0].Ts, Name: "sato"}}}
+	read := map[string]string{tp.Units[0].ID: tp.Units[0].Msgs[0].Ts}
+	if n := newCount(tp, read, ms); n != 1 {
+		t.Errorf("+N = %d, want 1 (話題の中の発言からの言及を 2 回数えた)", n)
+	}
+
+	before := loads["C3"]
+	m.SetSubscriptions(&Subscriptions{Save: func([]subs.Channel) error { return nil }})
+	m.setChannels([]subs.Channel{m.chans[0].ch, m.chans[1].ch, {ID: "C3", Name: "qa"}})
+	if !m.chans[2].loading || loads["C3"] != before {
+		// 読み始めた (loading) ことを見る。load は Cmd を走らせたときに呼ばれる
+		t.Errorf("新着のタブにいる間に足したタブを読み始めない: loading=%v", m.chans[2].loading)
+	}
+}

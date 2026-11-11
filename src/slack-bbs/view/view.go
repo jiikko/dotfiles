@@ -677,6 +677,12 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	}
 	if m.stream {
 		m.reselect(keep) // 先頭へ戻した後でも、選んでいた話題が残っていればそこへ戻す
+		for j := range m.chans {
+			// 新着のタブは全部のタブの板を並べるので、足したタブ (板がまだ無い) もすぐ読み始める (enterStream と同じ)
+			if c := &m.chans[j]; c.page == nil && !c.loading && c.err == nil {
+				cmds = append(cmds, m.reload(j))
+			}
+		}
 	}
 	return tea.Batch(cmds...)
 }

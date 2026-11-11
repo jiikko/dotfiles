@@ -201,7 +201,7 @@ func (m *Model) toggleHidden() {
 	if m.stream && hide && !m.showHidden && len(m.streamRows) > m.list.Cursor {
 		// 新着のタブは並べ直さず、隠した行だけをその場で抜く (並べ直すと、読んで既読になった話題もまとめて動き、カーソルが
 		// 無関係な行に乗る)。z で出しているときと戻すときは行をそのまま残す (淡い色が変わるだけ)
-		m.streamRows = slices.Delete(m.streamRows, m.list.Cursor, m.list.Cursor+1)
+		m.streamRows = dropEmptyHeaders(slices.Delete(m.streamRows, m.list.Cursor, m.list.Cursor+1))
 	}
 	switch {
 	case !hide:
@@ -260,7 +260,8 @@ func newCount(t board.Topic, read map[string]string, mentions map[string][]rende
 			}
 		}
 		for _, mn := range mentions[u.ID] {
-			if !mn.Mine && (!ok || board.TsBefore(mark, mn.Ts)) {
+			// 話題の中の発言から貼られた言及 (同じ話題の別の単位への引用) は、その発言として既に数えている
+			if !mn.Mine && (!ok || board.TsBefore(mark, mn.Ts)) && !inTopic(t, mn.Ts) {
 				n++
 			}
 		}
@@ -321,4 +322,23 @@ func (m *Model) buildStream() []row {
 		}
 	}
 	return rows
+}
+
+// inTopic は話題に ts の発言があるか。
+func inTopic(t board.Topic, ts string) bool {
+	return slices.ContainsFunc(t.Units, func(u board.Unit) bool {
+		return slices.ContainsFunc(u.Msgs, func(m board.Msg) bool { return m.Ts == ts })
+	})
+}
+
+// dropEmptyHeaders は話題の行が 1 つも続かない見出しを抜く (新着のタブで最後の話題を隠したとき、見出しだけを残さない)。
+func dropEmptyHeaders(rows []row) []row {
+	out := rows[:0]
+	for i, r := range rows {
+		if r.header() && (i+1 == len(rows) || rows[i+1].header()) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
