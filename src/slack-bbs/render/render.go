@@ -14,6 +14,7 @@ import (
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slack-bbs/board"
+	"slack-bbs/source"
 )
 
 // Page は 1 チャンネルの板。
@@ -46,6 +47,17 @@ type Mention struct {
 	ChannelName string `json:"channel_name"` // 言及した発言のチャンネル
 	Text        string `json:"text"`         // mrkdwn をほどいた本文
 	URL         string `json:"url"`          // 言及した発言の permalink
+}
+
+// IsGroup はグループ (複数のチャンネルをまとめた購読) の板か。ID で決める (メンバーの無いグループは Members も空)。
+func (p Page) IsGroup() bool { return source.IsGroupID(p.Channel) }
+
+// Label は板の名前: チャンネルは「#名前」、グループは「📂名前」(subs.Channel.Label と同じ形。端末の制御文字は落とす)。
+func (p Page) Label() string {
+	if p.IsGroup() {
+		return "📂" + clean(p.ChannelName)
+	}
+	return "#" + clean(p.ChannelName)
 }
 
 // MentionsOf は話題 t の発言への言及 (古い順)。
@@ -87,11 +99,7 @@ func Markdown(w io.Writer, p Page) error {
 			}
 		}
 	}
-	mark := "#"
-	if len(p.Members) > 0 {
-		mark = "📂" // グループの板
-	}
-	fmt.Fprintf(&sb, "# %s%s — %s 〜 %s (発言 %d / 話題 %d)\n\n", mark, clean(p.ChannelName), stamp(p.Since), stamp(p.Until), msgs, countTopics(p.Topics))
+	fmt.Fprintf(&sb, "# %s — %s 〜 %s (発言 %d / 話題 %d)\n\n", p.Label(), stamp(p.Since), stamp(p.Until), msgs, countTopics(p.Topics))
 	fmt.Fprintf(&sb, "%s より前に始まったスレッドは見ていない。\n", p.Lookback.Format("01/02"))
 	for _, n := range p.Notes {
 		fmt.Fprintf(&sb, "🚨 %s\n", clean(n))

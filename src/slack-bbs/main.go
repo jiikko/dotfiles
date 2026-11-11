@@ -443,7 +443,7 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 	err := eachChannel(ctx, o, d, stderr, func(c collected) error {
 		if o.dryRun {
 			fmt.Fprintf(stdout, "%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
-				pageLabel(c.page), len(c.units), c.sent, c.threads, c.chars)
+				c.page.Label(), len(c.units), c.sent, c.threads, c.chars)
 			return nil
 		}
 		if err := checkMax(c, o.max); err != nil {
@@ -455,11 +455,11 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		}
 		switch {
 		case use != nil:
-			fmt.Fprintf(stderr, "slack-bbs: %s: claude へ発言 %d 件 (約 %d トークン) を送った ($%.4f)\n", pageLabel(p), c.sent, use.InputTokens, use.CostUSD)
+			fmt.Fprintf(stderr, "slack-bbs: %s: claude へ発言 %d 件 (約 %d トークン) を送った ($%.4f)\n", p.Label(), c.sent, use.InputTokens, use.CostUSD)
 		case len(c.units) > 0:
-			fmt.Fprintf(stderr, "slack-bbs: %s: 新しい発言が無いので、%s の分類を使った (-no-cache で分類し直す)\n", pageLabel(p), p.ClassifiedAt.Format("01/02 15:04"))
+			fmt.Fprintf(stderr, "slack-bbs: %s: 新しい発言が無いので、%s の分類を使った (-no-cache で分類し直す)\n", p.Label(), p.ClassifiedAt.Format("01/02 15:04"))
 		}
-		warnDropped(stderr, pageLabel(p), dropped)
+		warnDropped(stderr, p.Label(), dropped)
 		if o.json {
 			pages = append(pages, p)
 			return nil
@@ -568,7 +568,7 @@ func assemble(stderr io.Writer, label string, units []board.Unit, resp board.Res
 	return topics
 }
 
-// warnDropped は分類から捨てたものを warn で出す。label は板の名前 (pageLabel)。
+// warnDropped は分類から捨てたものを warn で出す。label は板の名前 (render.Page.Label)。
 func warnDropped(stderr io.Writer, label string, dropped board.Dropped) {
 	if dropped.Any() {
 		fmt.Fprintf(stderr, "slack-bbs: %s: 🚨 LLM の分類から捨てたもの: %s\n", label, dropped)
@@ -804,7 +804,7 @@ func show(dir, key string, asJSON, keep bool, stdout, stderr io.Writer) error {
 		p := render.Page{Channel: r.Channel, ChannelName: r.ChannelName, Since: r.Since, Until: r.Until, Lookback: r.Lookback,
 			Base: r.Base, Notes: r.Notes, Mentions: r.Mentions, Members: r.Members}
 		if len(r.Units) > 0 {
-			p.Topics = assemble(stderr, pageLabel(render.Page{ChannelName: r.ChannelName, Members: r.Members}), r.Units, resp)
+			p.Topics = assemble(stderr, p.Label(), r.Units, resp)
 		}
 		if asJSON {
 			pages = append(pages, p)
@@ -998,12 +998,4 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 	}
 	c.page.Notes = append(c.page.Notes, notes...)
 	return c, nil
-}
-
-// pageLabel は板の名前 (stderr と -dry-run に出す): チャンネルは「#名前」、グループは「📂名前」(subs.Channel.Label と同じ形)。
-func pageLabel(p render.Page) string {
-	if len(p.Members) > 0 {
-		return "📂" + clean(p.ChannelName)
-	}
-	return "#" + clean(p.ChannelName)
 }

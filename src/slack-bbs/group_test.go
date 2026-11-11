@@ -52,3 +52,21 @@ func TestReadGroup(t *testing.T) {
 		t.Errorf("グループの単位を分類に当てられなかった:\n%s", md)
 	}
 }
+
+// メンバーの無いグループも、見出しと stderr・-dry-run の板の名前はグループの印 (📂) で出す (板の名前をメンバーの数で決めない)。
+func TestEmptyGroupIsLabeledAsGroup(t *testing.T) {
+	for _, args := range [][]string{{"-md"}, {"-dry-run"}} {
+		d := newDeps(t, &fakeSlack{}, &fakeClaude{})
+		path, _ := d.subsPath()
+		if err := subs.Save(path, []subs.Channel{{ID: "grp0123abcd", Name: "times"}}); err != nil {
+			t.Fatal(err)
+		}
+		var out, errb bytes.Buffer
+		if rc := run(context.Background(), args, &out, &errb, d); rc != 0 {
+			t.Fatalf("%v: rc=%d %s", args, rc, errb.String())
+		}
+		if !strings.Contains(out.String(), "📂times") || strings.Contains(out.String(), "#times") {
+			t.Errorf("%v: メンバーの無いグループをチャンネルの形 (#) で出した:\n%s", args, out.String())
+		}
+	}
+}
