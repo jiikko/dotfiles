@@ -19,7 +19,8 @@
 # 検出しない形 (silent): Bash の書き込み (sed / heredoc)・NotebookEdit・Markdown 以外の拡張子・jq が無い環境・依存が未導入・
 #   ja-textlint が指摘の有無以外で終わったとき (fail-open。規則の誤りは tests/bin/test_ja_textlint.sh が見る)・160KB を超えるファイル・
 #   Edit で new_string が空 (削除だけ) のとき・new_string がファイルに見つからないとき (書いた後に別の hook が書き換えた等)・
-#   old_string にあった行を同じ文字のまま別の場所へ動かしただけの行
+#   old_string にあった行を同じ文字のまま別の場所へ動かしただけの行・CR だけで改行したファイル (旧い Mac の形式。hook は 1 行と数え、
+#   textlint は CR で行を分けるので食い違う)
 # 分かっていて受ける形: replace_all でない Edit で new_string がファイルの別の場所にもあると、書いていない方の行も見る
 #   (どの出現を書いたかは、書いた後のファイルからは決まらない。old_string と同じ行は除くので、文脈の行は出ない)
 
@@ -45,11 +46,15 @@ case "$file" in
   *) exit 0 ;;
 esac
 [ -f "$file" ] || exit 0
-size=$(wc -c < "$file" 2>/dev/null) || exit 0
+# リダイレクトごと包む: 読めないファイルでは入力のリダイレクトの失敗が、wc の 2>/dev/null より先に stderr へ出る
+size=$( { wc -c < "$file"; } 2>/dev/null ) || exit 0
 [ "$size" -le 160000 ] || exit 0
 
 # 書いた行の範囲を [開始, 終了] の組で出す (行は 1 始まり)。jq の indices と文字列の切り出しはどちらもコードポイント単位。
 # 行は「前にある改行の数 + 1」で数える。split の要素数で数えない: 空の文字列の split は 0 要素で、ファイルの先頭が 0 行目になる。
+# 改行の位置は 1 度だけ集め、出現ごとに二分探索で引く。出現ごとに先頭から数え直すと、短い new_string (1 字の replace_all) で
+# 出現の数の 2 乗で遅くなり、hook の上限を超える。
+# old_string にある行は書いた行に数えない。ただし同じ行を old_string より多く書いたら (写し)、増えた分は書いた行に数える
 # CR は位置を探す前に外す (CRLF のファイルでも new_string は LF で届く)。行の数は CR を外しても変わらない
 ranges=$(printf '%s' "$input" | jq -c --rawfile c "$file" '
   ($c | gsub("\r"; "")) as $c
@@ -57,9 +62,13 @@ ranges=$(printf '%s' "$input" | jq -c --rawfile c "$file" '
       (.tool_input.new_string // "" | gsub("\r"; "")) as $s
       | (.tool_input.old_string // "" | gsub("\r"; "") | split("\n")) as $old
       | ($s | split("\n")) as $nl
-      | [ range(0; $nl | length) | . as $k | select($nl[$k] != "" and (any($old[]; . == $nl[$k]) | not)) ] as $ks
+      | [ range(0; $nl | length) | . as $k
+          | select($nl[$k] != ""
+              and ([$nl[:$k + 1][] | select(. == $nl[$k])] | length) > ([$old[] | select(. == $nl[$k])] | length)) ] as $ks
       | if $s == "" or ($ks | length) == 0 then [] else
-          [ $c | indices($s)[] | ([$c[:.] | match("\n"; "g")] | length + 1) as $l | $ks[] | [$l + ., $l + .] ]
+          ($c | indices("\n")) as $breaks
+          | [ $c | indices($s)[] | . as $i | ($breaks | bsearch($i)) as $b | ((if $b < 0 then -1 - $b else $b end) + 1) as $l
+              | $ks[] | [$l + ., $l + .] ]
         end
     else [[1, 1e9]] end' 2>/dev/null) || exit 0
 [ "$ranges" != "[]" ] || exit 0

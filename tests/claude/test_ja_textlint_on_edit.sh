@@ -101,6 +101,27 @@ top="$TMP_ROOT/top.md"
 printf '先頭で潰す行。\n二行目。\n' > "$top"
 expect_lines "ファイルの先頭に書いた行の指摘を知らせる" "$(run "$(edit_input "$top" "先頭で潰す行。")")" "1"
 
+# old_string にある行を写して増やした分は、書いた行として知らせる (old_string にある元の行は出さない)
+cp_f="$TMP_ROOT/copy.md"
+printf '黙って捨てる。\n間。\n黙って捨てる。\n' > "$cp_f"
+expect_lines "old_string の行を写して増やした行を知らせる" "$(run "$(edit_ctx_input "$cp_f" "黙って捨てる。
+間。" "黙って捨てる。
+間。
+黙って捨てる。")")" "3"
+
+# 出現の多い短い new_string (1 字の replace_all) でも上限の内に終わる (出現ごとに先頭から改行を数え直すと、出現の数の 2 乗で伸びる)。
+# 大きさは 1000 行・3000 回: 実測で hook 全体は 2〜3 秒 (ほとんどが textlint)、数え直す形の jq だけで 800 行 17 秒・1200 行 55 秒
+many="$TMP_ROOT/many.md"
+{ for _ in $(seq 1000); do printf 'ここにあるのはの、の、の。\n'; done; printf '最後の行で潰す。\n'; } > "$many"
+expect_lines "出現の多い 1 字の new_string でも上限の内に終わり、書いた行を知らせる" "$(run "$(edit_input "$many" "の")")" "1001"
+
+# 読めないファイルでは何も出さず、stderr にも出さない
+ro="$TMP_ROOT/ro.md"
+printf '黙って捨てる。\n' > "$ro"
+chmod 000 "$ro"
+expect_lines "読めないファイルは見ず、stderr にも出さない" "$(run "$(write_input "$ro")")" ""
+chmod 600 "$ro"
+
 # new_string が改行で終わっても、次の行 (書いていない行) は見ない
 m="$TMP_ROOT/nl.md"
 printf '足した行。\n前から黙って書いてある。\n' > "$m"
