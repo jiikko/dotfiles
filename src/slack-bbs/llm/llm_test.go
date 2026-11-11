@@ -50,3 +50,31 @@ func TestClassifierNamesModelAndPrompt(t *testing.T) {
 		t.Errorf("Classifier が指示文と応答の形の両方からハッシュを取っていない")
 	}
 }
+
+// 応答の形のテーマの一覧は board.Themes と同じ (片方だけ足すと、知らないテーマとして捨てるか、選べないテーマができる)。
+func TestSchemaThemesMatchBoard(t *testing.T) {
+	var s struct {
+		Properties struct {
+			Topics struct {
+				Items struct {
+					Properties struct {
+						Theme struct {
+							Enum []string `json:"enum"`
+						} `json:"theme"`
+					} `json:"properties"`
+				} `json:"items"`
+			} `json:"topics"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(Schema), &s); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Properties.Topics.Items.Properties.Theme.Enum; !slices.Equal(got, board.Themes) {
+		t.Errorf("Schema のテーマ %v と board.Themes %v が違う", got, board.Themes)
+	}
+	for _, th := range board.Themes {
+		if !strings.Contains(instructions, th+" (") {
+			t.Errorf("指示文にテーマ %s の説明が無い", th)
+		}
+	}
+}

@@ -51,9 +51,9 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 		},
 	}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[
-		{"title":"設計","state":"open","members":[%q],"labels":[]},
-		{"title":"リリース","state":"decided","members":[%q],"labels":[]},
-		{"title":"障害","state":"open","members":[%q],"labels":[]}]}`, mine, other, parent))}
+		{"title":"設計","state":"open","theme":"other","members":[%q],"labels":[]},
+		{"title":"リリース","state":"decided","theme":"other","members":[%q],"labels":[]},
+		{"title":"障害","state":"open","theme":"other","members":[%q],"labels":[]}]}`, mine, other, parent))}
 	var out, errb bytes.Buffer
 	if rc := run(context.Background(), []string{"C1"}, &out, &errb, newDeps(t, sl, cl)); rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
@@ -103,7 +103,7 @@ func TestMentionsAreCollectedPerTopic(t *testing.T) {
 func TestMentionSearchFailureIsNoted(t *testing.T) {
 	since := now.Add(-48 * time.Hour).Unix()
 	sl := &fakeSlack{history: fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"x"}]`, ts(since+1)), failSe: true}
-	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"x","state":"open","members":[%q],"labels":[]}]}`, ts(since+1)))}
+	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"x","state":"open","theme":"other","members":[%q],"labels":[]}]}`, ts(since+1)))}
 	var out, errb bytes.Buffer
 	if rc := run(context.Background(), []string{"C1"}, &out, &errb, newDeps(t, sl, cl)); rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, errb.String())
@@ -120,7 +120,7 @@ func TestMentionSearchStopsAtPageLimit(t *testing.T) {
 	for p := 1; p <= mentionPages+1; p++ {
 		sl.search[p] = "[" + found("C9", "random", ts(since+5000-int64(p)), "U1", "x") + "]"
 	}
-	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"x","state":"open","members":[%q],"labels":[]}]}`, ts(since+1)))}
+	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"x","state":"open","theme":"other","members":[%q],"labels":[]}]}`, ts(since+1)))}
 	var out, errb bytes.Buffer
 	if rc := run(context.Background(), []string{"C1"}, &out, &errb, newDeps(t, sl, cl)); rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, errb.String())

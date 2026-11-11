@@ -24,8 +24,8 @@ func cacheFixture(t *testing.T) (*fakeSlack, *fakeClaude, deps, string) {
 	a, b := ts(since+100), ts(since+200)
 	sl := &fakeSlack{history: fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"リリース"},{"ts":%q,"user":"U1","text":"障害"}]`, b, a)}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[
-		{"title":"話題A","state":"info","members":[%q],"background":[{"text":"a","refs":[%q]}],"labels":[]},
-		{"title":"話題B","state":"decided","members":[%q],"background":[],"labels":[]}]}`, a, a, b))}
+		{"title":"話題A","state":"info","theme":"other","members":[%q],"background":[{"text":"a","refs":[%q]}],"labels":[]},
+		{"title":"話題B","state":"decided","theme":"other","members":[%q],"background":[],"labels":[]}]}`, a, a, b))}
 	d := newDeps(t, sl, cl)
 	dir := filepath.Join(t.TempDir(), "cache")
 	d.cacheDir = func() (string, error) { return dir, nil }

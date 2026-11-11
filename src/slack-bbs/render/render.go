@@ -119,9 +119,39 @@ func (p Page) topic(sb *strings.Builder, t board.Topic) {
 	}
 }
 
-// Mark は話題の印 (要対応 / 必読 / 状態の順に、当てはまるものを並べる)。
+// themeMark はテーマの印と名前。どの印も表示幅が 2 で変わらないもの (異体字セレクタで幅が揺れる記号を使わない)。
+var themeMark = map[string][2]string{
+	board.ThemeIncident:   {"🐛", "障害"},
+	board.ThemeRelease:    {"🚀", "リリース"},
+	board.ThemeQuestion:   {"❓", "質問・相談"},
+	board.ThemeDiscussion: {"💬", "議論・設計"},
+	board.ThemeAnnounce:   {"📣", "告知"},
+	board.ThemeSchedule:   {"📅", "予定・会議"},
+	board.ThemeOps:        {"🔧", "作業・運用"},
+	board.ThemeMetrics:    {"📈", "数字・分析"},
+	board.ThemeMoney:      {"💰", "お金・契約"},
+	board.ThemePeople:     {"👥", "人・体制"},
+	board.ThemeChat:       {"☕", "雑談"},
+	board.ThemeOther:      {"📝", "その他"},
+}
+
+// ThemeIcon は話題のテーマの印 (知らないテーマはその他の印)。
+func ThemeIcon(t board.Topic) string {
+	if m, ok := themeMark[t.Theme]; ok {
+		return m[0]
+	}
+	return themeMark[board.ThemeOther][0]
+}
+
+// UrgentMark は緊急の話題の印 (LLM の判断)。
+const UrgentMark = "🚨"
+
+// Mark は話題の印 (緊急 / 要対応 / 必読 / 状態 / テーマの順に、当てはまるものを並べる)。
 func Mark(t board.Topic) string {
 	var marks []string
+	if t.Urgent {
+		marks = append(marks, UrgentMark+" 緊急")
+	}
 	if t.Has(board.KindAction) {
 		marks = append(marks, "🔴 要対応")
 	}
@@ -130,6 +160,9 @@ func Mark(t board.Topic) string {
 	}
 	if !t.Unclassified {
 		marks = append(marks, stateMark[t.State])
+		if m, ok := themeMark[t.Theme]; ok && t.Theme != board.ThemeOther { // 「その他」は見出しの雑音になるので出さない
+			marks = append(marks, m[0]+" "+m[1])
+		}
 	}
 	return strings.Join(marks, " ")
 }

@@ -16,6 +16,8 @@ type Response struct {
 type RespTopic struct {
 	Title      string      `json:"title"`
 	State      string      `json:"state"`
+	Theme      string      `json:"theme"`      // Themes のどれか
+	Urgent     bool        `json:"urgent"`     // 今すぐ手を打たないとまずい話か (障害・お客さんへの影響・セキュリティ・今日が期限)
 	Members    []string    `json:"members"`    // 単位の ID
 	Conclusion RespPoint   `json:"conclusion"` // 1 項目 (空なら無し)
 	Background []RespPoint `json:"background"`
@@ -74,6 +76,26 @@ const (
 	StateInfo    = "info"    // 共有のみ
 )
 
+// 話題のテーマ。並びは LLM への指示に出す順。
+const (
+	ThemeIncident   = "incident"   // 障害・不具合
+	ThemeRelease    = "release"    // リリース・デプロイ
+	ThemeQuestion   = "question"   // 質問・相談
+	ThemeDiscussion = "discussion" // 議論・設計
+	ThemeAnnounce   = "announce"   // 告知
+	ThemeSchedule   = "schedule"   // 予定・会議
+	ThemeOps        = "ops"        // 作業・運用
+	ThemeMetrics    = "metrics"    // 数字・分析
+	ThemeMoney      = "money"      // お金・契約
+	ThemePeople     = "people"     // 人・体制
+	ThemeChat       = "chat"       // 雑談
+	ThemeOther      = "other"      // その他
+)
+
+// Themes はテーマの一覧 (LLM の応答の形と、知らない値の検査に使う)。
+var Themes = []string{ThemeIncident, ThemeRelease, ThemeQuestion, ThemeDiscussion, ThemeAnnounce, ThemeSchedule,
+	ThemeOps, ThemeMetrics, ThemeMoney, ThemePeople, ThemeChat, ThemeOther}
+
 // ラベルの種類。
 const (
 	KindAction   = "action"    // 要対応
@@ -106,6 +128,8 @@ type Label struct {
 type Topic struct {
 	Title        string  `json:"title"`
 	State        string  `json:"state"`
+	Theme        string  `json:"theme"`            // Themes のどれか (未分類は other)
+	Urgent       bool    `json:"urgent,omitempty"` // LLM の判断で緊急
 	Unclassified bool    `json:"unclassified,omitempty"`
 	Labels       []Label `json:"labels"`
 	Points       []Point `json:"points"`
@@ -135,6 +159,7 @@ type Dropped struct {
 	Unclassified     int `json:"unclassified"`      // どの話題にも入らなかった単位
 	EmptyTopics      int `json:"empty_topics"`      // 単位が 1 つも残らなかった話題
 	BadState         int `json:"bad_state"`         // 知らない状態 (議論中として扱う)
+	BadTheme         int `json:"bad_theme"`         // 知らないテーマ (その他として扱う)
 	Points           int `json:"points"`            // 話題の中に根拠が無い要点
 	Labels           int `json:"labels"`            // 話題の中に根拠が無い・知らない種類のラベル
 }
@@ -151,7 +176,7 @@ func (d Dropped) String() string {
 	}{
 		{d.UnknownMembers, "入力に無い単位"}, {d.DuplicateMembers, "2 つ目の話題にも入れた単位"},
 		{d.Unclassified, "どの話題にも入らず未分類へ回した単位"}, {d.EmptyTopics, "単位が残らなかった話題"},
-		{d.BadState, "知らない状態 (議論中にした)"}, {d.Points, "根拠の無い要点"}, {d.Labels, "根拠の無い・知らないラベル"},
+		{d.BadState, "知らない状態 (議論中にした)"}, {d.BadTheme, "知らないテーマ (その他にした)"}, {d.Points, "根拠の無い要点"}, {d.Labels, "根拠の無い・知らないラベル"},
 	} {
 		if f.n > 0 {
 			parts = append(parts, fmt.Sprintf("%s %d", f.what, f.n))
@@ -167,7 +192,7 @@ func (d Dropped) String() string {
 //   - 要点とラベルの根拠は、その話題に入った単位の発言の ts に限る。根拠が 1 つも残らない要点・ラベルは捨てる
 //   - 機械で確かめたラベル (名指し・自分のスレッドへの返信) は LLM に依らず付ける
 //
-// 並びは 要対応 → 必読 → その他 (それぞれ最後の発言が新しい順)、未分類は最後。
+// 並びは 緊急 → 要対応 → 必読 → その他 (それぞれ最後の発言が新しい順)、未分類は最後。
 func Assemble(units []Unit, resp Response) ([]Topic, Dropped) {
 	byID := make(map[string]Unit, len(units))
 	for _, u := range units {
@@ -177,7 +202,7 @@ func Assemble(units []Unit, resp Response) ([]Topic, Dropped) {
 	var d Dropped
 	var topics []Topic
 	for _, rt := range resp.Topics {
-		t := Topic{Title: rt.Title, State: rt.State}
+		t := Topic{Title: rt.Title, State: rt.State, Theme: rt.Theme, Urgent: rt.Urgent}
 		for _, id := range rt.Members {
 			u, ok := byID[id]
 			switch {
@@ -197,6 +222,10 @@ func Assemble(units []Unit, resp Response) ([]Topic, Dropped) {
 		if t.State != StateDecided && t.State != StateOpen && t.State != StateInfo {
 			d.BadState++
 			t.State = StateOpen
+		}
+		if !slices.Contains(Themes, t.Theme) {
+			d.BadTheme++
+			t.Theme = ThemeOther
 		}
 		own := tsSet(t.Units)
 		for _, p := range rt.points() {
@@ -234,7 +263,7 @@ func Assemble(units []Unit, resp Response) ([]Topic, Dropped) {
 		return TsBefore(topics[j].Last(), topics[i].Last())
 	})
 	if len(rest) > 0 {
-		u := Topic{Title: "未分類", State: StateInfo, Unclassified: true, Units: rest}
+		u := Topic{Title: "未分類", State: StateInfo, Theme: ThemeOther, Unclassified: true, Units: rest}
 		u.Labels = mechanicalLabels(rest)
 		sortUnits(u.Units)
 		topics = append(topics, u)
@@ -244,6 +273,8 @@ func Assemble(units []Unit, resp Response) ([]Topic, Dropped) {
 
 func rank(t Topic) int {
 	switch {
+	case t.Urgent:
+		return -1
 	case t.Has(KindAction):
 		return 0
 	case t.Has(KindMustRead):
@@ -326,7 +357,7 @@ func Prune(resp Response, units []Unit) Response {
 	own := tsSet(units)
 	var out Response
 	for _, rt := range resp.Topics {
-		t := RespTopic{Title: rt.Title, State: rt.State}
+		t := RespTopic{Title: rt.Title, State: rt.State, Theme: rt.Theme, Urgent: rt.Urgent}
 		for _, id := range rt.Members {
 			if ids[id] {
 				t.Members = append(t.Members, id)

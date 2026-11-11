@@ -46,9 +46,11 @@ func (r ExecRunner) Run(ctx context.Context, args []string, stdin []byte) ([]byt
 
 // Schema は claude -p --json-schema に渡す応答の形 (board.Response と同じ)。
 const Schema = `{"type":"object","additionalProperties":false,"required":["topics"],"properties":{"topics":{"type":"array","items":{` +
-	`"type":"object","additionalProperties":false,"required":["title","state","members","conclusion","background","next","labels"],"properties":{` +
+	`"type":"object","additionalProperties":false,"required":["title","state","theme","urgent","members","conclusion","background","next","labels"],"properties":{` +
 	`"title":{"type":"string"},` +
 	`"state":{"type":"string","enum":["decided","open","info"]},` +
+	`"theme":{"type":"string","enum":["incident","release","question","discussion","announce","schedule","ops","metrics","money","people","chat","other"]},` +
+	`"urgent":{"type":"boolean"},` +
 	`"members":{"type":"array","items":{"type":"string"}},` +
 	`"conclusion":` + point + `,` +
 	`"background":{"type":"array","items":` + point + `},` +
@@ -161,6 +163,11 @@ const instructions = `あなたは Slack のチャンネルの会話を、後か
 - 同じ件について話している単位は 1 つの話題にまとめる。雑談や単発の共有は小さな話題のままでよい
 - title: 話題の見出し (日本語で短く。何の件かが分かる名詞句)
 - state: decided (何かが決まった) / open (議論中・答えの出ていない質問がある) / info (共有だけで、決めることがない)
+- theme: 話題の種類。incident (障害・不具合) / release (リリース・デプロイ) / question (質問・相談) / discussion (議論・設計) /
+  announce (告知) / schedule (予定・会議) / ops (作業・運用) / metrics (数字・分析) / money (お金・契約) / people (人・体制) /
+  chat (雑談) / other (どれにも当てはまらない)
+- urgent: 今すぐ手を打たないとまずい話なら true (障害が起きている・お客さんに影響が出ている・セキュリティの問題・今日が期限)。
+  既に片付いた話・心配や予定の話は false。迷ったら false
 - 要約は 3 つの欄に分ける。どれも原文に書かれていることだけを書き、推測を足さない。各項目の text は 1 文で短く (60 字程度まで)。refs は根拠の発言の ts (その話題の中の発言)
   - conclusion: 今どうなっているか・何が決まったかを 1 項目 (決まっていなければ、何が論点かを書く)
   - background: そこに至った経緯・前提を 0〜3 項目 (古い順)

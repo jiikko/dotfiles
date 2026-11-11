@@ -71,7 +71,7 @@ func TestListGroupsTopicsByDay(t *testing.T) {
 		}
 	})
 	got := strings.Join(leftPlain(m), "\n")
-	want := []string{"11/10 (火) 今日", "今日の夕方", "今日の朝", "11/09 (月) 昨日", "昨日", "11/08 (日)", "一昨日の要対応", "未分類", "未分類"}
+	want := []string{"11/10 (火) 今日", "今日の夕方", "今日の朝", "11/09 (月) 昨日", "昨日", "11/08 (日)", "一昨日の要", "未分類", "未分類"} // 一覧の幅では題の後ろが切れる
 	at := 0
 	for _, w := range want {
 		i := strings.Index(got[at:], w)
@@ -572,4 +572,24 @@ func TestActivePaneIsEmphasized(t *testing.T) {
 	check("l の後", false)
 	press(m, "h")
 	check("h の後", true)
+}
+
+// 一覧の行頭には印を 2 つ出す: 1 つ目は緊急なら 🚨 (要対応より先)、そうでなければ要対応・必読・状態。2 つ目はテーマ。
+func TestListShowsStateAndThemeIcons(t *testing.T) {
+	action := board.Label{Kind: board.KindAction, Source: board.SourceMention}
+	m := datedModel(t, func() []board.Topic {
+		urgent := topicAt("決済", day0, action)
+		urgent.Urgent, urgent.Theme = true, board.ThemeIncident
+		q := topicAt("権限", day0.Add(-time.Hour), action)
+		q.Theme = board.ThemeQuestion
+		chat := topicAt("ランチ", day0.Add(-2*time.Hour))
+		chat.Theme = board.ThemeChat
+		return []board.Topic{urgent, q, chat}
+	})
+	got := strings.Join(leftPlain(m), "\n")
+	for _, w := range []string{"🚨🐛 決済", "🔴❓ 権限", "⚪☕ ランチ"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("一覧に %q が無い:\n%s", w, got)
+		}
+	}
 }

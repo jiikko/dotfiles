@@ -142,9 +142,15 @@ func (m *Model) leftLines() []string {
 	return shadow(card(out, m.leftWidth(), m.cardRows(), cardPadX(m.w), surfList, edge))
 }
 
-// firstMark は一覧に出す印 1 つ (要対応 → 必読 → 状態の順で最初に当てはまるもの)。どの印も表示幅は 2。
+// firstMark は一覧に出す印 2 つ: 1 つ目は 緊急 → 要対応 → 必読 → 状態 の順で最初に当てはまるもの、2 つ目はテーマ。どの印も表示幅は 2。
 func firstMark(t board.Topic) string {
+	return stateIcon(t) + render.ThemeIcon(t)
+}
+
+func stateIcon(t board.Topic) string {
 	switch {
+	case t.Urgent:
+		return render.UrgentMark
 	case t.Has(board.KindAction):
 		return "🔴"
 	case t.Has(board.KindMustRead):
