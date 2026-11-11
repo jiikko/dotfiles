@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -219,12 +220,13 @@ func TestToastIsDrawnBottomRight(t *testing.T) {
 // 画面は青 (34)・水色 (36) の基本色と、基本色の地 (40〜47・100〜107) を使わない: 背景が青い端末で沈む (ユーザー報告 2026-11-10)。
 // 地を塗るのは配色 (style.go) の 24bit の色だけ。24bit・256 色の指定 (38;2;r;g;b など) の中の数は色の番号として読まない。
 func TestScreenAvoidsBasicBlueAndBasicBackgrounds(t *testing.T) {
-	m := datedModel(t, func() []board.Topic {
+	m := datedModel(t, func() []board.Topic { // 購読の画面のキー (上の行の右端) も描くため、下で SetSubscriptions する
 		tp := topicAt("PR 1234 の「確認」", day0)
 		tp.Points = []board.Point{{Section: board.SectionConclusion, Text: "tanaka が「直す」と言った", Refs: []string{tp.Units[0].ID}}}
 		return []board.Topic{tp, topicAt("昨日", day0.AddDate(0, 0, -1))}
 	})
 	m.chans[0].page.Base = "https://ws.slack.com/"
+	m.SetSubscriptions(&Subscriptions{})
 	press(m, "u")
 	press(m, "r") // 読み直しを始めた中立の知らせ (結果は渡さない) も色を検査する
 	for range 20 {
@@ -243,10 +245,11 @@ func TestScreenAvoidsBasicBlueAndBasicBackgrounds(t *testing.T) {
 				if i+1 < len(ps) && ps[i+1] == "2" {
 					i += 4
 				} else {
-					i++ // 256 色 (5;n)
-					if i < len(ps) && ps[i] == "5" {
-						i++
+					// 256 色は灰色の段 (232〜255。知らせの箱の落ち影 layout.ShadowNearBlack) だけを許す。番号で書いた青を通さない
+					if n, err := strconv.Atoi(ps[min(i+2, len(ps)-1)]); i+2 >= len(ps) || ps[i+1] != "5" || err != nil || n < 232 {
+						t.Errorf("24bit でも灰色の 256 色でもない色の指定 %q が出た", sgr)
 					}
+					i += 2
 				}
 			case "34", "36", "94", "96", "40", "41", "42", "43", "44", "45", "46", "47", "100", "101", "102", "103", "104", "105", "106", "107":
 				t.Errorf("使わない色 %q が出た", sgr)
@@ -548,6 +551,13 @@ func TestActivePaneIsEmphasized(t *testing.T) {
 		}
 		if !strings.HasPrefix(active, on) || !strings.HasPrefix(idle, off) {
 			t.Errorf("%s: 操作中の欄の枠が水色から流れていない: 左 %q 右 %q", when, l[0], r[0])
+		}
+		activeSide, idleSide := l[1], r[1] // 左の縁 ▐ (中身の 1 行目)
+		if !leftActive {
+			activeSide, idleSide = r[1], l[1]
+		}
+		if !strings.Contains(activeSide, cTeal.fg()+"▐") || !strings.Contains(idleSide, cMuted.fg()+"▐") {
+			t.Errorf("%s: 左の縁の色が操作中かどうかと合わない: 左 %q 右 %q", when, l[1], r[1])
 		}
 		sel := cSelIdle.bg()
 		if leftActive {

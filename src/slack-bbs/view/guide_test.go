@@ -55,6 +55,15 @@ func TestBodyHasScrollbarOnlyWhenOverflowing(t *testing.T) {
 			t.Errorf("バーで行が幅を超えた: %q", l)
 		}
 	}
+	for w := MinWidth; w <= MinWidth+3; w++ { // 狭い端末でも、折り返す幅が本文のカードの中身を超えない
+		m.Update(tea.WindowSizeMsg{Width: w, Height: 30})
+		for _, l := range bodyPlain(m) {
+			if strings.Contains(l, "…") {
+				t.Errorf("幅 %d: 本文の行が切れた: %q", w, l)
+			}
+		}
+	}
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 30})
 	for _, l := range rows {
 		if strings.Contains(l, "…") {
 			t.Errorf("バーの桁を引かずに折り返して、行が切れた: %q", l)

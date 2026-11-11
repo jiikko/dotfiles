@@ -340,6 +340,34 @@ func TestTitleKeepsState(t *testing.T) {
 	if !strings.Contains(h, t0.Format("15:04")+" に読んだ") || strings.Contains(h, "購読") || termwidth.Of(h) > MinWidth {
 		t.Errorf("狭い端末で状態が購読のキーに押し出された: %q", h)
 	}
+	// 長い状態 (読み直しの失敗・読み直し中・読めなかった) でも頭は残る。購読の一覧を読んでいる間も、今のチャンネルの状態を消さない
+	c := &m.chans[m.cur]
+	for _, st := range []struct {
+		name          string
+		loading, page bool
+		want          string
+	}{
+		{"読み直しに失敗", false, true, "🚨 読み直し"},
+		{"読み直し中", true, true, "読み直し中"},
+		{"読めなかった", false, false, "🚨 読めなかった"},
+	} {
+		saved := c.page
+		c.err, c.loading = errors.New("boom"), st.loading
+		if !st.page {
+			c.page = nil
+		}
+		if h := sgrRe.ReplaceAllString(m.titleLine(), ""); !strings.Contains(h, st.want) || termwidth.Of(h) > MinWidth {
+			t.Errorf("%s: 状態が無い: %q", st.name, h)
+		}
+		m.picking = true
+		m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+		if h := sgrRe.ReplaceAllString(m.titleLine(), ""); !strings.Contains(h, "チャンネルの一覧を読んでいます") || !strings.Contains(h, st.want) {
+			t.Errorf("%s: 一覧を読んでいる間に今のチャンネルの状態が消えた: %q", st.name, h)
+		}
+		m.picking = false
+		m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: 20})
+		c.page = saved
+	}
 }
 
 // header はロゴと状態の行とタブの行 (色を外す)。

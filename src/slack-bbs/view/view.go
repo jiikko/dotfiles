@@ -671,7 +671,7 @@ func wrap(s string, w int) []string {
 
 // MinWidth / MinHeight より小さい端末では枠を描かず、案内の 1 行だけを出す (枠の最小の幅・高さを割ると行がはみ出す)。
 const (
-	MinWidth  = 40
+	MinWidth  = 43 // これより狭いと、本文を折り返す幅 (bodyWidth の下限 10) が本文のカードの中身より広くなり、全行が … で切れる
 	MinHeight = 12
 )
 
@@ -722,8 +722,8 @@ func (m *Model) screen() []string {
 // titleLine はロゴと今のチャンネルの状態。右端に購読の画面を開くキーを出す (幅が足りなければ状態を詰め、それでも足りなければキーを外す)。
 func (m *Model) titleLine() string {
 	st := m.state()
-	if m.picking {
-		st = m.spin(m.pickStarted) + " チャンネルの一覧を読んでいます"
+	if m.picking { // 今のチャンネルの状態 (読み直し中・失敗) も消さない
+		st = strings.TrimSpace(m.spin(m.pickStarted) + " チャンネルの一覧を読んでいます  " + st)
 	}
 	head := logo() + "  "
 	room := m.w - termwidth.Of(head)
