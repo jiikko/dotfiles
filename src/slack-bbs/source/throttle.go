@@ -285,10 +285,9 @@ func (t *Throttle) runInTurn(ctx context.Context, cmd string, args []string) (ou
 			unlock()
 			paused := st.PausedUntil // 別のプロセスが 429 で止めた期限も、ファイルから読んだこの値で画面に出す
 			g.stats.add(func(cs *callStats) {
-				cs.sleeping = true
-				if paused.After(cs.paused) {
-					cs.paused = paused
-				}
+				// ファイルの期限 (自分の 429 も書いてある) をそのまま採る。大きい方を採ると、時計が戻ったときに clampState が詰める前の
+				// 古い期限が残り、呼び出しを再開した後も「停止中」が出続ける
+				cs.sleeping, cs.paused = true, paused
 			})
 			err := g.sleep(ctx, d)
 			g.stats.add(func(cs *callStats) { cs.sleeping = false })
