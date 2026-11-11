@@ -21,7 +21,7 @@
 - 🚨 **入れる前に、本物で 1 回測る** (未検証の点: 付けたときに tools から本当に消えるか / system prompt の `EndConversation` の段も揃うか / 28,875 などの別の並びが残らないか)。
   測るには本物の claude を起こすので利用枠を使う。起こす回数を最小にし (例: 起動 1 回 + 再開 1 回)、起動時の `prompt_snapshot` と再開の最初の要求の読み・`thinking_drop` の有無で当たりを確かめる
 - テストは偽の claude で「起動と再開の引数に同じ tools の指定が入る」ことを固定する (本物の振る舞いは上の実測で確かめる)
-- 効いたかは、入れた後の本物の PG の再開で、外れの回数と `prefix_mismatch` を 449 と同じ数え方で数え直して書き戻す (perf-claims-need-measurement)
+- 改善したかは、入れた後の本物の PG の再開で、外れの回数と `prefix_mismatch` を 449 と同じ数え方で数え直して書き戻す (perf-claims-need-measurement)
 
 ## 関連ファイル
 
@@ -37,25 +37,25 @@
 - [x] PG を起こすとき (起動と再開の両方) に `SendFeedback` の有無を揃えた: `pro-con: PG・PM の --settings に feedbackDrafts: off を足し、起動と再開で SendFeedback の有無を揃える (525)`。
   `--disallowedTools` ではなく設定 `feedbackDrafts: "off"` にした (理由は下)。PM も同じ `sessionSettings` を使うので揃う (431 で `persistentSessionSettings` に改名。取り込みの係も同じ)。haiku (要約役・btw) は 1 回きりの `-p` で再開が無いので付けない
 - [x] テスト (偽の claude なし。引数を組む関数を直接): 起動と再開の `--settings` に同じ `"feedbackDrafts":"off"` が入る (`launcher_test.go` の 2 本)。旧コードに戻すと 2 本とも赤になるのを確かめた
-- [ ] 効いたかを、入れた後の本物の PG の再開で数え直す (取り込みの後)。🚨 **これだけでは外れは減らない見込み** (下の「実測」3)。続きは `546-research-pro-con-endconversation-gate-resume-cache.md`
+- [ ] 改善したかを、入れた後の本物の PG の再開で数え直す (取り込みの後)。🚨 **これだけでは外れは減らない見込み** (下の「実測」3)。続きは `546-research-pro-con-endconversation-gate-resume-cache.md`
   → 2026-09-29: 実測 3 の外れは `messages_changed` で段ではなかった (546)。本番の 60 分以内の外れは SendFeedback の出入りによる `tools_changed` だけで、
   この変更で起きにくくなった見込み (546 の「本番の再開の外れの内訳」)
   - 2026-09-27 (546): gate (`EndConversation` の段) を揃えても、実験の再開は同じ形で外れた。実測 3 の外れは段が原因ではなかった見込みが高い。原因は未確認 (546 の「進捗」)
-  - 2026-09-29 (431 の計測。transcript のみ): `feedbackDrafts: "off"` で gate の効く起動 3 本 (C-102 と 546 の実験 2 本。DISABLE_GROWTHBOOK 付きの 1 本を除く) は
+  - 2026-09-29 (431 の計測。transcript のみ): `feedbackDrafts: "off"` で gate が働く起動 3 本 (C-102 と 546 の実験 2 本。DISABLE_GROWTHBOOK 付きの 1 本を除く) は
     どれも「SendFeedback 無し・EndConversation の段あり」で、flag 無しの起動ではこの組が 0/278 (段があれば SendFeedback も在る: 107/107)。
     **gate が true の起動でも off が SendFeedback を外している** (間接の観測。実測 1 の「未観測」)。入れた後の再開したプロセス 6 本は、途中で EndConversation を足し直したときに
-    SendFeedback を足さなかった (6/6。前の形は 77/81 で足した) ので、再開の側でも効いている見込み (間接)。PG の再開は 2/2 当たり。431 の残タスクで数える。本番の外れの内訳は 546
+    SendFeedback を足さなかった (6/6。前の形は 77/81 で足した) ので、再開の側でも働いている見込み (間接)。PG の再開は 2/2 当たり。431 の残タスクで数える。本番の外れの内訳は 546
 
 ### 実測 (claude 2.1.283)
 
 1. **`SendFeedback` の出入りは GrowthBook の gate と設定で決まる** (claude の実体のコードを読んだ): `isEnabled() = feedbackDrafts !== "off" && Cdr()`、
    `Cdr()` は `tengu_juniper_relay` の値 (環境変数 `CLAUDE_CODE_SEND_FEEDBACK=false` でも外れる)。`feedbackDrafts` は policy / `--settings` (flagSettings) / user の設定から読む。
-   → `--settings` に `"off"` を入れれば gate と関係なく外れる。`--disallowedTools` を選ばなかったのは、下の 2 のとおり `EndConversation` には効かず、
-   `SendFeedback` に効くかも gate が false の起動でしか試せなかったため (実体のコードで効き方が読める設定の方を採った)。
+   → `--settings` に `"off"` を入れれば gate と関係なく外れる。`--disallowedTools` を選ばなかったのは、下の 2 のとおり `EndConversation` には適用されず、
+   `SendFeedback` に適用されるかも gate が false の起動でしか試せなかったため (実体のコードで適用のされ方が読める設定の方を採った)。
    🚨 gate が true の起動で `"off"` によって消えることは**未観測** (今は `~/.claude.json` の gate のキャッシュが false で、起動時に在る側を起こせない)。
    2026-09-29: 間接に観測した (上の「進捗」の最後の項)
 2. **`--disallowedTools SendFeedback,EndConversation` で起動 → 再開**: 起動時の `prompt_snapshot` に `SendFeedback` も `EndConversation` の段も無かったが、
-   再開の最初の要求の直前に `deferred_tools_delta` が `EndConversation` を**足した** (`--disallowedTools` は `EndConversation` に効かない)。
+   再開の最初の要求の直前に `deferred_tools_delta` が `EndConversation` を**足した** (`--disallowedTools` は `EndConversation` に適用されない)。
    起動時に無かったのは gate が false だっただけで、flag の効果とは言えない
 3. **その再開はキャッシュを外した**: 起動の要求は読み 24,803 / 書き 21,718、再開の最初の要求は読み **26,318** / 書き **20,349** (会話全体をほぼ書き直し。`thinking_drop` は無し)。
    tools は揃っている (`SendFeedback` は両方とも無い) ので、食い違いは 26,318 より後 = system prompt の `EndConversation` の段と推定 (再開時の system prompt は transcript に残らない)。

@@ -34,7 +34,7 @@
   - live (`live.RecordAttach`) は短い id から記録 (sessions.json、無ければ sessions-retired.json) の session id を引き、
     transcript の**全体**から窓の中の `origin.kind == "human"` の発言を拾って受付の箱に `kind: "attach"` で置く (`live.HumanPrompts`)
   - dispatcher (store.Apply の `attach`) が、打った時刻のまま「attach で人間が指示: <原文>」を履歴に足す。どの列でも受け、状態は変えない
-  - ついでに直したもの: transcript の読みを `bufio.Scanner` から `bufio.Reader` に替えた (8MB を超える 1 行で黙って読むのを止め、
+  - ついでに直したもの: transcript の読みを `bufio.Scanner` から `bufio.Reader` に替えた (8MB を超える 1 行でエラーを出さずに読むのを止め、
     後の発言を落としていた)。再開の文 (`RestartNote`) は human の印が付いていても発言に数えない。引き出しの履歴の時刻を手元の時間帯で出す
     (transcript の時刻は UTC)。終了のとき裏の処理を待ってから抜ける (main。bubbletea は走っている Cmd を待たない)
 - 確かめたこと: 新しい検査 (`TestRecordAttachSubmitsHumanPromptsInWindow` / `TestAttachAppendsSaidVerbatim` /

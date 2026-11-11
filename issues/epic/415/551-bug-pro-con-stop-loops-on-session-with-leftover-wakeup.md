@@ -77,4 +77,4 @@ pro-con: 終了のときに止めきれなかった: exit status 1: pro-con disp
   - make lint 0 issues / go test -race ./... (src/pro-con) rc=0
 - 残り:
   - [ ] 取り込み後、本物の pro-con を止めて「止めきれなかった」が出ないことを確かめる。今の dispatcher は C-089 (4bbb588c) を止め終えたと読めずにいるので、
-    新版へ入れ替わった後にもう一度止めれば確かめられる
+    新バージョンへ入れ替わった後にもう一度止めれば確かめられる

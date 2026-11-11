@@ -56,7 +56,7 @@ pro-con は当初「PM (producer) と PG (consumer) を分け、複数の Claude
 - **PG**: 個別の実装・調査を行う worker。card 単位で worktree / session を持つ
 - **integrator (取り込みの係)**: PG の成果を review し、必要なら rework、問題なければ master へ取り込んで card / issue を閉じる
 - **dispatcher**: card の状態遷移、PG の起動・再開・停止、枠、依存待ち等を機械的に管理
-- **monitor / watchdog**: 停滞、長時間待ち、異常を検知し、既知の待ちと「黙って止まった」を分ける
+- **monitor / watchdog**: 停滞、長時間待ち、異常を検知し、既知の待ちと「誰にも気づかれずに止まった」を分ける
 
 LLM の判断と、状態遷移・プロセス管理の責務を分離している。
 
@@ -117,7 +117,7 @@ PG
 - `pro-con ps`
 - viewer / screen relay
 - dispatcher / TUI が落ちても file 上の正本から復元できる設計
-- card と session / worktree の食い違いを黙って捨てない
+- card と session / worktree の食い違いを知らせずに捨てない
 
 UI は TUI だが、TUI 自体を正本にしない。
 
@@ -309,7 +309,7 @@ pro-con は **人間 → PM → card → dependency / queue → executor → int
 
 6. **Recoverability / observability**
    - UI / agent / dispatcher が落ちても仕事を復元できる
-   - 黙って消えた card / worker を許さない
+   - 知らされないまま消えた card / worker を許さない
 
 7. **Executor independence**
    - Claude Code を現在の executor として使うが、pro-con の card / workflow の意味を Claude Code 固有 session API に閉じない
@@ -384,7 +384,7 @@ pro-con 自体が以下の競争をすることを目的にしない。
 
 直接の Claude Code session の方が速い。
 
-### pro-con が効く
+### pro-con が役に立つ場面
 
 - 問い / acceptance criteria が固まった仕事が複数ある
 - 小さく比較的独立した修正が五月雨式に出る

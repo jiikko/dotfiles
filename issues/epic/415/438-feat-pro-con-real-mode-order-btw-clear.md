@@ -101,10 +101,10 @@
 
 ## 隔離した本物のモードで見たこと (2026-09-27、C-008 の PG)
 
-- 置き場: `XDG_STATE_HOME=<worktree>/tmp/e2e438/state` (本番の `~/.local/state/pro-con` に触らない)。`XDG_CONFIG_HOME` は git の設定にも効くので
+- 置き場: `XDG_STATE_HOME=<worktree>/tmp/e2e438/state` (本番の `~/.local/state/pro-con` に触らない)。`XDG_CONFIG_HOME` は git の設定にも適用されるので
   変えず、dispatcher を手で `pro-con dispatcher --pm off --integrator off` と起こし、画面は `--join` で加えた (隔離した tmux `-L pc438 -f /dev/null`)。
   カードは確認のカード (`--purpose question`) だけにして、PG を起こさない
 - 🚨 **空の置き場で dispatcher を起こすと、予定 `worktree-clean` (毎日 04:00) がその場で「今日の枠は未実行」として走る** (`schedule.Job.Due` は記録が無いと真。コードで読んだ。走らせてはいない)。
   隔離した記録を正として本番の repo (`~/dotfiles`・`~/src/*`) の worktree を片付けにいくので、起こす前に `live/schedule.json` へ直前の時刻の実行を書いて止めた。
   隔離した置き場で dispatcher を起こすときは同じ手当てが要る
-- 画面の幅 170 桁では、案内の行から `d 削除`・`s 設定`・`x 完了を片付け` が落ちて見えなかった (削る仕組みは未確認)。押せば効いた
+- 画面の幅 170 桁では、案内の行から `d 削除`・`s 設定`・`x 完了を片付け` が落ちて見えなかった (削る仕組みは未確認)。押せば動いた

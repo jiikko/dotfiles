@@ -51,7 +51,7 @@
   - lockman は子を別のプロセスグループに置く。bash が書いた pgid からそのグループも撃ち、bash が抜けた後に残った子を止める (前からの約束を lock の下でも保つ)
   - 取り消し・時間切れでは lockman 本体ではなく bash のグループを SIGKILL する (lockman を SIGKILL すると解放されず、TTL の 30 分まで repo の次の実行を止める。
     敵対的レビューで再現)。lockman が子を起こす前に失敗したら、rc に関わらずコマンドの結果にしない。子の後の 122 / 125 は「lockman の rc かもしれない」と添えて渡す
-  - 待ちの上限は 1 時間 (`runLockGiveUp`)。超えたら lockman の言い分 (中身を読めない lock 等) を添えて「実行できなかった」で PG を再開する (黙って永久に待たない)
+  - 待ちの上限は 1 時間 (`runLockGiveUp`)。超えたら lockman の言い分 (中身を読めない lock 等) を添えて「実行できなかった」で PG を再開する (知らせないまま永久に待たない)
   - 待たせた頼みはカード + コマンドで覚える。取り下げ・頼み直しで印を持ち越さない
   - 検査: `dispatcher/runlock_test.go` (本物の lockman を build し、一時の repo + worktree で外の保持者を作る) と `runner_test.go` の
     `TestRunWaitsWhileRepoLockIsHeldOutside` / `TestRunGivesUpWaitingForRepoLock` / `TestRunBlockIsForgottenWhenRequestIsDropped`。

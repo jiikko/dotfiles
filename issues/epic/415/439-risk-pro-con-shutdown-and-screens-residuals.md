@@ -15,7 +15,7 @@
   trigger: ctrl+r の後に PG が止まっていた報告。直し方の案: 印の fd の CLOEXEC を外して exec をまたいで持ち越す
 - 画面の印を数えられない状態が続く (sudo で作った root 所有の `screens/*.lock` が残る等) と、画面が起こした dispatcher が 1 分ごとに止めて抜け、
   画面が起こし直して再開する (枠を使う)。trigger: dispatcher.log に「開いている画面が 1m0s 無い」が繰り返し出る
-- 画面の印を置けなかった画面も、開いたときに 1 回は dispatcher を起こす (起動の経路 main.go の startDispatcherIfIdle。keep の防ぎは効かない)
+- 画面の印を置けなかった画面も、開いたときに 1 回は dispatcher を起こす (起動の経路 main.go の startDispatcherIfIdle。keep の防ぎは働かない)
 - 前の `--stop` が止め直しを続けている間に次の `--stop` が走ると、stop.log へ並行して書き、「今回の子の分だけ出す」が崩れる
 - `--stop` の子は SIGTERM / SIGHUP / SIGINT を無視して止め終えるが、SIGKILL では途中で止まる
 - SIGTERM を受けた画面が起こした dispatcher は 1 回だけ止めて抜ける。止めきれないと rc=1 で抜け、PG が残る (画面を開けば keeper が次の dispatcher を起こして扱う)
@@ -41,8 +41,8 @@
   無視しない場合と同じく rc=143 で抜ける。親の無視では claude の子を守れない (守るならプロセスグループを分ける)。
   `dispatchercmd.go` の「Ignore にすると子も止められなくなる」のコメントを、実測に合わせて直した (Notify を選ぶ理由は、回数を数えることと claude 以外の子)
 - `claude agents --json` / `--all` の出力の形は 2.1.282 で測った。止まったかは pid と state で決める (pid 無し かつ working でない = 01dbb3b0。
-  dogfooding で、終えた session が stop 後も state: done のままだと分かって直した)。版が上がって pid が出なくなる / working の綴りが変わると、
+  dogfooding で、終えた session が stop 後も state: done のままだと分かって直した)。バージョンが上がって pid が出なくなる / working の綴りが変わると、
   止まったかの確かめがどちらかへ倒れる (未確認)。→ 466 で「止まった = pid 無し かつ stopped / done」の許可リストに直し、知らない state は
-  止めに行って警告を出す側へ倒した (pid が出なくなる版では、生きている done を止まったと読む形が残る)
+  止めに行って警告を出す側へ倒した (pid が出なくなるバージョンでは、生きている done を止まったと読む形が残る)
   → **2026-09-28 に 2.1.283 で読み直した**: 形は同じ。欄は `id` / `sessionId` / `kind` / `name` / `cwd` / `startedAt` と、生きている session にだけ `pid` / `status`、
   裏の session には `state`。9 本のうち対話の 8 本は pid 付き、裏の 1 本は「pid 無し・working」(551 の、起床の予約が残った形)

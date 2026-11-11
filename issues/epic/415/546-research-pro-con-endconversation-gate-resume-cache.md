@@ -22,7 +22,7 @@
 - `claude stop` / `claude agents` / haiku の `-p` を打つ前後で `cachedGrowthBookFeatures` の 2 つの gate と `cachedGrowthBookFeaturesAt` がどう変わるか (LLM を呼ばないものから)
 - PG の起動・再開の直前のキャッシュの値と、そのプロセスの `prompt_snapshot` の `EndConversation` の段の有無が一致するか
 - 揃える手があるか: 例: 再開の前にキャッシュの値を起動時と同じ側に寄せる / 起動と再開の間に別の claude を打たない順にする。
-  gate の値を書き換える形は Claude Code の内部に依存するので、採るなら版が変わったら確かめ直す前提を書く
+  gate の値を書き換える形は Claude Code の内部に依存するので、採るならバージョンが変わったら確かめ直す前提を書く
 
 ## 損の大きさ (525 の実測 4)
 
@@ -38,7 +38,7 @@
 
 1. **gate は環境変数 `DISABLE_GROWTHBOOK` で丸ごと既定値に倒せる** (claude 2.1.283 の実体: `isEnabled = !DISABLE_GROWTHBOOK && …`。無効なら
    `getFeatureValueWithSource` は既定値を返し、`~/.claude.json` の `cachedGrowthBookFeatures` も読まない)。値の出どころは「起動後に取った値 (payload) > disk のキャッシュ」の順で、
-   環境変数の上書き (`getEnvironmentOverrides`) は配布版では常に null (効かない)。
+   環境変数の上書き (`getEnvironmentOverrides`) は配布バージョンでは常に null (使えない)。
    `--settings` の `env` に `DISABLE_GROWTHBOOK: "1"` を入れると、起動・再開 (コピー) とも `prompt_snapshot` に `EndConversation` も `SendFeedback` も出なかった (実測)
 2. 🚨 **ところが、gate を揃えても再開はキャッシュを外した。`EndConversation` の段は外れの原因ではない** (本物の claude の A-B。本番の PG と同じ `-w` の worktree・同じ引数):
 
@@ -72,11 +72,11 @@
   `tools_changed` (17,778。段なしの起動の tools は 14 本で、再開で tools そのものが変わった見込み)。「分かったこと 2」の表の A と B は外れの理由が違い、段の有無だけの
   比較になっていない。「段は外れの原因ではない」は `~/dotfiles` の組 (どれも `messages_changed`) から言える
 - `messages_changed` は**本番では 1 回も出ていない**。「会話の部分が別のプロセスになると必ず書き直される」は実験の条件 (1 往復だけの会話など) に固有の見込み
-  (何が効いているかは未確認)。本番の 60 分以内の外れは全部 `tools_changed`
+  (何が働いているかは未確認)。本番の 60 分以内の外れは全部 `tools_changed`
 - 外れた再開は、再開したプロセスの tools で会話を書き直す (SendFeedback の無いプロセスが書き直せば、次に別の tools のプロセスが書き直すまで
   SendFeedback 無しの形になる。C-012 は 28,876 の側に戻った)
 - feedbackDrafts: off (525) の後の再開したプロセス 6 本 (PG 2・PM 2・取り込みの係 2) は、途中で EndConversation を足し直したときに SendFeedback を足さなかった
-  (6/6。前の形の同じ場面では 77/81 で足した)。再開の側でも off は効いている見込み (間接の観測)。PG の再開は 2/2 当たり。本数が少ないので 431 の残タスクで数える
+  (6/6。前の形の同じ場面では 77/81 で足した)。再開の側でも off は働いている見込み (間接の観測)。PG の再開は 2/2 当たり。本数が少ないので 431 の残タスクで数える
 
 ### 採らなかったこと
 

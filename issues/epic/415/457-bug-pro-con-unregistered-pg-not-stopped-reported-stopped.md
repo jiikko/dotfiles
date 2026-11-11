@@ -14,7 +14,7 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
 - 該当: `src/pro-con/dispatcher/shutdown.go` の `stopTarget` (`owned` が偽の枝: launchGrace を過ぎると `("", false)` = 止めるものが無い) /
   `ensureStopped` (記録 sessions.json と sessions-retired.json に在るものしか確かめない) / 447 の `stopClosed` (同じ `ensureStopped` を使う)
 - 発火条件: 作業中のカードの PG が一覧には出ているのに、`register` に取り込まれないまま launchGrace (1 分) を過ぎる。取り込まれない形:
-  claude の版が変わって一覧の `kind` が "background" でなくなる (427 に kind の警告として記録済み) / session の startedAt が LaunchedAt より前になる (時計が戻る)
+  claude のバージョンが変わって一覧の `kind` が "background" でなくなる (427 に kind の警告として記録済み) / session の startedAt が LaunchedAt より前になる (時計が戻る)
 - 壊れ方: 終了のとき履歴に「PG の session は既に止まっていた」、`Shutdown` は nil、stop-result は ok。生きている PG は止まらず、画面からも見えず見張られない。
   カードは分解済みへ戻るが、次の dispatcher で「再開できない: 前の session が pro-con の記録に無い」のまま進まない。閉じても (447) 止めない
 - 根拠: 監査の係が一時ディレクトリの写しで、既存の偽物 (fakeLauncher / newDispatcher) を使うプローブで再現した (kind="bg" / 開始時刻 2 秒前の両方で stops=[] かつ err=nil)。
@@ -38,7 +38,7 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
     「記録に無い session が生きている。pro-con が起動したと示せないので止めていない」と名指しして `Shutdown` をエラーにする
     (stop-result は ok にならない)。閉じたときは closeStopWait の後に「止められない: …」と履歴に書く。「既に止まっていた」とは書かない
   - 記録にある session の照合 (`stopTarget` の記録の枝・`ensureStopped`・`stillAlive`) からも `Kind == "background"` を外した
-    (session id で照らしているので kind は要らない。残すと claude の版で kind が変わったとき、記録にある PG も止まったと数える = 同じ壊れ方)
+    (session id で照らしているので kind は要らない。残すと claude のバージョンで kind が変わったとき、記録にある PG も止まったと数える = 同じ壊れ方)
   - 取り込めなかった理由は、従来どおり `register` が kind / 開始時刻の `suspect` を出来事に出す (Tick ごと・終了の周ごと)。
     記録に無い PG を止めたときは「pro-con の記録に無かったが、カードの session の id と worktree が一致したので止めた」を出す
 - [x] 確かめたこと (偽物の launcher / 一覧。本物の claude・state dir には触らない。`dispatcher/unregistered_test.go`)
@@ -115,5 +115,5 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
   (= `go test -race ./...`) で、23 パッケージすべて ok (dispatcher 27s)。repo 全体の `make test` (lint / runtime / 他の src) は走らせていない (変更は pro-con の Go だけ)
 - 未確認のリスクとして残すもの (直す根拠が無い)
   - 短い id が別の session を指す形は、その session が生きている間は終了・閉じるが名指しで失敗し続け、カードも再開できない (fail closed。人が確かめて claude stop するまで)
-  - 488 より前の版の dispatcher が始めた再開 (名前を渡していない) の結果を、この版が取り込む形は名前で当たらない (dispatcher の入れ替え 505 の途中だけ。名指しに回る)
+  - 488 より前のバージョンの dispatcher が始めた再開 (名前を渡していない) の結果を、このバージョンが取り込む形は名前で当たらない (dispatcher の入れ替え 505 の途中だけ。名指しに回る)
   - kind も時刻も崩れて cwd も repo root の落ちた PG は、戻るまで名指しだけになる / 2 つの状態の置き場で worktree がぶつかる形は未確認のまま

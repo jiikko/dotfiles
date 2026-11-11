@@ -34,7 +34,7 @@
 
 3. **`--exclude-dynamic-system-prompt-sections` は PG には使わない**
    - 当初のこの issue では候補にしていたが、現在の Claude Code では **print / headless (`-p`) 向け**。
-   - `claude --bg` の persistent session には効かない。431 の実装候補から外す。
+   - `claude --bg` の persistent session には適用されない。431 の実装候補から外す。
    - upstream が interactive / background session に対応したら再評価する。
    - 参考:
      - https://code.claude.com/docs/en/cli-reference
@@ -50,7 +50,7 @@
 5. **先に計測の料金を正す** (2026-09-29 に直した。「進捗」)
    - 実装前の `src/pro-con/metrics/usage.go` は cache read を全 model 一律 0.1x としていた。
    - 現在の Opus 5.5 は cache hit / refresh が base input の **0.05x** ($0.20 / MTok、base input $4 / MTok)。
-   - そのままだと pro-con 自身が「cache を効かせた価値」を約 2 倍高く見積もる。
+   - そのままだと pro-con 自身が「cache が当たった価値」を約 2 倍高く見積もる。
    - 431 の before / after を判断する前に直す。
 
 ## なぜこの設計にするか
@@ -478,7 +478,7 @@ resume:
 ```
 
 Claude Code 2.1.260 以降は prompt-cache の hit ratio / miss / likely cause を `/usage`・status line 側にも持つ。
-transcript に diagnostics が記録される版ではそれも材料にし、無ければ従来どおり usage tokens から判定する。
+transcript に diagnostics が記録されるバージョンではそれも材料にし、無ければ従来どおり usage tokens から判定する。
 
 参考:
 - https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md
@@ -521,7 +521,7 @@ Claude Platform には 1h cache があるが、Claude Code / subscription / prov
 
 将来 `promptCacheTtl` 等を pro-con が設定するなら:
 
-- subscription で効くか
+- subscription で機能するか
 - 現在の session が実際に 5m / 1h のどちらを使っているか
 - card / resume の間隔分布
 
@@ -531,11 +531,11 @@ Claude Platform には 1h cache があるが、Claude Code / subscription / prov
 
 431 では `--model opus` 等を足さない。
 
-role ごとの model を設定するなら [426](../done/426-design-pro-con-open-decisions.md) の構想どおり config の責務として設計し、cache だけを理由に黙って品質設定を変えない。
+role ごとの model を設定するなら [426](../done/426-design-pro-con-open-decisions.md) の構想どおり config の責務として設計し、cache だけを理由に断りなく品質設定を変えない。
 
 ### DISABLE_GROWTHBOOK
 
-546 で cache miss に効かなかった。
+546 で cache miss を減らせなかった。
 全 gate を既定値へ倒す副作用だけ残るので入れない。
 
 ### --exclude-dynamic-system-prompt-sections
@@ -572,7 +572,7 @@ Claude Code upstream が background / interactive session に対応したら、�
 6. [x] `make test` / `make lint`
 7. [ ] 取り込み後の dogfooding 10 start / 10 resume 以上を集計 — 2026-09-29 時点で今の形の PG は起動 1・再開 2 (役を含めて 7 本。「計測」)。残タスクへ
 8. [ ] 449 baseline と比較し、この issue に結果を書く — 7 本の分は比較した (「計測」)
-9. [ ] resume miss が残るなら 546 に現在版の実測を追記し、431 は閉じる — 本番の外れの内訳を 546 に、PM・取り込みの係の TTL 切れを 581 に書いた。431 は計測待ちで閉じない
+9. [ ] resume miss が残るなら 546 に現在のバージョンの実測を追記し、431 は閉じる — 本番の外れの内訳を 546 に、PM・取り込みの係の TTL 切れを 581 に書いた。431 は計測待ちで閉じない
 
 ## 受け入れ条件
 
@@ -602,7 +602,7 @@ commit「pro-con: Opus 5.5 のキャッシュの読みを料金 0.05 倍で数�
 - **設計からの差分: 5 時間枠の %**。`FiveHourUSDPerPct = 3.5` は、449 が読みを 0.1 倍と置いた料金換算 ($120 / 34%) に合わせた値。
   読みの料金だけ 0.05 倍に直して同じ 3.5 で割ると、同じ使い方の % が 3 割ほど小さく出る (449 の 5 時間枠の区間は読みが料金換算の 63%)。
   この issue の「3.5 は再推定しない」を守るため、**% は読みを 0.1 倍の重み (`fiveHourReadRate`) で数えたまま、USD だけ料金どおりにした**。
-  旧版 (9554235e) と新版に乱数の transcript 2,000 通りを読ませ、% の差 0 件 (USD は opus を含む 1,181 件で変わる) を確かめた
+  旧バージョン (9554235e) と新バージョンに乱数の transcript 2,000 通りを読ませ、% の差 0 件 (USD は opus を含む 1,181 件で変わる) を確かめた
 - **記録済みの USD**: `metrics.jsonl` のうち、この変更より前に閉じたカードの USD は読み 0.1 倍で数えた値のまま (Opus 5.5 の読みの分だけ高い)。
   % は前後で同じ式なので比べられる。`pro-con stats` の USD を前後にまたいで比べるときだけ注意
 - **launcher**: 起動 `--bg -w <name>` / 再開 `--bg --resume <id>` の後ろに共通の `persistentSessionArgs(name, userSettings)`
@@ -642,12 +642,12 @@ commit「pro-con: Opus 5.5 のキャッシュの読みを料金 0.05 倍で数�
    SendFeedback 無しに起動した C-057 / C-087 / C-089 と 525 の probe の起動 1 本 (4b5dad9e。9132782b はその写し) と同一 (ハッシュ一致。
    温かい起動ではどれも 24,803 を読んだ)。温かければ同じ先頭を読むはず (推定)
 2. **SendFeedback の揺れは今の形で止まっている見込みが高い**。前の形の PG の起動 26 本は、read が SendFeedback の有無で 2 つの値に分かれた
-   (26/26。2.1.283 では 24,803 / 26,759)。flag 付きで gate の効く起動 3 本 (C-102 と 546 の実験 2 本。DISABLE_GROWTHBOOK 付きの 1 本を除く) はどれも
+   (26/26。2.1.283 では 24,803 / 26,759)。flag 付きで gate が働く起動 3 本 (C-102 と 546 の実験 2 本。DISABLE_GROWTHBOOK 付きの 1 本を除く) はどれも
    「SendFeedback 無し・EndConversation の段あり」で、flag 無しの起動ではこの組が 0/278 (段があれば SendFeedback も在る: 107/107)。
    gate が true の起動でも `"off"` が SendFeedback を外している (間接の観測)
 3. **再開の外れの理由は 2 つだけ** (transcript の `message.diagnostics.cache_miss_reason`。外れ 37 回すべてに付き、当たり・途中の要求・起動には付かない):
    `tools_changed` 15 回 (PG の、起動時に SendFeedback が在った chain だけ) と `previous_message_not_found` 22 回 (前の応答から 60 分越え = 1 時間 TTL 切れ)。
-   60 分以内で外れた再開は全部 `tools_changed`。今の形の PG の再開は 2/2 当たった。**再開の側でも `"off"` は効いている見込み (間接の観測)**:
+   60 分以内で外れた再開は全部 `tools_changed`。今の形の PG の再開は 2/2 当たった。**再開の側でも `"off"` は働いている見込み (間接の観測)**:
    今の形の再開したプロセス 6 本 (PG 2・PM 2・取り込みの係 2) は、途中で EndConversation を足し直した (その gate が true に戻った) ときに SendFeedback を
    足さなかった (6/6)。前の形の同じ場面では 77/81 で SendFeedback も足した。EndConversation と SendFeedback は別の gate
    (`tengu_umber_kestrel` / `tengu_juniper_relay`) なので、EndConversation の出入りは SendFeedback の gate を直接は表さない。内訳は 546 の「本番の再開の外れの内訳」
@@ -661,7 +661,7 @@ commit「pro-con: Opus 5.5 のキャッシュの読みを料金 0.05 倍で数�
 
 - 較正: 449 の C-004 の起動・再開、525 の実測 3、546 の A-B を同じ数え方で数え直して全部一致。449 の C-002 / C-003 / C-005 / C-006 は transcript が消えていて数え直せない
 - 反証 (別の数え方: requestId で束ね、再開の写しを uuid の包含で除く。cards.json と起動・再開の種別が 98/98 一致): 数字は全部再現した。解釈の補正で採ったもの:
-  - 「2.1.283 では PM と PG で先頭を共有しない」→ 誤り。共有を決めるのは役ではなく、chain を起動した版の tools (同じ tools なら役をまたいで共有する。C-004 の PG と PM で一致)
+  - 「2.1.283 では PM と PG で先頭を共有しない」→ 誤り。共有を決めるのは役ではなく、chain を起動したバージョンの tools (同じ tools なら役をまたいで共有する。C-004 の PG と PM で一致)
   - 「read の値が 1 種類になったかは C-102 の 1 本では判定できない」→ tools のハッシュで判定できる (上の 1)
   - 再開 2/2 の読み方: 2/2 と「偶然なら約 9%」が示すのは起動の側の `"off"` の効き目 (起動の snapshot で直接見えている) で、
     再開の側の効き目は別の観測 (上の 3 の 6/6) で見えた (2026-09-29 の 2 周の敵対的レビュー)
@@ -675,12 +675,12 @@ commit「pro-con: Opus 5.5 のキャッシュの読みを料金 0.05 倍で数�
 ### 残タスク (計測待ち)
 
 - [ ] 今の形 (Opus 5.5) の PG の起動 10 本・再開 10 回を数える (実装順 7・8)。**再開の条件**: dogfooding を再開して今の形の起動・再開がたまったとき。
-  **dogfooding を再開する前に `pro-con config set schedule off`** (上の 🚨。dispatcher が止まっていても、次の起動の最初の tick で予定より先に効く。
+  **dogfooding を再開する前に `pro-con config set schedule off`** (上の 🚨。dispatcher が止まっていても、次の起動の最初の tick で予定より先に適用される。
   数え終えたら on に戻す)。起動ごとに、起動時刻の前 60 分に同じ tools の session が動いていたか (冷えた起動を分ける) と tools のハッシュを、
   再開ごとに `diagnostics.cache_miss_reason` を添える
 - [ ] 今の形の再開したプロセスで、SendFeedback が一度も出てこない (起動の tools にも `deferred_tools_delta` にも `tools_changed` の外れにも) ことを見る。
   SendFeedback の gate の値そのものが要るなら、再開の時刻の `~/.claude.json` の `cachedGrowthBookFeatures.tengu_juniper_relay` を控える
-- 次に数える session は 2.1.284 以降で動く。温かい起動の read の値と tools のハッシュは版ごとに取り直す (2.1.282 → 2.1.283 で read が +158)
+- 次に数える session は 2.1.284 以降で動く。温かい起動の read の値と tools のハッシュはバージョンごとに取り直す (2.1.282 → 2.1.283 で read が +158)
 - [ ] 数え終わったら受け入れ条件の残り 3 つを閉じる。`tools_changed` が残れば 546 へ、TTL 切れは 581 へ
 - 数え方 (2026-09-29 の計測と反証で使った判定。スクリプトは残していないので、この手順から組み直す。transcript・jobs・cards.json / cards-archive.jsonl・events の読み取りだけで足りる):
   1. 対象: `~/.claude/jobs/<短い id>/state.json` の `respawnFlags` に `feedbackDrafts` が在る job が今の形。役は worktree 名 (pc-c-* / pc-pm-* / pc-int-*)
@@ -708,9 +708,9 @@ commit「pro-con: Opus 5.5 のキャッシュの読みを料金 0.05 倍で数�
 記録して直さないもの:
 
 - FiveHourPct の新旧のビット単位の一致は、arm64 で 5 分の書き込みが 1 model あたり約 3.6e15 トークンを超えると FMA の融合の違いで崩れる (現実の大きさの乱数 6 万件では一致)。
-  入力の単価が 2 進で有限に表せない model (0.8 など) を表に足すと現実の大きさで効くので、そのときは明示の float64() 変換で丸めを固定する
-- USD のセントへの丸めは、ちょうど半セントの額の約 5.7% で切り下げになる (旧版と同じ。差は 1 セント以下)
-- `pro-con stats` の USD の新旧混在は、行に単価の表の版を持たせれば分けられるが、記録の形を変えるので入れない (stats.go の注記だけ)
+  入力の単価が 2 進で有限に表せない model (0.8 など) を表に足すと現実の大きさで影響するので、そのときは明示の float64() 変換で丸めを固定する
+- USD のセントへの丸めは、ちょうど半セントの額の約 5.7% で切り下げになる (旧バージョンと同じ。差は 1 セント以下)
+- `pro-con stats` の USD の新旧混在は、行に単価の表のバージョンを持たせれば分けられるが、記録の形を変えるので入れない (stats.go の注記だけ)
 
 2 周目 (1 周目の修正を攻め口にした 2 体): コード 8 件・issue の記述 12 件。採った修正:
 
