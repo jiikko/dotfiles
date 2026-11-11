@@ -68,8 +68,13 @@ func (p *Picker) queueFetch() {
 	}
 	now := f.lp.now()
 	var on, rest []string
+	targets := map[string]bool{}
 	for _, it := range p.items {
-		if it.grp != nil || it.memberOnly || !it.ch.IsMember || it.ch.IsArchived || slices.Contains(f.queue, it.ch.ID) {
+		if it.grp != nil || it.memberOnly || !it.ch.IsMember || it.ch.IsArchived {
+			continue
+		}
+		targets[it.ch.ID] = true
+		if slices.Contains(f.queue, it.ch.ID) {
 			continue
 		}
 		if lp, ok := p.last[it.ch.ID]; ok && now.Sub(lp.At) < lastPostFresh {
@@ -82,6 +87,11 @@ func (p *Picker) queueFetch() {
 		}
 	}
 	f.queue = append(append(f.queue, on...), rest...)
+	for id := range f.failed {
+		if !targets[id] || slices.Contains(f.queue, id) {
+			delete(f.failed, id) // 取る対象でなくなった・列に戻した (見出しの「取れなかった」に数え続けない)
+		}
+	}
 }
 
 func (lp *LastPosts) now() time.Time {
@@ -159,22 +169,23 @@ func (p *Picker) Fetching() int {
 const (
 	postedFetching = "..."  // 取り直しの列にあって、まだ値が無い
 	postedNone     = "-"    // 取らないチャンネル (参加していない) で、値も無い
-	postedFailed   = "err"  // 取り直しで取れなかった (前の値も無い)
+	postedFailed   = "err"  // 取り直しで取れなかった (前の値があっても出す)
 	postedEmpty    = "none" // 発言が 1 つも無い
 )
 
 // posted はチャンネルの最終投稿の欄 (取った日付。値が無ければ、取り直し待ち・取れなかった・取らない、のどれか)。
 func (p *Picker) posted(id string) string {
+	// 取れなかったものは前の値を持っていても err を出す (見出しの「取れなかった n 件」がどの行かを表で分かるように)
+	if p.fetch != nil && p.fetch.failed[id] {
+		return postedFailed
+	}
 	if lp, ok := p.last[id]; ok {
 		if lp.Ts == "" {
 			return postedEmpty
 		}
 		return postedDate(board.TsTime(lp.Ts), p.nowOr())
 	}
-	switch {
-	case p.fetch != nil && p.fetch.failed[id]:
-		return postedFailed
-	case p.fetch != nil && slices.Contains(p.fetch.queue, id):
+	if p.fetch != nil && slices.Contains(p.fetch.queue, id) {
 		return postedFetching
 	}
 	return postedNone

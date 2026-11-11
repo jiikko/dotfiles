@@ -347,7 +347,8 @@ func cachedPicker(d deps, st cache.Store) (*subs.Picker, time.Time, bool) {
 // cmdSub は購読の画面を開く。前に取ったチャンネルの一覧があればそれですぐ開き、一覧の取り直しを裏で流して、届いたら差し替える
 // (取り直しは slack-cli がページの間を空けて取るので 1 分ほどかかる)。参加しているチャンネルの最終投稿も裏で取り直す。
 func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
-	// 画面を開いている間に裏で slack-cli を呼ぶので、slack-cli の stderr を端末へ流さない (流すと画面が崩れる。読む画面の browse と同じ)
+	// 画面を開いている間に裏で slack-cli を呼ぶので、そちらは slack-cli の stderr を端末へ流さない (流すと画面が崩れる。読む画面の browse と同じ)。
+	// 画面を開く前に一覧を取る (キャッシュが無い) ときは流す (429 で待っている知らせが見えないと、1 分ほど何も出ずに止まって見える)
 	cli := source.Client{R: source.Quiet(d.slack)}
 	st := openStore(d, io.Discard)
 	// 画面を閉じたら裏の仕事 (一覧と最終投稿の取り直し) を取り消し、slack-cli の子が終わるのを待ってから戻る
@@ -370,7 +371,7 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 		})
 	} else {
 		var err error
-		if p, _, err = newPicker(ctx, d, cli, st); err != nil {
+		if p, _, err = newPicker(ctx, d, source.Client{R: d.slack}, st); err != nil {
 			return err
 		}
 	}

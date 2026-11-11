@@ -178,3 +178,36 @@ func TestPickerRefreshQueuesNewChannels(t *testing.T) {
 		t.Errorf("取った順 = %v", asked)
 	}
 }
+
+// 取れなかったチャンネルは前の値があっても表に err を出す。一覧の差し替えで取る対象でなくなった (参加をやめた) ものと、
+// 列に戻したものは「取れなかった」に数えない。
+func TestPickerFailedLastPosts(t *testing.T) {
+	lp := &LastPosts{Get: func(context.Context, string) (string, error) { return "", errors.New("x") }, Now: func() time.Time { return lpNow }}
+	p := NewPicker(lpAll(), nil)
+	p.Resize(140, 20)
+	p.SetLastPosts(map[string]LastPost{"C1": {Ts: "1794400000.000000", At: lpNow.Add(-2 * time.Hour)}})
+	cmd := p.StartFetch(context.Background(), lp)
+	for cmd != nil {
+		cmd = p.HandleLastPost(cmd().(LastPostMsg))
+	}
+	row := func(name string) string {
+		for _, l := range p.Lines() {
+			if strings.Contains(l, name) {
+				return strings.Join(strings.Fields(l), " ")
+			}
+		}
+		return ""
+	}
+	if got := row("#dev"); !strings.HasSuffix(got, "err 42") {
+		t.Errorf("前の値のあるチャンネルが取れなかった行 = %q", got)
+	}
+	left := lpAll()
+	left[0].IsMember = false // dev の参加をやめた
+	p.Refresh(NewPicker(left, nil)) // ops・zz は新しい値が無いので列に戻り、dev は取る対象でなくなる
+	if len(p.fetch.failed) != 0 || slices.Contains(p.fetch.queue, "C1") {
+		t.Errorf("取る対象でなくなった dev か列に戻した ops・zz を「取れなかった」に数えた: failed=%v queue=%v", p.fetch.failed, p.fetch.queue)
+	}
+	if got := row("#ops"); !strings.HasSuffix(got, "... 17") {
+		t.Errorf("列に戻した ops の行 = %q", got)
+	}
+}
