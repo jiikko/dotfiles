@@ -201,7 +201,8 @@ func (m *Model) toggleHidden() {
 		m.toast.Show("この話題を隠した (z で隠した話題を出すのをやめる)", true)
 	default:
 		m.toast.Show("この話題を隠した (z で隠した話題も出し、その上で x を押すと戻す)", true)
-		m.body = false // 隠した話題の本文を開いたままにしない
+		m.body = false  // 隠した話題の本文を開いたままにしない
+		m.pager.Reset() // カーソルは次の話題へ移る。隠した話題を送った位置から読ませない
 	}
 	m.fitList(1)
 	if m.reads == nil || m.reads.SaveHidden == nil {
@@ -214,14 +215,28 @@ func (m *Model) toggleHidden() {
 
 // toggleShowHidden は z キー: 隠した話題も一覧に出すか (出すときは淡い色で出す)。
 func (m *Model) toggleShowHidden() {
+	keep := ""
+	if t, ok := m.selected(); ok {
+		keep = t.Units[0].ID
+	}
 	m.showHidden = !m.showHidden
 	for i := range m.chans {
 		m.chans[i].rows = nil
 	}
-	m.fitList(1)
+	if len(m.chans) > 0 && !m.reselect(keep) {
+		m.pager.Reset() // 選んでいた話題が隠れた: カーソルは別の話題に移る
+	}
 	if m.showHidden {
 		m.toast.Show("隠した話題も出す (淡い色。x で隠すのをやめる)", true)
 	} else {
 		m.toast.Show("隠した話題を出さない", true)
 	}
+}
+
+// zHint は z の案内 (押したときに起きること)。
+func zHint(showing bool) string {
+	if showing {
+		return "隠した話題を出さない"
+	}
+	return "隠した話題も出す"
 }

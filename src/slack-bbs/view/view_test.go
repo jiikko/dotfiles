@@ -681,3 +681,25 @@ func TestUnsubscribeAsksFirst(t *testing.T) {
 		t.Fatalf("y で外していない: saved=%v tabs=%s", saved, ids(m))
 	}
 }
+
+// 購読を外すか確かめている間に購読の画面が開いたら、確かめるのをやめる (隠れた確認に購読の画面の Enter・y で答えさせない)。
+// 小さい端末では、問いと答え方を 1 行で出す。
+func TestUnsubscribeConfirmVsPickerAndTiny(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	m := subsModel(l, &saved, &opened)
+	run(m, m.Init())
+	pending := press(m, "s") // 一覧を裏で読み始める (結果はまだ渡さない)
+	press(m, "d")
+	run(m, pending)
+	press(m, "enter") // 購読の画面の Enter (保存して閉じる)
+	if len(saved) != 1 || ids(m) != "C1,C2" {
+		t.Fatalf("購読の画面の Enter が、隠れた確認に答えた: saved=%v tabs=%s", saved, ids(m))
+	}
+	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: MinHeight - 1})
+	press(m, "d")
+	if lines := m.Lines(); len(lines) != 1 || !strings.Contains(lines[0], "購読を外す？") || !strings.Contains(lines[0], "y/Enter") {
+		t.Errorf("小さい端末の確認: %q", lines)
+	}
+}

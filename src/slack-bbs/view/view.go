@@ -206,6 +206,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast.Show("チャンネルの一覧を読めなかった: "+msg.err.Error(), false)
 			break
 		}
+		if m.unsub != "" {
+			// 購読を外す確認の板は購読の画面の下に隠れる。隠れた確認に購読の画面のキー (Enter・y) で答えさせない
+			m.unsub = ""
+			m.toast.Show("購読を外すのをやめた (購読の画面を開いた)", false)
+		}
 		m.picker = msg.p
 	case tea.PasteMsg:
 		if m.picker != nil {
@@ -311,18 +316,8 @@ func (m *Model) loaded(msg loadedMsg) {
 	if idx == m.cur {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
-		found := false
-		for i, r := range m.rows() {
-			if !r.header() && slices.ContainsFunc(c.page.Topics[r.topic].Units, func(u board.Unit) bool { return u.ID == keep }) {
-				m.list.Cursor, found = i, true
-				break
-			}
-		}
-		m.fitList(1)
+		m.reselect(keep)
 		m.pager.Reset()
-		if m.body && !found {
-			m.body = false // 読んでいた話題が消えた: 黙って別の話題の本文に替えない (替えると、選んでいない話題を読んだことになる)
-		}
 		// 読み直しは既読にしない (本文の欄に出ていても): 欄は先頭へ戻り、付いた返信は欄の外にありうる。小さい端末・購読の画面の裏では
 		// 欄が描かれていない。読んでいる最中に付いた返信は、選び直すまで ● で出す
 	}
@@ -668,6 +663,9 @@ func (m *Model) bodyLines() (lines []string, first []bool) {
 	}
 	ti, ok := m.selectedIndex()
 	if !ok {
+		if len(c.page.Topics) > 0 {
+			return []string{"話題は全部隠している (z で隠した話題も出す)。"}, nil
+		}
 		return []string{"期間内の発言はありません。"}, nil
 	}
 	key := bodyKey{page: c.page, topic: ti, width: m.bodyWidth()}
@@ -731,7 +729,11 @@ func (m *Model) tiny() bool { return m.w < MinWidth || m.h < MinHeight }
 // Lines は画面の行。toast は右下 (キーの案内の上) に重ねる。
 func (m *Model) Lines() []string {
 	lines := m.screen()
-	if i := m.unsubIndex(); i >= 0 && m.picker == nil {
+	if i := m.unsubIndex(); i >= 0 && m.tiny() {
+		// 小さい端末の画面は 1 行なので板が収まらない。問いと答え方を 1 行で出す
+		return []string{termwidth.Truncate("#"+termsafe.PlainLine(m.chans[i].ch.Name)+" の購読を外す？ y/Enter: 外す  その他: やめる", max(m.w, 1), "…")}
+	}
+	if i := m.unsubIndex(); i >= 0 {
 		box := confirm.Dialog(" 購読を外す ", []string{"#" + termsafe.PlainLine(m.chans[i].ch.Name), "の購読を外しますか？", "(s の購読の画面でまた付けられる)"}, confirm.HintYesNo, m.w, true)
 		lines = layout.OverlayCentered(lines, box, m.w, len(lines), true)
 	}
@@ -966,7 +968,7 @@ func (m *Model) helpLines() []string {
 		pane = []hintfit.Item{h(2, "j/k", "話題を選ぶ"), h(2, "l/Enter", "本文を読む")}
 	}
 	// 本文の欄では Tab が 1 行目に入らず幅 100 で落ちるが、案内に無くても効く
-	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"), h(4, "x", "話題を隠す"), h(5, "z", "隠した話題も出す"))
+	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"), h(4, "x", "話題を隠す"), h(5, "z", zHint(m.showHidden)))
 	chans := []hintfit.Item{h(4, "Tab", "次のチャンネル"), h(3, "r", "今のチャンネルを読み直す"), h(4, "R", "全チャンネルを読み直す")}
 	if m.subs != nil { // d が効くのは購読を変えられる起動だけ (案内に出したキーは必ず効く。TUI ガイド)
 		chans = append(chans, h(5, "d", "購読を外す"))
@@ -1035,4 +1037,20 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 	cmd := m.setChannels(sel)
 	m.toast.Show("#"+name+" の購読を外した (s でまた付けられる)", true)
 	return cmd
+}
+
+// reselect は一覧の行を作り直した後、最初の単位が keep の話題にカーソルを戻し、戻せたかを返す。戻せなければ (話題が消えた・隠れた)
+// 本文の欄を閉じる: 黙って別の話題の本文に替えない (替えると、選んでいない話題を読んだことになる)。
+func (m *Model) reselect(keep string) bool {
+	topics := m.topics()
+	for i, r := range m.rows() {
+		if !r.header() && slices.ContainsFunc(topics[r.topic].Units, func(u board.Unit) bool { return u.ID == keep }) {
+			m.list.Cursor = i
+			m.fitList(1)
+			return true
+		}
+	}
+	m.fitList(1)
+	m.body = false
+	return false
 }

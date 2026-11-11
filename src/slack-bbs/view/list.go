@@ -80,6 +80,9 @@ func (m *Model) rows() []row {
 	if c.rows == nil && c.page != nil {
 		ts := c.page.Topics
 		c.rows = buildRows(ts, time.Local, func(i int) bool { return !m.showHidden && topicHidden(ts[i], c.hidden) })
+		if c.rows == nil {
+			c.rows = []row{} // 全部を隠したとき: nil は「作り直す」の印なので、空の行を覚える (描くたびに数え直さない)
+		}
 	}
 	return c.rows
 }
@@ -124,7 +127,8 @@ func (m *Model) leftLines() []string {
 		if i == m.list.Cursor {
 			cur = pink("▌")
 		}
-		unread := topicUnread(t, c.read, c.mentions)
+		hidden := topicHidden(t, c.hidden)
+		unread := !hidden && topicUnread(t, c.read, c.mentions) // 隠した話題は未読に数えない (タブの未読の数と揃える)
 		if unread {
 			dot = pink("●")
 		}
@@ -134,7 +138,7 @@ func (m *Model) leftLines() []string {
 		text = termwidth.Truncate(text, room, "…")
 		pad := termwidth.PadSpaces(room - termwidth.Of(text))
 		switch {
-		case topicHidden(t, c.hidden):
+		case hidden:
 			text = dim(text) // z で出している隠した話題
 		case unread || i == m.list.Cursor:
 			text = boldText(text)

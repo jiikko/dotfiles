@@ -644,3 +644,27 @@ func TestHideTopic(t *testing.T) {
 		t.Error("隠した後に名指しされた話題を隠したままにした")
 	}
 }
+
+// z で隠した話題を出さなくしたとき、本文を開いていた話題が隠れたら本文の欄を閉じる (黙って別の話題の本文に替えない)。
+// 全部を隠したら、右の欄は「発言が無い」ではなく隠していることを伝える。
+func TestShowHiddenToggleKeepsSelection(t *testing.T) {
+	m := datedModel(t, func() []board.Topic {
+		return []board.Topic{topicAt("雑談", day0), topicAt("障害", day0.Add(-time.Hour))}
+	})
+	press(m, "x") // 雑談を隠す
+	press(m, "z") // 出す
+	for i, r := range m.rows() {
+		if !r.header() && m.chans[0].page.Topics[r.topic].Title == "雑談" {
+			m.list.Cursor = i
+		}
+	}
+	press(m, "l")
+	press(m, "z") // 出さない: 開いていた雑談が隠れる
+	if t2, ok := m.selected(); m.body || (ok && t2.Title == "雑談") {
+		t.Errorf("隠れた話題の本文を開いたまま・別の話題に替えた: body=%v", m.body)
+	}
+	press(m, "x") // 障害も隠す
+	if lines, _ := m.bodyLines(); len(lines) != 1 || !strings.Contains(lines[0], "隠している") {
+		t.Errorf("全部隠したときの右の欄: %q", lines)
+	}
+}
