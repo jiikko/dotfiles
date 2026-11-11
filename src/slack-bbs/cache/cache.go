@@ -208,9 +208,15 @@ func (s Store) SaveRead(ch string, units map[string]string, now time.Time) error
 // ReadKeep で数える: 印は -lookback (既定 30 日) の間返信の付きうるスレッドを覚えるので、14 日で消すと読み直しのたびに未読へ戻る。
 const CacheKeep = 14 * 24 * time.Hour
 
-// Expire は置き場の中で、書き換えの無いまま残す期間を過ぎたキャッシュのファイル (<ID>.raw.json・.summary.json は CacheKeep、
-// .read.json は ReadKeep) を消し、消した数を返す。この形でないファイル (slack-cli の lock など) には触らない。
-// 1 つ消せなくても残りは続け、消せなかったものをまとめて返す。
+// Expire は置き場の中で、書き換えの無いまま残す期間を過ぎたキャッシュのファイルを消し、消した数を返す。
+//   - <ID>.raw.json と .summary.json は組で数え、新しい方の時刻から CacheKeep を過ぎたら両方消す。summary だけで数えない:
+//     分類を使い回した読み直し (main.go の classify) は raw だけを書き直すので、毎日読んでいるチャンネルの summary も古い時刻のまま残る
+//   - <ID>.read.json は ReadKeep
+//   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>) は CacheKeep
+//
+// この形でないファイル (slack-cli の lock など) には触らない。消す直前に時刻を取り直す (並んで起動した別の slack-bbs が
+// 書き直したばかりのファイルを、先に読んだ古い時刻で消さない。窓は残る)。1 つ消せなくても残りは続け、消せなかったものをまとめて返す。
+// 時刻が未来のファイル (時計を戻した等) は、その時刻から数えるので期限が延びる (害は残るだけなので受け入れる)。
 func (s Store) Expire(now time.Time) (int, error) {
 	if s.Dir == "" {
 		return 0, nil
@@ -222,37 +228,85 @@ func (s Store) Expire(now time.Time) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	keep := map[string]time.Duration{"raw": CacheKeep, "summary": CacheKeep, "read": ReadKeep}
-	n := 0
 	var errs []error
-	for _, e := range ents {
-		base, ok := strings.CutSuffix(e.Name(), ".json")
-		if !ok || !e.Type().IsRegular() {
-			continue
-		}
-		dot := strings.LastIndexByte(base, '.')
-		if dot < 0 {
-			continue
-		}
-		d, known := keep[base[dot+1:]]
-		if !known || !source.IsChannelID(base[:dot]) {
-			continue
-		}
-		info, err := e.Info()
+	mtime := func(name string) (time.Time, bool) {
+		info, err := os.Lstat(filepath.Join(s.Dir, name))
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
 				errs = append(errs, err)
 			}
+			return time.Time{}, false
+		}
+		return info.ModTime(), info.Mode().IsRegular()
+	}
+	type entry struct {
+		names  []string
+		newest time.Time
+		keep   time.Duration
+	}
+	groups := map[string]*entry{}
+	for _, e := range ents {
+		if !e.Type().IsRegular() {
 			continue
 		}
-		if now.Sub(info.ModTime()) <= d {
+		key, keep, ok := expireGroup(e.Name())
+		if !ok {
 			continue
 		}
-		if err := os.Remove(filepath.Join(s.Dir, e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			errs = append(errs, err)
+		at, ok := mtime(e.Name())
+		if !ok {
 			continue
 		}
-		n++
+		g := groups[key]
+		if g == nil {
+			g = &entry{keep: keep}
+			groups[key] = g
+		}
+		g.names = append(g.names, e.Name())
+		if at.After(g.newest) {
+			g.newest = at
+		}
+	}
+	n := 0
+	for _, g := range groups {
+		if now.Sub(g.newest) <= g.keep {
+			continue
+		}
+		for _, name := range g.names {
+			if at, ok := mtime(name); !ok || now.Sub(at) <= g.keep {
+				continue
+			}
+			if err := os.Remove(filepath.Join(s.Dir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+				continue
+			}
+			n++
+		}
 	}
 	return n, errors.Join(errs...)
+}
+
+// expireGroup はキャッシュのファイル名を、まとめて期限を数える組の鍵と残す期間にする。キャッシュの形でなければ ok が偽。
+func expireGroup(name string) (key string, keep time.Duration, ok bool) {
+	if atomicfile.IsTemp(name) {
+		if id, _, found := strings.Cut(name, "."); found && source.IsChannelID(id) {
+			return "tmp:" + name, CacheKeep, true
+		}
+		return "", 0, false
+	}
+	base, ok := strings.CutSuffix(name, ".json")
+	if !ok {
+		return "", 0, false
+	}
+	id, kind, found := strings.Cut(base, ".")
+	if !found || !source.IsChannelID(id) {
+		return "", 0, false
+	}
+	switch kind {
+	case "raw", "summary":
+		return "board:" + id, CacheKeep, true
+	case "read":
+		return "read:" + id, ReadKeep, true
+	}
+	return "", 0, false
 }

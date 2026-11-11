@@ -316,3 +316,26 @@ func TestReadExpiresOldCache(t *testing.T) {
 		t.Errorf("今読んだチャンネルのキャッシュが無い: %v", err)
 	}
 }
+
+// -dry-run は量を見るだけで、古いキャッシュも消さない。
+func TestDryRunKeepsOldCache(t *testing.T) {
+	_, _, d, dir := cacheFixture(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(dir, "C9.raw.json")
+	if err := os.WriteFile(old, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(-15 * 24 * time.Hour)
+	if err := os.Chtimes(old, at, at); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if rc := run(context.Background(), []string{"-dry-run", "C1"}, &out, &errb, d); rc != 0 {
+		t.Fatalf("rc=%d %s", rc, errb.String())
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Errorf("-dry-run が古いキャッシュを消した: %v", err)
+	}
+}

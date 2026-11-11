@@ -126,21 +126,26 @@ func TestReadRoundTripAndPrune(t *testing.T) {
 	}
 }
 
-// Expire は書き換えの無いまま期間を過ぎたファイルだけを消す: raw と summary は CacheKeep、既読の印は ReadKeep。
+// Expire は書き換えの無いまま期間を過ぎたファイルだけを消す: raw と summary は組の新しい方から CacheKeep、既読の印は ReadKeep、
+// 書きかけの一時ファイルは CacheKeep。
 // キャッシュの形でないファイル (slack-cli の lock・知らない拡張子) と、期間の内のファイルには触らない。
 func TestExpire(t *testing.T) {
 	dir := t.TempDir()
 	st := Store{Dir: dir}
 	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
 	age := map[string]time.Duration{
-		"COLD.raw.json":     CacheKeep + time.Hour, // 消す
-		"COLD.summary.json": CacheKeep + time.Hour, // 消す
-		"COLD.read.json":    CacheKeep + time.Hour, // 既読は ReadKeep まで残す
-		"OLD.read.json":     ReadKeep + time.Hour,  // 消す
-		"WARM.raw.json":     CacheKeep - time.Hour,
-		"slack-cli.lock":    ReadKeep * 2,
-		"notes.json":        ReadKeep * 2,
-		"x.y.json":          ReadKeep * 2, // ID の形でない
+		"COLD.raw.json":         CacheKeep + time.Hour, // 消す
+		"COLD.summary.json":     CacheKeep + time.Hour, // 消す
+		"USED.summary.json":     CacheKeep * 3,         // 分類を使い回していて raw だけが新しい: 組で数えて残す
+		"USED.raw.json":         time.Hour,
+		"COLD.raw.json.tmp.123": CacheKeep + time.Hour, // 書きかけで残った一時ファイル: 消す
+		"WARM.raw.json.tmp.456": time.Hour,
+		"COLD.read.json":        CacheKeep + time.Hour, // 既読は ReadKeep まで残す
+		"OLD.read.json":         ReadKeep + time.Hour,  // 消す
+		"WARM.raw.json":         CacheKeep - time.Hour,
+		"slack-cli.lock":        ReadKeep * 2,
+		"notes.json":            ReadKeep * 2,
+		"x.y.json":              ReadKeep * 2, // ID の形でない
 	}
 	for name, a := range age {
 		p := filepath.Join(dir, name)
@@ -152,15 +157,15 @@ func TestExpire(t *testing.T) {
 		}
 	}
 	n, err := st.Expire(now)
-	if err != nil || n != 3 {
-		t.Fatalf("Expire = %d, %v; want 3 件", n, err)
+	if err != nil || n != 4 {
+		t.Fatalf("Expire = %d, %v; want 4 件", n, err)
 	}
 	var left []string
 	ents, _ := os.ReadDir(dir)
 	for _, e := range ents {
 		left = append(left, e.Name())
 	}
-	want := "COLD.read.json,WARM.raw.json,notes.json,slack-cli.lock,x.y.json"
+	want := "COLD.read.json,USED.raw.json,USED.summary.json,WARM.raw.json,WARM.raw.json.tmp.456,notes.json,slack-cli.lock,x.y.json"
 	if got := strings.Join(left, ","); got != want {
 		t.Errorf("残ったファイル: %s, want %s", got, want)
 	}

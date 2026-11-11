@@ -399,8 +399,10 @@ func eachChannel(ctx context.Context, o options, d deps, stderr io.Writer, fn fu
 // read は 1 段で読む: 集めて claude -p で分類し、組んで出す。
 func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) error {
 	st := openStore(d, stderr)
-	if _, err := st.Expire(d.now()); err != nil {
-		fmt.Fprintf(stderr, "slack-bbs: 🚨 古いキャッシュを消せなかった (読むのは続ける): %s\n", clean(err.Error()))
+	if !o.dryRun { // -dry-run は量を見るだけで、キャッシュを消さない
+		if _, err := st.Expire(d.now()); err != nil {
+			fmt.Fprintf(stderr, "slack-bbs: 🚨 古いキャッシュを消せなかった (読むのは続ける): %s\n", clean(err.Error()))
+		}
 	}
 	if !o.json && !o.dryRun && !o.md && d.tty() {
 		return browse(ctx, o, d, st)
