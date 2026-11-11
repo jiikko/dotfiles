@@ -347,13 +347,24 @@ func cachedPicker(d deps, st cache.Store) (*subs.Picker, time.Time, bool) {
 // cmdSub は購読の画面を開く。前に取ったチャンネルの一覧があればそれですぐ開き、一覧の取り直しを裏で流して、届いたら差し替える
 // (取り直しは slack-cli がページの間を空けて取るので 1 分ほどかかる)。参加しているチャンネルの最終投稿も裏で取り直す。
 func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
-	cli := source.Client{R: d.slack}
+	// 画面を開いている間に裏で slack-cli を呼ぶので、slack-cli の stderr を端末へ流さない (流すと画面が崩れる。読む画面の browse と同じ)
+	cli := source.Client{R: source.Quiet(d.slack)}
 	st := openStore(d, io.Discard)
+	// 画面を閉じたら裏の仕事 (一覧と最終投稿の取り直し) を取り消し、slack-cli の子が終わるのを待ってから戻る
+	// (待たないと、戻った直後の os.Exit で子を止める前にこのプロセスが終わり、子がプロセスをまたぐ呼び出しの列の外で Slack を呼び続ける)
+	ctx, cancel := context.WithCancel(ctx)
+	g := newGuard()
+	defer g.closeAndWait(cancel)
 	p, at, cached := cachedPicker(d, st)
 	var cmds []tea.Cmd
 	if cached {
 		p.SetNote(at.Format("01/02 15:04") + " に取った一覧・取り直し中")
 		cmds = append(cmds, func() tea.Msg {
+			done, ok := g.start()
+			if !ok {
+				return subs.ChannelsMsg{Err: context.Canceled}
+			}
+			defer done()
 			fresh, _, err := newPicker(ctx, d, cli, st)
 			return subs.ChannelsMsg{P: fresh, Err: err}
 		})
@@ -367,7 +378,7 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	cmds = append(cmds, p.StartFetch(ctx, lastPosts(cli, st, d.now)))
+	cmds = append(cmds, p.StartFetch(ctx, lastPosts(cli, st, d.now, g.start)))
 	if err := d.pick(p, cmds...); err != nil {
 		return err
 	}
@@ -391,12 +402,49 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 
 // lastPosts は購読の画面が最終投稿を取り直す口 (slack-cli の history で最新の 1 件を読み、キャッシュに書く)。前に取った分は
 // 呼び出し側が SetLastPosts で先に出す (newPicker / cachedPicker)。
-func lastPosts(cli source.Client, st cache.Store, now func() time.Time) *subs.LastPosts {
+// start は slack-cli を起こす前に呼ぶ待ちの登録 (guard.start)。閉じた後は呼ばずに取り消しのエラーを返す。
+func lastPosts(cli source.Client, st cache.Store, now func() time.Time, start func() (func(), bool)) *subs.LastPosts {
 	return &subs.LastPosts{
-		Get:  cli.LastPost,
+		Get: func(ctx context.Context, id string) (string, error) {
+			done, ok := start()
+			if !ok {
+				return "", context.Canceled
+			}
+			defer done()
+			return cli.LastPost(ctx, id)
+		},
 		Save: st.SaveLastPosts,
 		Now:  now,
 	}
+}
+
+// guard は画面の外で子 (slack-cli・claude -p) を起こす仕事の数を数え、閉じたら新しい仕事を始めさせずに、走っている仕事の終わりを待つ。
+type guard struct {
+	mu       sync.Mutex
+	closed   bool // 閉じた後に走り出した仕事は始めない (Wait と並んで Add しない)
+	inflight sync.WaitGroup
+}
+
+func newGuard() *guard { return &guard{} }
+
+// start は仕事の前に呼び、終わったら返す関数を呼ぶ。閉じた後は false。
+func (g *guard) start() (func(), bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return nil, false
+	}
+	g.inflight.Add(1)
+	return g.inflight.Done, true
+}
+
+// closeAndWait は新しい仕事を止め、cancel で走っている仕事を取り消して、終わるのを待つ。
+func (g *guard) closeAndWait(cancel context.CancelFunc) {
+	g.mu.Lock()
+	g.closed = true
+	g.mu.Unlock()
+	cancel()
+	g.inflight.Wait()
 }
 
 func cmdSubs(d deps, stdout io.Writer) error {
@@ -653,28 +701,9 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 	// 画面を閉じたら、走っている読み直し (slack-cli と claude -p) を止め、終わるのを待ってから戻る。
 	// 待たないと、戻った直後の os.Exit で子を止める前にこのプロセスが終わり、claude が走り続けて費用がかかる。
 	ctx, cancel := context.WithCancel(ctx)
-	var (
-		mu       sync.Mutex
-		closed   bool // 閉じた後に走り出した読み直しは始めない (Wait と並んで Add しない)
-		inflight sync.WaitGroup
-	)
-	defer func() {
-		mu.Lock()
-		closed = true
-		mu.Unlock()
-		cancel()
-		inflight.Wait()
-	}()
-	// start は画面の外で子 (slack-cli・claude -p) を起こす仕事の前に呼び、終わったら返す関数を呼ぶ。閉じた後は false を返す。
-	start := func() (func(), bool) {
-		mu.Lock()
-		defer mu.Unlock()
-		if closed {
-			return nil, false
-		}
-		inflight.Add(1)
-		return inflight.Done, true
-	}
+	g := newGuard()
+	defer g.closeAndWait(cancel)
+	start := g.start
 	load := func(ctx context.Context, ch subs.Channel) (render.Page, error) {
 		done, ok := start()
 		if !ok {
@@ -732,7 +761,7 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 				return p, err
 			},
 			Cached: func() (*subs.Picker, time.Time, bool) { return cachedPicker(d, st) },
-			Posts:  lastPosts(cli, st, d.now),
+			Posts:  lastPosts(cli, st, d.now, start),
 			Save: func(sel []subs.Channel) error {
 				path, err := d.subsPath()
 				if err != nil {

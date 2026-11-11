@@ -395,18 +395,19 @@ func (p *Picker) Lines() []string {
 	if p.note != "" {
 		head += p.note + "  " // 一覧が古い・取り直せなかったことは、狭い端末でも見出しの後ろより先に切らない
 	}
-	if f := p.fetch; f != nil {
-		if len(f.queue) > 0 {
-			head += fmt.Sprintf("最終投稿を取得中 (残り %d)  ", len(f.queue))
-		}
-		if f.errs > 0 {
-			head += fmt.Sprintf("最終投稿を取れなかった %d 件  ", f.errs)
-		}
-	}
+
 	if p.editing != nil {
 		head += fmt.Sprintf("グループ「%s」に入れるチャンネルを選ぶ (%d チャンネル)", termsafe.PlainLine(p.editing.Name), len(p.editing.Members))
 	} else {
 		head += fmt.Sprintf("購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", n, total)
+	}
+	if f := p.fetch; f != nil { // 取り直しの進み具合は、購読の数より後ろに出す (狭い端末では先に切れてよい)
+		if len(f.queue) > 0 {
+			head += fmt.Sprintf("  最終投稿を取得中 (残り %d)", len(f.queue))
+		}
+		if len(f.failed) > 0 {
+			head += fmt.Sprintf("  最終投稿を取れなかった %d 件 (err)", len(f.failed))
+		}
 	}
 	lines := []string{termwidth.Truncate(head, p.w, "…")}
 	switch {
@@ -460,7 +461,7 @@ func (p *Picker) Lines() []string {
 	if len(vis) == 0 {
 		lines = append(lines, "  (一致するチャンネルがありません)")
 	}
-	for len(lines) < p.rows()+2 {
+	for len(lines) < p.rows()+4 { // 見出し・検索・タブ・列の見出しの 4 行 + 1 ページ (案内の 2 行がタブの件数で上下しない)
 		lines = append(lines, "")
 	}
 	// キーの案内の 2 行。書き方は TUI ガイドの「キー: 説明」で、語は略さない。閉じ方の 2 つ (どちらも抜ける手段 = 優先度 1) は
@@ -593,7 +594,7 @@ func Names(chs []Channel) []string {
 	return slices.Clip(out)
 }
 
-// 表の列の幅 (最終投稿は「2025/12」「11/11」「(取得中)」が入る幅。人数は 4 桁と「ch」)。
+// 表の列の幅 (最終投稿は「2025/12」「11/11」と印の「none」が入る幅。人数は 4 桁と「ch」)。
 const (
 	postedW  = 8
 	membersW = 6

@@ -27,19 +27,19 @@ type LastPosts struct {
 // lastPostFresh は、取り直さずに使う最終投稿の新しさ (これより前に取ったものだけを取り直す。開くたびに 186 件を取り直さない)。
 const lastPostFresh = time.Hour
 
-// fetch は最終投稿を裏で取り直す状態 (取り終えても残り、Refresh で増えた分を ResumeFetch で取る)。gen は取り直しを始めるたびに変わる (前の取り直しの結果を捨てる)。
+// fetch は最終投稿を裏で取り直す状態 (取り終えても残り、Refresh で増えた分を ResumeFetch で取る)。結果は取り直しの実体 (このポインタ) で
+// 照合する: 番号で照合すると、閉じてすぐ開き直した別の画面の取り直しと番号が重なり、前の画面の結果 (取り消しのエラー) が新しい画面に入る。
 type fetch struct {
 	ctx     context.Context
 	lp      *LastPosts
-	queue   []string // これから取るチャンネル (先頭から 1 件ずつ)
-	gen     int
-	errs    int  // 取れなかった数 (見出しに出す)
-	running bool // 取る Cmd を出していて、結果を待っている
+	queue   []string        // これから取るチャンネル (先頭から 1 件ずつ)
+	failed  map[string]bool // 取れなかったチャンネル (表の欄に出す。数は見出しに出す)
+	running bool            // 取る Cmd を出していて、結果を待っている
 }
 
 // LastPostMsg は最終投稿を 1 件取った結果。画面を持つ側 (読む画面・slack-bbs sub) は HandleLastPost へ渡す。
 type LastPostMsg struct {
-	gen int
+	f   *fetch
 	id  string
 	ts  string
 	err error
@@ -55,11 +55,7 @@ func (p *Picker) StartFetch(ctx context.Context, lp *LastPosts) tea.Cmd {
 	if lp == nil || lp.Get == nil {
 		return nil
 	}
-	gen := 1
-	if p.fetch != nil {
-		gen = p.fetch.gen + 1
-	}
-	p.fetch = &fetch{ctx: ctx, lp: lp, gen: gen}
+	p.fetch = &fetch{ctx: ctx, lp: lp, failed: map[string]bool{}}
 	p.queueFetch()
 	return p.nextFetch()
 }
@@ -105,10 +101,10 @@ func (p *Picker) nextFetch() tea.Cmd {
 		return nil
 	}
 	f.running = true
-	id, gen, ctx, get := f.queue[0], f.gen, f.ctx, f.lp.Get
+	id, ctx, get := f.queue[0], f.ctx, f.lp.Get
 	return func() tea.Msg {
 		ts, err := get(ctx, id)
-		return LastPostMsg{gen: gen, id: id, ts: ts, err: err}
+		return LastPostMsg{f: f, id: id, ts: ts, err: err}
 	}
 }
 
@@ -116,7 +112,7 @@ func (p *Picker) nextFetch() tea.Cmd {
 // 取れなかったチャンネルは前の値のまま残し、数だけを見出しに出す。取り消し (画面を閉じた) なら列を止める。
 func (p *Picker) HandleLastPost(msg LastPostMsg) tea.Cmd {
 	f := p.fetch
-	if f == nil || msg.gen != f.gen || len(f.queue) == 0 || f.queue[0] != msg.id || p.done {
+	if f == nil || msg.f != f || len(f.queue) == 0 || f.queue[0] != msg.id || p.done {
 		return nil
 	}
 	f.queue = f.queue[1:]
@@ -125,8 +121,9 @@ func (p *Picker) HandleLastPost(msg LastPostMsg) tea.Cmd {
 		f.queue, f.running = nil, false
 		return nil
 	case msg.err != nil:
-		f.errs++
+		f.failed[msg.id] = true
 	default:
+		delete(f.failed, msg.id)
 		if p.last == nil {
 			p.last = map[string]LastPost{}
 		}
@@ -157,18 +154,30 @@ func (p *Picker) Fetching() int {
 	return len(p.fetch.queue)
 }
 
-// posted はチャンネルの最終投稿の欄 (取った日付。まだ無ければ、取り直しの列にあるなら「(取得中)」、無ければ「—」)。
+// 最終投稿の欄の印。日付 (半角) と同じ列に縦に並ぶので、どれも半角で書く (全角と半角を同じ列に混ぜない)。
+// 「—」(U+2014) は端末によって幅が 1 にも 2 にもなるので使わない
+const (
+	postedFetching = "..."  // 取り直しの列にあって、まだ値が無い
+	postedNone     = "-"    // 取らないチャンネル (参加していない) で、値も無い
+	postedFailed   = "err"  // 取り直しで取れなかった (前の値も無い)
+	postedEmpty    = "none" // 発言が 1 つも無い
+)
+
+// posted はチャンネルの最終投稿の欄 (取った日付。値が無ければ、取り直し待ち・取れなかった・取らない、のどれか)。
 func (p *Picker) posted(id string) string {
 	if lp, ok := p.last[id]; ok {
 		if lp.Ts == "" {
-			return "なし"
+			return postedEmpty
 		}
 		return postedDate(board.TsTime(lp.Ts), p.nowOr())
 	}
-	if p.fetch != nil && slices.Contains(p.fetch.queue, id) {
-		return "(取得中)"
+	switch {
+	case p.fetch != nil && p.fetch.failed[id]:
+		return postedFailed
+	case p.fetch != nil && slices.Contains(p.fetch.queue, id):
+		return postedFetching
 	}
-	return "—"
+	return postedNone
 }
 
 // groupPosted はグループの最終投稿 (メンバーで一番新しいもの。どれも分からなければ「—」)。
@@ -180,7 +189,7 @@ func (p *Picker) groupPosted(g *Channel) string {
 		}
 	}
 	if newest == "" {
-		return "—"
+		return postedNone
 	}
 	return postedDate(board.TsTime(newest), p.nowOr())
 }
