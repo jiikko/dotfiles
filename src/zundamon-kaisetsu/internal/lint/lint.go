@@ -446,7 +446,7 @@ type showSpan struct {
 // showSpans は台本の図解の区間を出した順に返す。どの行に何が出ているかは build と同じ show.LineShows で決める
 // (lint で別に組み直すと、同じ中身の書き直し・書き方だけ違う同じ図解・書き直しで段が戻る形で build とずれる)。
 // null・別の図解・チャプターの境・台本の終わりで区間を閉じる。チャプターをまたいで残る図解は show-across-chapter が警告するので、
-// 境の手前で切り、境の行で書き直さずに残した図解は、境の後も同じ図解のあいだ数えない。
+// 境の手前で切り、境で切った図解は書き直すまで数えない。
 func showSpans(s *script.Script) []showSpan {
 	idx, steps, _, err := show.LineShows(s.Path, s.Lines)
 	if err != nil {
@@ -464,16 +464,14 @@ func showSpans(s *script.Script) []showSpan {
 	}
 	var last map[string]any
 	for i, line := range s.Lines {
-		if m, ok := line["show"].(map[string]any); ok {
-			last = m
-		}
 		if i > 0 && pyjson.Truthy(line["chapter"]) && cur != nil {
-			// 境の行で図解を書き直したなら (同じ図解でも)、そこから新しい区間として数える。書き直さずに残したときだけ、
-			// show-across-chapter (同じ条件) が警告するので、同じ図解のあいだ数えない
-			if sh, has := line["show"]; !has || sh == "next" {
-				skip = cur.n
-			}
+			skip = cur.n
 			end(i)
+		}
+		if m, ok := line["show"].(map[string]any); ok {
+			// 図解を書き直した行 (同じ図解でも・境の行でも、境の後の行でも) からは新しい区間として数える。境で切って書き直さずに
+			// 残した図解は show-across-chapter が警告するので、書き直すまで数えない (skip)
+			last, skip = m, -1
 		}
 		if idx[i] == nil {
 			end(i)

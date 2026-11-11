@@ -147,6 +147,14 @@ func TestLintRules(t *testing.T) {
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"),
 			m("zundamon", "c？", "chapter", "次", "show", map[string]any{"type": "keyword", "text": "語"}), m("metan", "d"), m("zundamon", "e"), m("metan", "f")},
 			[]string{"2:show-linger"}},
+		"境で切った図解を、次の境で書き直したらそこから数える": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？", "chapter", "二"), m("metan", "c"),
+			m("zundamon", "d？", "chapter", "三", "show", map[string]any{"type": "keyword", "text": "語"}), m("metan", "e"), m("zundamon", "f"), m("metan", "g")},
+			[]string{"1:show-across-chapter", "3:show-linger"}},
+		"境で切った図解を、境の後の行で書き直したらそこから数える": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？", "chapter", "二"),
+			m("metan", "c", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "d"), m("metan", "e"), m("zundamon", "f")},
+			[]string{"1:show-across-chapter", "2:show-linger"}},
 		// 図解の数字 (目安。issue 1055): 図解の中の数字が、出ている区間の字幕に無い。区切りの「,」は除いて比べ、コードの図解は見ない
 		"図解の数字が字幕に無い": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "約10920件", "sub": "前の年の約1.5倍"}), m("zundamon", "多いのだ", "show", nil)},
