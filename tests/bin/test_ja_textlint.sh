@@ -66,6 +66,8 @@ x ** 2 を計算する。
 初版 再版 改版 原版 出版 日本語版 無料版 有料版 試用版 製品版 完全版 縮刷版 豪華版 決定版 廉価版 普及版 通常版 絶版 電子版 海賊版 第IV版 第ⅳ版 版画 版権。
 新版画面と提出版と最初版と Go 言語版。
 失敗を握り潰さない。
+旧版画像と流出版と検出版と高原版。
+本の出版と第iv版。
 EOF
 
 rc=0
@@ -106,9 +108,13 @@ want="3 4 ja-ai-vocabulary 1
 41 2 ja-ai-vocabulary 1
 41 8 ja-ai-vocabulary 1
 41 12 ja-ai-vocabulary 1
-41 20 ja-ai-vocabulary 1"
+41 20 ja-ai-vocabulary 1
+43 2 ja-ai-vocabulary 1
+43 8 ja-ai-vocabulary 1
+43 12 ja-ai-vocabulary 1
+43 16 ja-ai-vocabulary 1"
 if [ "$(sort <<<"$got")" = "$(sort <<<"$want")" ]; then
-  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (27 件)"
+  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (31 件)"
 else
   fail "指摘が期待と違う。got:
 $got"
