@@ -116,7 +116,7 @@ func TestLintRules(t *testing.T) {
 		"next で段を進める連続は数えない": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "code", "lines": []any{"x", "y", "z"}, "steps": []any{[]any{1}, []any{2}, []any{3}}}),
 			m("metan", "b", "show", "next"), m("metan", "c", "show", "next"), m("zundamon", "d")}, nil},
-		// 図解の残り (目安。issue 1055): 段の無い図解は出した行から、段のある図解は最後に段を進めた行から、消える手前の行までを数え、4 行で出す
+		// 図解の残り (目安): 段の無い図解は出した行から、段のある図解は最後に段を進めた行から、消える手前の行までを数え、4 行で出す
 		"段の無い図解が 4 行残る": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"), m("metan", "c"), m("zundamon", "d")}, []string{"0:show-linger"}},
 		"3 行で消せば出さない": {[]map[string]any{
@@ -155,7 +155,7 @@ func TestLintRules(t *testing.T) {
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？", "chapter", "二"),
 			m("metan", "c", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "d"), m("metan", "e"), m("zundamon", "f")},
 			[]string{"1:show-across-chapter", "2:show-linger"}},
-		// 図解の数字 (目安。issue 1055): 図解の中の数字が、出ている区間の字幕に無い。区切りの「,」は除いて比べ、コードの図解は見ない
+		// 図解の数字 (目安): 図解の中の数字が、出ている区間の字幕に無い。区切りの「,」は除いて比べ、コードの図解は見ない
 		"図解の数字が字幕に無い": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "約10920件", "sub": "前の年の約1.5倍"}), m("zundamon", "多いのだ", "show", nil)},
 			[]string{"0:show-number-unspoken", "0:show-number-unspoken"}},
