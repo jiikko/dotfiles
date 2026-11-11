@@ -20,7 +20,7 @@
 ## 🚨 push は「反映」ではない — 実体パスから動くものは `~/dotfiles` へ pull するまで古いまま
 
 - **`~/dotfiles` の実体パスから起動されるもの**は、worktree の commit を push しても
-  **`~/dotfiles` に pull するまで古い版が動き続ける**。対象は `_claude/` (下節) だけでなく
+  **`~/dotfiles` に pull するまで古いバージョンが動き続ける**。対象は `_claude/` (下節) だけでなく
   **`scripts/` と `bin/`** も: 稼働中の tmux サーバが読むのは `_tmux.conf` の bind が指す
   `${DOTFILES_DIR:-$HOME/dotfiles}/scripts/...` / `.../bin/...` であって、worktree のコピーではない
 - **統合は「push して終わり」にしない**。`git push origin HEAD:master` →
@@ -37,7 +37,7 @@
   worktree 内で動かした結果は、`~/dotfiles` が古いままなら**本番の証拠にならない**。
   `git -C ~/dotfiles status -sb` の `behind N` が出ていないかを、報告の前に確認する
 - 実測 2026-09-05 (issue 265): C-v のペースト通知を 3 commit 入れたが、`~/dotfiles` へ
-  pull していなかったため**ユーザー環境では 2 回とも古い版が動いていた**。隔離サーバでは
+  pull していなかったため**ユーザー環境では 2 回とも古いバージョンが動いていた**。隔離サーバでは
   出ていたので「出るはず」と報告し、「出ない」の往復を 2 回作った
 - 🚨 **push が成功したことを確認するまで worktree を消さない**。`push; pull; worktree remove` を `;` で
   繋ぐと、push が non-fast-forward で弾かれても後続が走り、**未 push の commit を持つ worktree を消す**
@@ -50,7 +50,7 @@
 - 🚨 **ファイルを書き換えるスクリプトは作業根を絶対パスの引数で受け、`cd` と相対パスに頼らない** (どの checkout を書くかが字面に出ない。retro 1003)
 - 🚨 **本体への pull / worktree remove は `git -C ~/dotfiles` で対象を明示する**。worktree の cwd で
   `git pull` を打つと detached HEAD で必ず失敗する (同日 3 回)。`commit-with-pathspec.md` の
-  「worktree からの merge / push も cwd 依存」と同じ罠の pull 版
+  「worktree からの merge / push も cwd 依存」と同じ罠の pull の形
 
 ## 🚨 worktree で `_claude/` を編集しても、その変更は効かない
 
@@ -59,10 +59,10 @@
 - **`~/.claude/rules/` の link も `~/dotfiles/_claude/rules/` を指す**。worktree で足したルールは
   その worktree からは見えず、master へ載って初めて次のセッションから読まれる
 - つまり **`_claude/` の変更は「master へ push するまで動作確認できない」**。
-  worktree で編集 → push → 次のセッションで効く、の順になる。
+  worktree で編集 → push → 次のセッションで反映される、の順になる。
   `scripts/claude_links.sh apply` を worktree で叩いても link 先は `~/dotfiles` のまま
-- **push + `~/dotfiles` pull の後は、「次のセッションで効くはず」で閉じず headless の新規セッションで観測する**。
-  `claude -p --model haiku "<注入された文が見えるか答えて>"` を効くべき cwd / 効かないべき cwd の両方で回す
+- **push + `~/dotfiles` pull の後は、「次のセッションで反映されるはず」で閉じず headless の新規セッションで観測する**。
+  `claude -p --model haiku "<注入された文が見えるか答えて>"` を注入されるべき cwd / 注入されないべき cwd の両方で回す
   (A-B。数十秒・低コスト。実測 2026-09-19 issue 401 で hook の注入をこれで確認した)
   - 🚨 **PreToolUse の注入 (additionalContext) は stream-json の出力に載らない** (`hook_response` は SessionStart のものだけ。2026-10-28 に実測)。見えないのを「注入されていない」と読まず、transcript (`~/.claude/projects/<project>/<session>.jsonl`) の `hook_additional_context` / `hook_success` の attachment を読む (retro 953)
   - 🚨 **答えは最終応答 (stdout / `result`) から読まない**。headless でも Stop hook が block して続きを処理させるので、
@@ -91,7 +91,7 @@ push は `HEAD:master` で自分の commit だけを載せられる)。
 
 - ✗ 「今は誰も触っていないようだから」で共有ツリーで編集を始める
   (`ListAgents` で idle に見えても、未コミットの WIP は残っている)
-- ✗ worktree の成果を `cp` で `~/dotfiles` へ戻す (他セッションの変更を黙って消す)
+- ✗ worktree の成果を `cp` で `~/dotfiles` へ戻す (他セッションの変更を気づかないうちに消す)
 - ✗ 作った worktree を残したままセッションを終える
 
 ## 関連

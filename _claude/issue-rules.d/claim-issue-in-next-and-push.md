@@ -44,7 +44,7 @@
   - 🚨 **push はブランチ単位**なので、他に未 push の commit があれば一緒に飛ぶ。**飛ばしてよいかを先に確かめ**、
     確かめ方は `git log --oneline origin/master..HEAD` の**出力をそのまま**相手へ見せる (自分で数えた件数はずれる)。
     飛ばせないなら、claim できていないことをユーザーへ伝えてから着手する
-- **push できないときは黙って進めない**。`git pull --rebase` してから push し、それでも無理なら着手前にユーザーへ伝える
+- **push できないときは知らせずに進めない**。`git pull --rebase` してから push し、それでも無理なら着手前にユーザーへ伝える
 - 完了したら **目印 (symlink) を消してから** done へ移す (残すと dangling で CI が落ちる)
   - 🚨 **手でやらない。dotfiles の `scripts/issue_done.sh <NNN>` に寄せる** (他の repo でもその repo の中から呼べる。対象は cwd の repo の issues/。移動・目印削除・本文の相対リンクと
     他 issue からの参照の張り直し・担当者バナーの削除を 1 コマンドで行い、リンク検査が落ちたら戻す)。

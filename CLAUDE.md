@@ -6,7 +6,7 @@
 - macOS に `timeout(1)` は無い。**時間の上限付き実行は `bin/runtimeout`** (子孫ごと止める。スクリプト・テストからは
   `bin/lib/runtimeout.sh` で解決する)。背景起動 + kill の手組みや `gtimeout` を新しく書かない (issue 640 で寄せた。
   `timeout` / `gtimeout` / `( sleep; kill ) &` は `make test-lint` が落とす。`kill -0` で回す待ちの手組みは字句で決まらないのでレビューで見る)
-- 🚨 **残るのは「版」の差**。CI runner の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
+- 🚨 **残るのは「バージョン」の差**。CI runner の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow 側で brew の bash を PATH 先頭に出して揃えている。新しい workflow を足すときは同じ手当てが要る
 - bin のスクリプトの定型は手で書かない (issue 775): 秒数などの整数の引数の検査は `bin/lib/uint.sh` の `uint_ok`
   (`[!0-9]` は bash 3.2 の ja_JP で全角数字を通す)、自分の実体の置き場 (symlink 越し) は `readlink -f "$0"` (BSD の readlink も持つ)、
@@ -53,7 +53,7 @@
     リンクは足さない
   - 節が残り 1〜2 行になるなら節自体を廃止する。**触ったファイルで順次適用**する（一括改変はしない）
 - `_claude/rules/*.md` は `~/.claude/rules/` に link され、**毎セッション起動時に全文読まれる**。本文は規範だけにし、なぜ・起源・実例は同名の `_claude/rules-rationale/<name>.md` に置く (起動時には読まれない。ルールを疑う・改訂するときに読む)
-- 特定のファイル種別に触れたときだけ発火してよいルールは frontmatter `paths:` で条件ロードにする (例: `no-comment-line-starting-with-shellcheck.md`)。`paths` は一致するファイルの Read・Write・Edit で発火する (2.1.314 で headless の A-B を実測、2026-10-30。測り方は `_claude/skills/claude-md-compact/paths-probe.sh`)。🚨 2026-08-27 の版では Write で発火しなかったので、版に頼る設計の前に測り直す。行動で発火するルール (commit / tmux / テスト作法) は、ファイルに触れずにその行動へ進む経路があるので無条件のまま置く
+- 特定のファイル種別に触れたときだけ発火してよいルールは frontmatter `paths:` で条件ロードにする (例: `no-comment-line-starting-with-shellcheck.md`)。`paths` は一致するファイルの Read・Write・Edit で発火する (2.1.314 で headless の A-B を実測、2026-10-30。測り方は `_claude/skills/claude-md-compact/paths-probe.sh`)。🚨 2026-08-27 のバージョンでは Write で発火しなかったので、バージョンに頼る設計の前に測り直す。行動で発火するルール (commit / tmux / テスト作法) は、ファイルに触れずにその行動へ進む経路があるので無条件のまま置く
 - rule / hook / skill / agent / command を足すと、per-file link なので `~/.claude/` に link が張られるまで Claude Code から見えない。**link の漏れは SessionStart hook (`_claude/hooks/claude-links-sync.sh`) が次のセッション起動時に自動で補う** (欠けているときだけ `scripts/claude_links.sh apply` を回し、揃っていれば無言)。**すぐ使いたいときは `scripts/claude_links.sh apply` を手で叩く**。🚨 hook は張るだけで消さない: ファイルを**消した / 改名した**ときの旧 link (dangling) と、実ファイルや他ツールの link との衝突は `./setup.sh` が担う (issue 160)。漏れは `make test` (tests/claude/test_claude_links_complete.sh) も検出する
 - **規範を常時ロードの場所 (`_claude/CLAUDE.md` / `_claude/rules/`) から hook の条件付き注入へ移すときは、
   常時ロード側に「注入された規約に従う」義務を 1 行残す**。hook の出力は背景情報 (`<system-reminder>`) として届き、

@@ -23,7 +23,7 @@ dump を入れていたので、次の 1 往復で確定できた**。逆に言�
 dump を入れていれば往復は 1 回で済んでいた。
 
 実例 (obaket 617 M2, 2026-08-29): Swift runtime の `swift_task_dealloc` abort に対し、仮説 fix を 2 回
-(Task.detached 化 / guard-let 化) 当てて 3/3 クラッシュのまま → 効かなかった修正を戻し、forge に観測データ
+(Task.detached 化 / guard-let 化) 当てて 3/3 クラッシュのまま → 結果が変わらなかった修正を戻し、forge に観測データ
 (crash report の frame・決定的な再現子) を手土産に escalate → probe A (stored async closure を短命 Task から
 呼んで完了させると落ちる) で真因を確定。修正は protocol witness の sleeper + cancel しない単一 driver。
 仮説 fix を 3 回目に進めていたら、同じ形 (`scheduleProgressFlush`) の 2 箇所目を見落としたまま
@@ -77,10 +77,10 @@ nvim --headless --server "$sock" --remote-expr 'luaeval("...")'
 
 | 壊れ方 | 出た嘘 | 気づいた手段 |
 |---|---|---|
-| headless で `RenderMarkdown disable` が効かない (marks も conceallevel も変わらない) | 「toggle しても高さは変わらない」 | 出力に `conceallevel=3` と `marks=33` が両方の行に並んでいた |
-| headless の `nvim_feedkeys("i")` で insert に入らない | 4 案すべて「ずれ +0 行」 | insert で marks=0 になるはずの版が 102 のままだった |
+| headless で `RenderMarkdown disable` が反映されない (marks も conceallevel も変わらない) | 「toggle しても高さは変わらない」 | 出力に `conceallevel=3` と `marks=33` が両方の行に並んでいた |
+| headless の `nvim_feedkeys("i")` で insert に入らない | 4 案すべて「ずれ +0 行」 | insert で marks=0 になるはずの案が 102 のままだった |
 | BSD の `diff` に `--unchanged-group-format` が無い | 「画面 44 行中 44 行が変化」 | usage が stderr に出ていたが、stdout の数字だけ読めば通っていた |
-| `nvim -u <別パスの init>` が描画を一切しない | 「案 B を当てると装飾が全部消える」 | **変更前の版で同じ手順を踏んだ** (canary) |
+| `nvim -u <別パスの init>` が描画を一切しない | 「案 B を当てると装飾が全部消える」 | **変更前の状態で同じ手順を踏んだ** (canary) |
 
 4 つ目が最も危なかった。適用直後のキャプチャが素の markdown だったので、**自分の変更が壊した
 ように見えた**。`verify-execution-not-just-exit-code.md` の「隔離環境での *失敗* も本番の失敗では
@@ -94,7 +94,7 @@ nvim --headless --server "$sock" --remote-expr 'luaeval("...")'
 **insert モードに入った瞬間**で toggle ですらなかった。本文の「『何度直しても直らない』と
 言われたら、まず非対称を特定する」を、**機構の説明を始める前に**当てる必要があった。
 
-## 実例: view の使い回しと、効いていない再試行の合図 (obaket 859, 2026-09-19)
+## 実例: view の使い回しと、働いていない再試行の合図 (obaket 859, 2026-09-19)
 
 - 一覧 Table の選択が灰色 (first responder でない) になる不具合で、最初の仮説 (「true を true に代入しても変化にならない」) は
   実機ログで外れた。真因の 1 つは **SwiftUI がタブ切替で Table と監視用の NSView を使い回し、ViewModel だけ差し替える**ことで、
@@ -123,7 +123,7 @@ nvim --headless --server "$sock" --remote-expr 'luaeval("...")'
 - **no-op の正しい状態** (2026-09-17 retro 389): 最下端に居たため下へ動けなかったのを「キーが届いていない」と読んだ
 - **隣の問題にも同じ手を**: 片方で `ps eww` を使って原因を特定したのに、もう片方では使わなかった
 - **headless の観測**: 出力は「もっともらしい数字」で返るため、採った側からは嘘だと分からない
-- **今走っている実体** (2026-09-10 dotfiles 343): nodenv 配下 3 版のうち古い 2.1.17 で enum を数えて 4 値、走っていた 2.1.266 は 14 値。
+- **今走っている実体** (2026-09-10 dotfiles 343): nodenv 配下 3 バージョンのうち古い 2.1.17 で enum を数えて 4 値、走っていた 2.1.266 は 14 値。
   そのまま報告すれば「縮んだ」になっていた
 - **観測結果が返る前に commit しない** (2026-09-04 av1ify 255)
 

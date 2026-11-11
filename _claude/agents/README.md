@@ -39,7 +39,7 @@ agent は一部しか載っていないので、agent はここが正本。
 | エージェント | model | 守備範囲 |
 |---|---|---|
 | `test-runner` | opus | 言語非依存のテスト実行 (pytest / jest / rspec / go test / cargo) |
-| `swiftui-test-expert` | opus | XCTest / XCUITest / ViewInspector の**書き方**と flaky の潰し方 |
+| `swiftui-test-expert` | opus | XCTest / XCUITest / ViewInspector の**書き方**と flaky の直し方 |
 | `debugger` | opus | 実行時エラー・スタックトレース・想定外の挙動 (言語横断) |
 | `research-assistant` | opus | 実装前の技術調査 (公式ドキュメント・ベストプラクティス・比較) |
 

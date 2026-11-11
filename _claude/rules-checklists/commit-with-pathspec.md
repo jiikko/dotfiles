@@ -11,7 +11,7 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
   別の commit に同じ操作 (skip 等) をかける (obaket 1003: 他人の bump を skip するつもりで、次の周で自分の bump も skip した)
 - **`git reset HEAD~N` / `git commit --amend` / `git rebase` の前に、必ず `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象コミットが自分のものか確認する**（自分が数分前に作ったコミットと、メッセージ・時刻が一致するか）
 - 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
-- **上の確認が効くのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。
+- **上の確認で分かるのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。
   全セッションが同じ git user なので **author では区別できず**、`git pull --rebase` は他人の commit を
   自分の commit のあいだに挟むので **時刻の前後も根拠にならない**。帰属に使えるのは **commit が触ったファイル**と、
   **本人に聞くこと**だけ。誤帰属のコストは濡れ衣だけでなく、**真の当事者を探すのをやめてしまう**こと
@@ -20,7 +20,7 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
   `ListAgents` + `SendMessage` で**本人に聞く**
 - 副次の注意: **`git mv` は即座に stage される**。stage された変更は共有 index 上で「他セッションの pathspec なし commit / reset に拾われ得る」状態になるため、stage から commit までの間隔を最小にする
 - 🚨 **squash / 付け替えの soft reset の起点は、共有の ref (`origin/master` 等) ではなく自分の変更を積んだ起点の commit を hash で固定する**。
-  共有の ref は別の worktree の fetch で黙って進み、`reset --soft` した index が「他の session の変更を打ち消す差分」になる。
+  共有の ref は別の worktree の fetch で気づかないうちに進み、`reset --soft` した index が「他の session の変更を打ち消す差分」になる。
   起点を変えるなら、先に新しい起点の hash へ rebase を済ませてから、その hash へ soft reset する (rebase の後に古い起点の hash を使い続けない)。
   commit の前に `git diff --cached --stat <同じ hash>` と差分を読み、自分の作業と無関係な変更が無いことを確かめる
   (HEAD の祖先でない行き先への `git reset --soft` は、PreToolUse の `_claude/hooks/deny-soft-reset-to-non-ancestor.sh` が止める。
