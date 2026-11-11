@@ -69,6 +69,7 @@ x ** 2 を計算する。
 旧版画像と流出版と検出版と高原版。
 本の出版と第iv版。
 設定が有効かと無効かを見る。
+既定値は 30 日で、既定ではオフ。
 EOF
 
 rc=0
@@ -113,9 +114,11 @@ want="3 4 ja-ai-vocabulary 1
 43 2 ja-ai-vocabulary 1
 43 8 ja-ai-vocabulary 1
 43 12 ja-ai-vocabulary 1
-43 16 ja-ai-vocabulary 1"
+43 16 ja-ai-vocabulary 1
+46 1 ja-ai-vocabulary 1
+46 12 ja-ai-vocabulary 1"
 if [ "$(sort <<<"$got")" = "$(sort <<<"$want")" ]; then
-  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (31 件)"
+  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (33 件)"
 else
   fail "指摘が期待と違う。got:
 $got"
