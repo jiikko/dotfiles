@@ -59,9 +59,22 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 		on[c.ID] = true
 	}
 	p := &Picker{all: all, w: 80, h: 24, deleting: -1}
+	names := map[string]string{}
+	for _, c := range all {
+		names[c.ID] = c.Name
+	}
+	member := map[string]Channel{} // どれかのグループのメンバー (アーカイブ・一覧から消えたものもグループの編集で外せるように出す)
+	for _, g := range groups {
+		for i, mem := range g.grp.Members {
+			if n := names[mem.ID]; n != "" {
+				g.grp.Members[i].Name = n // 名前を変えたチャンネルは、今の名前にする (本文の頭と分類の入力に出る)
+			}
+			member[mem.ID] = g.grp.Members[i]
+		}
+	}
 	seen := map[string]bool{}
 	for _, c := range all {
-		if c.IsArchived && !on[c.ID] {
+		if _, isMember := member[c.ID]; c.IsArchived && !on[c.ID] && !isMember {
 			continue
 		}
 		seen[c.ID] = true
@@ -80,7 +93,16 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 	var gone []item
 	for _, c := range subscribed {
 		if !seen[c.ID] && !c.IsGroup() {
+			seen[c.ID] = true
 			gone = append(gone, item{ch: source.Channel{ID: c.ID, Name: c.Name, IsArchived: true}, on: true})
+		}
+	}
+	for _, g := range groups {
+		for _, mem := range g.grp.Members {
+			if !seen[mem.ID] {
+				seen[mem.ID] = true
+				gone = append(gone, item{ch: source.Channel{ID: mem.ID, Name: mem.Name, IsArchived: true}})
+			}
 		}
 	}
 	p.items = append(append(groups, gone...), p.items...)

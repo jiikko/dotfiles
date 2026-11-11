@@ -278,3 +278,29 @@ func TestPickerGroups(t *testing.T) {
 		t.Fatalf("y でグループを消していない・チャンネルの購読が変わった: %+v", sel)
 	}
 }
+
+// アーカイブされた・一覧から消えたメンバーも、グループの編集で行に出して外せる。メンバーの名前は今の一覧の名前に直す。
+func TestPickerGroupStaleMembers(t *testing.T) {
+	all := []source.Channel{{ID: "C1", Name: "times_a_new", IsMember: true}, {ID: "C2", Name: "times_b", IsArchived: true}}
+	g := Channel{ID: "grp0123abcd", Name: "times", Members: []Channel{{ID: "C1", Name: "times_a"}, {ID: "C2", Name: "times_b"}, {ID: "C9", Name: "gone"}}}
+	p := NewPicker(all, []Channel{g})
+	p.Resize(100, 14)
+	if got := p.Selected()[0].Members[0].Name; got != "times_a_new" {
+		t.Errorf("メンバーの名前を今の名前に直していない: %q", got)
+	}
+	p.Key("e")
+	lines := strings.Join(p.Lines(), "\n")
+	for _, w := range []string{"[x] #times_b", "[x] #gone"} {
+		if !strings.Contains(lines, w) {
+			t.Fatalf("編集で %q が出ない (外せない):\n%s", w, lines)
+		}
+	}
+	for p.items[p.visible()[p.list.Cursor]].ch.ID != "C9" {
+		p.Key("j")
+	}
+	p.Key("x")
+	p.Key("enter")
+	if m := p.Selected()[0].Members; len(m) != 2 {
+		t.Errorf("消えたメンバーを外せない: %+v", m)
+	}
+}

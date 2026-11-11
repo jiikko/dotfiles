@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -701,5 +702,56 @@ func TestUnsubscribeConfirmVsPickerAndTiny(t *testing.T) {
 	press(m, "d")
 	if lines := m.Lines(); len(lines) != 1 || !strings.Contains(lines[0], "購読を外す？") || !strings.Contains(lines[0], "y/Enter") {
 		t.Errorf("小さい端末の確認: %q", lines)
+	}
+}
+
+// グループのメンバーが変わったら、今のタブは読み直し、前のメンバーで走っていた読み直しの結果は捨てる。
+// d でグループを外すときは、定義ごと消える (既読は引き継がない) と確かめる。
+func TestGroupMembersChangedReloads(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	g := subs.Channel{ID: "grp0123abcd", Name: "times", Members: []subs.Channel{{ID: "C1", Name: "dev"}}}
+	var saved [][]subs.Channel
+	m := quiet(New(context.Background(), []subs.Channel{g}, l.load, nil, func() time.Time { return t0 }))
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+	m.SetSubscriptions(&Subscriptions{Save: func(sel []subs.Channel) error { saved = append(saved, sel); return nil }})
+	stale := m.Init() // 前のメンバーで読み始める (結果はまだ渡さない)
+	g2 := g
+	g2.Members = append(slices.Clone(g.Members), subs.Channel{ID: "C2", Name: "ops"})
+	fresh := m.setChannels([]subs.Channel{g2})
+	if fresh == nil {
+		t.Fatal("メンバーが変わったのに読み直さない")
+	}
+	run(m, stale)
+	if m.chans[0].page != nil {
+		t.Error("前のメンバーで読んだ結果を受け取った")
+	}
+	run(m, fresh)
+	if m.chans[0].page == nil {
+		t.Fatal("読み直しの結果を受け取らない")
+	}
+	press(m, "d")
+	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "グループを消しますか") || !strings.Contains(screen, "既読は引き継がない") {
+		t.Errorf("グループを消す確認の文:\n%s", screen)
+	}
+}
+
+// 裏のタブのグループのメンバーが変わったら、前のメンバーで走っていた読み直し (R) の結果は捨て、開いたときに読み直す。
+func TestGroupMembersChangedInBackgroundTab(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	g := subs.Channel{ID: "grp0123abcd", Name: "times", Members: []subs.Channel{{ID: "C1", Name: "dev"}}}
+	ch := subs.Channel{ID: "C9", Name: "news"}
+	m := quiet(New(context.Background(), []subs.Channel{ch, g}, l.load, nil, func() time.Time { return t0 }))
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+	run(m, m.Init())
+	stale := m.reload(1) // R で裏のグループも読み始める (結果はまだ渡さない)
+	g2 := g
+	g2.Members = append(slices.Clone(g.Members), subs.Channel{ID: "C2", Name: "ops"})
+	m.setChannels([]subs.Channel{ch, g2})
+	run(m, stale)
+	if m.chans[1].page != nil {
+		t.Fatal("前のメンバーで読んだ結果を裏のタブで受け取った")
+	}
+	if cmd := press(m, "tab"); cmd == nil {
+		t.Error("メンバーが変わった裏のタブを開いても読み直さない")
 	}
 }

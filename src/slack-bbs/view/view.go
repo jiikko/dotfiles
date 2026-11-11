@@ -577,8 +577,16 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	// 外したチャンネルで走っている読み直し (claude -p) は止めない: 結果は ID の照合で捨てる。止めるには読み直しごとの
 	// 取り消しを持つ必要があり、外す操作は稀なので費用 (1 回分の分類) を受け入れる
 	next := make([]chanState, 0, len(sel))
+	changed := map[string]bool{}
 	for _, ch := range sel {
 		c, ok := old[ch.ID]
+		if ok && !sameMembers(c.ch, ch) {
+			// グループのメンバーが変わった: 板は前のメンバーのもの。走っている読み直し (前のメンバーで集めている) の結果は捨て
+			// (世代を進める)、読み直す。今のタブはすぐ、他のタブは開いたとき (stale)
+			m.seq++
+			c.gen, c.loading, c.stale = m.seq, false, c.page != nil
+			changed[ch.ID] = true
+		}
 		c.ch = ch
 		next = append(next, c)
 		if !ok {
@@ -589,6 +597,9 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	m.toast.Show(fmt.Sprintf("購読するチャンネルを保存した (%d 件)", len(next)), true)
 	if i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID }); i >= 0 {
 		m.cur = i
+		if changed[curID] {
+			return m.reload(i)
+		}
 		return nil
 	}
 	m.cur, m.body = 0, false
@@ -731,10 +742,10 @@ func (m *Model) Lines() []string {
 	lines := m.screen()
 	if i := m.unsubIndex(); i >= 0 && m.tiny() {
 		// 小さい端末の画面は 1 行なので板が収まらない。問いと答え方を 1 行で出す
-		return []string{termwidth.Truncate(m.chans[i].ch.Label()+" の購読を外す？ y/Enter: 外す  その他: やめる", max(m.w, 1), "…")}
+		return []string{termwidth.Truncate(m.chans[i].ch.Label()+unsubVerb(m.chans[i].ch)+"？ y/Enter: はい  その他: やめる", max(m.w, 1), "…")}
 	}
 	if i := m.unsubIndex(); i >= 0 {
-		box := confirm.Dialog(" 購読を外す ", []string{m.chans[i].ch.Label(), "の購読を外しますか？", "(s の購読の画面でまた付けられる)"}, confirm.HintYesNo, m.w, true)
+		box := confirm.Dialog(" 購読を外す ", append([]string{m.chans[i].ch.Label()}, unsubBody(m.chans[i].ch)...), confirm.HintYesNo, m.w, true)
 		lines = layout.OverlayCentered(lines, box, m.w, len(lines), true)
 	}
 	if box := m.toast.BoxLines(true, max(len(lines)-1-helpRows, 1), m.w); len(box) > 0 && len(lines) > len(box)+helpRows {
@@ -1023,7 +1034,7 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 		m.toast.Show("購読を外すのをやめた", true)
 		return nil
 	}
-	name := m.chans[i].ch.Label()
+	gone := m.chans[i].ch
 	sel := make([]subs.Channel, 0, len(m.chans)-1)
 	for j, c := range m.chans {
 		if j != i {
@@ -1035,7 +1046,11 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 		return nil
 	}
 	cmd := m.setChannels(sel)
-	m.toast.Show(name+" の購読を外した (s でまた付けられる)", true)
+	if gone.IsGroup() {
+		m.toast.Show(gone.Label()+" のグループを消した (メンバーのチャンネルの購読は変わらない)", true)
+	} else {
+		m.toast.Show(gone.Label()+" の購読を外した (s でまた付けられる)", true)
+	}
 	return cmd
 }
 
@@ -1053,4 +1068,25 @@ func (m *Model) reselect(keep string) bool {
 	m.fitList(1)
 	m.body = false
 	return false
+}
+
+// sameMembers は a と b のグループのメンバーが同じ (並びも) か。チャンネルはメンバーを持たないので常に真。
+func sameMembers(a, b subs.Channel) bool {
+	return slices.EqualFunc(a.Members, b.Members, func(x, y subs.Channel) bool { return x.ID == y.ID })
+}
+
+// グループを外すとグループの定義 (メンバー) ごと消える (購読の一覧にしか定義が無い)。作り直すと別の ID になり、既読と隠した話題は
+// 引き継がない。確認と知らせでそう伝える (チャンネルの「また付けられる」と同じ文にしない)。
+func unsubVerb(c subs.Channel) string {
+	if c.IsGroup() {
+		return " のグループを消す"
+	}
+	return " の購読を外す"
+}
+
+func unsubBody(c subs.Channel) []string {
+	if c.IsGroup() {
+		return []string{"のグループを消しますか？", "(メンバーのチャンネルの購読は変わらない。", "作り直しても既読は引き継がない)"}
+	}
+	return []string{"の購読を外しますか？", "(s の購読の画面でまた付けられる)"}
 }

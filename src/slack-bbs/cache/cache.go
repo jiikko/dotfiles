@@ -137,12 +137,17 @@ func (s Store) saveFile(p string, v any) error {
 }
 
 // MsgKeys は単位の発言の鍵 (ts と本文のハッシュ) を並べたもの。本文が編集されると鍵が変わり、分類し直す対象になる。
+// グループの単位は鍵の頭にチャンネルを付ける (ts はチャンネルの中でしか一意でない。単独のチャンネルの鍵は変えない)。
 func MsgKeys(units []board.Unit) []string {
 	var keys []string
 	for _, u := range units {
 		for _, m := range u.Msgs {
 			h := sha256.Sum256([]byte(m.Text))
-			keys = append(keys, m.Ts+":"+hex.EncodeToString(h[:8]))
+			key := m.Ts + ":" + hex.EncodeToString(h[:8])
+			if u.Ch != "" {
+				key = u.Ch + "/" + key
+			}
+			keys = append(keys, key)
 		}
 	}
 	slices.Sort(keys)

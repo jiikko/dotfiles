@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -350,7 +351,13 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 	if err := subs.Save(path, sel); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "%d 件のチャンネルを購読する (%s)\n", len(sel), path)
+	groups := 0
+	for _, c := range sel {
+		if c.IsGroup() {
+			groups++
+		}
+	}
+	fmt.Fprintf(stdout, "%d 件のチャンネルと %d 件のグループを購読する (%s)\n", len(sel)-groups, groups, path)
 	return nil
 }
 
@@ -411,8 +418,8 @@ func eachChannel(ctx context.Context, o options, d deps, stderr io.Writer, fn fu
 			if ctx.Err() != nil {
 				return err
 			}
-			fmt.Fprintf(stderr, "slack-bbs: #%s: %s\n", clean(ch.Name), clean(err.Error()))
-			failed = append(failed, "#"+ch.Name)
+			fmt.Fprintf(stderr, "slack-bbs: %s: %s\n", ch.Label(), clean(err.Error()))
+			failed = append(failed, ch.Label())
 		}
 	}
 	if len(failed) > 0 {
@@ -435,8 +442,8 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 	var pages []render.Page
 	err := eachChannel(ctx, o, d, stderr, func(c collected) error {
 		if o.dryRun {
-			fmt.Fprintf(stdout, "#%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
-				c.page.ChannelName, len(c.units), c.sent, c.threads, c.chars)
+			fmt.Fprintf(stdout, "%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
+				pageLabel(c.page), len(c.units), c.sent, c.threads, c.chars)
 			return nil
 		}
 		if err := checkMax(c, o.max); err != nil {
@@ -448,11 +455,11 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		}
 		switch {
 		case use != nil:
-			fmt.Fprintf(stderr, "slack-bbs: #%s: claude へ発言 %d 件 (約 %d トークン) を送った ($%.4f)\n", clean(p.ChannelName), c.sent, use.InputTokens, use.CostUSD)
+			fmt.Fprintf(stderr, "slack-bbs: %s: claude へ発言 %d 件 (約 %d トークン) を送った ($%.4f)\n", pageLabel(p), c.sent, use.InputTokens, use.CostUSD)
 		case len(c.units) > 0:
-			fmt.Fprintf(stderr, "slack-bbs: #%s: 新しい発言が無いので、%s の分類を使った (-no-cache で分類し直す)\n", clean(p.ChannelName), p.ClassifiedAt.Format("01/02 15:04"))
+			fmt.Fprintf(stderr, "slack-bbs: %s: 新しい発言が無いので、%s の分類を使った (-no-cache で分類し直す)\n", pageLabel(p), p.ClassifiedAt.Format("01/02 15:04"))
 		}
-		warnDropped(stderr, p.ChannelName, dropped)
+		warnDropped(stderr, pageLabel(p), dropped)
 		if o.json {
 			pages = append(pages, p)
 			return nil
@@ -555,15 +562,16 @@ func cachedPage(st cache.Store, ch, model string) (p render.Page, at time.Time, 
 }
 
 // assemble は分類を検査して話題に組み、捨てたものがあれば warn で出す。
-func assemble(stderr io.Writer, name string, units []board.Unit, resp board.Response) []board.Topic {
+func assemble(stderr io.Writer, label string, units []board.Unit, resp board.Response) []board.Topic {
 	topics, dropped := board.Assemble(units, resp)
-	warnDropped(stderr, name, dropped)
+	warnDropped(stderr, label, dropped)
 	return topics
 }
 
-func warnDropped(stderr io.Writer, name string, dropped board.Dropped) {
+// warnDropped は分類から捨てたものを warn で出す。label は板の名前 (pageLabel)。
+func warnDropped(stderr io.Writer, label string, dropped board.Dropped) {
 	if dropped.Any() {
-		fmt.Fprintf(stderr, "slack-bbs: #%s: 🚨 LLM の分類から捨てたもの: %s\n", clean(name), dropped)
+		fmt.Fprintf(stderr, "slack-bbs: %s: 🚨 LLM の分類から捨てたもの: %s\n", label, dropped)
 	}
 }
 
@@ -796,7 +804,7 @@ func show(dir, key string, asJSON, keep bool, stdout, stderr io.Writer) error {
 		p := render.Page{Channel: r.Channel, ChannelName: r.ChannelName, Since: r.Since, Until: r.Until, Lookback: r.Lookback,
 			Base: r.Base, Notes: r.Notes, Mentions: r.Mentions, Members: r.Members}
 		if len(r.Units) > 0 {
-			p.Topics = assemble(stderr, r.ChannelName, r.Units, resp)
+			p.Topics = assemble(stderr, pageLabel(render.Page{ChannelName: r.ChannelName, Members: r.Members}), r.Units, resp)
 		}
 		if asJSON {
 			pages = append(pages, p)
@@ -896,6 +904,9 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 			c.units = append(c.units, u.InChannel(mem.ID))
 		}
 		for _, mn := range mc.page.Mentions {
+			if slices.ContainsFunc(ch.Members, func(x subs.Channel) bool { return x.ID == mn.Channel }) {
+				continue // 同じグループのチャンネルの発言は板の本文に出ている。言及にも出すと 2 回出て、既読の印も動かす
+			}
 			mn.Unit = mem.ID + "/" + mn.Unit // 言及の振り分けと既読は単位の ID で引く
 			c.page.Mentions = append(c.page.Mentions, mn)
 		}
@@ -986,4 +997,12 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 	}
 	c.page.Notes = append(c.page.Notes, notes...)
 	return c, nil
+}
+
+// pageLabel は板の名前 (stderr と -dry-run に出す): チャンネルは「#名前」、グループは「📂名前」(subs.Channel.Label と同じ形)。
+func pageLabel(p render.Page) string {
+	if len(p.Members) > 0 {
+		return "📂" + clean(p.ChannelName)
+	}
+	return "#" + clean(p.ChannelName)
 }

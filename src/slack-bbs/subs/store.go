@@ -75,6 +75,14 @@ func Load(path string) ([]Channel, error) {
 		if !source.IsGroupID(g.ID) {
 			return nil, fmt.Errorf("%s のグループ %q の ID %q が読めない形", path, g.Name, g.ID)
 		}
+		seen := map[string]bool{}
+		for _, m := range g.Members {
+			if !source.IsChannelID(m.ID) || seen[m.ID] {
+				// 同じメンバーが 2 回あると同じ単位の ID が 2 つでき、グループの板ごと読めなくなる
+				return nil, fmt.Errorf("%s のグループ %q のメンバー %q が読めない形か重複している (slack-bbs sub で直す)", path, g.Name, m.ID)
+			}
+			seen[m.ID] = true
+		}
 	}
 	return append(f.Channels, f.Groups...), nil
 }

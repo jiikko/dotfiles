@@ -20,7 +20,10 @@ func TestReadGroup(t *testing.T) {
 	sl := &fakeSlack{histByCh: map[string]string{
 		"C1": fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"リリースします"}]`, at),
 		"C2": fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"リリースの件、了解"}]`, at),
-	}, failHist: map[string]bool{"C3": true}}
+	}, failHist: map[string]bool{"C3": true}, search: map[int]string{
+		// 同じグループの ops の発言が dev の発言のリンクを貼っている: 板の本文に出ているので、言及には出さない
+		1: "[" + found("C2", "ops", ts(since+200), "U1", "これ "+link("C1", at)) + "]",
+	}}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"リリース","state":"info","theme":"release","urgent":false,
 		"members":["C1/%s","C2/%s"],"conclusion":{"text":"","refs":[]},"background":[],"next":[],"labels":[]}]}`, at, at))}
 	d := newDeps(t, sl, cl)
@@ -41,6 +44,9 @@ func TestReadGroup(t *testing.T) {
 		if !strings.Contains(md, want) {
 			t.Errorf("出力に %q が無い:\n%s", want, md)
 		}
+	}
+	if strings.Contains(md, "この話題への言及") {
+		t.Errorf("同じグループのチャンネルからのリンクを言及にも出した:\n%s", md)
 	}
 	if strings.Contains(md, "未分類") {
 		t.Errorf("グループの単位を分類に当てられなかった:\n%s", md)

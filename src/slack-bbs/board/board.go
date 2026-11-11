@@ -287,6 +287,9 @@ func sortUnits(us []Unit) {
 	sort.SliceStable(us, func(i, j int) bool { return TsBefore(us[i].Msgs[0].Ts, us[j].Msgs[0].Ts) })
 }
 
+// tsSet は単位の発言の ts の集まり (要点とラベルの根拠を引く)。グループの板でもチャンネルを付けない: LLM の refs は ts で返る。
+// 受け入れていること: 同じ話題に、別のチャンネルの同じ ts の発言 (同じマイクロ秒に複数のチャンネルへ投稿するボット等) があると、
+// 根拠のリンクは先に当たった単位のチャンネルで組む。直すなら refs をチャンネル付きで返させる (実害の実例を添えて再提起する)
 func tsSet(us []Unit) map[string]bool {
 	s := map[string]bool{}
 	for _, u := range us {

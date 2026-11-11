@@ -33,3 +33,19 @@ func TestSaveLoadGroups(t *testing.T) {
 		t.Error("読めない形のグループの ID を受け入れた")
 	}
 }
+
+// グループのメンバーが重複している・チャンネルの ID の形でない購読の一覧は断る (同じ単位の ID が 2 つできて板ごと読めなくなる)。
+func TestLoadRejectsBadMembers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "subscriptions.json")
+	for _, body := range []string{
+		`{"channels":[],"groups":[{"id":"grp0123abcd","name":"t","members":[{"id":"C1"},{"id":"C1"}]}]}`,
+		`{"channels":[],"groups":[{"id":"grp0123abcd","name":"t","members":[{"id":"grp0123abcd"}]}]}`,
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil {
+			t.Errorf("断らなかった: %s", body)
+		}
+	}
+}
