@@ -56,9 +56,12 @@ func (r ExecRunner) Run(ctx context.Context, args ...string) ([]byte, []byte, er
 }
 
 // Quiet は端末へ stderr を流さない runner を返す (読む画面の中で流すと画面が崩れる。警告は板の注記に載る)。
+// Throttle は中の runner を静かにし、列はそのまま共有する (列を分けると、同じプロセスの中で 2 本ずつ Slack へ届く)。
 // 実物の ExecRunner 以外 (テストの偽物など) はそのまま返す。
 func Quiet(r Runner) Runner {
 	switch er := r.(type) {
+	case *Throttle:
+		return &Throttle{r: Quiet(er.r), g: er.g}
 	case ExecRunner:
 		er.Tee = nil
 		return er

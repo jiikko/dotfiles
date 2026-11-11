@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,7 +94,7 @@ type deps struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	rc := run(ctx, os.Args[1:], os.Stdout, os.Stderr, deps{
-		slack:    source.ExecRunner{Bin: envOr("SLACK_BBS_SLACK", "slack"), Tee: os.Stderr},
+		slack:    source.NewThrottle(source.ExecRunner{Bin: envOr("SLACK_BBS_SLACK", "slack"), Tee: os.Stderr}, slackLockPath(), os.Stderr),
 		claude:   llm.ExecRunner{Bin: envOr("SLACK_BBS_CLAUDE", "claude")},
 		now:      time.Now,
 		subsPath: subs.Path,
@@ -107,6 +108,16 @@ func main() {
 	})
 	stop()
 	os.Exit(rc)
+}
+
+// slackLockPath は Slack の呼び出しの列をプロセスの間で共有するファイル (source.Throttle)。置き場が分からなければ空
+// (この slack-bbs の中だけで並べる)。
+func slackLockPath() string {
+	dir, err := userdirs.CacheDir("slack-bbs")
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "slack-cli.lock")
 }
 
 func isTerminal(f *os.File) bool {

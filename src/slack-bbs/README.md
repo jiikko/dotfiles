@@ -13,7 +13,9 @@ slack-bbs -json > board.json  # 話題に組んだ結果 (中間表現)
 
 ## 何をするか
 
-1. **取得** — [slack-cli](https://github.com/jiikko/slack-cli) (読み取り専用) で history・thread・users・whoami を読む
+1. **取得** — [slack-cli](https://github.com/jiikko/slack-cli) (読み取り専用) で history・thread・users・whoami を読む。
+   slack-cli の呼び出しは 1 列に並べ、Slack のレート制限の段に合わせて間を空ける (`source/throttle.go`)。列は
+   `~/.cache/slack-bbs/slack-cli.lock` で共有するので、読む画面と 2 段の実行を同時に走らせても合計で数える。429 で止められたら列ごと待つ
 2. **まとめ直し** — スレッド 1 本、またはスレッド外の発言 1 件を「単位」にする (スレッドは既に 1 つの話題なので割らない)。
    **親が期間より前でも、期間内に返信が付いたスレッドは「続いている」単位として拾う** (チャンネルの流れに出ない返信を見逃さない)。
    history の親の `latest_reply` で見つけるので、`-lookback` (既定 30 日) より前に始まったスレッドは見ない (画面にそう書く)
