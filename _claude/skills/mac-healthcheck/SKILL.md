@@ -60,7 +60,7 @@ tmux の `kill-server` / `kill-session` を打たない (本番のサーバ。`~
      dotfiles の nvim は `swapfile = false`)
    - ファイルを片付ける (nvim の古い swap など): 消さずに `~/.Trash/mac-healthcheck-<日時>/` へ `mv` し、件数と移し先を伝える。
      動いている nvim が開いているファイルの swap は動かさない (`lsof <swap>` で開いているものが無いかを見る)
-   - ディスクの掃除: cleanup-tmp-dir skill に渡す (一時領域・DerivedData・container)。使っていないアプリ・formula は mac-uninstall skill に渡す。`diskdoctor` の候補は、それが提示するコマンドを見せて人に打ってもらう
+   - ディスクの掃除: cleanup-tmp-dir skill に渡す (一時領域・DerivedData・container・使っていない git worktree)。使っていないアプリ・formula は mac-uninstall skill に渡す。`diskdoctor` の候補は、それが提示するコマンドを見せて人に打ってもらう
    - クラッシュが続く: crash-log-analyzer skill に最新の `.ips` を渡す
    - 人の操作が要るもの (Chrome・Screen Sharing などアプリの再起動、ファイアウォール、バッテリー交換、買い替え): 手順を 1〜3 行で示す。
      手順 6 で human issue が選ばれていれば、`issues/` の規約 (採番・`期限:`・具体的な手順) で起票する
