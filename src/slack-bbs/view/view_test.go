@@ -360,9 +360,14 @@ func TestTitleKeepsState(t *testing.T) {
 			t.Errorf("%s: 状態が無い: %q", st.name, h)
 		}
 		m.picking = true
-		m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
-		if h := sgrRe.ReplaceAllString(m.titleLine(), ""); !strings.Contains(h, "チャンネルの一覧を読んでいます") || !strings.Contains(h, st.want) {
-			t.Errorf("%s: 一覧を読んでいる間に今のチャンネルの状態が消えた: %q", st.name, h)
+		for w := MinWidth; w <= 120; w++ {
+			m.Update(tea.WindowSizeMsg{Width: w, Height: 20})
+			if h := sgrRe.ReplaceAllString(m.titleLine(), ""); !strings.Contains(h, st.want) || termwidth.Of(h) > w {
+				t.Errorf("%s: 幅 %d で一覧を読んでいる間に今のチャンネルの状態が消えた: %q", st.name, w, h)
+			}
+		}
+		if h := sgrRe.ReplaceAllString(m.titleLine(), ""); !strings.Contains(h, "チャンネルの一覧を読んでいます") {
+			t.Errorf("%s: 広い端末で一覧を読んでいることが出ない: %q", st.name, h)
 		}
 		m.picking = false
 		m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: 20})

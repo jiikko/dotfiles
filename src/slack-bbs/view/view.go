@@ -722,13 +722,15 @@ func (m *Model) screen() []string {
 // titleLine はロゴと今のチャンネルの状態。右端に購読の画面を開くキーを出す (幅が足りなければ状態を詰め、それでも足りなければキーを外す)。
 func (m *Model) titleLine() string {
 	st := m.state()
-	if m.picking { // 今のチャンネルの状態 (読み直し中・失敗) も消さない
-		st = strings.TrimSpace(m.spin(m.pickStarted) + " チャンネルの一覧を読んでいます  " + st)
+	if m.picking {
+		// 今のチャンネルの状態 (読み直し中・失敗) を先に置く: 狭い端末で切れるのは一覧の読み込みの方にする
+		// (押した手応えは openPicker の知らせが出す)
+		st = strings.TrimSpace(st + "  " + m.spin(m.pickStarted) + " チャンネルの一覧を読んでいます")
 	}
 	head := logo() + "  "
 	room := m.w - termwidth.Of(head)
 	cap := ""
-	if m.subs != nil {
+	if m.subs != nil && !m.picking { // 読んでいる間は s を押し終えているので、状態に幅を譲る
 		if k := keycap("s", "購読するチャンネル"); room-termwidth.Of(k)-2 >= minState {
 			cap = k
 		}
