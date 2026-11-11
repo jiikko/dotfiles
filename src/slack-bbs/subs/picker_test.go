@@ -183,3 +183,29 @@ func TestPickerCtrlKeys(t *testing.T) {
 		t.Errorf("Ctrl-C: done=%v saved=%v, want 保存せずに閉じる", p.Done(), p.Saved())
 	}
 }
+
+// 検索の語を打っている間も、↑↓ (Ctrl-N/Ctrl-P) で絞り込んだ一覧を動き、Tab で付け外しできる (語は欄に残る)。
+func TestPickerSelectWhileSearching(t *testing.T) {
+	all := []source.Channel{{ID: "C1", Name: "times_alice", IsMember: true}, {ID: "C2", Name: "general", IsMember: true}, {ID: "C3", Name: "times_bob", IsMember: true}}
+	p := NewPicker(all, nil)
+	p.Resize(80, 12)
+	for _, k := range []string{"/", "t", "i", "m", "e", "s", "down", "tab"} {
+		p.Key(k)
+	}
+	if !p.filtering || p.filter.String() != "times" {
+		t.Fatalf("移動と付け外しで検索の欄が閉じた・語が変わった: filtering=%v %q", p.filtering, p.filter.String())
+	}
+	if sel := p.Selected(); len(sel) != 1 || sel[0].Name != "times_bob" {
+		t.Fatalf("絞り込んだ 2 件目 (times_bob) を Tab で付けたい: %+v", sel)
+	}
+	p.Key("ctrl+p")
+	p.Key("tab")
+	p.Key("ctrl+n")
+	p.Key("tab") // times_bob を外す
+	if sel := p.Selected(); len(sel) != 1 || sel[0].Name != "times_alice" {
+		t.Errorf("Ctrl-P / Ctrl-N で動いて付け外したい: %+v", sel)
+	}
+	if help := strings.Join(p.Lines(), "\n"); !strings.Contains(help, "Tab: 購読を付け外し") {
+		t.Errorf("入力中の案内に Tab が無い:\n%s", help)
+	}
+}

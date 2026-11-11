@@ -141,7 +141,13 @@ func (p *Picker) Press(k, text string) {
 				p.list.Cursor, p.list.Offset = 0, 0 // 一致が変わったら先頭から (Enter・Esc で語が変わらなければ今のページに留まる)
 			}
 		}()
+		// 打ったまま選べるように、編集キーでない ↑ / ↓ / Ctrl-N / Ctrl-P は一覧の移動、Tab は付け外しに使う
+		// (Space は語の区切りに要るので付け外しに使えない。Tab は fzf の複数選択と同じ)
 		switch k {
+		case "up", "down", "ctrl+n", "ctrl+p":
+			p.list.Move(listnav.MotionOf(k), len(p.visible()), p.rows(), 0)
+		case "tab":
+			p.toggle(p.visible())
 		case "enter":
 			p.filtering = false
 		case "esc":
@@ -158,10 +164,7 @@ func (p *Picker) Press(k, text string) {
 	vis := p.visible()
 	switch k {
 	case "space", " ", "x":
-		if len(vis) > 0 {
-			i := vis[min(p.list.Cursor, len(vis)-1)]
-			p.items[i].on = !p.items[i].on
-		}
+		p.toggle(vis)
 		return
 	case "/":
 		p.filtering = true
@@ -183,6 +186,14 @@ func (p *Picker) Press(k, text string) {
 	}
 	if m := listnav.MotionOf(k); m != listnav.None {
 		p.list.Move(m, len(vis), p.rows(), 0)
+	}
+}
+
+// toggle はカーソルの下のチャンネル (vis は今見えている添字) の購読を付け外す。
+func (p *Picker) toggle(vis []int) {
+	if len(vis) > 0 {
+		i := vis[min(p.list.Cursor, len(vis)-1)]
+		p.items[i].on = !p.items[i].on
 	}
 }
 
@@ -247,7 +258,7 @@ func (p *Picker) Lines() []string {
 	line1 := []hintfit.Item{{Prio: 2, Text: "Space/x: 購読を付け外し"}, {Prio: 2, Text: "/: 名前で検索"}, {Prio: 1, Text: "Enter: 保存して閉じる"}}
 	line2 := []hintfit.Item{{Prio: 3, Text: "n/p: 次・前のページ"}, {Prio: 1, Text: "q: 保存せずに閉じる"}}
 	if p.filtering {
-		line1 = []hintfit.Item{{Prio: 2, Text: "文字を打つと名前で検索"}, {Prio: 1, Text: "Enter: 検索の語を決める"}}
+		line1 = []hintfit.Item{{Prio: 2, Text: "↑↓: 移動"}, {Prio: 2, Text: "Tab: 購読を付け外し"}, {Prio: 1, Text: "Enter: 検索の欄を閉じる"}}
 		line2 = []hintfit.Item{{Prio: 3, Text: "Ctrl-W: 1 語消す"}, {Prio: 3, Text: "Ctrl-U: 前を全部消す"}, {Prio: 1, Text: "Esc: 検索を消す"}}
 	}
 	for _, items := range [][]hintfit.Item{line1, line2} {
