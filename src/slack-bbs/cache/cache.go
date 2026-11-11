@@ -384,7 +384,7 @@ func (s Store) SaveChannels(chs []source.Channel, now time.Time) error {
 // TabVersion は最後に見ていたタブのファイルの形の版。
 const TabVersion = 1
 
-// tabFile は読む画面で最後に見ていたタブの置き場 (次の起動で最初に開く)。名前が ID の形でないので Expire は触らない。
+// tabFile は読む画面で最後に見ていたタブの置き場 (次の起動で最初に開く)。Expire はこのファイルを消さない (書きかけの一時ファイルだけを消す)。
 const tabFile = "view.json"
 
 type lastTab struct {
