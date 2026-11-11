@@ -687,8 +687,9 @@ func TestShowHiddenToggleStaysOnSelected(t *testing.T) {
 	}
 }
 
-// 一覧に出す話題が無いときは、空の欄にせず、なぜ無いか (読み込み中・読めない・話題が 0 件・全部隠した) と次に押すキーを
-// 一覧の真ん中に出す。読み込み中は、前に読んだ板が無いか話題が 0 件のときだけ「読み込み中」と出す (話題のある板は一覧に出す)。
+// 一覧に出す話題が無いときは、空の欄にせず、なぜ無いか (読み込み中・読めない・話題が 0 件) と次に押すキーを一覧の真ん中に出す。
+// 読み込み中は、前に読んだ話題を全部隠していても「読み込み中」と出す。全部隠しただけのときは、隠したことに触れず話題が無いと出す。
+// 話題のある板を読み直している間は、話題を出す。
 func TestEmptyListSaysWhy(t *testing.T) {
 	plain := regexp.MustCompile("\x1b\\[[0-9;:]*[a-zA-Z]")
 	left := func(m *Model) string {
@@ -714,11 +715,17 @@ func TestEmptyListSaysWhy(t *testing.T) {
 		"読めなかった":   {func(m *Model) { m.chans[0].err = errors.New("x") }, []string{"読めませんでした", "r で読み直す"}},
 		"まだ読んでいない": {func(*Model) {}, []string{"まだ読んでいません", "r で読む"}},
 		"話題が 0 件":  {func(m *Model) { m.chans[0].setPage(empty, day0, false) }, []string{"話題はありません", "ありません"}},
+		"前に読んだ話題を全部隠していて読み直し中": {func(m *Model) {
+			m.chans[0].setPage(full, day0, true)
+			u := full.Topics[0].Units[0]
+			m.chans[0].hidden[u.ID] = u.Last()
+			m.chans[0].loading, m.chans[0].started = true, day0
+		}, []string{"読み込み中", "ここに話題が並びます"}},
 		"全部隠した": {func(m *Model) {
 			m.chans[0].setPage(full, day0, false)
 			u := full.Topics[0].Units[0]
 			m.chans[0].hidden[u.ID] = u.Last()
-		}, []string{"隠した話題だけです", "z で隠した話題も出す"}},
+		}, []string{"話題はありません", "新しい話題が来ると"}},
 		"新着のタブで読み込み中のタブがある": {func(m *Model) { m.stream = true; m.chans[1].loading, m.chans[1].started = true, day0 }, []string{"読み込み中", "読み終わったタブから"}},
 		"新着のタブで話題が無い":       {func(m *Model) { m.stream = true }, []string{"新着はありません"}},
 	} {

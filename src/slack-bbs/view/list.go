@@ -206,8 +206,8 @@ func stateIcon(t board.Topic) string {
 }
 
 // emptyList は一覧に出す話題が無いときに、一覧の真ん中に出す見出しと案内 (案内は区切りのよい所で行を分けておく)。
-// 読み込み中なら、話題が無いのは読み終わっていないからだと出す (前に読んだ板が無いか、あっても話題が 0 件のとき。
-// 話題のある前の板を出しているなら一覧は空にならない)。
+// 読み込み中は、前に読んだ板の話題を全部隠していて一覧が空のときも「読み込み中」と出す。話題を全部隠しただけのときは、隠したことには触れず、
+// 話題が無いときの文言を出す (ユーザーの決定 2026-11-11: 隠した話題は無いものとして扱う。z で出せることはキーの案内にある)。
 func (m *Model) emptyList() (head string, hint []string) {
 	if m.stream {
 		oldest := time.Time{}
@@ -223,7 +223,7 @@ func (m *Model) emptyList() (head string, hint []string) {
 	}
 	c := m.chans[m.cur]
 	switch {
-	case c.loading && (c.page == nil || len(c.page.Topics) == 0):
+	case c.loading:
 		return m.spin(c.started) + " 読み込み中", []string{"読み終わると、", "ここに話題が並びます"}
 	case c.page == nil && c.err != nil:
 		return "🚨 読めませんでした", []string{"r で読み直す"}
@@ -232,7 +232,7 @@ func (m *Model) emptyList() (head string, hint []string) {
 	case len(c.page.Topics) == 0:
 		return "📭 話題はありません", []string{"期間内の発言が", "ありません"}
 	}
-	return "隠した話題だけです", []string{"z で隠した話題も出す"}
+	return "📭 話題はありません", []string{"新しい話題が来ると、", "ここに並びます"}
 }
 
 // emptyBlock は見出しと案内 (淡い色) を、幅 w・rows 行の欄の真ん中に置いた行。欄に収まらない行は折り返す (切ると案内が読めない)。
