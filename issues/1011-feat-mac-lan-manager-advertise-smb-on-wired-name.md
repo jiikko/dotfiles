@@ -35,7 +35,7 @@ dotfiles mac-lan-manager から広告したホストは見れないのかな？�
 3. **同じホスト名を 2 本の `dns-sd -P` で登録したとき、mDNSResponder が名前の衝突として扱わないかを先に実験で確かめる**。
    衝突するなら、1 本の登録の中で両方を出す形 (`dns-sd` 以外の登録手段を含む) を検討する
 
-採らない案: obaket が `_mac-lan-manager._tcp` も探す。製品のアプリが個人用の道具の目印に依存し、Finder など他の SMB クライアントには効かない。
+採らない案: obaket が `_mac-lan-manager._tcp` も探す。製品のアプリが個人用の道具の目印に依存し、Finder など他の SMB クライアントでは使えない。
 
 ## 注意点
 

@@ -1,4 +1,4 @@
-# 169 bug: `xctest-logarchive` の glob が「実測」と書かれているが実測の記録が無く、黙って 0 件になりうる
+# 169 bug: `xctest-logarchive` の glob が「実測」と書かれているが実測の記録が無く、エラーを出さずに 0 件になりうる
 
 起票日: 2026-09-02
 重要度: **P2**
@@ -22,7 +22,7 @@
   (spindump 側は `%@-Spindump.txt` / `Hang (Spindump).txt` が XCTHarness に在る)
 - `mdfind` と Trash にも現物が無い
 
-名前が違えば**この検出項目は黙って 0 件**になる (false negative)。P2 の修正が効いているかを誰も確認できない状態。
+名前が違えば**この検出項目はエラーを出さずに 0 件**になる (false negative)。P2 の修正が反映されているかを誰も確認できない状態。
 
 ## 対応案
 
@@ -52,7 +52,7 @@
 ### 1 を実施: コメントの主張を実測の有無に合わせた
 
 `src/doctor/disk/catalog.go` の `xctest-logarchive` のコメントから「実測の名前」という記述を削り、
-**「この glob 自体が未実測」**であることと、確定手順 (`xcodebuild test` の直後に `ls -la` で実名を採る) を書いた。
+**「この glob 自体が未実測」** であることと、確定手順 (`xcodebuild test` の直後に `ls -la` で実名を採る) を書いた。
 コード直近に残すのは [`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md) の規律
 (issue は移動するがコードは現場に残り、改修者が該当行を編集する瞬間に必ず目に入る)。
 

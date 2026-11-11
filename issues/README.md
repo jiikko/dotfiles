@@ -3,7 +3,7 @@
 **共通規約（命名・type 語彙・状態ディレクトリ・`期限:`・`human`・`retro`・本文の書き方）は
 [`_claude/issue-rules.md`](../_claude/issue-rules.md) が正本**で、issues/ を持つ repo のセッションに
 SessionStart hook（`_claude/hooks/issue-rules-inject.sh`）が注入する（issue 401）。
-ここには dotfiles でだけ効く道具・検査・経緯を書く。共通規約をここへ写さない。
+ここには dotfiles でだけ使う道具・検査・経緯を書く。共通規約をここへ写さない。
 
 ## 採番
 
@@ -46,7 +46,7 @@ issues/ の外から markdown リンク `[issue 012](../issues/done/012-….md)`
 ## 検査と表示
 
 - `期限:` の書式は `tests/issues/test_human_issues_have_deadline.sh` が検査する（箇条書き・全角コロン・日付不正で落ちる。
-  issue 375 が `- 期限:` で hook と `issue-sync` から黙って漏れていた）
+  issue 375 が `- 期限:` で hook と `issue-sync` からエラーを出さずに漏れていた）
 - `next/` の symlink の有効性（`../<同名>` の形に固定）は `tests/issues/test_next_links_valid.sh`、claim された issue に
   担当者バナーがあることは `tests/issues/test_next_claims_have_banner.sh`（fixture は `…_fixtures.sh`。issue 403）
 - glogx の issues viewer（`i` キー）: `human` タブは件数 0 でも All の右に固定で出る。`n` で `next/` の claim を

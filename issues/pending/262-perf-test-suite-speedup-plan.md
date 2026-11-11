@@ -101,9 +101,9 @@ make -n test-discovered-heavy NPROC=3   → xargs -P 3    ✅
 NPROC=3 make -n test-discovered-heavy   → xargs -P 14   ❌ (env は効かない)
 ```
 
-env が効かないのは make の変数優先順位 (makefile の `:=` は env より強い) そのもので、バグではない。
+env の値が使われないのは make の変数優先順位 (makefile の `:=` は env より強い) そのもので、バグではない。
 問題は **どこにも書かれていないこと** (`grep -rn NPROC --include='*.md'` が 0 件)。
-`make -j` はテストの並列度に一切効かない (target 並列と `xargs -P` は独立) ことも併記する。
+`make -j` はテストの並列度に一切影響しない (target 並列と `xargs -P` は独立) ことも併記する。
 
 書き先は `tests/CLAUDE.md` (無ければ `Makefile` のヘッダではなく、実際に読まれる入口)。
 根拠: `_claude/rules/new-tool-requires-entrypoint-docs.md` (ヘッダコメントは入口に数えない)。
@@ -147,7 +147,7 @@ A/B を全部やっても下限は直列腕の 87s。ここを削るのが唯一
 `SERIAL_TEST_DIRS := tests/tmux tests/nvim tests/zshrc/tmux-session` の据え置き理由は Makefile 曰く
 **「共有資源に触り、並列時の競合を検証していない」**。つまり「競合する」と確かめたのではなく
 **未検証**。tmux テストには `-L` でソケットを隔離する既存の規律
-(`_claude/rules/tmux-probe-requires-socket-isolation.md`) があるので、**隔離が効いている
+(`_claude/rules/tmux-probe-requires-socket-isolation.md`) があるので、**隔離が成立している
 ものは並列腕へ移せる可能性がある**。
 
 - 1 本ずつ「独自 tempdir と `-L` ソケットだけで閉じているか」を確かめてから移す
@@ -276,7 +276,7 @@ bounded-wait は `tests/lib/wait_until.sh` に一本化した (rc だけ返し�
 - `tmux/test_smooth_scroll.sh` の 12 箇所 — `sleep 0.3 # リピート判定 (150ms) を跨ぐ` のように
   **仕様の時定数を跨ぐ入力**。fake clock を注入できない領域なので残すのが正解
 - `scripts/test_run_make_targets_parallel.sh:92` の `sleep 5` — `kill -9 $PPID` の後に残るだけ
-  (分類 2)。**壁時計には効いていないはずだが未計測**。orphan 31 件の 1 つの可能性が高い
+  (分類 2)。**壁時計には影響していないはずだが未計測**。orphan 31 件の 1 つの可能性が高い
 
 #### 見込み
 
@@ -284,12 +284,12 @@ bounded-wait は `tests/lib/wait_until.sh` に一本化した (rc だけ返し�
 FIFO 同期のオーバーヘッドを引いたぶん。「44s → 20s 弱」は算術的には導けないので、
 **着手したら before/after を実測して本文を更新する** (`perf-claims-need-measurement.md`)。
 `test_go_autobuild.sh` が並列腕の律速であることは実測済みなので、縮めば並列腕 29s も縮む。
-E-2 は直列腕から 4〜5s の見込み。**CI 全体は相変わらず bench-tmux 待ち**で、効くのは
+E-2 は直列腕から 4〜5s の見込み。**CI 全体は相変わらず bench-tmux 待ち**で、短縮されるのは
 ローカルの `make test` と Tests の単独再実行。
 
 ### D. 却下 — 動的バランシング (parallel_tests 相当)
 
-並列腕は 41 本 29s まで縮んでおり、振り分けの最適化より直列腕の方が桁で効く。
+並列腕は 41 本 29s まで縮んでおり、振り分けの最適化より直列腕の方が桁で影響が大きい。
 実行時間ベースの振り分けを入れる価値は現時点で無い。
 
 ### F. 却下 — av1ify/concat を独立 workflow にして `paths` で絞る
@@ -356,9 +356,9 @@ zshlib/_ffprobe_helpers.zsh → targets: ... test-zshrc            ← 参照検
 - rest ジョブの後始末に **`Terminate orphan process: pid (...) (sleep)` が 31 件**出ている。
   分類 2 の `sleep` が job 終了まで生き残っている形。害は出ていない (runner ごと消える) が、
   **壁時計を食っているかは未計測**。E に着手するなら最初に測る
-- CI の heavy 99s の内訳 (ffmpeg のオーバーサブスクライブがどれだけ効いているか) は未計測
+- CI の heavy 99s の内訳 (ffmpeg のオーバーサブスクライブがどれだけ影響しているか) は未計測
 - `run_tests_parallel` の `NPROC` を CI で明示していない (runner のコア数任せ)。macos-15 の
-  コア数と、それが並列腕 29s にどう効いているかは未実測
+  コア数と、それが並列腕 29s にどう影響しているかは未実測
 - `-P` をコア数の 2〜3 倍にしたときのメモリ / fd 上限は未実測 (A 節)
 
 ## 進め方の提案
@@ -366,7 +366,7 @@ zshlib/_ffprobe_helpers.zsh → targets: ... test-zshrc            ← 参照検
 **E は完了 (E-1 `6467aeea` / E-2 `0a9db0d0`)、D と F は却下、A は完了 (2026-09-05, `tests/CLAUDE.md`)。
 残りは B と C だけで、どちらも trigger 待ちなので `issues/pending/` へ置く。**
 
-- **B (直列腕を 3 本目の job へ)** — trigger: **「Tests だけを再実行したときの待ちが長い」**と
+- **B (直列腕を 3 本目の job へ)** — trigger: **「Tests だけを再実行したときの待ちが長い」** と
   実際に感じたとき (flake の切り分け中など)。CI 全体の壁時計は bench-tmux 347s が決めるので、
   B を入れても push ごとの体感は 1 秒も変わらない
 - **C (直列腕を減らす)** — trigger: **B の完了**。着手は `tests/tmux/test_schedule_keys.sh` の

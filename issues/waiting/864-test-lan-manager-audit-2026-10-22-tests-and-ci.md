@@ -47,7 +47,7 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
 ### A5 (P3) 「条件が成り立つまで Advance を回す」待ちが 8 通り (test-helpers)
 
 - `model_test.go` の `advanceUntil` (5s・Gosched)・`awaitWired` (5s)・無名の待ち 3 か所、`reach_test.go:awaitReach` (10s・Sleep 1ms)、`speed_test.go:awaitSpeed` (10s・Gosched)、別 package の `setup/setup_test.go:waitFor`
-- `len(h.m.bg) > 0` の無名の待ちは上限で Fatal せず黙って先へ進む (後の assert が別の文面で落ち、原因が読めない)
+- `len(h.m.bg) > 0` の無名の待ちは上限で Fatal せずエラーを出さずに先へ進む (後の assert が別の文面で落ち、原因が読めない)
 - 方向: `pollUntil(t, what, limit, step, cond)` 1 本に寄せる
 
 ### A6 (P3) Scanner と Store の偽物がパッケージごとに写され、本物と規約が違う (test-helpers)
@@ -105,7 +105,7 @@ lan-manager の全体監査 (865) のうち、テスト (test-cleanup / test-hel
 - [x] A4 (dotfiles-0e。commit「test(mac-lan-manager): setup のテストの準備の書き込みの失敗を t.Fatal で受ける」)。2 か所 (stale の 2 周目以降・生きている持ち主の lock) を t.Fatal で受ける
 - [x] A5 (dotfiles-b9): 待ちを `internal/testwait.Until(t, what, limit, step, cond)` 1 本に寄せた (lanmgr の awaitReach・awaitSpeed・awaitWired・
   advanceUntil と無名の 3 か所、setup の waitFor)。名前の付いた 4 つは呼び出し元が多いので Until を呼ぶ 1 行の関数として残した。上限は元の値のまま。
-  周の間は 1ms 眠る (Gosched で回す形は上限まで CPU を焼く)。`len(h.m.bg) > 0` の待ちは上限で Fatal するようになった (黙って先へ進まない)。
+  周の間は 1ms 眠る (Gosched で回す形は上限まで CPU を焼く)。`len(h.m.bg) > 0` の待ちは上限で Fatal するようになった (エラーを出さずに先へ進まない)。
   変異: Until が上限で Fatal せず戻る旧の形にする → `TestUntilFailsAtLimit` が red。`-race` で lanmgr・setup は緑
 - [x] A6 (dotfiles-b9): 偽物を `lanmgr/lanmgrtest` (glogx からも使うので internal には置かない) の `Scan` と `Store` に寄せた。
   lanmgr の `fakeScan` / `memStore`、root の `dumpScan` / `brokenStore` / `escStore`、glogx の `fakeLanScan` (2 か所) を消した。

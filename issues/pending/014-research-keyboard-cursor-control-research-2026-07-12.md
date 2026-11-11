@@ -37,7 +37,7 @@ Karabiner チューニング / Keymou / OS Mouse Keys 仮説の検証) の採否
 | `mouse_key` は **20ms 固定間隔**のタイマーで相対 HID レポートを送出。押下時間による加速はどこにも実装されていない | [mouse_key_handler.hpp](https://github.com/pqrs-org/Karabiner-Elements/blob/main/src/share/manipulator/manipulators/post_event_to_virtual_devices/mouse_key_handler.hpp)（`std::chrono::milliseconds(20)`） |
 | 複数の `mouse_key` 同時押しの合成は x/y が**加算**、`speed_multiplier` は**乗算**（`speed_multiplier_ *= other.speed_multiplier_`） | [mouse_key.hpp](https://github.com/pqrs-org/Karabiner-Elements/blob/main/src/share/types/mouse_key.hpp) |
 | 値は `count_converter`（閾値 128 の端数蓄積器）で int8 の HID 相対移動量に変換。**低い multiplier ほど複数 tick 分をまとめた間欠的な動きになりやすい**（※ソース構造からの推論、実測未検証） | 同 mouse_key_handler.hpp |
-| 出力は仮想 HID マウスへの生の相対値で、公式 docs も「速度は System Settings の Mouse 設定に依存」と明記。**macOS 側のポインタ設定（追跡速度）の影響を後段で受ける**（issue [#3556](https://github.com/pqrs-org/Karabiner-Elements/issues/3556) は stale close、変更予定なし。加速カーブがどこまで効くかの実測は未実施） | [公式 docs](https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/to/mouse-key/) |
+| 出力は仮想 HID マウスへの生の相対値で、公式 docs も「速度は System Settings の Mouse 設定に依存」と明記。**macOS 側のポインタ設定（追跡速度）の影響を後段で受ける**（issue [#3556](https://github.com/pqrs-org/Karabiner-Elements/issues/3556) は stale close、変更予定なし。加速カーブがどこまで反映されるかの実測は未実施） | [公式 docs](https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/to/mouse-key/) |
 | 方向キー自体に `speed_multiplier` を持たせると対角同時押しで乗算が爆発する既知の失敗パターンあり（issue [#3049](https://github.com/pqrs-org/Karabiner-Elements/issues/3049)。オーバーフロー自体は v15.4.0 (2025-06-29) で修正）。**現行構成（方向キー = x/y のみ、f/g = multiplier のみ）はこの教訓どおりの正しい設計で変更不要** | 同 issue / NEWS.md |
 
 Karabiner-Elements 本体は v16.1.0（2026-07-05）まで活発にメンテされており、macOS 15 Sequoia / 26 Tahoe とも公式サポート対象。乗り換え理由はない。
@@ -50,11 +50,11 @@ Karabiner-Elements 本体は v16.1.0（2026-07-05）まで活発にメンテさ�
 
 **できること**:
 
-1. **速度段の追加** — x/y を持たない multiplier 専用キーを 1〜2 段追加する（例: 精密 0.15 / 長距離 4.0）。乗算合成なので f(2.0)+新キー(4.0) 同時押しで 8.0 のような重ね掛けも効く（意図しない組み合わせに注意）。
-2. **Mouse Key XY Scale** — Settings > Virtual Keyboard タブの「Mouse Key XY speed」（%指定）が全 mouse_key 出力に乗る独立レバー。JSON の multiplier を刻む前に、まずここで基準速度を決めると調整しやすい。※Devices タブの「XY movement multiplier」は物理マウス用で mouse_key には効かない別物。
-3. **macOS 側の追跡速度** — System Settings のトラックパッド/マウス「軌跡の速さ」も mouse_key の見かけ速度に効く（公式 docs 記載の依存関係。効き方の詳細は未実測）。
+1. **速度段の追加** — x/y を持たない multiplier 専用キーを 1〜2 段追加する（例: 精密 0.15 / 長距離 4.0）。乗算合成なので f(2.0)+新キー(4.0) 同時押しで 8.0 のような重ね掛けも適用される（意図しない組み合わせに注意）。
+2. **Mouse Key XY Scale** — Settings > Virtual Keyboard タブの「Mouse Key XY speed」（%指定）が全 mouse_key 出力に乗る独立レバー。JSON の multiplier を刻む前に、まずここで基準速度を決めると調整しやすい。※Devices タブの「XY movement multiplier」は物理マウス用で mouse_key には適用されない別物。
+3. **macOS 側の追跡速度** — System Settings のトラックパッド/マウス「軌跡の速さ」も mouse_key の見かけ速度に影響する（公式 docs 記載の依存関係。影響の詳細は未実測）。
 4. **グリッドワープの強化** — v16.0.0（2026-05-03）で `set_mouse_cursor_position` に `relative_to: focused_window` が追加された。**画面全体ではなくフォーカス中ウィンドウ内の相対グリッド**へワープできる。現行 3x2 の画面グリッドに加えて「ウィンドウ内 3x3」を別キーに割ると実用的な到達精度が上がる。なお相対移動（現在位置からのオフセット）は非対応（point/percent の絶対指定のみ、ソースで確認）。
-5. **to_if_held_down による 2 段階疑似加速（未検証の設計案）** — 押下直後は低速 mouse_key、閾値（例 300ms）超えで高速版に切り替える案。プリミティブは全て実在するが、**この組み合わせを実装した公開設定例は公式ギャラリー含め発見できず、動作未確認**。実装しても離散的な 2〜3 段であり連続カーブにはならない。
+5. **to_if_held_down による 2 段階疑似加速（未検証の設計案）** — 押下直後は低速 mouse_key、閾値（例 300ms）超えで高速の mouse_key に切り替える案。プリミティブは全て実在するが、**この組み合わせを実装した公開設定例は公式ギャラリー含め発見できず、動作未確認**。実装しても離散的な 2〜3 段であり連続カーブにはならない。
 6. **精密モードのカクつき対策（推論ベース）** — g の 0.3 をさらに下げるより、XY Scale で基準を下げて g は 0.5〜0.7 に留める方が count_converter の蓄積が滑らかに働きやすいと考えられる（※未実測）。
 
 **評価**: 数十分で試せる改善だが、得られるのは「離散段の増加」まで。「滑らかさ」の質的改善は構造的に不可能。
@@ -68,12 +68,12 @@ Karabiner-Elements 本体は v16.1.0（2026-07-05）まで活発にメンテさ�
 | ツール | 方式 | 価格 | メンテ状況（2026-07 時点） | 特記 |
 |---|---|---|---|---|
 | **[neru](https://github.com/y3owk1n/neru)** ⭐推奨 | Recursive Grid / Grid / Hints（AX API + Vision OCR）/ vim 風スクロールを 1 本に統合 | 無料 (MIT) | **v1.46.1 (2026-07-08)、ほぼ日次で開発中**。Go 製、約 450 stars | brew tap で導入可。全キーバインドリマップ可。warpd の実質的後継。過去に brew の `depends_on` 誤解釈問題 (#984)・権限再認識問題 (#736) あり、いずれも解決済み |
-| **[mouseless](https://mouseless.click/)** | 画面全体 2 文字グリッド + Free mode（連続移動・S/D/F ホールドで段階加速・スクロール・ドラッグ） | $20 買い切り / Setapp（7 日試用） | **v1.0.0 安定版 (2026-07-07)**。本体クローズド、issue トラッカー 723 stars | `brew install --cask mouseless`（macOS ≥12、cask で確認済み）。グリッド+連続移動の両輪が 1 本で揃う。Sequoia+M4 で「途中からトリガーしなくなる」未解決 issue #515 あり |
+| **[mouseless](https://mouseless.click/)** | 画面全体 2 文字グリッド + Free mode（連続移動・S/D/F ホールドで段階加速・スクロール・ドラッグ） | $20 買い切り / Setapp（7 日試用） | **v1.0.0 安定バージョン (2026-07-07)**。本体クローズド、issue トラッカー 723 stars | `brew install --cask mouseless`（macOS ≥12、cask で確認済み）。グリッド+連続移動の両輪が 1 本で揃う。Sequoia+M4 で「途中からトリガーしなくなる」未解決 issue #515 あり |
 | **[Homerow](https://www.homerow.app/)** | 検索バー + UI 要素ラベル（Vimac 後継）。Shift+Cmd+J でスクロールモード | $49.99 買い切り。試用は**期間無制限**（50 起動ごとに購入リマインダー） | v1.5.3 (2026-03-19)。Tahoe 対応修正済み (v1.4.1) | macOS 13+。操作は 2 段階（検索 or Tab/Shift+ラベルでフォーカス → Return でクリック）。商用では完成度最有力だが高価格帯 |
 | **[Scoot](https://github.com/mjrusso/scoot)** | element（avy 風 2 文字）/ grid / freestyle（連続移動）の **3 モードを手動切替**（自動フォールバックではない） | 無料 (BSD-3) | v1.3 (2026-03-02)。README の対応 OS 表記（Big Sur/Monterey）は古いまま | `brew install --cask scoot`。Sequoia で原因不明ビープ (#51 open)、Tahoe+スケーリング解像度でクラッシュ (#59 open) の固有バグ報告あり |
 | **[Shortcat](https://shortcat.app/)** | fuzzy 検索で UI 要素を絞り込み（ラベル暗記不要） | 無料（「延長ベータ」扱い、正式な価格体系は未定） | v0.12.2 (2025-07-03) 以降 **約 1 年リリースなし** | macOS 13+、「tested on 15.3」と明記。Electron 対応を公式に明記（VS Code 等）。停滞リスクあり |
 | **[Wooshy](https://wooshy.app/)** | 全 UI（Dock・メニューバー・ステータスバー含む）をテキスト検索してクリック | サブスク $3.28/月（年額 $39.28 = 実質無割引）。無料版は「ランダムに休止」 | Ws48 (2026-04-28)、ほぼ月次リリース。Tahoe 対応明記 (Ws44/45) | 最小要件 Sonoma 14.6+ |
-| **[Superkey](https://superkey.app/)** | **OCR 主体**（+ オプトインで AX API 併用）のテキスト検索クリック + Hyperkey 統合 | 買い切り（価格は一次情報で未確認。第三者サイトに $15.99 の記載）。20 日試用 | v1.66 (2026-06-23)、活発 | macOS 12+。OCR 方式なので AX ツリーが貧弱なアプリでも文字が見えれば効きうる（公式明言はなし） |
+| **[Superkey](https://superkey.app/)** | **OCR 主体**（+ オプトインで AX API 併用）のテキスト検索クリック + Hyperkey 統合 | 買い切り（価格は一次情報で未確認。第三者サイトに $15.99 の記載）。20 日試用 | v1.66 (2026-06-23)、活発 | macOS 12+。OCR 方式なので AX ツリーが貧弱なアプリでも文字が見えれば使える可能性がある（公式明言はなし） |
 | **[Mousio](https://github.com/jaywcjlove/mousio)** (+ Mousio Hint) | 象限グリッド再帰分割 + カーソルモード + Hint 連携 | 本体無料 + IAP（$0.99/月 or $6.99 買い切り）。Hint は brew cask 配布（価格情報なし） | 本体 v2.3.0 (2025-12-13)、リポジトリは 2026 年も活動 | App Store 配布（macOS 14+）。**両方ともクローズドソース**（GitHub は issue 窓口のみ） |
 | [stochos](https://github.com/museslabs/stochos) | 2 文字 400 セルグリッド + サブグリッド絞り込み | 無料 (GPL-3.0) | v1.0.0 (2026-07-07)、新興 | **macOS はシングルディスプレイのみ対応**。brew なし |
 | [KeyboardStack](https://keyboardstack.com/) | グリッドズームイン + カーソルモード | 無料版あり / フル $29.99 | 更新状況を示す一次情報が見つからず未確認 | macOS 13.5+ |
@@ -103,14 +103,14 @@ Karabiner-Elements 本体は v16.1.0（2026-07-05）まで活発にメンテさ�
   - 制約: 調整は 2 スライダーのみ。現行 macOS では defaults キーによる CLI 調整方法は文書化が見つからない。Mouse Keys ON 中はテンキーが数字入力に使えなくなる等の副作用にも注意。
 - **Full Keyboard Access**（Tab ナビゲーション）: OS 標準のフォーカス移動。デフォルトでは対象が限定的で、「All Controls」(Ctrl+F7) が必要。Firefox 非対応・フォーカス迷子などの実務上の穴があり、主役にはならない。
 - **Switch Control の Point Mode**（走査線交差方式）: 原理上任意ピクセルに到達できるが、タイマー走査待ちが本質的に低速。参考知識レベル。
-- **ブラウザ内の解決**: [Vimium](https://github.com/philc/vimium)（v2.4.2, 2026-03、活発）/ Vimium C / Surfingkeys（Safari 版は App Store 配布あり）のヒントモードで「ブラウザ内のクリック」はカーソル移動なしで潰せる。Safari 派生の Vimari は約 5 年停滞、Hammerspoon 実装の [vifari](https://github.com/dzirtusss/vifari) も 14 ヶ月更新なし。ヒントで潰せない残りはドラッグ&ドロップ / canvas 系 UI（Figma・地図）/ 動画スクラブ等で、そこは連続移動系（§4）か D+モードの守備範囲。
+- **ブラウザ内の解決**: [Vimium](https://github.com/philc/vimium)（v2.4.2, 2026-03、活発）/ Vimium C / Surfingkeys（Safari 向けは App Store 配布あり）のヒントモードで「ブラウザ内のクリック」はカーソル移動なしで済ませられる。Safari 派生の Vimari は約 5 年停滞、Hammerspoon 実装の [vifari](https://github.com/dzirtusss/vifari) も 14 ヶ月更新なし。ヒントで済ませられない残りはドラッグ&ドロップ / canvas 系 UI（Figma・地図）/ 動画スクラブ等で、そこは連続移動系（§4）か D+モードの守備範囲。
 
 ---
 
 ## 6. 方向性 E: キーボードファームウェア
 
 - **Advantage360（非 Pro / SmartSet）= 現有機**: 公式 Action Tokens（現行 v3-31-23）に mouse tokens（クリック / スクロール / 上下左右移動）は存在するが、**速度・加速を指定するパラメータが仕様上一切ない**。さらに公式マニュアルに「Karabiner 等のキーボードカスタマイズソフト併用で予測不能な挙動になりうる」という注意書きあり。**滑らかさ目的で乗り換える動機なし**。
-- **Advantage360 Pro（ZMK）**: `&mmv` + `acceleration-exponent` / `time-to-max-speed-ms` で**ファームウェアレベルの加速カーブ**を構成可能。Kinesis 公式フォークにもマウス移動サポート追加済み。ホスト OS 非依存で効く根本解だが、**Pro への買い替えが前提**（本体 $499〜の再投資）。将来キーボードを更新する際の判断材料。
+- **Advantage360 Pro（ZMK）**: `&mmv` + `acceleration-exponent` / `time-to-max-speed-ms` で**ファームウェアレベルの加速カーブ**を構成可能。Kinesis 公式フォークにもマウス移動サポート追加済み。ホスト OS 非依存で適用される根本解だが、**Pro への買い替えが前提**（本体 $499〜の再投資）。将来キーボードを更新する際の判断材料。
 - QMK の kinetic mouse keys も同等機能を持つ（参考。現有機では使えない）。
 
 ---

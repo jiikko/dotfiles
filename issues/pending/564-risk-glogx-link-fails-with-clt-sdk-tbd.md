@@ -6,7 +6,7 @@
 > 再開の trigger: Air で dotfiles の Go を触るとき / 別のマシンでも同じ `tapi error` が出たとき。
 > 2026-09-27 時点の確認: kojiM3MBP (macOS 27.0) では `go build` が通り再現しない。
 > 自動修復を作るなら「警告を出して `SDKROOT` を Xcode の SDK へ逃がす」が候補。先に Air で逃がし先が通るかを確かめる。
-> `CGO_ENABLED=0` で逃がすのは不可 (`ime_tis_darwin.go` の cgo の IME 読み取りが黙って抜ける)。
+> `CGO_ENABLED=0` で逃がすのは不可 (`ime_tis_darwin.go` の cgo の IME 読み取りがエラーを出さずに抜ける)。
 
 ## 概要
 

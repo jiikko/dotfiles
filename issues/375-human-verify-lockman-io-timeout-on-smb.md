@@ -1,4 +1,4 @@
-# human: lockman の --io-timeout が実 SMB のサーバ不達で効くか確かめる
+# human: lockman の --io-timeout が実 SMB のサーバ不達のときに期限内に戻すか確かめる
 
 起票日: 2026-09-15
 カテゴリ: human（人間しかできない作業。実 SMB 共有とサーバの停止操作が要る）
@@ -14,7 +14,7 @@
 
 包みが当たっている位置は `readLock` / `serverNow` / `OpenFile` / `ReadDir` / `Rename` で、
 smbfs がそのどれで止まるか（あるいは ETIMEDOUT で即エラーになるか）で、
-`--io-timeout` が効くのか「そもそも要らなかった」のかが変わる。
+`--io-timeout` が実際に期限内に戻すのか「そもそも要らなかった」のかが変わる。
 
 ## 手順
 

@@ -9,7 +9,7 @@
 ## 概要
 
 issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新責務が 1 つの型に寄っておらず、新しい経路や状態を足すと
-畳み忘れが黙って入る箇所。どれも今は正しく動く (誤動作は未発火)。trigger 待ちのものは trigger を明記する。
+畳み忘れが気づかないうちに入る箇所。どれも今は正しく動く (誤動作は未発火)。trigger 待ちのものは trigger を明記する。
 
 出典: glogx issues viewer 監査 (668) の responsibility D・E / encapsulation F / polymorphism J / duplication D1・D3 / ui-components U3。
 
@@ -79,7 +79,7 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
 - [x] D1: 「issues 側の watcher 死亡時の扱いは誤りか」を確かめた → **誤りではない**。git log 側が世代を進めるのは飛んでいる測定 (`measuring`) を捨てるためで、
   そのせいで旧世代のポーリングも捨てられるので札を張り直す。issues 側は指紋を goroutine の中で測り終えて届くので捨てる測定が無く、世代を進めず旧世代のポーリングもそのまま有効
   (理由を `handleWatch` のコメントに書いた)。共通部分 (watcher・世代・2 本の札・イベント待ち・届けた側だけ札を降ろす) を `watchChain` (watch_chain.go) に寄せ、両方の見張りに埋め込んだ。
-  メッセージを作る関数は**張るときだけ**呼ぶ形にした (最初の版は張っている間も `watchTargets` (ReadDir を含む) を毎回組んでいて、旧実装より重くなっていた)。
+  メッセージを作る関数は**張るときだけ**呼ぶ形にした (最初に書いたものは張っている間も `watchTargets` (ReadDir を含む) を毎回組んでいて、旧実装より重くなっていた)。
   変異 (`release` が両方の札を降ろす) → `TestGitLogProbeDropsOnlyDeliveringChain` と issues 側の 2 本が red
 - [x] D3: URL ピッカーに `offset` を持たせて `listnav.WindowOffset` を通した (古いコメントも直した)。カーソル行の描き方は `issuesRenderOpts.paintCursorRow` に寄せた
   (一覧の行 / group の親行 / URL ピッカー)。回帰: `TestURLPickerWindowStaysWhileCursorInside`。変異 (旧来の式) → red

@@ -52,7 +52,7 @@
 
 失うもの: `swift` を起動するたびに shim の分の時間がかかる (未測定)。列の待ちで、`swift build` を打った人の端末がすぐ始まらなくなる。
 
-効かない経路: PATH に `~/dotfiles/bin` が無い起動元 (Dock から起動した Xcode の GUI・launchd・cron)、絶対パス (`/usr/bin/swift`)、`xcrun swift`、`swift-build` の直叩き。
+shim が適用されない経路: PATH に `~/dotfiles/bin` が無い起動元 (Dock から起動した Xcode の GUI・launchd・cron)、絶対パス (`/usr/bin/swift`)、`xcrun swift`、`swift-build` の直叩き。
 
 ### 案 B: 各スクリプトで `serial-run` を呼ぶ
 
@@ -60,7 +60,7 @@ repo ごとに書き足す。shim は要らないが、人の端末は拾えず�
 
 ### 案 C: hook の見送りを減らす
 
-複合コマンドだけを直す案。`swift` 以外 (`make`・`xcodebuild`) にも効くが、スクリプトの中と人の端末は拾えない。案 A と別の問題なので、やるなら別の issue にする。
+複合コマンドだけを直す案。`swift` 以外 (`make`・`xcodebuild`) にも適用されるが、スクリプトの中と人の端末は拾えない。案 A と別の問題なので、やるなら別の issue にする。
 
 ## 確かめること
 

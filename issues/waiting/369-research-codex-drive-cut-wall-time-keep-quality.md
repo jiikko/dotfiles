@@ -41,7 +41,7 @@
 
 上の時間食いのうち **型エラー往復 / 走らない変異ループ / sandbox 由来の偽赤 / 「xcodebuild を試みさせない」の縛り**は、
 すべて **codex の sandbox (`-s workspace-write`) が xcodebuild / SwiftPM / clang のキャッシュ書き込みを拒む** 1 点から
-派生している (SKILL.md の Error 74 の注記群が全部この派生)。旧版の案 2〜3 はその症状への対処で、原因を外す案が無かった。
+派生している (SKILL.md の Error 74 の注記群が全部この派生)。旧バージョンの案 2〜3 はその症状への対処で、原因を外す案が無かった。
 不具合対応の原則 (パッチワークより前提の是正) に従い、**原因側を案 0 として最上流に置く**。
 
 ## 順序
@@ -54,7 +54,7 @@
 段階 3 (skill から外して repo 側へ)
 ```
 
-## 案 0: sandbox の制限を外す (原因の除去。旧版に無かった案)
+## 案 0: sandbox の制限を外す (原因の除去。旧バージョンに無かった案)
 
 **決定 2026-09-13: 案 0-b (`-s danger-full-access`) を採用** (ユーザー承認)。SKILL.md 4.3.0 に反映済み
 (実装 / 競作 / `[3.7]` の雛形を `danger-full-access` に、旧 Error 74 規律は「外せない環境向け」として残置、
@@ -95,7 +95,7 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 - **worktree ごとに `-derivedDataPath` を分ける**。codex が worktree で xcodebuild を回し、同時に Claude が本体で
   xcodebuild / `swift build` を回すと DerivedData と package graph が共有されて無限待ちになる
   (`no-concurrent-spm-build-during-xcodebuild.md` がそのまま当たる。obaket で 7.5 時間停止の実例)
-- 効いたら SKILL.md の Error 74 系の注記 (「xcodebuild を試みさせない」「shared の swift build まで」「偽赤の再実行」) を
+- 案 0 で解消したら SKILL.md の Error 74 系の注記 (「xcodebuild を試みさせない」「shared の swift build まで」「偽赤の再実行」) を
   **条件つき** (sandbox を外せない repo 向け) に書き換える。全部消さない: 外せない repo は残る
 
 質を落とさない根拠: codex が自分で型検査・test を回せるようになるだけで、Claude の検閲 (`[3]` / `[3.8]` の当て直し) は
@@ -118,9 +118,9 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 - skill は既に「変異検証は codex の報告を数に入れず、Claude が `[3.8]` で必ず自分で当て直す」と書いている (SKILL.md 検証節)
   のに、走らないと分かっている repo でも codex の実行ループを毎回回している。**skill の中で矛盾している**
 - **その repo で走らないことが 1 度分かったら以降は最初から Claude のハーネスで当てる** (変異 patch の生成だけ codex read-only に
-  作らせる)。obaket macOS は案 0 が効くまでこの条件に当たる
+  作らせる)。obaket macOS は案 0 で解消するまでこの条件に当たる
 - 減るのは走らない実行ループ 1 回 (max effort・15〜40 分)。Claude 側の作業は増える (明示的な例外として skill に書く)
-- 案 0 が効いた repo では不要になる (条件つきの記述にする)
+- 案 0 で解消した repo では不要になる (条件つきの記述にする)
 
 ### 1-2. codex が返した直後に型検査、通してからレビュー fanout (旧案 2 の順序部分)
 
@@ -130,7 +130,7 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
   (sandbox で走るかは repo ごとに未確認 = 最初のマイルストーンで確かめてから固定する)
 - 質を落とさない根拠: 型エラーはどの往復でも最終的に直る。減るのは「型エラーを抱えたままレビューに出す」往復
 - 却下した形: 「macOS の配線は Claude が書く」— skill の役割分担 (Claude は重い実装を書かない) と衝突する
-- 案 0 が効けば codex 側で型が通るようになり、この項は「Claude 側の順序」だけが残る
+- 案 0 で解消すれば codex 側で型が通るようになり、この項は「Claude 側の順序」だけが残る
 
 ### 1-3. luna max の出力の質が低いときは astra 系モデルへ切り替えてよい (ユーザー指示 2026-09-13)
 
@@ -218,7 +218,7 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 ユーザーの「これは可能なのか」への回答として、**codex を 1 回も起動せずに確かめられる範囲**を実測した。
 このセッションのマシンでは **codex を使わない**とユーザーが指示したため (2026-09-20)、案 0 の効果測定はここでは行わない。
 
-### 1. 版ドリフトの採り直し — 案 0 / 1-3 の前提は今も有効
+### 1. バージョンドリフトの採り直し — 案 0 / 1-3 の前提は今も有効
 
 issue の案 0 / 1-3 は `codex-cli 0.154.0` 時点の `codex exec --help` に依存しているが、手元は **0.155.1** に上がっていた。
 採り直した結果 (2026-09-20、stdout / stderr / rc を分離して取得。rc=0):
@@ -229,7 +229,7 @@ issue の案 0 / 1-3 は `codex-cli 0.154.0` 時点の `codex exec --help` に�
   確認には codex の起動が要る)
 - `--dangerously-bypass-approvals-and-sandbox` も健在 (却下済みなので使わない)
 
-→ **版ドリフトで前提は崩れていない**。案 0 / 1-3 を採り直す必要はない。
+→ **バージョンドリフトで前提は崩れていない**。案 0 / 1-3 を採り直す必要はない。
 
 ### 2. `[x]` 4 件は「主張」ではなく実在することを確認した
 
@@ -286,13 +286,13 @@ issue の `[x]` は本文の主張であって証拠ではないので、成果�
 - obaket issue 781 — 3-1 の具体例 (実時間待ちテストの量産)
 - `_claude/rules/perf-claims-need-measurement.md` — 案 1 を先にやる根拠
 - `_claude/rules/no-concurrent-spm-build-during-xcodebuild.md` — 案 0 で codex に xcodebuild を回させるときの並行禁止
-- codex 反証レビュー (2026-09-12、read-only 1 本、旧版に対して): P1 4 件 (旧案 5 の同時実行と lens 削減 / 旧案 2 の xcodebuild と
+- codex 反証レビュー (2026-09-12、read-only 1 本、旧バージョンに対して): P1 4 件 (旧案 5 の同時実行と lens 削減 / 旧案 2 の xcodebuild と
   役割分担 / 旧案 7 の再開情報の欠落 / 案 1 の測定範囲) と P2 5 件をすべて反映した。obaket 側の実測値は codex の参照範囲外で未反証
 - 案 0 / 1-3 の出典 (2026-09-13 web 調査): [Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference)
   (`sandbox_workspace_write.writable_roots` と `-c` 構文) / [Codex sandboxing](https://developers.openai.com/codex/concepts/sandboxing) /
   [GPT-6 Astra の codex 設定記事](https://codex.danielvaughan.com/2026/09/03/gpt-6-astra-codex-cli-configuration-context-notes-safety/)
-  (ID・最低版・effort 5 段) / [openai/codex #43398](https://github.com/openai/codex/issues/43398) (モデル ID 一覧と capacity 死) /
+  (ID・最低バージョン・effort 5 段) / [openai/codex #43398](https://github.com/openai/codex/issues/43398) (モデル ID 一覧と capacity 死) /
   [openai/codex #8029](https://github.com/openai/codex/issues/8029) (VS Code 拡張が writable_roots を無視する既知 issue)
 - 🚨 2026-09-13 の追記 (案 0 / 1-3 / 段構成) は**外部反証を通していない**。案 0 のオプション実在は `codex exec --help` で
-  実測、キー名と ID は上の一次資料で確認、効くかどうか・使えるかどうかは受け入れ条件の実測で確かめる
+  実測、キー名と ID は上の一次資料で確認、反映されるかどうか・使えるかどうかは受け入れ条件の実測で確かめる
   (反証されていない仕様として扱う)

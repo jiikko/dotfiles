@@ -9,7 +9,7 @@ status バーの window list で、**最近 shell でコマンドを実行した
 
 非 current window のセルに適用される（current は Coral の島 `@cur-accent`）。最後のコマンド実行
 からの経過を `@fade-step-secs`（現 3 秒）刻みの「段（bucket）」に落とし、明るい紫から 5 段かけて
-地に溶かす（黄昏の残光: 橙の陽=現在地が沈んだ場所に紫の残光が残り、闇へ冷めていく。
+地の色へ近づける（黄昏の残光: 橙の陽=現在地が沈んだ場所に紫の残光が残り、闇へ冷めていく。
 旧シアン 51→23 はオレンジ基調テーマで「基調から浮く」ためバイオレットへ変更 2026-07-16。
 経緯: issue 017）:
 
@@ -72,7 +72,7 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
   トリック（status-left の @secfmt と同型）。追従はステータス再描画単位
   （status-interval=1、prefix 点滅の駆動と共用）なのでほぼ即時。window 切替等の操作でも再描画
 - `@fade-tpl` は bg+fg（セル先頭用）、`@fadefg-tpl` は fg のみ（pane 数・claude アイコン後の
-  文字色リセット用）。分かれている理由は zoom の暗赤背景を途中で潰さないため。段計算は
+  文字色リセット用）。分かれている理由は zoom の暗赤背景を途中で上書きしないため。段計算は
   `@fade-bucket`、bg 色式は `@fade-ramp-tpl`、段数上限は `@fade-bucket-max` に
   集約したので、定数を 1 箇所変えれば全体へ伝播する（以前は色式を 3 変数に複製していたが
   2026-07-15 にヘルパーへ集約した）
@@ -95,14 +95,14 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
   なければならない。throttle > step だと @last-touched が最大 throttle 秒古いまま残り、離れた直後の
   window が数段沈んで見え、発見性という主目的が壊れる（2026-07-14 に 5 秒フェード化と同時に 30→3 へ）
 
-## よくある「効いていない」の正体
+## よくある「反映されていない」の正体
 
 | 症状 | 原因と対処 |
 |---|---|
 | 導入・変更直後に何も変わらない | 全 window が未スタンプ = 消灯スタートは正常。作業した window から点灯していく |
 | `ls` を打っても点灯しない | その zsh が**古い**（lib 読み込みはシェル起動時のみ。`tmux source-file` では zsh は変わらない）。`exec zsh` か `source ~/dotfiles/zshlib/_tmux_window_name.zsh` |
 | スタンプはあるのに色が変わらない | 再描画待ち（status-interval=1 なので通常 1 秒以内）。window 切替で即反映 |
-| resurrect リストア後に全部消灯 | 正常。@last-touched は resurrect に保存されず、復元 pane は新しい zsh を起動するので以後は自動で効く。**リストア後の手動作業は不要** |
+| resurrect リストア後に全部消灯 | 正常。@last-touched は resurrect に保存されず、復元 pane は新しい zsh を起動するので以後は自動で適用される。**リストア後の手動作業は不要** |
 
 デバッグの入口: `tmux list-windows -a -F '#{session_name}:#I #{@last-touched}'` で
 スタンプの有無を見る。手動で点灯テストするなら

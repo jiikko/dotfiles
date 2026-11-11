@@ -3,14 +3,14 @@
 起票日: 2026-10-11
 
 > 凍結 (pending)。再開の条件: go 行を 1.26 へ上げる判断をしたとき / tmux の popup の resize で消し残しが出たとき /
-> v2.1.x の修正版が出て公開から 2 週間以上経ったとき (詳細は「再開の条件」)
+> v2.1.x の修正バージョンが出て公開から 2 週間以上経ったとき (詳細は「再開の条件」)
 
 ## 概要
 
 ユーザーの問い (2026-10-11): bubbletea のバージョンを上げる余地は無いか。
 
 repo の 6 module (glogx / pro-con / treefiler / tuikit / schedkeys / restartable) は `charm.land/bubbletea/v2` v2.0.8・
-`github.com/charmbracelet/x/ansi` v0.11.7・ultraviolet `v0.0.0-20260803092147-8b693049ce2a` を使う。出ている版は v2.0.9・v2.0.10
+`github.com/charmbracelet/x/ansi` v0.11.7・ultraviolet `v0.0.0-20260803092147-8b693049ce2a` を使う。出ているバージョンは v2.0.9・v2.0.10
 (2026-09-24)・v2.1.0 (2026-10-08)、x/ansi v0.11.9、ultraviolet `v0.0.0-20261008173134-6b8d4baf91b4`。
 
 ## 結論 (2026-10-11): 今は上げない
@@ -44,14 +44,14 @@ repo の 6 module (glogx / pro-con / treefiler / tuikit / schedkeys / restartabl
 ## 再開の条件 (trigger)
 
 - go 行を 1.26 へ上げる判断をしたとき (1 の衝突が消える)
-- tmux の popup の resize で消し残し・古い行が残る不具合が出たとき (5 の修正が効く見込み)
-- v2.1.0 の公開から 2 週間以上経ち、v2.1.x の修正版が出たとき
+- tmux の popup の resize で消し残し・古い行が残る不具合が出たとき (5 の修正で直る見込み)
+- v2.1.0 の公開から 2 週間以上経ち、v2.1.x の修正バージョンが出たとき
 
 上げるときの手順は `docs/glogx-bubbletea-v2.md` のチェックリスト。加えて:
 - ZWJ・肌色を含む行を実 TUI で描かせ、右枠の位置を ASCII 行と比べる (2)。`termwidth` の表と docs の表を測り直す
 - pro-con `BenchmarkFrame*Rendered` / glogx `BenchmarkCursorMoveViewJARendered` を上げる前後で比べる (3。日本語の行)
 - `src/tuikit/framebench` の冒頭の「v2.0.8 の cursedRenderer.flush を再現」を新しい flush (`pendingErase`・`viewEquals`) と読み比べる
-- 6 module の版の一致は `tests/scripts/test_tuikit_consumers_aligned.sh` が見る (ultraviolet を直接 require するのは tuikit だけ)
+- 6 module のバージョンの一致は `tests/scripts/test_tuikit_consumers_aligned.sh` が見る (ultraviolet を直接 require するのは tuikit だけ)
 
 ## 未確認
 

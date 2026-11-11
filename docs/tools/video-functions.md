@@ -52,7 +52,7 @@ AV1_CRF=35 av1ify movie.mp4  # CRF指定
   - 処理した本数ぶんの空ディレクトリ (1 本 4KB) が溜まる。**アイドル時に
     `rm -rf ~/.lockman/av1c` で片付く**。実行中に消すと、走っているプロセスの
     lease が飛ぶので消さないこと
-  - `lockman` が PATH に無いときは警告を出して排他なしで続行する (黙って進めない)
+  - `lockman` が PATH に無いときは警告を出して排他なしで続行する (知らせずに進めない)
 - 依存: `ffmpeg`, `ffprobe` (SVT-AV1サポート付き)
 
 ## concat
