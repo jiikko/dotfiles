@@ -3,6 +3,7 @@ package subs
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -202,12 +203,34 @@ func TestPickerFailedLastPosts(t *testing.T) {
 		t.Errorf("前の値のあるチャンネルが取れなかった行 = %q", got)
 	}
 	left := lpAll()
-	left[0].IsMember = false // dev の参加をやめた
+	left[0].IsMember = false        // dev の参加をやめた
 	p.Refresh(NewPicker(left, nil)) // ops・zz は新しい値が無いので列に戻り、dev は取る対象でなくなる
 	if len(p.fetch.failed) != 0 || slices.Contains(p.fetch.queue, "C1") {
 		t.Errorf("取る対象でなくなった dev か列に戻した ops・zz を「取れなかった」に数えた: failed=%v queue=%v", p.fetch.failed, p.fetch.queue)
 	}
 	if got := row("#ops"); !strings.HasSuffix(got, "... 17") {
 		t.Errorf("列に戻した ops の行 = %q", got)
+	}
+}
+
+// 一覧の差し替えで取る対象でなくなったチャンネルは、取る列から外す。取っている最中に外れたものが失敗しても「取れなかった」に数えない
+// (表に行が無いので、見出しの数だけが残る)。
+func TestPickerDropsChannelsThatLeft(t *testing.T) {
+	var asked []string
+	lp := &LastPosts{Get: func(_ context.Context, id string) (string, error) {
+		asked = append(asked, id)
+		return "", errors.New("not_in_channel")
+	}, Now: func() time.Time { return lpNow }}
+	p := NewPicker(lpAll(), nil)
+	cmd := p.StartFetch(context.Background(), lp)           // 列は C1 C2 C3、C1 を取っている最中
+	p.Refresh(NewPicker([]source.Channel{lpAll()[2]}, nil)) // C1 と C2 が一覧から消えた
+	for cmd != nil {
+		cmd = p.HandleLastPost(cmd().(LastPostMsg))
+	}
+	if !slices.Equal(asked, []string{"C1", "C3"}) {
+		t.Errorf("取った順 = %v, want [C1 C3] (消えた C2 は取らない)", asked)
+	}
+	if !maps.Equal(p.fetch.failed, map[string]bool{"C3": true}) {
+		t.Errorf("取れなかった = %v, want C3 だけ (取っている最中に消えた C1 は数えない)", p.fetch.failed)
 	}
 }

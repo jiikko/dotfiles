@@ -67,14 +67,19 @@ func (p *Picker) queueFetch() {
 		return
 	}
 	now := f.lp.now()
-	var on, rest []string
-	targets := map[string]bool{}
-	for _, it := range p.items {
-		if it.grp != nil || it.memberOnly || !it.ch.IsMember || it.ch.IsArchived {
-			continue
+	targets := p.fetchTargets()
+	// 取る対象でなくなった (一覧から消えた・参加をやめた) ものは列から外す。取っている最中の先頭は、結果の照合のために残す
+	// (結果が失敗でも、対象でなければ「取れなかった」に数えない。HandleLastPost)
+	kept := f.queue[:0:0]
+	for i, id := range f.queue {
+		if targets[id] || i == 0 && f.running {
+			kept = append(kept, id)
 		}
-		targets[it.ch.ID] = true
-		if slices.Contains(f.queue, it.ch.ID) {
+	}
+	f.queue = kept
+	var on, rest []string
+	for _, it := range p.items {
+		if !targets[it.ch.ID] || it.grp != nil || slices.Contains(f.queue, it.ch.ID) {
 			continue
 		}
 		if lp, ok := p.last[it.ch.ID]; ok && now.Sub(lp.At) < lastPostFresh {
@@ -92,6 +97,17 @@ func (p *Picker) queueFetch() {
 			delete(f.failed, id) // 取る対象でなくなった・列に戻した (見出しの「取れなかった」に数え続けない)
 		}
 	}
+}
+
+// fetchTargets は最終投稿を取るチャンネル (参加していて、アーカイブ済みでない・一覧にある)。
+func (p *Picker) fetchTargets() map[string]bool {
+	out := map[string]bool{}
+	for _, it := range p.items {
+		if it.grp == nil && !it.memberOnly && it.ch.IsMember && !it.ch.IsArchived {
+			out[it.ch.ID] = true
+		}
+	}
+	return out
 }
 
 func (lp *LastPosts) now() time.Time {
@@ -131,7 +147,9 @@ func (p *Picker) HandleLastPost(msg LastPostMsg) tea.Cmd {
 		f.queue, f.running = nil, false
 		return nil
 	case msg.err != nil:
-		f.failed[msg.id] = true
+		if p.fetchTargets()[msg.id] { // 取っている間に対象でなくなったもの (一覧から消えた) は、表に行が無いので数えない
+			f.failed[msg.id] = true
+		}
 	default:
 		delete(f.failed, msg.id)
 		if p.last == nil {
