@@ -7,7 +7,11 @@
 "use strict";
 
 module.exports = function (context) {
-  const { Syntax, RuleError, report, getSource, locator } = context;
+  const { Syntax, RuleError, report, getSource, locator, getFilePath } = context;
+  // Markdown のファイルだけを見る。text plugin (.txt・コミットメッセージ) は段落全体を 1 つの Str にするので、表示される太字の ** まで当たる
+  if (!/\.(?:md|markdown)$/iu.test(getFilePath() || "")) {
+    return {};
+  }
   return {
     [Syntax.Str](node) {
       const text = getSource(node);
@@ -15,7 +19,7 @@ module.exports = function (context) {
         report(
           node,
           new RuleError(
-            "この ** は太字にならず、文字のまま表示される。閉じの ** の前が約物で後ろが文字だと閉じない。** の外側に空白を入れるか、約物を太字の外へ出す",
+            "この ** は太字にならず、文字のまま表示される (閉じの ** の前が約物で後ろが文字のとき・開きの ** の後ろが空白のときなど)。太字にしたいなら ** の外側に空白を入れるか約物を太字の外へ出し、文字として見せたいならコードにする",
             { padding: locator.range([m.index, m.index + 2]) },
           ),
         );

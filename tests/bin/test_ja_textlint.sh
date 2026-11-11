@@ -44,6 +44,16 @@ Go の版を上げる。
 ただし**「拡張しやすい」は先回りの抽象で買わない**と書く。
 **太字**は表示される。
 `**/*.go` はコードなので見ない。
+版画を刷る。
+体験版を配る。
+第２版と第二版と第2.1版を読む。
+絶版と電子版と海賊版と特別版。
+効き目がある。
+古い方に倒す。
+処理が静かに失敗する。
+潰さないように書く。
+x ** 2 を計算する。
+効かない設定。
 EOF
 
 rc=0
@@ -68,9 +78,14 @@ want="3 4 ja-ai-vocabulary 1
 14 4 ja-ai-vocabulary 1
 16 1 ja-ai-vocabulary 1
 18 4 ja-bold-not-rendered 2
-18 26 ja-bold-not-rendered 2"
+18 26 ja-bold-not-rendered 2
+26 3 ja-ai-vocabulary 1
+27 4 ja-ai-vocabulary 1
+28 1 ja-ai-vocabulary 1
+29 3 ja-bold-not-rendered 2
+30 1 ja-ai-vocabulary 1"
 if [ "$(sort <<<"$got")" = "$(sort <<<"$want")" ]; then
-  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (11 件)"
+  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (16 件)"
 else
   fail "指摘が期待と違う。got:
 $got"
@@ -92,6 +107,23 @@ if cmp -s "$work/w.md" "$work/w.orig"; then
   ok "--fix でも語彙の規則は書き換えない"
 else
   fail "--fix で語彙が書き換わった (rc=$rc): $(cat "$work/w.md")"
+fi
+
+# text plugin は段落全体を 1 つの Str にするので、.txt で太字の規則を走らせると表示される太字まで当たる
+printf 'feat: **太字**を足す。黙って捨てない。\n' >"$work/t.txt"
+rc=0
+"$BIN" "$work/t.txt" >"$work/t.out" 2>&1 || rc=$?
+if grep -qF 'ja-ai-vocabulary' "$work/t.out" && ! grep -qF 'ja-bold-not-rendered' "$work/t.out"; then
+  ok ".txt では太字の規則を走らせない (語彙の規則は走る = ファイルは検査されている)"
+else
+  fail ".txt で太字の規則が出た (rc=$rc): $(cat "$work/t.out")"
+fi
+rc=0
+printf 'ただし**「x」**と書く。\n' | "$BIN" --stdin --stdin-filename x.md >"$work/s.out" 2>&1 || rc=$?
+if [ "$rc" -eq 1 ] && grep -qF 'ja-bold-not-rendered' "$work/s.out"; then
+  ok "標準入力でも x.md の名前なら太字の規則を走らせる"
+else
+  fail "標準入力 (x.md) で太字の規則が出ない (rc=$rc): $(cat "$work/s.out")"
 fi
 
 cat >"$work/d.md" <<'EOF'
