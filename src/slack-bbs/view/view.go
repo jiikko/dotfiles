@@ -80,6 +80,9 @@ type Model struct {
 	subs    *Subscriptions
 	picker  *subs.Picker // 購読の画面を開いている間だけ非 nil
 	picking bool         // 購読の画面の一覧を読んでいる
+	// pickCached は、読んでいる間に前に取った一覧で購読の画面を開いたこと (読み終えたら開いている画面の一覧を差し替える。
+	// 閉じた後なら捨てる: 閉じた画面を取り直しの終わりに勝手に開き直さない)
+	pickCached bool
 	// pickStarted は購読の画面の一覧を読み始めた時刻 (経過秒を出す)
 	pickStarted time.Time
 }
@@ -88,7 +91,9 @@ type Model struct {
 type Subscriptions struct {
 	// Open は全チャンネルと今の購読から選ぶ画面を作る (slack-cli でチャンネルの一覧を取る。画面の外の goroutine で呼ばれる)
 	Open func(ctx context.Context) (*subs.Picker, error)
-	Save func([]subs.Channel) error // 選んだ購読を保存する
+	// Cached は前に取ったチャンネルの一覧と今の購読で、すぐ開ける画面を作る (一覧を取った時刻と一緒に)。無ければ ok が偽。nil なら使わない
+	Cached func() (p *subs.Picker, at time.Time, ok bool)
+	Save   func([]subs.Channel) error // 選んだ購読を保存する
 }
 
 // New は画面を作る。chans は 1 つ以上。
@@ -178,6 +183,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loaded(msg)
 	case pickerMsg:
 		m.picking = false
+		if m.pickCached {
+			m.pickCached = false
+			switch {
+			case m.picker == nil: // 前の一覧で開いた画面を、取り直しの間に閉じた
+			case msg.err != nil:
+				m.picker.SetNote("前に取った一覧 (取り直せなかった: " + msg.err.Error() + ")")
+			default:
+				m.picker.Refresh(msg.p)
+				m.picker.SetNote("")
+			}
+			break
+		}
 		if msg.err != nil {
 			m.toast.Show("チャンネルの一覧を読めなかった: "+msg.err.Error(), false)
 			break
@@ -486,12 +503,23 @@ func (m *Model) openPicker() tea.Cmd {
 		m.toast.Show("購読するチャンネルを選ぶ画面は、チャンネルを指定しないで起動したときだけ開ける (端末の slack-bbs sub でも選べる)", false)
 		return nil
 	}
+	// 前に取った一覧があれば、すぐその一覧で開いて裏で取り直す (取り直しは slack-cli が数十秒かけることがある。
+	// slack-cli の一覧の覚えは 1 時間で、ページの間を空けて取るので 18 ページで約 1 分)
+	cached := false
+	if m.subs.Cached != nil {
+		if p, at, ok := m.subs.Cached(); ok {
+			p.SetNote(at.Format("01/02 15:04") + " に取った一覧・取り直し中")
+			m.picker, m.pickCached, cached = p, true, true
+		}
+	}
 	if m.picking {
 		return nil
 	}
 	m.picking, m.pickStarted = true, m.now()
-	// 押した手応えは知らせで返す (数秒かかる一覧の読み込みを、上の状態の行の回る印だけにしない)
-	m.toast.ShowInfo("チャンネルの一覧を読んでいます…")
+	if !cached {
+		// 押した手応えは知らせで返す (数秒かかる一覧の読み込みを、上の状態の行の回る印だけにしない)
+		m.toast.ShowInfo("チャンネルの一覧を読んでいます…")
+	}
 	open, ctx := m.subs.Open, m.ctx
 	return func() tea.Msg {
 		p, err := open(ctx)

@@ -23,6 +23,8 @@ type item struct {
 
 // Picker はチャンネルの一覧から購読を選ぶ画面の状態。キーは bubbletea の KeyPressMsg.String() の表記で受ける。
 type Picker struct {
+	all       []source.Channel // NewPicker に渡した一覧 (Refresh で新しい一覧に差し替える元)
+	note      string           // 見出しに添える一覧の出所 (前に取った一覧を出している等)。空なら出さない
 	items     []item
 	list      listnav.List
 	filter    lineedit.Line // 検索の語 (入力欄の編集キーは TUI ガイドの「入力欄の編集キー」)
@@ -40,7 +42,7 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 	for _, c := range subscribed {
 		on[c.ID] = true
 	}
-	p := &Picker{w: 80, h: 24}
+	p := &Picker{all: all, w: 80, h: 24}
 	seen := map[string]bool{}
 	for _, c := range all {
 		if c.IsArchived && !on[c.ID] {
@@ -68,6 +70,27 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 	p.items = append(gone, p.items...)
 	return p
 }
+
+// Refresh は一覧を fresh (取り直した一覧で作った画面) のチャンネルに差し替える。付け外し・検索の語・カーソルのチャンネルは
+// 今の画面のものを保つ (前に取った一覧で開いた画面を、取り直しの間に操作していても失わない)。並びは差し替えた時点の購読で組み直す。
+func (p *Picker) Refresh(fresh *Picker) {
+	curID := ""
+	if vis := p.visible(); len(vis) > 0 {
+		curID = p.items[vis[min(p.list.Cursor, len(vis)-1)]].ch.ID
+	}
+	n := NewPicker(fresh.all, p.Selected())
+	p.all, p.items = n.all, n.items
+	p.list.Cursor, p.list.Offset = 0, 0
+	for i, ix := range p.visible() {
+		if p.items[ix].ch.ID == curID {
+			p.list.Cursor = i
+			break
+		}
+	}
+}
+
+// SetNote は見出しに添える一覧の出所を決める (空なら出さない)。
+func (p *Picker) SetNote(note string) { p.note = termsafe.PlainLine(note) }
 
 // Resize は端末の大きさを伝える。
 func (p *Picker) Resize(w, h int) { p.w, p.h = w, h }
@@ -208,7 +231,12 @@ func (p *Picker) Lines() []string {
 		}
 	}
 	pageNo := fmt.Sprintf("ページ %d/%d", p.page()/p.rows()+1, p.pages(len(vis)))
-	lines := []string{termwidth.Truncate(fmt.Sprintf("%s  購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", pageNo, n, len(p.items)), p.w, "…")}
+	head := pageNo + "  "
+	if p.note != "" {
+		head += p.note + "  " // 一覧が古い・取り直せなかったことは、狭い端末でも見出しの後ろより先に切らない
+	}
+	head += fmt.Sprintf("購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", n, len(p.items))
+	lines := []string{termwidth.Truncate(head, p.w, "…")}
 	switch {
 	case p.filtering:
 		// 語はキャレットが欄に収まるよう前を切って出し、端末のカーソルをキャレットに置く (Cursor。日本語の変換中の文字が欄に出る)

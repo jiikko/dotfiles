@@ -209,3 +209,25 @@ func TestPickerSelectWhileSearching(t *testing.T) {
 		t.Errorf("入力中の案内に Tab が無い:\n%s", help)
 	}
 }
+
+// Refresh は一覧を取り直した一覧に差し替え、付け外し・検索の語・カーソルのチャンネルを保つ。
+func TestPickerRefreshKeepsState(t *testing.T) {
+	old := []source.Channel{{ID: "C1", Name: "times_a", IsMember: true}, {ID: "C2", Name: "times_b", IsMember: true}, {ID: "C3", Name: "dev", IsMember: true}}
+	p := NewPicker(old, nil)
+	p.Resize(80, 14)
+	for _, k := range []string{"/", "t", "i", "m", "e", "s", "down", "tab"} { // times_b を付ける
+		p.Key(k)
+	}
+	fresh := NewPicker(append([]source.Channel{{ID: "C0", Name: "times_0", IsMember: true}}, old...), []Channel{{ID: "C1", Name: "times_a"}})
+	p.Refresh(fresh)
+	if sel := p.Selected(); len(sel) != 1 || sel[0].ID != "C2" {
+		t.Errorf("付け外しを失った (取り直した側の購読で上書きした): %+v", sel)
+	}
+	if !p.filtering || p.filter.String() != "times" {
+		t.Errorf("検索の語を失った: %q", p.filter.String())
+	}
+	vis := p.visible()
+	if len(vis) != 3 || p.items[vis[p.list.Cursor]].ch.ID != "C2" {
+		t.Errorf("カーソルのチャンネルを失った (一致 %d 件)", len(vis))
+	}
+}

@@ -292,8 +292,9 @@ func parseSpan(s string) (time.Duration, error) {
 	return d, nil
 }
 
-// newPicker は今の購読と全チャンネル (slack-cli) から購読を選ぶ画面を作り、購読の置き場と一緒に返す。
-func newPicker(ctx context.Context, d deps, cli source.Client) (*subs.Picker, string, error) {
+// newPicker は今の購読と全チャンネル (slack-cli) から購読を選ぶ画面を作り、購読の置き場と一緒に返す。取ったチャンネルの一覧は
+// st に残す (次に読む画面の s ですぐ開くため。残せなくても画面は開く)。
+func newPicker(ctx context.Context, d deps, cli source.Client, st cache.Store) (*subs.Picker, string, error) {
 	path, err := d.subsPath()
 	if err != nil {
 		return nil, "", err
@@ -306,11 +307,33 @@ func newPicker(ctx context.Context, d deps, cli source.Client) (*subs.Picker, st
 	if err != nil {
 		return nil, "", err
 	}
-	return subs.NewPicker(all, cur), path, nil
+	p := subs.NewPicker(all, cur)
+	if err := st.SaveChannels(all, d.now()); err != nil {
+		p.SetNote("チャンネルの一覧をキャッシュに書けなかった: " + err.Error())
+	}
+	return p, path, nil
+}
+
+// cachedPicker は前に取ったチャンネルの一覧 (st) と今の購読で、すぐ開ける購読の画面を作る。一覧が無い・読めない・購読を読めないときは ok が偽
+// (どれも、すぐ後に取り直す newPicker が同じものを読み、読めなければそちらが知らせる)。
+func cachedPicker(d deps, st cache.Store) (*subs.Picker, time.Time, bool) {
+	list, ok, err := st.LoadChannels()
+	if err != nil || !ok {
+		return nil, time.Time{}, false
+	}
+	path, err := d.subsPath()
+	if err != nil {
+		return nil, time.Time{}, false
+	}
+	cur, err := subs.Load(path)
+	if err != nil {
+		return nil, time.Time{}, false
+	}
+	return subs.NewPicker(list.Channels, cur), list.SavedAt, true
 }
 
 func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
-	p, path, err := newPicker(ctx, d, source.Client{R: d.slack})
+	p, path, err := newPicker(ctx, d, source.Client{R: d.slack}, openStore(d, io.Discard))
 	if err != nil {
 		return err
 	}
@@ -655,9 +678,10 @@ func browse(ctx context.Context, o options, d deps, st cache.Store) error {
 					return nil, context.Canceled
 				}
 				defer done()
-				p, _, err := newPicker(ctx, d, cli)
+				p, _, err := newPicker(ctx, d, cli, st)
 				return p, err
 			},
+			Cached: func() (*subs.Picker, time.Time, bool) { return cachedPicker(d, st) },
 			Save: func(sel []subs.Channel) error {
 				path, err := d.subsPath()
 				if err != nil {

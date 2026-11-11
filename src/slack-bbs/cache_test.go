@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"slack-bbs/source"
 	"slack-bbs/subs"
 	"slack-bbs/view"
 )
@@ -337,5 +339,24 @@ func TestDryRunKeepsOldCache(t *testing.T) {
 	}
 	if _, err := os.Stat(old); err != nil {
 		t.Errorf("-dry-run が古いキャッシュを消した: %v", err)
+	}
+}
+
+// 購読の画面のために取ったチャンネルの一覧はキャッシュに残し、次に開くときは残した一覧と今の購読ですぐ画面を作れる。
+func TestPickerChannelListIsCached(t *testing.T) {
+	sl, _, d, _ := cacheFixture(t)
+	st := openStore(d, io.Discard)
+	if _, _, ok := cachedPicker(d, st); ok {
+		t.Fatal("まだ取っていないのに、残した一覧で画面を作った")
+	}
+	if _, _, err := newPicker(context.Background(), d, source.Client{R: sl}, st); err != nil {
+		t.Fatal(err)
+	}
+	p, at, ok := cachedPicker(d, st)
+	if !ok || !at.Equal(now) {
+		t.Fatalf("取った一覧を残していない: ok=%v at=%v", ok, at)
+	}
+	if lines := strings.Join(p.Lines(), "\n"); !strings.Contains(lines, "#") {
+		t.Errorf("残した一覧の画面にチャンネルが無い:\n%s", lines)
 	}
 }

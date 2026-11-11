@@ -618,3 +618,44 @@ func TestNarrowWrapDoesNotFakeHeading(t *testing.T) {
 		t.Errorf("折り返しの続きを見出しにした")
 	}
 }
+
+// 前に取ったチャンネルの一覧があれば、s ですぐその一覧で購読の画面を開き、取り直したら一覧を差し替える。差し替えても、
+// 取り直しの間の付け外しとカーソルのチャンネルは保つ。取り直しの間に画面を閉じたら、取り直しの結果で開き直さない。
+func TestPickerOpensFromCachedListAndRefreshes(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	m := newModel(l)
+	cur := []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}
+	old := []source.Channel{{ID: "C1", Name: "dev", IsMember: true}, {ID: "C2", Name: "ops", IsMember: true}}
+	fresh := append(old, source.Channel{ID: "C3", Name: "qa", IsMember: true})
+	var saved [][]subs.Channel
+	m.SetSubscriptions(&Subscriptions{
+		Open:   func(context.Context) (*subs.Picker, error) { return subs.NewPicker(fresh, cur), nil },
+		Cached: func() (*subs.Picker, time.Time, bool) { return subs.NewPicker(old, cur), t0, true },
+		Save:   func(sel []subs.Channel) error { saved = append(saved, sel); return nil },
+	})
+	run(m, m.Init())
+	pending := press(m, "s")
+	screen := strings.Join(m.Lines(), "\n")
+	if !strings.Contains(screen, "購読するチャンネルを選ぶ") || !strings.Contains(screen, t0.Format("01/02 15:04")+" に取った一覧・取り直し中") || strings.Contains(screen, "#qa") {
+		t.Fatalf("前に取った一覧ですぐ開いていない:\n%s", screen)
+	}
+	press(m, "j")
+	press(m, "x") // ops を外す
+	run(m, pending)
+	screen = strings.Join(m.Lines(), "\n")
+	if !strings.Contains(screen, "#qa") || strings.Contains(screen, "取り直し中") {
+		t.Fatalf("取り直した一覧に差し替わっていない:\n%s", screen)
+	}
+	press(m, "x") // カーソルは ops のまま: ops を付け直す
+	press(m, "enter")
+	if len(saved) != 1 || len(saved[0]) != 2 || saved[0][1].ID != "C2" {
+		t.Fatalf("差し替えでカーソルのチャンネルか付け外しを失った: %v", saved)
+	}
+
+	pending = press(m, "s")
+	press(m, "q") // 取り直しの間に閉じる
+	run(m, pending)
+	if m.picker != nil {
+		t.Error("閉じた購読の画面を、取り直しの結果で開き直した")
+	}
+}

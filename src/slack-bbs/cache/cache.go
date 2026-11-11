@@ -84,6 +84,10 @@ func (s Store) load(ch, kind string, v any, current func() bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	return loadFile(p, v, current)
+}
+
+func loadFile(p string, v any, current func() bool) (bool, error) {
 	b, err := os.ReadFile(p)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
@@ -118,6 +122,10 @@ func (s Store) save(ch, kind string, v any) error {
 	if err != nil {
 		return err
 	}
+	return s.saveFile(p, v)
+}
+
+func (s Store) saveFile(p string, v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -319,4 +327,35 @@ func expireGroup(name string) (key string, keep time.Duration, ok bool) {
 		return "read:" + id, ReadKeep, true
 	}
 	return "", 0, false
+}
+
+// ChannelsVersion はチャンネルの一覧のファイルの形の版。
+const ChannelsVersion = 1
+
+// Channels は最後に取ったワークスペースのチャンネルの一覧 (購読の画面をすぐ開くため。開いたら裏で取り直す)。
+// 本文は入らない (ID・名前・非公開か・参加しているか・アーカイブ済みか)。
+type Channels struct {
+	Version  int              `json:"version"`
+	SavedAt  time.Time        `json:"saved_at"`
+	Channels []source.Channel `json:"channels"`
+}
+
+// channelsFile はチャンネルの一覧の置き場。名前が ID の形でないので Expire は触らない (購読の画面を開くたびに書き直す)。
+const channelsFile = "channels.json"
+
+// LoadChannels は最後に取ったチャンネルの一覧を読む。無い・版が違うときは ok が偽 (誤りではない)。
+func (s Store) LoadChannels() (c Channels, ok bool, err error) {
+	if s.Dir == "" {
+		return c, false, nil
+	}
+	ok, err = loadFile(filepath.Join(s.Dir, channelsFile), &c, func() bool { return c.Version == ChannelsVersion })
+	return c, ok, err
+}
+
+// SaveChannels はチャンネルの一覧を書く。
+func (s Store) SaveChannels(chs []source.Channel, now time.Time) error {
+	if s.Dir == "" {
+		return nil
+	}
+	return s.saveFile(filepath.Join(s.Dir, channelsFile), Channels{Version: ChannelsVersion, SavedAt: now, Channels: chs})
 }
