@@ -25,7 +25,9 @@ if ! command -v npm >/dev/null; then
 fi
 
 ok=0; fail=0
-TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
+# 実パスで持つ: /var は /private/var への symlink で、textlint は cwd を実パスで持つ。論理パスのファイルは cwd の
+# .textlintignore の照合から外れ、「ignore に消されない」の検査が何も確かめなくなる
+TMP_ROOT=$(cd "$(mktemp -d)" && pwd -P) || exit 1; trap 'rm -rf "$TMP_ROOT"' EXIT
 
 # hook は依存を入れないので、先に手で 1 回打って入れておく (本番も同じ: 一度手で打てば入る)
 printf 'x\n' > "$TMP_ROOT/warm.md"
@@ -83,6 +85,45 @@ expect_lines "複数行の new_string の 2 行目の指摘も知らせる" "$(r
 g="$TMP_ROOT/b.md"
 printf '日本語の前置き。\n同じ行で効く。\n間の行。\n同じ行で効く。\n' > "$g"
 expect_lines "同じ new_string の全部の出現の行を知らせる" "$(run "$(edit_input "$g" "同じ行で効く。")")" "2 4"
+
+# new_string の中の書き換えていない文脈の行 (old_string にある行) の指摘は出さない
+edit_ctx_input() { # $1=file $2=old_string $3=new_string
+  jq -n --arg f "$1" --arg o "$2" --arg s "$3" '{tool_name: "Edit", tool_input: {file_path: $f, old_string: $o, new_string: $s}}'
+}
+k="$TMP_ROOT/ctx.md"
+printf '一行目。\n前から黙って書いてある。\n追加で潰す行。\n' > "$k"
+expect_lines "文脈の行 (old_string にある行) の指摘は出さず、足した行だけを知らせる" \
+  "$(run "$(edit_ctx_input "$k" "前から黙って書いてある。" "前から黙って書いてある。
+追加で潰す行。")")" "3"
+
+# ファイルの先頭 (位置 0) に書いた行も 1 行目として数える
+top="$TMP_ROOT/top.md"
+printf '先頭で潰す行。\n二行目。\n' > "$top"
+expect_lines "ファイルの先頭に書いた行の指摘を知らせる" "$(run "$(edit_input "$top" "先頭で潰す行。")")" "1"
+
+# new_string が改行で終わっても、次の行 (書いていない行) は見ない
+m="$TMP_ROOT/nl.md"
+printf '足した行。\n前から黙って書いてある。\n' > "$m"
+expect_lines "new_string の末尾の改行で、次の行の指摘を出さない" "$(run "$(edit_input "$m" "足した行。
+")")" ""
+
+# CRLF のファイルでも、LF で届く複数行の new_string の位置を見つける
+c="$TMP_ROOT/crlf.md"
+printf '前置き\r\nここは何も無い。\r\n新しく潰す行。\r\n' > "$c"
+expect_lines "CRLF のファイルで複数行の Edit の指摘を知らせる" "$(run "$(edit_input "$c" "ここは何も無い。
+新しく潰す行。")")" "3"
+
+# session の cwd の .textlintignore で知らせを消さない
+ig="$TMP_ROOT/ig"
+mkdir -p "$ig"
+printf '*.md\n' > "$ig/.textlintignore"
+printf '黙って捨てる。\n' > "$ig/x.md"
+expect_lines "cwd の .textlintignore があっても知らせる" "$(cd "$ig" && run "$(write_input "$ig/x.md")")" "1"
+
+# 160KB を超えるファイルは見ない (textlint はファイル全体を読むので、hook の上限を超える)
+big="$TMP_ROOT/big.md"
+{ printf '黙って捨てる。\n'; for _ in $(seq 6000); do printf 'これは三十字ほどの、指摘の出ない普通の文の行です。\n'; done; } > "$big"
+expect_lines "160KB を超えるファイルは見ない" "$(run "$(write_input "$big")")" ""
 
 # 表示されない太字も知らせる
 h="$TMP_ROOT/c.md"
