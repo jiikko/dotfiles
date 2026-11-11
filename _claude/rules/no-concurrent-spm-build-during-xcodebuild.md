@@ -25,6 +25,9 @@ paths:
   (実測: obaket で `Reload Package 'shared'` のまま 7.5 時間停止。ユーザー指摘まで気づけず)
 - 変異検証などで並行したいときは、**xcodebuild の完了を待つ**か、**変異側を使い捨て worktree**
   (別 checkout = 別 .build / 別 package graph) に出す
+- PATH に `~/dotfiles/bin` がある起動元では、shim (`bin/xcodebuild`・`bin/swift`) が同じ repo の xcodebuild と `swift build` / `swift test` を
+  serial-run の列で 1 本ずつにする (worktree も同じ列)。shim が届かない呼び方 (`/usr/bin/swift` の絶対パス・`xcrun`・Dock から起動した Xcode) では
+  今までどおり人が避ける。使い捨て worktree で並行させたいときは `SERIAL_RUN_SHIM_DISABLE=1` で shim を外す (経路と条件は `docs/tools/serial-run.md` の 1.5)
 - **kill した xcodebuild run の直後の full run は判定に使わない**。残骸環境でテストが
   flake する (実測: kill 直後の run だけ drop 系 6 本 red、単独・再実行は green)。
   kill 後は 1 回捨て run を挟むか、単独 suite 再実行で切り分けてから判定する

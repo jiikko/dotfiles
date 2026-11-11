@@ -74,17 +74,18 @@ repo ごとに書き足す。shim は要らないが、人の端末は拾えず�
 
 ## 受け入れ条件
 
-- [ ] PATH に `~/dotfiles/bin` がある環境で、スクリプトの中の `swift build` と Claude の複合コマンドの中の `swift build` が `serial-run` の列に入る。
-- [ ] 情報だけの呼び出しと `--help` は待たない (`isHeavy` と shim のテスト)。
-- [ ] `serial-run` の列の中から呼んでも止まらず、`serial-run` を二重に起動しない (入れ子)。
-- [ ] `serial-run` が壊れていても `swift` は動く。
-- [ ] 待ちの上限を超えたときに、ビルドの失敗と区別できる。
-- [ ] shim が自分自身を呼び続けない (実体の解決に失敗したら落ちる)。
-- [ ] shim の起動の遅れを `swift --version` の前後で測り、結果を本文に書く。
-- [ ] `swift run` と `swift package` を対象にするかを決め、`hook_test.go` の期待値に反映する。
-- [ ] CI では shim が列を使わない。
-- [ ] `isHeavy` の対象の語を増やしたら hook の入口の語も揃える (`tests/claude/test_serial_run_wrap.sh`)。
-- [ ] 入口の文書 (`src/serialrun/README.md`、`docs/tools/serial-run.md`) を更新する。
+- [x] PATH に `~/dotfiles/bin` がある環境で、スクリプトの中の `swift build` と Claude の複合コマンドの中の `swift build` が `serial-run` の列に入る。(`bin/swift`。通しの確認は下の進捗)
+- [x] 情報だけの呼び出しと `--help` は待たない (`isHeavy` と shim のテスト)。
+- [x] `serial-run` の列の中から呼んでも止まらず、二重に並ばない (入れ子)。**読み替え**: 「`serial-run` を二重に起動しない」から変えた。`SERIAL_RUN_HELD` の有無だけで素通しにすると、終わった列から漏れて残った値で排他を外れるので、列の中でも serial-run を起こして札を照合させる (1 回 約 27 ms)
+- [x] `serial-run` が壊れていても `swift` は動く。(`SERIAL_RUN_FAIL_OPEN`。`tests/bin/test_serial_run_fail_open.sh`)
+- [x] 待ちの上限を超えたときに、ビルドの失敗と区別できる。(上限は既定の 1 時間のまま。rc 125 と stderr の `serial-run:` の行で区別する。`--max-wait 0` にしない理由は下の決着)
+- [x] shim が自分自身を呼び続けない (実体の解決に失敗したら落ちる)。
+- [x] shim の起動の遅れを `swift --version` の前後で測り、結果を本文に書く。
+- [x] `swift run` と `swift package` を対象にするかを決め、`hook_test.go` の期待値に反映する。(どちらも対象にしない)
+- [x] CI では shim が列を使わない。
+- [x] `isHeavy` の対象の語を増やしたら hook の入口の語も揃える (`tests/claude/test_serial_run_wrap.sh`)。(コマンド名は増やしていない。swift / xcodebuild は入口の語に既にある)
+- [x] 入口の文書 (`src/serialrun/README.md`、`docs/tools/serial-run.md`) を更新する。(あわせて `_claude/rules/no-concurrent-spm-build-during-xcodebuild.md`)
+- [x] (2026-11-11 にユーザー指示で追加) xcodebuild にも同じ shim を置く。
 
 ## 関連
 
@@ -94,3 +95,44 @@ repo ごとに書き足す。shim は要らないが、人の端末は拾えず�
 ## 進捗
 
 - 2026-11-10: 起票。read-only のサブエージェント 2 体 (事実・設計) の反証レビューを通し、`isHeavy` の情報表示の扱い、判定の口、rc 125 の衝突、待ちの上限、実体の解決、拾えない経路を反映した。実装は未着手。
+- 2026-11-11: 実装した。
+  - `bin/swift`・`bin/xcodebuild` (PATH shim。共通部分は `bin/lib/serial_run_shim.sh`)、`serial-run --if-heavy` (重くなければ置き場に触らず exec)、
+    `isHeavy` の swift の情報表示 (`--show-bin-path` / `--show-codecov-path` 系 / `--version`。`-X…` の値は飛ばす) と xcodebuild の情報表示の追加
+    (`-showBuildSettingsForIndex` / `-showComponent` / `-showTestPlans` / `-find-executable` / `-find-library`)、`bin/serial-run` の `SERIAL_RUN_FAIL_OPEN`
+  - 通しの確認 (本物の swift / xcodebuild と worktree の serial-run。置き場は `SERIAL_RUN_STATE_DIR` で隔離): 列を別の 1 本が持つ間、shim 経由の
+    `swift build` は待った (wait=3.1s)。shim 経由の xcodebuild のビルド中に打った `swift build` は wait=6.2s で、xcodebuild の後に走った。
+    `swift build --show-bin-path` と `xcodebuild -version` は置き場を作らなかった。`serial-run -- swift build` は history.log に 1 行 (二重に並ばない)
+  - 起動の遅れ (実体を `/usr/bin/true` にして 50 回の平均を 3 回): 素通しの swift 10〜35 ms、serial-run を通す軽い呼び出し 45〜85 ms、
+    列の中の呼び出し 約 27 ms。`xcodebuild -version` は実物で 99〜114 ms が 140〜147 ms (20 回の平均を 3 回)
+  - 変異: `--if-heavy` の分岐を外す / swift の情報表示の判定を外す / `-showTestPlans` を外す / 別の checkout の shim を飛ばす処理を外す (互いに呼び合い 10 秒の上限で止まる) /
+    readlink を相対名に戻して解決の失敗を通す (同じく呼び合う) / 本体 checkout の serial-run に戻す / `zsh -f` を外す / serial-run へ渡す stdin を
+    `/dev/null` にする / `$0` の正規化を外す / bin/serial-run の `unset SERIAL_RUN_FAIL_OPEN` を外す。全部 red (`bin/mutate-verify`)
+  - codex (gpt-6.1-sol, high) の敵対的レビューを 2 周。採った指摘は上の実装に入れた。採らなかったものと未確認のものは下の決着
+
+## 決着
+
+確かめること の結果:
+
+- Xcode の Run Script build phase: my-products の app の `project.yml` の build phase で `swift build` / `swift test` / `swift run` / `swift package` を呼ぶものは無かった (grep、2026-11-11)。
+  Dock から起動した Xcode の GUI の PATH には `~/dotfiles/bin` が無いので shim は届かない (届かない経路として文書に書いた)
+- SwiftPM / xcodebuild の中から `swift` を PATH で起こすか: 確かめていない。起こしても、列の中なら `SERIAL_RUN_HELD` と祖先の照合で素通しになる
+- `DEVELOPER_DIR` / `TOOLCHAINS`: shim は環境を変えずに PATH の次の `swift` (普段は `/usr/bin/swift` の trampoline) を exec するだけ。実際の解決先は測っていない
+- パイプラインの 2 段: 下の「採らなかった指摘」
+- `swift run` / `swift package`: 対象にしない (`swift run` は長く動くサーバーを起こしうる。`swift package` は短い)
+
+採らなかった指摘 (再提起するなら、理由を覆す実測を添える):
+
+- 「stdin がパイプなら列を見送る」(1 つのパイプラインに重い段が 2 つあると、後ろの段が列で待つ間パイプを読まず止まる): fastlane (Ruby の Open3) などは
+  子の stdin にパイプを渡すので、xcodebuild の主な経路が並ばなくなる。代わりに待ちの上限 (1 時間) を外さず、止まっても 125 で解けるようにした。
+  再提起の条件は `bin/lib/serial_run_shim.sh` の冒頭
+- 「hook が包んだ `serial-run -- swift build` の外側にも無期限待ちと fail-open を」: shim を入れる前と同じ挙動 (上限 1 時間・ビルドできなければ 125)
+
+未確認リスク (観測ポイント):
+
+- `xcodebuild test` が起こすテストのプロセスに `TEST_RUNNER_PATH` で shim の PATH を渡し、テストから同じ repo の `swift build` / `xcodebuild` を同期で打つと、
+  テストのプロセスは外側の列の子孫ではない (`SERIAL_RUN_HELD` も渡らない) ので、外側の列を待って止まりうる。obaket のテストのコードは swift / xcodebuild を起こしていない (grep、2026-11-11)
+- `xcodebuild -showBuildSettings` などの情報表示は列に並ばないが、package graph を解決する。同じ package の `swift build` と重なったときに 7.5 時間の停止と同じ形になるかは確かめていない (fastlane もこの呼び出しを打つ)
+
+改善の評価: 前は Claude の Bash が 1 つのコマンドとして打った形だけが並び、スクリプトの中・人の端末・hook が見送った複合コマンドの swift / xcodebuild は列の外で重なっていた。
+今は PATH に `~/dotfiles/bin` がある起動元なら、同じ repo の xcodebuild と swift build / test が 1 本ずつになる (通しの確認で、xcodebuild の後に swift build が待った)。
+足した複雑さ: shim 2 本と共通の lib (約 80 行)、`--if-heavy`、fail-open の分岐。失うもの: swift / xcodebuild の起動のたびの遅れ (上の実測) と、列が混んでいるときの待ち

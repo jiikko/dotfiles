@@ -6,12 +6,13 @@
 設計の正本は issue 869。
 
 ```sh
-serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]   # 順番を待ってから実行し、子の rc を返す
+serial-run [-l <lock名>] [--max-wait <秒>] [--if-heavy] -- <コマンド> [引数…]   # 順番を待ってから実行し、子の rc を返す
 serial-run status [-l <lock名>]                                     # 先頭と待ち行列を出す
 serial-run hook                                                     # Claude Code の PreToolUse(Bash) hook の本体
 serial-run -h                                                       # usage (rc=0)
 ```
 
+- `--if-heavy`: コマンドが hook と同じ判定 (`isHeavy`) で直列化の対象でなければ、置き場に触らずにそのまま exec する。PATH shim (`bin/swift`・`bin/xcodebuild`) が呼び出しを渡す口
 - rc: 子の rc (シグナルで死んだら 128+n) / `125` 道具の失敗 (誤用・置き場・待ちの上限・入口のビルドの失敗) / `126` 起動できない / `127` 見つからない
 - 待ちの上限は既定 1 時間 (`--max-wait 0` で上限なし)。超えたら子を起こさずに 125
 - 待っている間は stderr に順番を出す (順番が変わったときと 30 秒ごと)。先頭の持ち主の説明は、順番・先頭の札・その状態 (走っている / 孤児 / 開けない)・長く持っているかが変わった行にだけ付ける。先頭が長く持っていたら `🚨 長く持っている` と pid・状態・取れる手を出す
@@ -43,7 +44,8 @@ serial-run -h                                                       # usage (rc=
   1 つのパイプラインに serial-run が 2 本入ると互いの札を待って止まるので、字句で段の境目を読み違えてもこの形にならないための歯止め。
   手で書いた `serial-run` を含むパイプライン、複合コマンドの境目が `|` と隣り合う形、`|` の後で改行する形も見送る
 - PATH を書き換えるコマンド (前置きの `PATH=` / `export PATH=…` / `unset PATH` / `eval`) は見送る (差し込んだ serial-run が見つからなくなる)
-- make の dry-run 等 (`-n` `-q` `-p` `-t` `--help`)・go / swift / mutate-verify の help・xcodebuild の情報表示は待たせない
+- make の dry-run 等 (`-n` `-q` `-p` `-t` `--help`)・go / swift / mutate-verify の help・xcodebuild と swift の情報表示 (`--show-bin-path` 等) は待たせない。
+  `swift run` (長く動くサーバーを起こしうる) と `swift package` は対象にしない
 - hook の判断 (差し込んだ / 重いのに見送った理由) は置き場の `hook.log` に残り、`serial-run status` が最後の 5 行を出す
 - 重いコマンドの頭に許可ルール (deny / ask) を書くなら、`serial-run -- ` を付けた形も書く (Claude Code は書き換えた後のコマンドで判定する)
 - 置き場を作れない・採番できないときは、🚨 を出して順番を待たずに走らせる (包んだコマンドを走らせないより害が小さい)
@@ -55,6 +57,13 @@ serial-run -h                                                       # usage (rc=
   規則と検出しない形は `background.go` の `backgroundDenial`。書き換えと deny を同じ hook が出すので、別の hook との順番に依らない
 - 止め方: Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1` (背景に回す形の deny も止まる)
 
+## PATH shim (`bin/swift`・`bin/xcodebuild`)
+
+`swift build` / `swift test` と xcodebuild のビルド・テストは、PATH の先頭の `bin/swift`・`bin/xcodebuild` が `serial-run --if-heavy --` に通す (待ちの上限は既定のまま)。
+字面の見えないスクリプトの中・人の端末も並ぶ。共通部分は `bin/lib/serial_run_shim.sh`。
+並ばない条件・届かない経路・起動の遅れの実測は [docs/tools/serial-run.md](../../docs/tools/serial-run.md) の 1.5。
+shim は exec した後に rc 125 を道具の失敗と包んだコマンドの失敗に分けられないので、`SERIAL_RUN_FAIL_OPEN=1` を付けて呼び、`bin/serial-run` はビルドできないときに `--` の後を順番を待たずに起こす。
+
 ## make の入口に組み込む
 
 dotfiles の `make test` は自分で順番待ちに入る (`make/serial-run.mk` の `$(serial_run)` を recipe の先頭に置き、本体は `test-all`)。
@@ -64,7 +73,7 @@ CI (`CI`)・`SERIAL_RUN_MAKE_DISABLE=1` (serial-run の入口のビルドが壊�
 
 
 - hook で包まれないもの: 人が端末で直接打つコマンド・git hook (pre-push 等)・スクリプトの中の重い処理・codex・pro-con の PG (user の hook を持ち込まない)。
-  dotfiles の `make test` は上の make の入口で並ぶ。
+  dotfiles の `make test` は上の make の入口で、`swift build` / `swift test` と xcodebuild は上の PATH shim で並ぶ。
   これらは列の外で走るので、列の中の 1 本と重なりうる。必要ならその道具の側で `serial-run` を呼ぶ (入れ子は素通しになる)
 - 子が正常に終わった後に残った背景の孫は止めない (lock の外で走り、次の 1 本と同時に動く)。止めるときも、切り離された孫 (`( sleep & )`) は取りこぼす
 - 同じユーザーの session どうしのための道具。他のユーザーと置き場を共有する使い方は対象外 (置き場の権限は 0700 / 0600)

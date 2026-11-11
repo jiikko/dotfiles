@@ -18,8 +18,8 @@ dotfiles の `_claude/settings.json` の PreToolUse hook が、**どの repo で
 |---|---|---|
 | `make` / `gmake` | target が `test` / `lint` / `test-*` / `lint-*` | `-n` / `-q` / `-p` / `-t` / `--help` などの何もしない呼び方、それ以外の target (`make build` など) |
 | `go test` | `go test …` / `go -C dir test …` | `go test -h`、`go build` など test 以外 |
-| `swift` | `swift build` / `swift test` | help |
-| `xcodebuild` | build / test など | `-version` / `-list` などの情報表示 |
+| `swift` | `swift build` / `swift test` | help、`--show-bin-path` / `--show-codecov-path` / `--version` などの情報表示、`swift run` / `swift package` |
+| `xcodebuild` | build / test など | `-version` / `-list` / `-showBuildSettings` / `-showTestPlans` / `-find-executable` などの情報表示 |
 | `mutate-verify` / `mutate-verify-list` | 普通の呼び出し | help |
 
 `runtimeout 600 make test` のような前置きの後ろも見る。判定の正本は `src/serialrun/hook.go` の `isHeavy`。
@@ -30,7 +30,26 @@ dotfiles の `_claude/settings.json` の PreToolUse hook が、**どの repo で
 - codex・pro-con の PG など、ユーザーの hook を持ち込まない実行者
 - 上の表に無いコマンド (`npm test` / `pnpm test` / `cargo test` / `bundle exec rspec` / `pytest` など)
 
-これらを並べたいときに、下の 2・3 を使う。
+これらを並べたいときに、下の 2・3 を使う。`swift` と `xcodebuild` は、下の 1.5 の shim がスクリプトの中・人の端末の分も並べる。
+
+## 1.5. `swift` と `xcodebuild` は PATH の shim が並べる
+
+`~/dotfiles/bin/swift` と `~/dotfiles/bin/xcodebuild` は PATH shim (共通部分は `bin/lib/serial_run_shim.sh`) で、上の表の「並ぶ形」を
+`serial-run --if-heavy --` (shim と同じ checkout の serial-run) に通す。swift は build / test 以外を serial-run を起こさずに実体へ渡し、xcodebuild は全部を serial-run に渡す
+(情報表示の判定は `isHeavy` にだけ置く)。PATH に `~/dotfiles/bin` がある起動元なら、スクリプトの中 (`bin/test-shared` の `swift test` など)・
+人の端末・codex・fastlane・Claude Code の複合コマンドの中も並ぶ。何も組み込まなくてよい。
+
+- 並ばないとき: `CI` / `SERIAL_RUN_SHIM_DISABLE=1` / shim の隣に serial-run が無い。
+  列の中 (hook が包んだ `serial-run -- swift build` も shim を通る) は serial-run が札を照合して素通しにする (2 度目は並ばない)
+- 待ちの上限は serial-run の既定 (1 時間。hook の経路と同じ)。超えたら rc 125 で、`if ! swift build` はビルドの失敗と読む (stderr の `serial-run:` の行に待ちの上限と出る)。
+  serial-run がビルドできない日は順番を待たずに実体を起こす
+- 届かない経路: PATH に `~/dotfiles/bin` が無い起動元 (Dock から起動した Xcode・launchd・cron・`xcodebuild test` が起こすテストのプロセス)、
+  `/usr/bin/swift` などの絶対パス、`xcrun swift`・`xcrun xcodebuild`、`swift-build` の直叩き
+- 🚨 1 つのパイプラインに重い段を 2 つ並べない (`swift build | swift test`)。後ろの段が列で待つ間パイプを読まず、前の段の出力がパイプの容量を超えると、待ちの上限 (1 時間) まで両方が止まる
+- 🚨 列を持ったコマンドが、環境を引き継がない別のプロセス (子孫ではないもの) に重いコマンドを打たせて待つと、互いに待って止まる
+- 起動の遅れ (実体を `/usr/bin/true` にして測った値): 素通しの swift で 1 回 10〜35 ms、serial-run を通す `swift build --show-bin-path` で 45〜85 ms
+  (列の中の呼び出しも serial-run を通る)。
+  `xcodebuild -version` は実物で 99〜114 ms が 140〜147 ms になる (情報表示も serial-run を通るため)
 
 ## 2. Makefile がある repo: 入口の target を包む
 

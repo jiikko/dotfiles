@@ -178,7 +178,14 @@ var (
 	helpFlags = map[string]bool{"-h": true, "-help": true, "--help": true}
 	// xcodebuild の、ビルドせずに情報だけを出す呼び方 (待たせない)
 	xcodeInfoFlags = map[string]bool{"-version": true, "-list": true, "-showBuildSettings": true, "-showsdks": true,
-		"-showdestinations": true, "-help": true, "-usage": true, "-license": true, "-checkFirstLaunchStatus": true}
+		"-showdestinations": true, "-help": true, "-usage": true, "-license": true, "-checkFirstLaunchStatus": true,
+		"-showBuildSettingsForIndex": true, "-showComponent": true, "-showTestPlans": true, "-find-executable": true, "-find-library": true}
+	// swift build / swift test の、ビルドせずにパスや版を出すだけの呼び方 (待たせない)。
+	// bin/obaket-sftp (obaket) はビルドの後に --show-bin-path で成果物の場所を引くので、列の後ろで待たせると 1 本の作業が 2 度並ぶ。
+	// swift 6.4 の `swift build --help` / `swift test --help` の一覧から取った。--print-pif-manifest-graph / --print-manifest-job-graph は入れない
+	// (SwiftPM 6.2 の native の build system では、グラフを出した後にそのまま通常のビルドへ進む)
+	swiftInfoFlags = map[string]bool{"--show-bin-path": true, "--show-codecov-path": true, "--show-code-coverage-path": true,
+		"--show-coverage-path": true, "--version": true}
 )
 
 // unwrapPrefix は前に付いた包みのコマンド (env / nice / nohup / command / noglob / runtimeout) を外した残りの語を返す。
@@ -305,7 +312,19 @@ func isHeavy(words []string) bool {
 		}
 		return !anyHelp(own)
 	case "swift":
-		return len(words) > 1 && (words[1] == "build" || words[1] == "test") && !anyHelp(words[2:])
+		// swift run (長く動くサーバーを起こしうる。列を持ったまま走り続ける) と swift package (依存の解決。短い) は対象にしない
+		if len(words) < 2 || (words[1] != "build" && words[1] != "test") || anyHelp(words[2:]) {
+			return false
+		}
+		for i := 2; i < len(words); i++ {
+			switch a := words[i]; {
+			case strings.HasPrefix(a, "-X") && !strings.Contains(a, "="): // -Xlinker / -Xswiftc / -Xcc などは次の 1 語を下の道具へ渡す (`-Xlinker --version` は SwiftPM の版表示ではない)。`-Xswiftc=-O` は値を同じ語に持つ
+				i++
+			case swiftInfoFlags[a]:
+				return false
+			}
+		}
+		return true
 	case "make", "gmake":
 		heavy := false
 		for i := 1; i < len(words); i++ {

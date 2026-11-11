@@ -1,0 +1,17 @@
+#!/bin/bash
+# 🚨 shebang は macOS 同梱の /bin/bash (3.2) に固定する。3.2 に無い構文 (連想配列・mapfile・${x,,}・local -n) を入れないこと。
+#
+# bin/xcodebuild — xcodebuild の PATH shim。ビルド・テストの呼び出しを serial-run の順番待ちに通す
+# (同じ checkout の SwiftPM と重なると止まることがある。_claude/rules/no-concurrent-spm-build-during-xcodebuild.md)。
+# 並ばない条件・届かない経路・止まる形は bin/lib/serial_run_shim.sh の冒頭。
+# 前段の振り分けは置かず、全部を serial-run --if-heavy に渡す。情報表示 (-version・-showBuildSettings 等) の一覧は src/serialrun/hook.go の
+# xcodeInfoFlags にだけ置く (ここへ写すと片方だけ増えて食い違う)。その分、情報表示も serial-run の起動の分だけ遅くなる
+set -u
+unset CDPATH
+self=$0
+case $self in */*) ;; *) self=./$self ;; esac # `bash swift` のように / の無い名前で起こされたときも lib を cwd から引く
+[ -L "$self" ] && self=$(/usr/bin/readlink -f "$self")
+# shellcheck source=bin/lib/serial_run_shim.sh
+. "${self%/*}/lib/serial_run_shim.sh" || exit 127
+serial_run_shim_resolve xcodebuild
+serial_run_shim_exec "$@"

@@ -1,0 +1,20 @@
+#!/bin/bash
+# 🚨 shebang は macOS 同梱の /bin/bash (3.2) に固定する。swift を呼ぶたびに起動するので、Homebrew の bash 5 の起動の分を払わない
+# (bin/tmux と同じ理由)。3.2 に無い構文 (連想配列・mapfile・${x,,}・local -n) を入れないこと。
+#
+# bin/swift — swift の PATH shim。`swift build` / `swift test` を serial-run の順番待ちに通し、それ以外はそのまま実体の swift へ渡す。
+# 並ばない条件・届かない経路・止まる形は bin/lib/serial_run_shim.sh の冒頭。
+# build / test の前段だけをここで見る (REPL・--version に serial-run の起動の分を払わせない)。最終の判定は serial-run --if-heavy
+set -u
+unset CDPATH
+self=$0
+case $self in */*) ;; *) self=./$self ;; esac # `bash swift` のように / の無い名前で起こされたときも lib を cwd から引く
+[ -L "$self" ] && self=$(/usr/bin/readlink -f "$self")
+# shellcheck source=bin/lib/serial_run_shim.sh
+. "${self%/*}/lib/serial_run_shim.sh" || exit 127
+serial_run_shim_resolve swift
+case "${1-}" in
+build | test) ;;
+*) exec "$real" "$@" ;;
+esac
+serial_run_shim_exec "$@"

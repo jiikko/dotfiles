@@ -2145,3 +2145,53 @@ func TestNestedFromNamedLockPassesThrough(t *testing.T) {
 	f.release(gz)
 	_ = exitCode(t, z)
 }
+
+// --if-heavy: 直列化の対象でないコマンドは列に並ばずにそのまま走る (置き場も作らない)。PATH shim (bin/xcodebuild) は全部の呼び出しをここへ渡す
+func TestIfHeavyRunsLightCommandWithoutQueue(t *testing.T) {
+	for _, argv := range [][]string{
+		{"sh", "-c", "exit 7"},
+		{"/bin/sh", "-c", "exit 7", "swift", "build"},
+	} {
+		f := newFixture(t)
+		cmd := f.start(nil, append([]string{"--if-heavy", "--"}, argv...)...)
+		if rc := exitCode(t, cmd); rc != 7 {
+			t.Fatalf("%v: rc=%d (子の rc 7 を返すはず)", argv, rc)
+		}
+		if _, err := os.Stat(f.state); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%v: 軽いコマンドで置き場を作った (err=%v)", argv, err)
+		}
+	}
+}
+
+// --if-heavy: swift の情報だけの呼び出しは並ばず、swift build は並ぶ (history.log に 1 行)。
+// 子は偽の swift (Base の名前だけが判定に使われる)
+func TestIfHeavyQueuesSwiftBuildButNotShowBinPath(t *testing.T) {
+	f := newFixture(t)
+	fake := filepath.Join(f.dir, "swift")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 3\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if rc := exitCode(t, f.start(nil, "--if-heavy", "--", fake, "build", "--show-bin-path")); rc != 3 {
+		t.Fatalf("--show-bin-path: rc=%d", rc)
+	}
+	if _, err := os.Stat(f.state); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("--show-bin-path で置き場を作った (err=%v)", err)
+	}
+	if rc := exitCode(t, f.start(nil, "--if-heavy", "--", fake, "build")); rc != 3 {
+		t.Fatalf("build: rc=%d", rc)
+	}
+	hist, err := os.ReadFile(f.queue().historyPath())
+	if err != nil {
+		t.Fatalf("swift build が列に並ばなかった (history.log が無い): %v", err)
+	}
+	if n := strings.Count(string(hist), "\n"); n != 1 {
+		t.Fatalf("history.log の行数が 1 でない:\n%s", hist)
+	}
+}
+
+func TestIfHeavyRejectedWithStatus(t *testing.T) {
+	f := newFixture(t)
+	if rc := exitCode(t, f.start(nil, "status", "--if-heavy")); rc != rcTool {
+		t.Fatalf("status --if-heavy: rc=%d (誤用は %d)", rc, rcTool)
+	}
+}

@@ -1,6 +1,6 @@
 // serial-run — 重いコマンド (make test / xcodebuild 等) をマシン全体で順番待ちにし、同時には 1 本だけ走らせる。
 //
-//	serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]
+//	serial-run [-l <lock名>] [--max-wait <秒>] [--if-heavy] -- <コマンド> [引数…]
 //	serial-run status [-l <lock名>]
 //	serial-run hook
 //
@@ -52,11 +52,12 @@ const (
 const defaultLock = "default"
 
 // usage の既定値は定数から作る (文面に複写すると定数を変えたときに食い違う)
-var usage = fmt.Sprintf(`usage: serial-run [-l <lock名>] [--max-wait <秒>] -- <コマンド> [引数…]
+var usage = fmt.Sprintf(`usage: serial-run [-l <lock名>] [--max-wait <秒>] [--if-heavy] -- <コマンド> [引数…]
        serial-run status [-l <lock名>]
        serial-run hook   (Claude Code の PreToolUse(Bash) hook。重いコマンドの前に serial-run -- を差し込む)
   -l          lock の名前 (既定は cwd の git の repo ごとの列。SERIAL_RUN_SCOPE=machine か repo の外ならマシン全体の %s)
   --max-wait  待ちの上限 (秒。既定 %d。0 は上限なし)。超えたら実行せずに rc=%d
+  --if-heavy  コマンドが直列化の対象 (hook と同じ判定) でなければ、列に並ばずにそのまま実行する (bin/swift・bin/xcodebuild の PATH shim が使う)
 rc: 子の rc / %d 道具の失敗 / %d 起動できない / %d 見つからない
 hook を止める: Claude Code の環境に SERIAL_RUN_HOOK_DISABLE=1
 `, defaultLock, int(defaultMaxWait.Seconds()), rcTool, rcTool, rcCannotExec, rcNotFound)
@@ -75,6 +76,7 @@ type options struct {
 	lock    string
 	maxWait time.Duration
 	status  bool
+	ifHeavy bool
 	argv    []string
 }
 
@@ -114,6 +116,10 @@ func run(args []string, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "serial-run: %v\n%s", err, usage)
 		return rcTool
+	}
+	// 置き場に触る前に判定する (軽いコマンドに列の置き場を作らせない・祖先の走査の ps も起こさない)
+	if opt.ifHeavy && !isHeavy(opt.argv) {
+		return execDirect(opt.argv, stderr)
 	}
 	if opt.lock == "" {
 		cwd, _ := os.Getwd()
@@ -744,6 +750,9 @@ func parseArgs(args []string) (options, error) {
 			goto done
 		case "-h", "--help":
 			return opt, errHelp
+		case "--if-heavy":
+			opt.ifHeavy = true
+			args = args[1:]
 		case "-l", "--max-wait":
 			if len(args) < 2 {
 				return opt, fmt.Errorf("%s に値が無い", a)
@@ -773,6 +782,9 @@ done:
 	if opt.status {
 		if len(args) > 0 {
 			return opt, errors.New("status はコマンドを取らない")
+		}
+		if opt.ifHeavy {
+			return opt, errors.New("status は --if-heavy を取らない")
 		}
 		return opt, nil
 	}
