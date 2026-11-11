@@ -49,7 +49,7 @@ CLI と desktop で描き方を分け、desktop は desktop の部品とテー�
 
 ## 考えること
 
-- desktop のテーマのキーの一覧と、`Text` の色にキーを渡したときの desktop での効き方 (型定義では受けるが未実測)。
+- desktop のテーマのキーの一覧と、`Text` の色にキーを渡したときの desktop での見え方 (型定義では受けるが未実測)。
   ライト / ダークを mod から知る手段 (`$.config.list()` の `theme` の行が使えるか)
 - 構造化の出力を bash のまま足すか、計算を repo の Go へ移すか。移すなら CLI の statusLine の起動時間 (今 約 0.16 秒。2026-10-03 に 3 回計測) を悪化させない
 - desktop の幅 (`ui.render` の props の `bodyColumns`) に応じた短縮の要否

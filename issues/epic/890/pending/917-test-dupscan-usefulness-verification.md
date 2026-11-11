@@ -14,7 +14,7 @@
 | 主張 | 根拠 | 強さ |
 |---|---|---|
 | gate は新しい写しを見つける | DualNoteApp の first-parent 500 commit の流し直しで赤 59。見た範囲は全部、同じ本体の単位が残ったままの本物の写し ([905](../done/905-feat-dupscan-ci-check-gate.md)) | 実測 |
-| gate は誤って止めにくい | 直近 100 commit で誤って止めたのは 1 (905。9b10af80 の版で数えた。500 commit の流し直しでは赤の一覧を見た限りで、件数を 1 つずつ数えてはいない) | 実測。DualNoteApp 1 つだけ |
+| gate は誤って止めにくい | 直近 100 commit で誤って止めたのは 1 (905。9b10af80 の時点のバージョンで数えた。500 commit の流し直しでは赤の一覧を見た限りで、件数を 1 つずつ数えてはいない) | 実測。DualNoteApp 1 つだけ |
 | 引く所要は小さい | DualNoteApp で index 0.5 秒・callers 0.6 秒・gate 0.4 秒 ([897](../done/897-feat-dupscan-index-subcommand.md)・905) | 実測。obaket の規模: report 1.6 秒・未コミットだけを見る gate 3.0 秒 (obaket の issue 1301。2026-10-25) |
 | index は grep より返る量が少ない | 同じ問いで grep の約 1/2〜1/23 の文字数 (定義に絞った正規表現との比では約 1/1.8〜1/1.9。ファイルの中身は cat の約 1/8.5) ([907](../done/907-feat-dupscan-exploration-queries.md)) | 実測。作業が速くなるかは未測定 |
 | 書く前に引くと写しを書かない | headless の 1 回で、skill を読み index を引き既存のヘルパーを使った ([903](../done/903-docs-dupscan-search-before-write-procedure.md))。ただし grep も打っており、skill を外した対照が無い | **未証明** |
@@ -46,7 +46,7 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
   - grep / Read の回数・返った文字数・費用 (`total_cost_usd`)・turn 数
 - **判定**:
   - A の「写しを書いた割合」が B より明らかに低い (例: 5 割以上減る) なら、書く前に引く効果があると言う。A の中でも「書く前に index を呼んだ回」と「呼ばなかった回」に分けて比べる (skill を読まなかった回は A から外さず、読んだ割合として別に書く)
-  - A と B に差が無く、A+ だけが低いなら、効いているのは gate (後から見つける側) だけ。skill を「セルフレビューで gate を回す」中心に縮めることを検討する
+  - A と B に差が無く、A+ だけが低いなら、働いているのは gate (後から見つける側) だけ。skill を「セルフレビューで gate を回す」中心に縮めることを検討する
   - 否定の対照 (既存が無い種類) で、A が「既存がある」と誤って使う・書かずに止まる回が出たら、それも書く
 - **限界**: 使い捨ての repo は小さく、実際の repo より grep で見つけやすい (効果は小さく出る側に寄る)。隔離した HOME はユーザーの環境と違う。モデル (sonnet / opus) で結果が変わりうるので、使ったモデルを書く
 
@@ -67,7 +67,7 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
 - 2026-10-25 起票 (ユーザー指示: 検証方法を sub issue に書いておく)
 - 2026-10-25 反証レビュー (sonnet・読み取りのみ) を取り込んだ: A に gate が混ざると書く前に引く効果と区別できない → gate を禁じた腕 A と、gate も使う腕 A+ に分けた /
   依頼文に型の名前を出すと grep で見つかる → 名前を出さない依頼文に / `bin/skill-eval` は Bash を許さないので使えない → `claude -p` を直接 / 腕 B の作り方 → 全腕を同じ隔離した HOME に /
-  判定を dupscan だけにすると循環する → diff を読む判定を併用 / 仕込むヘルパーを gate の下限より大きく / description の語で発火を誘導しない / 基準率を見る試走 / 費用の計算の誤り / 表の比の範囲と、誤って止めた数を数えた版
+  判定を dupscan だけにすると循環する → diff を読む判定を併用 / 仕込むヘルパーを gate の下限より大きく / description の語で発火を誘導しない / 基準率を見る試走 / 費用の計算の誤り / 表の比の範囲と、誤って止めた数を数えたバージョン
 - 2026-10-25 検証 1 も含めて、obaket の入っている別のマシンで行うことにした (ユーザー指示: 917 は obaket の入っている別マシンで検証やります)
 - 2026-10-25 検証 1 の試走 (ユーザー 2026-10-25: 縮小して回す = 3 腕 × 3 種類 × 3 回)。本番の前に腕 B (skill なし) で基準率を見た。M4Pro・`claude -p --model sonnet --setting-sources project,local`。
   腕の違いは「使い捨ての repo の `.claude/skills/dupscan/` に skill を置くか」だけにした (`--setting-sources project,local` で起動するとユーザーの skill が init の一覧から消えることを確かめた)。
@@ -91,7 +91,7 @@ skill の有る無しを変えて、headless の Claude Code (`claude -p`。`bin
 
 新規提案は [925](../../932/done/925-feat-dupscan-helper-search.md) の用途語検索、[926](../../932/done/926-feat-dupscan-query-diagnostics.md) の問い合わせ診断、[927](../../932/done/927-feat-dupscan-agent-context.md) のcontext集約、[928](../../932/done/928-feat-dupscan-agent-onboarding.md) の共通導入案内。用途語検索・診断・context・導入案内の最小機能は実装済みだが、一般的な再利用/開発効率の因果効果が測定済みとは扱わない。本issueの既存の保留条件は維持する。
 
-評価する際はClaude/Codexを分け、同じ課題・同じ入力repo・対応版で、適切な候補への到達、正しい再利用、誤った不存在判断、往復数、返却bytes、elapsed timeを取る。raw command回数だけで改善を判断せず、小規模fixtureで対照群の重複発生率が0だった制約と、設定が対照群へ漏れた制約を踏まえて比較条件を設計する。ログ解析は保存形式・利用可能性を環境ごとに確認し、既存のClaude用集計をCodexにもそのまま使えるとはみなさない。
+評価する際はClaude/Codexを分け、同じ課題・同じ入力repo・対応するバージョンで、適切な候補への到達、正しい再利用、誤った不存在判断、往復数、返却bytes、elapsed timeを取る。raw command回数だけで改善を判断せず、小規模fixtureで対照群の重複発生率が0だった制約と、設定が対照群へ漏れた制約を踏まえて比較条件を設計する。ログ解析は保存形式・利用可能性を環境ごとに確認し、既存のClaude用集計をCodexにもそのまま使えるとはみなさない。
 
 - 2026-10-28: 928で共通診断/表示専用案内を限定採用して完了。一般効果・未使用課題の比較計画とClaude/Swift未検証は948で継続する。本issueの既存測定/保留triggerは変更しない。
 

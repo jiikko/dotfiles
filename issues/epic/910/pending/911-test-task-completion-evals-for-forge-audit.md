@@ -19,7 +19,7 @@ fan-out を畳む・残すの判断には「仕込んだ欠陥を見つけられ
 
 - plugin に写すのは `skills/<skill>/` と `evals/` だけで、各 run は隔離された HOME で動く (ユーザーの CLAUDE.md・rules・他の skill は読まれない)。
   forge が前提にする `~/.claude/workflows/forge.js` と `_claude/agents/*.md` は届かないので、eval の中の forge は本番と別物になる
-- 比べるのは「plugin あり / なし (baseline)」の 2 つだけ。912 の ①②③ や 913 の A/B/C のような、skill の版・引数の違いは比べられない。baseline の run は費用の半分を使うが、この比較には意味が無い
+- 比べるのは「plugin あり / なし (baseline)」の 2 つだけ。912 の ①②③ や 913 の A/B/C のような、skill のバージョン・引数の違いは比べられない。baseline の run は費用の半分を使うが、この比較には意味が無い
 - 費用の実測は「1 ケース 1 回ずつで $0.14」で、これは発火を見るだけのケースの値。forge の fan-out を回す run の費用はまだ測っていない
 
 ## タスク
@@ -36,7 +36,7 @@ fan-out を畳む・残すの判断には「仕込んだ欠陥を見つけられ
 ### 1. driver を作る
 
 - [ ] fixture の写し (使い捨ての worktree) の上で、**本物の HOME の `claude -p`** を回す driver を作る (本番の rules・agents・forge.js が読まれる条件で測るため)。
-      腕 (skill の版・forge.js の引数・audit の実行方式) を引数で切り替え、baseline は回さない
+      腕 (skill のバージョン・forge.js の引数・audit の実行方式) を引数で切り替え、baseline は回さない
 - [ ] 非対話で止まらないようにする: forge が明示で飛ばせるのは Phase -1 (モード選択) だけで、Phase 1.5 の設計承認や audit の Step 3 は AskUserQuestion を出す。
       各ケースは「1.5 の設計書を書いた時点」「issue を書いた時点」で打ち切る形にし、codex に届く Phase (forge の Phase 5.3 の codex-review) を回さないことを driver で保証する
       (起票時は「codex は明示の指示があるときだけ使う、が記憶にあるユーザーの決定」を根拠にしていたが、2026-10-29 の memory にその項は無い。回さない理由は codex の枠と費用)
@@ -81,7 +81,7 @@ fan-out を畳む・残すの判断には「仕込んだ欠陥を見つけられ
 
 ## 0 の結果 (2026-10-29)
 
-- **専門家は agent の定義を読み込むか**: frontmatter は効いている (実測)。2026-10-03 の forge の run (swift-smbee、`wf_dc836c15-031`) の各 agent の transcript で、
+- **専門家は agent の定義を読み込むか**: frontmatter は反映されている (実測)。2026-10-03 の forge の run (swift-smbee、`wf_dc836c15-031`) の各 agent の transcript で、
   `dependency-analyzer` は定義の `model: sonnet` どおり sonnet で 23 ターン、他の専門家は定義どおり opus で走った。本文 (system prompt) は transcript に残らないので直接は見ていないが、
   同じ定義ファイルが `agentType` で読まれている。913 の「未確認」はこの範囲まで閉じた
 - **forge の使われ方**: 2 つの源で数えた。

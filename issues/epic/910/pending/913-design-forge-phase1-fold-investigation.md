@@ -38,7 +38,7 @@ Maximum は全員 (`_common/modes.md`)。
 - [ ] A / B / C を runs 回ずつ回し (判定規則は 911 に先に書いたもの。判別できなければ A のまま)、設計書の採点・費用・所要を比べる。**最終スコアだけでなく、どのケースで結果が反転したか**を見る (記事の手順)
 - [ ] 結果に応じて `forge.js` / `phases-0-1.md` / `_common/modes.md` / `_common/cross-review.md` を同時に直す
       (forge SKILL.md の「仕様を変えたら forge.js も同期更新」)。Phase 4 / 4.3 は変えない
-- [ ] 変えたら skill の整合チェック 3 回を回し、911 の driver で変更後の版を同じケースに回し直す (`bin/skill-eval forge` は forge のケースが無く「判定できない」で終わる。2026-10-25 に `--dry-run` で 0 件を確認)
+- [ ] 変えたら skill の整合チェック 3 回を回し、911 の driver で変更後のバージョンを同じケースに回し直す (`bin/skill-eval forge` は forge のケースが無く「判定できない」で終わる。2026-10-25 に `--dry-run` で 0 件を確認)
 
 ## 受け入れ条件
 
@@ -48,10 +48,10 @@ Maximum は全員 (`_common/modes.md`)。
 ## 未確認
 
 - `forge.js` は、`agentType: item.name` で起動した専門家が `_claude/agents/<name>.md` の本文をシステムプロンプトとして読み込む**前提**で書かれている
-  (`_common/agents.md` 冒頭の注記: プロンプトのテンプレートは agentType のシステムプロンプトに委ね、forge.js は簡潔版だけを持つ)。実際にそう動くかは**未実測**。
+  (`_common/agents.md` 冒頭の注記: プロンプトのテンプレートは agentType のシステムプロンプトに委ね、forge.js は簡潔にしたものだけを持つ)。実際にそう動くかは**未実測**。
   読み込まないなら、今の fan-out は「専門家」ではなく、観点の 1 行 (lens) が違うだけの同じモデルを並べていることになる。最初に 1 本で確かめる
   (ロスターに入る `Explore` は組み込みの agent で `_claude/agents/` に本文が無いので、確かめる対象から外す)
-  - 2026-10-29 (911 の 0): frontmatter は効いている。10-03 の forge の run で、`dependency-analyzer` は定義の `model: sonnet` どおり sonnet、他の専門家は定義どおり opus で走った。
+  - 2026-10-29 (911 の 0): frontmatter は反映されている。10-03 の forge の run で、`dependency-analyzer` は定義の `model: sonnet` どおり sonnet、他の専門家は定義どおり opus で走った。
     本文が system prompt に入ったかは transcript に残らないので直接は見ていない (同じ定義ファイルが `agentType` で読まれていることまでは確か)
 
 ## 関連ファイル

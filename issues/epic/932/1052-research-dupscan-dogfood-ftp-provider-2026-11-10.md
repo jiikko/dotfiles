@@ -16,7 +16,7 @@ gate 約 10 回、sweep 3 回、index 約 10 回、callers 2 回。grep に戻�
 
 ## 摩擦
 
-### F1 関数の `dupscan:allow` が gate では中のクロージャに効かない (直した)
+### F1 関数の `dupscan:allow` が gate では中のクロージャに適用されない (直した)
 
 - 場面: `FTPAdapter.write` の直前に `// dupscan:allow intentional …` を書いて `dupscan gate`。
 - 期待: sweep と同じく中のクロージャも静かになる (README の sweep の節 2 はそう書いている)。
@@ -47,5 +47,5 @@ gate 約 10 回、sweep 3 回、index 約 10 回、callers 2 回。grep に戻�
 - 場面: 新しい module の中の未使用を探した。
 - 今の回避: `index -file` の呼び出し数を見て、`callers` で個別に確かめた (呼び出し数はテストも数えるので、テストだけが呼ぶものを別に見分ける手間がある)。
 - 提案: `index` に `-prod-callers 0` の絞り込み。呼び出し元が全部テストの単位を一覧にする。
-- 効く理由と確かめ方: 新しい module を仕上げるときに 1 回で済む。obaket の FTP なら 2 件が出ることで確かめられる。
+- 効果の理由と確かめ方: 新しい module を仕上げるときに 1 回で済む。obaket の FTP なら 2 件が出ることで確かめられる。
 - 失うもの: 名前だけの照合なので同名の別定義で漏れる (0 件は不存在の証拠にならない注意書きが要る)。未対応。

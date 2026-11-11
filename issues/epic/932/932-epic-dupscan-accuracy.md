@@ -21,15 +21,15 @@
 | [946](done/946-feat-dupscan-recall-from-real-modules.md) | 4 module に回して寄せた 21 件のうち、既定の report が出したのは 4 件。小さい単位を比べていない事実を report に出す・メンバー名 1 語だけが違う写しの段 `L1m`（opt-in。Swift で組が倍増するので既定にしない）を実装済み。一括で掘る入口・名前の束は提案。Swift 固有の所見（既定 213 組の 98% がテスト・読めない構文 3.4%）もここ |
 | [948](948-research-dupscan-meets-its-aims.md) | 一般的な重複防止/探索/消費量の効果は未実証。928から未実施の比較研究を引継ぎ、候補注入A1等の測定を継続 |
 | [955](done/955-research-dupscan-dogfood-vlc-test-dedup-2026-10-28.md) | vlc のテストの重複の解消で使った所見。関数の中の `nonisolated(unsafe) let` 1 行でファイル全体が「読めない構文」になる (954 の P3 の答えの 1 つ。6 行で再現)・sweep の節 2 は 20 組中 1 か所だけが寄せる価値・節 3 の `w` の意味・後置 flag のエラー。done: F1 は 954・958 で解消、F2 は sweep の節 6 (型の写し)、F3・F4 は直した |
-| [965](done/965-research-dupscan-dogfood-treefiler-dedup-2026-10-29.md) | src/treefiler の重複の統合で使った所見。sweep の節 5 は Test 関数の中を見ない (仕様だが出力に出ない)・同じ単位の 2 つ目の allow-group が黙って効かない・単位の allow は組の全員に要る・Go の `callers New` が `errors.New` を拾う |
-| [966](done/966-ux-dupscan-sweep-silent-allow-marks-2026-10-29.md) | src/tuikit の sweep の 3 組を閉じたときの所見。sweep が印で消した組の数と、人数の合わない allow-group を出すようにした (起点を絞ったときは L1 で多い印だけ)。反証レビューの P2 2 件 (起点を絞ると印が粗い段の別の組に効く・levels を省いたパスの除外が L1m に効かない) を記録 |
-| [973](done/973-bug-dupscan-exclusion-level-and-narrow-allow-group.md) | levels を省いたパスの除外を L1m にも効かせた・起点を絞ったとき allow-group を言語ごとに L1 へ限る (起点の外に同じ言語のファイルがあるときだけ。CI の起点 src では今までどおり効く) |
+| [965](done/965-research-dupscan-dogfood-treefiler-dedup-2026-10-29.md) | src/treefiler の重複の統合で使った所見。sweep の節 5 は Test 関数の中を見ない (仕様だが出力に出ない)・同じ単位の 2 つ目の allow-group が知らせずに適用されない・単位の allow は組の全員に要る・Go の `callers New` が `errors.New` を拾う |
+| [966](done/966-ux-dupscan-sweep-silent-allow-marks-2026-10-29.md) | src/tuikit の sweep の 3 組を閉じたときの所見。sweep が印で消した組の数と、人数の合わない allow-group を出すようにした (起点を絞ったときは L1 で多い印だけ)。反証レビューの P2 2 件 (起点を絞ると印が粗い段の別の組に適用される・levels を省いたパスの除外が L1m に適用されない) を記録 |
+| [973](done/973-bug-dupscan-exclusion-level-and-narrow-allow-group.md) | levels を省いたパスの除外を L1m にも適用した・起点を絞ったとき allow-group を言語ごとに L1 へ限る (起点の外に同じ言語のファイルがあるときだけ。CI の起点 src では今までどおり適用される) |
 | [986](986-design-dupscan-structural-improvements.md) | 2 つの狙い (grep の置き換え・量産の抑止) の到達度の評価と、構造の改善の順 (指標 → 書く前の候補を戻り型・引数型でも引く → gate の近似段を索引なしで試作)。常設の索引と型の解決は 899・924・925 の決定を維持し、再開の条件つきで記録 |
 | [987](done/987-feat-dupscan-inject-by-return-and-param-type.md) | 986 の改善 2: 書く前の候補の注入 (A1) で、名前の語と戻り型・引数型を組み合わせて既存の関数を引く |
 | [988](pending/988-research-dupscan-gate-near-duplicate-prototype.md)（保留） | 986 の改善 3: gate の近似比較の段の試作。dotfiles の直近 30 commit (変わった単位 358) で近似の段だけが見つける写しは 0 件で測れず、obaket で測るまで保留 |
 | [989](done/989-design-dupscan-go-typed-resolution.md) | 986 の構造の変更: Go の型の解決を明示実行の go/packages で入れる (ユーザー決定 2026-10-30 で 899 の決定を Go について変えた) |
 | [1009](pending/1009-design-dupscan-post-write-body-similarity-candidates.md)（保留） | 未解決をまとめて受ける案を探した結果。まとめて片付く案は無く、一番近い「変わった単位だけを既存の全単位と近似照合する」は 902 (hook。ユーザー指示で保留) と 988 の合流。雑音を止める手段・循環しない測り方・採否の基準の 3 つが欠けている |
-| [1047](done/1047-research-dupscan-dogfood-treefiler-tuikit-2026-11-09.md) | treefiler / tuikit の重複探しで使った所見。`sweep -focus` を足した・効かせなかった allow-group の案内と `gate -v` の同じ理由の繰り返しを直した・lock の accessor の対を sweep の節 3 で畳み、組に印を付けた (Go だけ)。done |
+| [1047](done/1047-research-dupscan-dogfood-treefiler-tuikit-2026-11-09.md) | treefiler / tuikit の重複探しで使った所見。`sweep -focus` を足した・適用しなかった allow-group の案内と `gate -v` の同じ理由の繰り返しを直した・lock の accessor の対を sweep の節 3 で畳み、組に印を付けた (Go だけ)。done |
 | [970](done/970-refactor-dupscan-group-containment-one-check.md) | 「組が別の組に含まれるか」の判定が 3 か所 (組分け・sweep の節 2・節 6) にあったのを group.Subset に寄せた。done |
 | [972](done/972-research-dupscan-dogfood-glogx-tui-split-2026-10-29.md) | glogx の tui.go の分割 (971) で使った所見。雑音 3 件: Go の index -file に Swift の注意書き / -file でも無関係な testdata の「解析不完全」 / tmp/ の使い捨ての道具にも候補の注入 |
 | [981](done/981-bug-dupscan-gate-silent-on-generated-go-files.md) | Go の生成ファイルの見出し (`// Code generated … DO NOT EDIT.`) を付けた新しい写しが gate を無音で通る (変わった単位 0)。読まなかった生成ファイルの数を 1 行目に出す |
@@ -40,7 +40,7 @@
 | [990](done/990-bug-dupscan-swift-l1-locals-outside-binding-scope.md) | Swift の L1 が、束縛の届かない所 (closure・ループ・else の中・if の後ろ) の同じ綴りのプロパティを番号にする。[974](done/974-bug-dupscan-l1-numbers-shadowed-outer-names.md) の近似の残り |
 | [993](done/993-test-dupscan-swift-scope-kinds-cover-grammar.md) | Swift の scope の節の種類を文法 (node-types.json) の全部の節と突き合わせてテストで固定。didSet / willSet・局所の型の init / subscript の取りこぼしを直した |
 | [1021](done/1021-ux-dupscan-sweep-fold-same-owner-closure-groups.md) | sweep の節 2 で、1 つの単位の中のクロージャだけの組 (設定の表の行など) を単位ごとの 1 行に畳む (`-v` で畳まない。節 20 以上の組と `_` の変数は畳まない)。treefiler の節 2 は 8 組 → 3 組。done |
-| [1025](done/1025-research-dupscan-audit-2026-11-04.md) | 22 観点の監査 (直接実行、2 回目)。typed の alias の受け手の鍵・markOuter の重複・README の sweep の実測を直した。Swift の文法の版上げは生成物の無い main の commit なので候補が無いと分かり、984 の観測を閉じた。done |
+| [1025](done/1025-research-dupscan-audit-2026-11-04.md) | 22 観点の監査 (直接実行、2 回目)。typed の alias の受け手の鍵・markOuter の重複・README の sweep の実測を直した。Swift の文法のバージョン上げは生成物の無い main の commit なので候補が無いと分かり、984 の観測を閉じた。done |
 | [994](done/994-bug-dupscan-swift-decl-roles-setter-and-local-names.md) | Swift の setter の引数を局所の名前に・宣言を作る節の表を nameRole と 1 つに。局所の関数名を宣言にする案は、組への影響が無く採らない |
 | [1036](done/1036-bug-dupscan-inject-stamps-pile-up-in-tmpdir.md) | 書く前の候補の注入 (A1) の hook が、重複を防ぐ印を `$TMPDIR` に名前ごとの空ファイルで作り、消していなかった。`~/.cache/claude-dupscan-inject.seen` の 1 ファイルの行に移し、64KB で古い半分を捨てる。done |
 
@@ -89,6 +89,6 @@
 
 - [952](done/952-bug-dupscan-swift-escaped-identifier-matching.md): 有効なSwiftのバッククォート付き識別子で定義/参照/呼出とindex近似数が分断する未修正の不具合を再現し、記録した。最新sourceでも確認済み。
 
-- [957](done/957-research-dupscan-dogfood-feedback-obaket-1307-part2-2026-10-29.md): 所見を現行版で裏どりし、既存compare/JSON集計の導線とstale groupの一意な更新候補表示を実装。Q3の書込みCLIは編集が律速になる実測を再開条件とし、Q4/Q6の専用filterは全体JSON集計でも律速になる実例まで保留。preset拡張・自動分類・stale一括削除は不採用。P3/P8は既存修正を実ファイル/実hookで確認。
+- [957](done/957-research-dupscan-dogfood-feedback-obaket-1307-part2-2026-10-29.md): 所見を現行バージョンで裏どりし、既存compare/JSON集計の導線とstale groupの一意な更新候補表示を実装。Q3の書込みCLIは編集が律速になる実測を再開条件とし、Q4/Q6の専用filterは全体JSON集計でも律速になる実例まで保留。preset拡張・自動分類・stale一括削除は不採用。P3/P8は既存修正を実ファイル/実hookで確認。
 
 - Obaket1301の中間評価を948/917へ追記。後続提案: [gate終了結果の記録](done/976-feat-dupscan-gate-record-final-outcome.md)、[CI導入費用の診断](977-research-dupscan-ci-install-and-gate-cost.md)、[resolvedの人手検証支援](978-research-dupscan-resolved-review-evidence.md)。既存の重複検出・探索・一般効果を混同せず、提案の実装は未着手。

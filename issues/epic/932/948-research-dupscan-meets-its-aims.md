@@ -24,7 +24,7 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 - **呼ばれていない**。`scripts/dupscan_usage_report.py --days 30` (96 セッション、dupscan 自身を開発した 1 本を除く): 識別子らしい grep / rg **1,680 回**、dupscan の探索 **2 回** (`search` 1・`index` 1)。案内 hook の出た grep 1 回、その直後 3 手以内の dupscan 探索 0 回。
   - 案内 hook は 2026-10-28 に直したばかりで (941: 11:29、943: 12:28)、効果は**測れていない** (100 回以上の grep が溜まってから測る。再測定は 2026-11-04 と 2026-11-25)。
 - **書いた後の防止 (`gate` を `make test` と CI で回す) は機能している**が、狙いの「書く前に探して再利用する」ではなく事後の検出である。
-- **実在する重複を見つける力**: 統合前の 4 module (lockman / mac-lan-manager / ratelimit / restartable) に回して寄せた 21 件のうち、既定の `report` が出したのは **4 件** (946)。残りは `-min-nodes 12`・`near -similar`・名前の連番・人の目で見つけた。小さい単位 (20 節未満) を黙って比べていなかった。→ `report` は比べなかった数を出すようにし (946)、メンバー名 1 語だけが違う写しの段 `L1m` (opt-in) と、4 つの見方をまとめて回す `dupscan sweep` を足した。
+- **実在する重複を見つける力**: 統合前の 4 module (lockman / mac-lan-manager / ratelimit / restartable) に回して寄せた 21 件のうち、既定の `report` が出したのは **4 件** (946)。残りは `-min-nodes 12`・`near -similar`・名前の連番・人の目で見つけた。小さい単位 (20 節未満) を断りなく比べていなかった。→ `report` は比べなかった数を出すようにし (946)、メンバー名 1 語だけが違う写しの段 `L1m` (opt-in) と、4 つの見方をまとめて回す `dupscan sweep` を足した。
 - **書く前の `index` / `search` が重複を防いだ因果の証拠は無い**。928では固定Go sourceのClaude実編集2run・固定Swift sourceのCodex読取6runが明示承認され、実行済み。12課題の本番比較は未実施。Go両群とも既存helper再利用・規則の写し0件だったため、重複防止の因果効果は示せなかった。
 
 ### ② 探しやすい
@@ -51,14 +51,14 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 
 ## 改善案 (狙いどおりにするために)
 
-優先順位は効きそうな順。**A が効かなければ B〜E は意味が薄い** (呼ばれなければ精度も context 削減も効果ゼロ)。
+優先順位は効果が見込める順。**A の効果が出なければ B〜E は意味が薄い** (呼ばれなければ精度も context 削減も効果ゼロ)。
 
 ### A. 入口: agent が考えなくても候補が目に入るようにする (最優先)
 
 - 現状は「grep の前に dupscan を使え」と案内して agent の判断に任せる pull 型で、30 日で 0.1%。
 - **提案 A1 (push 型)**: 新しい関数を書く Edit / Write の直前 (PreToolUse) に hook が、`new_string` から追加される関数の名前と引数の型・戻り値を取り出して `dupscan index` を内部で引き、**似た名前・同じ署名の既存の定義 (上位 3 件まで、1 件 1 行) を注入する**。agent は呼ばなくても候補を見る。Go は既に「`src/` の .go を Write / Edit すると 1 回案内する」hook がある (suggest-dupscan-for-go-edit) ので、案内の代わりに結果を出す形に伸ばす。懸念: 遅延 (索引は 0.2〜0.3 秒)、雑音 (候補が無関係だと無視される)、`new_string` からの抽出の誤り。
 - **提案 A2**: 案内を出す grep の形を増やす前に、941 の効果 (案内の後の dupscan 率) を 2026-11-04 に測る。上がらなければ pull 型の案内は打ち止めとし、A1 に進む。
-- **提案 A3**: `CLAUDE.md` の「シンボル検索の使い分け」は毎セッション読まれているのに 0.1% なので、文面の追加は効かない前提で扱う。
+- **提案 A3**: `CLAUDE.md` の「シンボル検索の使い分け」は毎セッション読まれているのに 0.1% なので、文面の追加は効果が出ない前提で扱う。
 
 ### B. 狭い検索で負けない
 
@@ -92,7 +92,7 @@ dupscan を Claude Code が使えば、①同じ役割のメソッドを重ね�
 | A1 の計測 | hook が注入のたびに `~/.cache/claude-dupscan-inject.log` へ `時刻 session 名前 候補数` を足す (2026-10-30 の 987 から 5 列目に引き方 `name` / `returns` が付く。report は 4 列・5 列の両方を数え、戻り型で出した注入の数も出す)。`scripts/dupscan_usage_report.py` が「注入 N 回 / 候補あり M 回 / session K 本」を出す | **実装済み**。効果の判定は「候補ありの注入の後、同じ session で新しい関数が書かれなかった / 既存を呼んだか」を見る必要があり、**まだ測っていない** (転記元の transcript の読み方を決めてから) |
 | A2 | 2026-11-04 に 941 の案内の効果を測る。上がらなければ pull 型の案内の追加は打ち止め | 日付待ち |
 | A3 | `CLAUDE.md` に文面を足さない | 方針のみ |
-| B (942 b') | 解析不完全の通知を 1 行にする | **採らない** (942 で決着。942 は c の縮小版を採って done) |
+| B (942 b') | 解析不完全の通知を 1 行にする | **採らない** (942 で決着。942 は c を縮小したものを採って done) |
 | C | index の行に `Read` の引数を貼る | 保留。範囲指定の使用率の母数が 0 (index の直後の Read が無い)。A1 の後に母数が増えてから測る |
 | D | 連番の名前・testdata・近い完全一致の数 | 946 に記録済み。未実装 |
 | E-1 | 入口の指標 | usage report で測定中 |
@@ -146,7 +146,7 @@ codex に設計を反証させてから回した (指摘の採用: 問いを「�
 
 - **形**: Go の小さな fixture 6 課題 (各 10 ファイル。目的に近い既存関数が 1 つ、関係のない関数のファイルが 8 つ。依頼文は既存関数の名前も「再利用」も書かない)。`claude -p --model claude-sonnet-5-5 --restricted --tools Read,Edit,Write,Grep,Glob`。A = A1 の hook なし / B = あり。6 課題 × 10 反復 × 2 腕 = 120 run の予定で、35 run (A 17・B 18) で止めた (ユーザーの判断。調整のたびに回し直すと重い)。1 run 約 13 秒・約 $0.02。
 - **結果**: 既存関数を呼ばずに書き直した run は **A 0/17・B 0/18** (各 95% 区間 0〜18%)。B では名前の近い 4 課題で注入が毎回出た (14/14) が、**注入が無くても毎回再利用する**ので差が出ない (天井効果)。fixture が小さく、agent が全部読めるのが原因と見ている。t4 の機能確認の失敗は、隠しテストが区切り行を 2 文字に決め打ちしていた fixture の誤り (agent は Markdown の 3 文字以上を使っていた)。
-- **言えること**: この条件 (小さい repo・sonnet・Bash なし) では、A1 が無くても重複は起きない。A1 が効くかは何も言えない。
+- **言えること**: この条件 (小さい repo・sonnet・Bash なし) では、A1 が無くても重複は起きない。A1 の効果があるかは何も言えない。
 - **再開の条件と直す点**: ①目的の関数を見つけにくい課題にする (別パッケージに置く・数百ファイルの repo)。そうしないと天井のまま ②t4 の隠しテストを直す ③run を並列にして 1 周を数分にする。作り直したら codex に課題の作りを見せてから回す。
 - 道具: 実験用に A1 の hook に `DUPSCAN_INJECT=off` の opt-out を足した (今回は腕を settings で分けたので使っていない)。作業ファイル (fixture・`run_one.sh`・`drive.sh`・`collect.py`) は本体の `tmp/a1-ab-20261028/` にある (追跡されない。消えたら上の形から作り直す)。
 
@@ -196,7 +196,7 @@ codex に設計を反証させてから回した (指摘の採用: 問いを「�
 ## 2026-10-29 の refresh (dotfiles-38)
 
 - **A1 の雑音は測れない (標本 0)**: このマシンの transcript (直近 3 日・サブエージェント含む 94 本) で、A1 の hook が入った 2026-10-28 15:52 より後に `.go` / `.swift` へ新しい関数を足した Write / Edit は 0 回。それより前の 39 回 (dotfiles の Go 30・pj_energy_matching 6・esa-cli 2・Swift 1) は hook の前。dupscan 自身の開発は別のマシン (air5 ほか) で、注入ログ (`~/.cache/claude-dupscan-inject.log`) もマシンごとに書かれる。このマシンにはログのファイル自体が無かった (21:05 の観測で 1 行書いたはずのファイル。消した主体は未特定。A-B の pilot は隔離した環境で回したので、そちらのログは別)。hook は本番の配線のまま直接起動すると注入とログの両方を出す (確認済み)。**2026-11-04 の再測定で、各マシンのログと transcript を合わせて数える**。
-- **A1 の hook の潜在的な無音の故障を直した**: 候補の判定で使っていた `os.path.commonprefix` が Python 3.15 で非推奨の警告を出していた。削除されると例外が hook 全体の `except` に吸われ、注入が黙って止まる。判定は `a.startswith(b) or b.startswith(a)` の後なので、共通部分の長さは短い方の長さと等しい → `min(len(a), len(b))` に置き換えた (同じ判定)。テスト 22 件 ok、閾値を 99 / 5 にする変異で赤。repo の中に他の `commonprefix` の使用は無い。
+- **A1 の hook の潜在的な無音の故障を直した**: 候補の判定で使っていた `os.path.commonprefix` が Python 3.15 で非推奨の警告を出していた。削除されると例外が hook 全体の `except` に吸われ、注入が気づかないうちに止まる。判定は `a.startswith(b) or b.startswith(a)` の後なので、共通部分の長さは短い方の長さと等しい → `min(len(a), len(b))` に置き換えた (同じ判定)。テスト 22 件 ok、閾値を 99 / 5 にする変異で赤。repo の中に他の `commonprefix` の使用は無い。
 - 節 3 の収穫と 942 b' は上の表と受け入れ条件に書いた。
 - 再測定 (2026-11-04)・A-B のやり直し・928 から引き継いだ比較の採否は変わらず未着手 (日付待ち・課題の作り直しが要る)。
 
@@ -208,7 +208,7 @@ transcript の `hook_additional_context` と、それを起こした Write / Edi
 
 | 新しい名前 (書いた所) | 出た候補 | 分類 |
 |---|---|---|
-| `allowedGroup` (dupscan の allow_group_test.go) | `allowed(src, kindReason string) string` ほか 1 | **役に立った**: 同じ package の、印を挿す同じ形の test helper。今のコードは `marked` を共有して書いている (`allowed` と同じ下請け)。注入の時点の版は `strings.Replace` の手書きで、後から寄った。注入が効いたかは transcript からは決められない |
+| `allowedGroup` (dupscan の allow_group_test.go) | `allowed(src, kindReason string) string` ほか 1 | **役に立った**: 同じ package の、印を挿す同じ形の test helper。今のコードは `marked` を共有して書いている (`allowed` と同じ下請け)。注入の時点のコードは `strings.Replace` の手書きで、後から寄った。注入が使われたかは transcript からは決められない |
 | `entry` (dupscan の report の test) | `group_test.go` の `entry(key, test, h1…)` | 同じ役割 (test 用に `*Entry` を組む) だが、別 package の test helper で寄せ先が無い |
 | `fixed` (mac-lan-manager の actions.go) | treefiler の `fixed(vs ...string) func(*Settings) []string` | 同じ考え (定数を返す関数を作る) だが、別 module・型も違う。寄せ先なし |
 | `WindowHash` (dupscan の norm.go) | `Line.Window`・`rowCursor.window`・`deleteScroll.window` | **無関係**: 名前の前方 `Window` が一致しただけ (UI の表示窓の関数) |

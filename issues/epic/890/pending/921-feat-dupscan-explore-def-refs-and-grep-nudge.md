@@ -1,6 +1,6 @@
 # 921 (feat): dupscan を探索に使わせる (定義を本体つきで返す・型の参照・grep からの案内)
 
-> 保留 (2026-10-25): 実装・push は済み。残るのは受け入れ条件の最後の 1 つ (hook が効いたかの測り直し) だけ。**再開: 2026-11-25 ごろ**に下の「測り直しの手順」で測り、結果をここに書いて done へ移す
+> 保留 (2026-10-25): 実装・push は済み。残るのは受け入れ条件の最後の 1 つ (hook が使われるようになったかの測り直し) だけ。**再開: 2026-11-25 ごろ**に下の「測り直しの手順」で測り、結果をここに書いて done へ移す
 
 起票日: 2026-10-25
 
@@ -24,7 +24,7 @@ Swift の repo で定義・呼び出し元を探すとき、agent は dupscan �
 
 grep のパターンには `func executeMutation`・`struct HTTPRequestHead`・`retrying(`・`StorageOperationLockRegistry` のような、定義や呼び出し元を探すものが多い
 (識別子らしいパターンは全体で 1,174。数え方は正規表現の近似で、Swift 以外の識別子 (`run_cli` 等) も混ざる)。
-skill dupscan の 2 節に「grep の前に」と書いてあっても使われていないので、機能を足すだけでは効かない (②が要る)。
+skill dupscan の 2 節に「grep の前に」と書いてあっても使われていないので、機能を足すだけでは使われるようにならない (②が要る)。
 
 ## 対応方針
 
@@ -59,7 +59,7 @@ skill dupscan の 2 節・README・obaket の AGENTS.md / CLAUDE.md の dupscan 
 - [x] hook が `.dupscan.json` のある repo のシンボル探しの grep にだけ案内を出し、止めない。出しすぎない
 - [x] 足したテストに変異を当てて赤を見る。`make -C src/dupscan lint test` と hook のテストが通る
 - [x] 入口のドキュメントを直す
-- [ ] 1 か月後 (2026-11-25 ごろ) に測り直し、ここに書く (hook が効いたかの判定)。全部の grep の回数ではなく、「識別子らしい grep」と「dupscan の def / refs / callers / index」の回数で比べる (反証レビューの指摘)
+- [ ] 1 か月後 (2026-11-25 ごろ) に測り直し、ここに書く (hook が使われるようになったかの判定)。全部の grep の回数ではなく、「識別子らしい grep」と「dupscan の def / refs / callers / index」の回数で比べる (反証レビューの指摘)
 
 ## 関連
 

@@ -27,7 +27,7 @@ settings の hook (`_claude/settings.json` の command) と比べて、次がで
 
 - **settings の hook を mods へ移すのは、この環境では向かない。移したものは 0 件** (620 / 622 / 623 と下の表)。
   hook のイベントとシステムプロンプトの口が user の mod に届かず、届く口 (`tool.call`) で移せるものも、sh の script や settings の hook のままの方が壊れ方が少なかった
-  - 届かない原因は版ではない: 同じ probe を `--plugin-dir` で 2.1.286 (desktop 同梱) と 2.1.287 (CLI。このマシンの最新) に載せると、
+  - 届かない原因はバージョンではない: 同じ probe を `--plugin-dir` で 2.1.286 (desktop 同梱) と 2.1.287 (CLI。このマシンの最新) に載せると、
     届くイベント・bypass される口 (`prompt.compose` / `classic.*`) ・debug log の `seated outermost: this machine has managed settings` がどちらも同じだった (2026-10-02)。
     mods 自体も 2.1.286 に入っている (概要の「2.1.287 に入った」と違い、2.1.286 でも canary の mod が読まれた)
 - **mods は、hook ではできない「画面に足すもの」にだけ使う**: 帯 `issue-band` (621) と desktop のステータスバー `desktop-statusline` (625)
@@ -54,7 +54,7 @@ settings に配線されている hook の script 16 本 (エントリは 25) (`
 | `warn-discarding-checkout.sh` | **移さない (settings の hook のまま ask を足した)**。確実に捨てる単純なコマンドだけ PreToolUse の `ask` で人に選ばせ、曖昧な形は注意のまま (ユーザーの判断)。理由に消える一覧を見せられるので mod は要らない | 623 (done) |
 | `ratelimit-warn.sh` | **移した (2026-10-07。hook は fallback として残す)**。`classic.*` が届くようになったので `classic.UserPromptSubmit` で同じ文を注入し、status line にも出す。子プロセス (zsh → Go → 裏の更新) を起こさない | 658 |
 | `next-claim-unshared.sh` | **今は移さない**。モデルに行動 (push の伺い) をさせるための注入で、帯に出すだけでは役目を果たさない。621 の帯にも足さないと決めた。`classic.*` が届く今なら移せるが、新しくできることが少ないので 658 の後に判断 | — |
-| `deny-bare-tmux-kill.sh` / `deny-piped-push-then-destroy.sh` / `deny-tmp-area-rm.sh` | **移さない**。守りの hook。mod の hook は失敗すると黙ってスキップされ、chain が続く (reference.md「Developing one」)。settings の hook のままにする | — |
+| `deny-bare-tmux-kill.sh` / `deny-piped-push-then-destroy.sh` / `deny-tmp-area-rm.sh` | **移さない**。守りの hook。mod の hook は失敗するとエラーを出さずにスキップされ、chain が続く (reference.md「Developing one」)。settings の hook のままにする | — |
 | `issue-progress-check.sh` (Stop で差し戻す) | **今は移さない**。`classic.Stop` の `block` で移せるが、新しくできることが無い | — |
 | `gofmt-on-edit.sh` / `git-state-verify.sh` / `next-claim-push.sh` / `normalize-settings.sh` / `claude-links-sync.sh` / `issue-progress-start.sh` | **移さない**。移しても新しくできることが無い。`claude-links-sync` と `normalize-settings` はセッションの外の状態 (link・settings ファイル) を直す仕事 | — |
 
@@ -74,21 +74,21 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
   settings の env (読むフォルダの一覧) は起動時に読まれる。settings の hook が起動時の snapshot かは未確認。
   env にフォルダを足す commit は、hook を外す切り替えの commit より前に分けて入れる
 
-## 前提と未確認の点 (619 で最初に潰す)
+## 前提と未確認の点 (619 で最初に確かめる)
 
 **619 の 3 経路の実測結果は、620〜623 の着手条件にする**。読まれない経路があれば、その経路で要る settings の hook は残し、この表を直してから着手する。
 
 
 - [x] **読み込まれる経路** (619 で実測。プロセスの環境では対話 / `-p` / `--bg` とも読む。settings の `env` からも対話 / `-p` は読み、`--setting-sources project,local` は読まない。PG は dispatcher で外すと決め、テストで固定した)。settings の hook は対話と `claude -p` では走るが、**pro-con の PG・PM・取り込みの係では走らない**
       (`--setting-sources project,local` で起動し、ユーザーの settings.json の hook と env が外れる。`src/pro-con/dispatcher/launcher.go` の
-      `persistentSessionArgs`、`rolesettings.go` 冒頭。issue 431)。移す hook は今も PG に効いていないので、PG で mod が読まれないことは退行ではない。
+      `persistentSessionArgs`、`rolesettings.go` 冒頭。issue 431)。移す hook は今も PG に適用されていないので、PG で mod が読まれないことは退行ではない。
       reference.md によれば `CLAUDE_CODE_PLUGIN_DIRS` は、`~/.claude/settings.json` (= `_claude/settings.json` への link) の `env` に加えて**プロセスの環境**からも読まれる。
       dispatcher は PG を `os.Environ()` (tmux の変数だけ外す) で起こしていたので、Claude のペインの中から pro-con を起動すると、
       その経路の PG にだけ mod が載りえた。→ 619 で外すと決め、`roleEnv` (dispatcher が claude を起こす 3 箇所) にした
 - [x] **subagent / fork**。`prompt.compose` で足した節が subagent のシステムプロンプトにも入るかは未確認 (今の SessionStart の注入は subagent に届かない)
       → このマシンでは `prompt.compose` 自体が mod に届かないので、問いが消えた (620)
-- [ ] **二重に効かないこと**。移行の途中で、mod と settings の hook が同じ注入・同じ表示をしないようにする (1 本ずつ切り替える)
-- [ ] **API の変化への備え**。Claude Code の更新で mod が読み込まれなくなったとき、何が黙って止まるかを列挙しておく。守りの hook を移さないのはこのため
+- [ ] **二重に働かないこと**。移行の途中で、mod と settings の hook が同じ注入・同じ表示をしないようにする (1 本ずつ切り替える)
+- [ ] **API の変化への備え**。Claude Code の更新で mod が読み込まれなくなったとき、何が知らせずに止まるかを列挙しておく。守りの hook を移さないのはこのため
 
 ## 子 issue
 
@@ -110,7 +110,7 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 
 - 2026-10-02: 起票 (記事と `claude-code.d.ts` を読み、hook 16 本を分類した)
 - 2026-10-02: 反証レビュー 2 本 (事実 / 設計。read-only のサブエージェント、sonnet)。事実は行数など軽微 3 件を訂正。
-  設計は採用 9 件: 622 を保留に、623 を settings の `ask` との比較からに、624 を epic から外す、黙って止まるときの扱いの節を足す、
+  設計は採用 9 件: 622 を保留に、623 を settings の `ask` との比較からに、624 を epic から外す、知らせずに止まるときの扱いの節を足す、
   620 の判定を script 経由に、619 を 620〜623 の着手条件に、620 → 621 を直列に、621 の失敗モード、619 の CI の扱いを決める。
   反証されなかった判断: 守りの hook・`ratelimit-warn`・`next-claim-unshared`・残り 7 本を移さないこと、619 を土台にすること
 - 2026-10-02: 敵対的レビュー 1 本 (read-only のサブエージェント、opus。「書いたとおりに実装したら壊れる手順」を探させた)。7 件すべて採用 (根拠は実物で確認):
@@ -135,10 +135,10 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - 2026-10-02: 621 (帯の mod、案 3。注入は併記で残す) / 622 (mod へは移さず、PostToolUse の working を sh の script に分けて 28.7ms → 15.7ms) /
   623 (settings の hook のまま、確実に捨てる単純なコマンドだけ ask。敵対的レビュー 5 周) を done。625 は desktop-statusline の mod を入れ、
   desktop の画面での確認を 628 (human、期限 2026-10-09) に起こした。振り返りは 629。
-  残り: 625 / 628 の確認。前提のチェックのうち「二重に効かないこと」は 621 で意図して併記にした (注入と帯)、
+  残り: 625 / 628 の確認。前提のチェックのうち「二重に働かないこと」は 621 で意図して併記にした (注入と帯)、
   「API の変化への備え」は `make test` の `tests/claude/test_claude_mods.sh` (validate / test) が更新後の最初の実行で気づく形
 - 2026-10-02: 結論の節を足した (移行は向かない・mods は画面に足すものだけ・625 は残して 628 の確認後にこの epic を閉じる。ユーザーと確認)
-- 2026-10-02: 628 の 1 回目の確認で desktop に何も出なかった (625 に観測と候補)。「移行できなかったのは版が足りなかったからか」をユーザーに問われ、
+- 2026-10-02: 628 の 1 回目の確認で desktop に何も出なかった (625 に観測と候補)。「移行できなかったのはバージョンが足りなかったからか」をユーザーに問われ、
   2.1.286 / 2.1.287 で probe の結果が同じことを確かめて結論の節に書いた (原因は managed settings のまま)
 - 2026-10-07: **測り直し (claude 2.1.292)**。619 の probe に `prompt.compose` / `prompt.context` を足した 15 イベントを `--plugin-dir` + `claude -p` (Bash 1 回) で回すと全部届き、`bypassed by` 0 本。
   原因は `cc-plugin-sec-default@builtin not seated: no managed settings and not a Team or Enterprise organization` — managed settings が無くなった。

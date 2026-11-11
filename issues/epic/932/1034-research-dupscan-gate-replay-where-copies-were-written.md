@@ -63,7 +63,7 @@ gate は 2026-10-29〜11-05 の手元の 106 回で、重複を 1 回も止め�
 - **make と CI の gate の下限を 12 節にした** (`Makefile` の `DUPSCAN_GATE_MIN_NODES`)。dupscan 自身の既定 (20) は Swift (DualNoteApp・obaket) の較正なので変えない (この計測は dotfiles の Go だけ)
 - 素の `dupscan gate` と make の判定が食い違うので、`src/` の Go を書くときの hook の案内を `make test-dupscan-gate` に変え、CLAUDE.md と `docs/dupscan-overview.md` に下限を書いた
 - 確認: 同じ package に `lastRow` の写しを植えると、新しい target は止め (L1、make は Error 1)、既定の下限では素通りした (rc=0)。hook のテストは、案内を素の `dupscan gate` に戻す変異で 5 件赤
-- 反証レビュー (2026-11-05、sonnet、読み取りのみ): P2 4 件・P3 3 件を採用 (L1m の数え違い 4→3・雑音の仕分けの読み方・「主」の言い過ぎを直接の証拠に置き換え・gate を変えた根拠の記録・入口の二重の案内・記録の条件の混在・skill の記述)。反証できなかった: 書かれた commit の特定・既定 3 / 下限 12 9 / near 9 の数・30 commit の止まり 0・CI での効き方 (flag は後勝ちで -base と衝突しない)・記録の読み手
+- 反証レビュー (2026-11-05、sonnet、読み取りのみ): P2 4 件・P3 3 件を採用 (L1m の数え違い 4→3・雑音の仕分けの読み方・「主」の言い過ぎを直接の証拠に置き換え・gate を変えた根拠の記録・入口の二重の案内・記録の条件の混在・skill の記述)。反証できなかった: 書かれた commit の特定・既定 3 / 下限 12 9 / near 9 の数・30 commit の止まり 0・CI での挙動 (flag は後勝ちで -base と衝突しない)・記録の読み手
 - 敵対的レビューは省略した (設定値の変更だけで、効き目は上の実測で確かめた)
 - root の `make test` rc=0
 
