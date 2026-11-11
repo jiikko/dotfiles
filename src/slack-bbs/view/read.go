@@ -251,17 +251,22 @@ func zHint(showing bool) string {
 // newCount は話題の、既読の印より後の他の人の期間内の発言と言及の数 (新着のタブの「+N」。印の無い単位は全部を数える)。
 // 数えるものは未読の判定 (unitUnread) と同じ。
 func newCount(t board.Topic, read map[string]string, mentions map[string][]render.Mention) int {
-	n := 0
+	counted := map[string]bool{} // 数えた発言の ts
 	for _, u := range t.Units {
 		mark, ok := read[u.ID]
 		for _, msg := range u.Msgs {
 			if msg.New && !msg.Mine && (!ok || board.TsBefore(mark, msg.Ts)) {
-				n++
+				counted[msg.Ts] = true
 			}
 		}
+	}
+	n := len(counted)
+	for _, u := range t.Units {
+		mark, ok := read[u.ID]
 		for _, mn := range mentions[u.ID] {
-			// 話題の中の発言から貼られた言及 (同じ話題の別の単位への引用) は、その発言として既に数えている
-			if !mn.Mine && (!ok || board.TsBefore(mark, mn.Ts)) && !inTopic(t, mn.Ts) {
+			// 話題の中の発言から貼られた言及は、その発言を数えたときだけ外す (2 回数えない)。発言を既読で数えていないなら言及を数える:
+			// 未読の判定 (unitUnread) は言及で未読になるので、外すと「● なのに +0」になる
+			if !mn.Mine && (!ok || board.TsBefore(mark, mn.Ts)) && !counted[mn.Ts] {
 				n++
 			}
 		}
@@ -322,13 +327,6 @@ func (m *Model) buildStream() []row {
 		}
 	}
 	return rows
-}
-
-// inTopic は話題に ts の発言があるか。
-func inTopic(t board.Topic, ts string) bool {
-	return slices.ContainsFunc(t.Units, func(u board.Unit) bool {
-		return slices.ContainsFunc(u.Msgs, func(m board.Msg) bool { return m.Ts == ts })
-	})
 }
 
 // dropEmptyHeaders は話題の行が 1 つも続かない見出しを抜く (新着のタブで最後の話題を隠したとき、見出しだけを残さない)。

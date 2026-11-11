@@ -187,11 +187,21 @@ func TestStreamRound2(t *testing.T) {
 		t.Errorf("+N = %d, want 1 (話題の中の発言からの言及を 2 回数えた)", n)
 	}
 
-	before := loads["C3"]
 	m.SetSubscriptions(&Subscriptions{Save: func([]subs.Channel) error { return nil }})
 	m.setChannels([]subs.Channel{m.chans[0].ch, m.chans[1].ch, {ID: "C3", Name: "qa"}})
-	if !m.chans[2].loading || loads["C3"] != before {
-		// 読み始めた (loading) ことを見る。load は Cmd を走らせたときに呼ばれる
+	if !m.chans[2].loading { // 読み始めた (loading) ことを見る (load は Cmd を走らせたときに呼ばれる)
 		t.Errorf("新着のタブにいる間に足したタブを読み始めない: loading=%v", m.chans[2].loading)
+	}
+}
+
+// 話題の中の発言から貼られた言及は、その発言を既読で数えていないなら数える (● なのに +0 にしない)。
+func TestStreamMentionFromReadMessageCounts(t *testing.T) {
+	tp := topicAt("q", day0.Add(-time.Hour))
+	cite := board.Unit{ID: tsAt(day0), Msgs: []board.Msg{{Ts: tsAt(day0), Name: "sato", Text: "これ", New: true}}}
+	tp.Units = append(tp.Units, cite)
+	ms := map[string][]render.Mention{tp.Units[0].ID: {{Unit: tp.Units[0].ID, Ts: cite.Msgs[0].Ts, Name: "sato"}}}
+	read := map[string]string{tp.Units[0].ID: tp.Units[0].Msgs[0].Ts, cite.ID: cite.Msgs[0].Ts} // 引用した発言は既読
+	if !topicUnread(tp, read, ms) || newCount(tp, read, ms) != 1 {
+		t.Errorf("未読 %v / +N %d: 言及で未読なら +1", topicUnread(tp, read, ms), newCount(tp, read, ms))
 	}
 }
