@@ -56,7 +56,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # ~/.local/bin が PAT
 - 新しいシェルで `command -v zundamon-kaisetsu` がパスを返せばよい
 - 更新は `git -C "$D" pull` (取り出す範囲はそのまま)
 - 初回の起動で Go がビルドする (数十秒〜数分。`zundamon-kaisetsu: building...` と出る。バイナリは `$D/src/zundamon-kaisetsu/` の中にできる)。
-  要る Go は 1.25 以上 (`src/zundamon-kaisetsu/go.mod`) で、手元の Go が古くても、要る版 (約 90MB) を初回に自動で取りに行く (ネットワークが要る)
+  要る Go は 1.25 以上 (`src/zundamon-kaisetsu/go.mod`) で、手元の Go が古くても、要るバージョン (約 90MB) を初回に自動で取りに行く (ネットワークが要る)
 - `assets/` (立ち絵) は非公開のサブモジュールで、取れなくてよい (手順 3 で用意する。`git submodule` は打たない)
 
 以下のコマンドは**この skill のディレクトリで**実行する (パスはここからの相対):
@@ -79,7 +79,7 @@ zundamon-kaisetsu check
 | VOICEVOX エンジン | Apple の `container` か `docker` (どちらも無ければ VOICEVOX のデスクトップアプリ) | 必須 (手順 2) |
 | mp4 | ffmpeg (H.264) と Google Chrome か Chromium (`CHROME` 環境変数で場所を指定できる) | HTML だけ作るなら `NG` のままでよい |
 | 立ち絵の書き出し | `uv` | 立ち絵を用意しないなら不要 |
-| mermaid の図 (台本の `show` の `mermaid`) | Node の `npx` と Chrome (初回に版を固定した mermaid-cli を取りに行く) | 使わないなら不要。`check` は `npx` を見ないので、使うときに `npx --version` で確かめる |
+| mermaid の図 (台本の `show` の `mermaid`) | Node の `npx` と Chrome (初回にバージョンを固定した mermaid-cli を取りに行く) | 使わないなら不要。`check` は `npx` を見ないので、使うときに `npx --version` で確かめる |
 
 ### 2. VOICEVOX エンジン
 
@@ -103,7 +103,7 @@ zundamon-kaisetsu check
 
 立ち絵を用意しなくても動く (名前入りの丸アバターで出る)。用意するなら、坂本アヒルさんが pixiv で配布している素材を使う。
 
-| キャラ | 配布ページ | 動作を確かめた版 |
+| キャラ | 配布ページ | 動作を確かめたバージョン |
 |---|---|---|
 | ずんだもん | https://www.pixiv.net/artworks/92641351 | ずんだもん立ち絵素材 2.3 |
 | 四国めたん | https://www.pixiv.net/artworks/92641379 | 四国めたん立ち絵素材 2.1 |
@@ -112,7 +112,7 @@ zundamon-kaisetsu check
 2. 同梱の `readme.txt` と公式ガイドライン (https://zunko.jp/guideline.html) を読む。動画への利用・改変は可、
    クレジットは任意 (build は HTML のクレジット欄に「立ち絵: 坂本アヒル」を自動で入れる。mp4 には入らない)。**素材を公開リポジトリに置かない** (再配布になる。
    下の置き場は clone の中のサブモジュールの場所で、commit・push しなければ公開されない)
-3. 展開したフォルダを `assets/zundamon-kaisetsu/psd/` に置く (版が違うとフォルダ名・ファイル名が変わるので、4 のコマンドのパスを実物に合わせる)
+3. 展開したフォルダを `assets/zundamon-kaisetsu/psd/` に置く (バージョンが違うとフォルダ名・ファイル名が変わるので、4 のコマンドのパスを実物に合わせる)
 
    ```
    assets/zundamon-kaisetsu/psd/
@@ -131,7 +131,7 @@ zundamon-kaisetsu check
    ```
 
    `--preview` の画像に全表情 × 口 3 段階が並ぶので、目で確かめる。
-   上の表と違う版の素材ではレイヤー名が変わっていることがあり、そのときは無いレイヤーを名指しして止まる。
+   上の表と違うバージョンの素材ではレイヤー名が変わっていることがあり、そのときは無いレイヤーを名指しして止まる。
    `faces/<キャラ>.json` のレイヤー名を素材に合わせて直す。
 
 (dotfiles の持ち主の環境だけ: `assets/` は非公開リポジトリ `jiikko/assets` のサブモジュールで、素材と書き出した表情が入っている。

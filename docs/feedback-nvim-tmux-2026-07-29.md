@@ -24,7 +24,7 @@ nvim 側 (_nviminit.lua + nvim/lua/dotfiles/* + ftplugin/*、約 2,000 行) と 
   autocmd の自動掃除・BufWipeout での map 掃除など、過去事故の対策がパターンとして
   横展開されている。
 
-## 事故から一般化した弱点パターン (今後の設計判断に効かせる)
+## 事故から一般化した弱点パターン (今後の設計判断に反映する)
 
 ### 1. hook + run-shell はエラーの排出先が「アクティブ pane の view-mode」
 
@@ -62,7 +62,7 @@ resurrect のように状態を焼き込む機構がある場合、移行 checkl
 docker 一発で再現するのが最短**:
 `docker run --rm -v ~/dotfiles:/dotfiles:ro ubuntu:24.04` + apt で tmux/zsh/perl/gawk を
 入れて該当テストを叩く (今回この手順で 3 プローブ以内に真因へ到達)。app 層ログの推測より
-先にこれを回すこと (instrument-before-second-fix の tmux 版)。
+先にこれを回すこと (instrument-before-second-fix の tmux 向けの形)。
 
 ### 5. fallback 経路は「コメントの主張」ごとテストする
 

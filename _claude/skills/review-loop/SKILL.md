@@ -90,7 +90,7 @@ gh pr comment {number} --body-file {request_body_file}
 
 依頼文の例:
 
-> @codex review for 対象 head は {target_sha}。前回の修正が効いていない別経路・境界・並行・部分失敗を探してください。
+> @codex review for 対象 head は {target_sha}。前回の修正では直らない別経路・境界・並行・部分失敗を探してください。
 > 根拠と発火条件を示し、修正が生んだ回帰も確認してください。確定できない懸念は未確認として分けてください。
 
 head が実行中に変われば、旧 SHA の結果を今回の要求の完了として数えない。

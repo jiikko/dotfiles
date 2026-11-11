@@ -7,7 +7,7 @@ description: repo の root に issues/ を作り、dotfiles の issues/README.md
 # start-issues-ops — repo で issue 運用を始める
 
 repo の root に `issues/` を作り、`~/dotfiles/issues/README.md` をコピーする。
-`issues/` が在る repo では、dotfiles の issue 系の hook が次のセッションから効く (手順 5 の一覧)。
+`issues/` が在る repo では、dotfiles の issue 系の hook が次のセッションから適用される (手順 5 の一覧)。
 共通規約 (命名・type・状態ディレクトリ・`epic/`・`期限:`・`human`・`retro`) は `~/dotfiles/_claude/issue-rules.md` が正本で、
 hook が注入する。README には写さない。
 
@@ -27,7 +27,7 @@ hook が注入する。README には写さない。
    `copied` が出たことを確かめる
 4. **AskUserQuestion で 2 つを 1 回に聞く** (repo ごとに運用が違うので既定を決めない)
    - **claim (`next/`) を使うか**。claim の規約 (`issue-rules.d/claim-issue-in-next-and-push.md`) と hook は、`issues/next/`
-     (か `issues/epic/<name>/next/`) が実在する repo でだけ効く
+     (か `issues/epic/<name>/next/`) が実在する repo でだけ適用される
      - 「使う」: `mkdir "$root/issues/next" && touch "$root/issues/next/.keep"` (空のディレクトリは git に載らず、別の checkout では opt-in が消える)。
        着手のたびに目印と担当者バナーを push する手間が増える
      - 「使わない」: 何も作らない。複数のマシン・セッションが同じ issue に同時に着手しても、どこにも出ない。単一マシンの運用ならこちら
@@ -43,7 +43,7 @@ hook が注入する。README には写さない。
        glogx の issues viewer (`i` キー) もその repo の `issues/` を読む
      - **dotfiles にしか無いもの** (消すか、その repo の同等物に置き換える): `tests/issues/` の検査、`githooks/pre-push`、
        pro-con 用の `issue_number_drafts.sh`、`audit-log`、経緯の節
-   - 次のセッションから効く hook: 規約の注入 (`issue-rules-inject.sh`。本体・claim・反証レビュー・検証レポートの移し方)、
+   - 次のセッションから適用される hook: 規約の注入 (`issue-rules-inject.sh`。本体・claim・反証レビュー・検証レポートの移し方)、
      `human` の期限 (`human-tasks-due.sh`)、未決着の `retro` (`retro-open.sh`)、本文の更新漏れ (`issue-progress-check.sh`)、
      claim を使うなら未 push の claim (`next-claim-push.sh` / `next-claim-unshared.sh`)
    - 状態ディレクトリ (`done/`・`pending/`・`waiting/`) と `epic/<name>/` は作っていない。最初に使うときに作る

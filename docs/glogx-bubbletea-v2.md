@@ -110,8 +110,8 @@ toolchain の自動取得への依存**: 手元 go が 1.25.4 の環境では `G
 失敗記録の backoff と噛み合いビルドが止まった。1.25.0 なら手元の go でそのままビルドされる。
 1.26 固有の機能は元々使っていない（上げた commit も依存更新の chore で、機能上の必要ではなかった）。
 
-CI の Go は go.mod ではなく `.github/go-version` (2026-10-09 から `1.26.x`。stdlib の脆弱性の修正版を CI で使うため) が決める。
-go.mod の `go` 行は手元で必要な最小の版で、上げると上の toolchain の自動取得に戻る。
+CI の Go は go.mod ではなく `.github/go-version` (2026-10-09 から `1.26.x`。stdlib の脆弱性の修正バージョンを CI で使うため) が決める。
+go.mod の `go` 行は手元で必要な最小のバージョンで、上げると上の toolchain の自動取得に戻る。
 
 **再評価の trigger**: 1.26 固有の機能が実際に要るようになったとき。候補として挙がっていたのは
 goroutine リーク検出器（`GOEXPERIMENT=goroutineleakprofile` + pprof の `goroutineleak`。fetch
@@ -126,7 +126,7 @@ goroutine と `context` の cancel 取りこぼしを機械的に検証できる
 3. `make -C src/glogx lint` / `make -C src/glogx test` (CI の 2 job と同一コマンド)
 4. tmux 上で実 TUI を起動し、最外周フレーム・usage オーバーレイ・`j/k/G/Enter/Esc/q`・Alt Screen 復帰を目視
 5. `PasteMsg` の扱いが変わっていないか (貼り付けがキー実行に戻っていないか)
-6. `src/tuikit/framebench` が再現している flush の手順 (前のコマとの比較 → Clear → Draw → Render → Flush) が、新しい版の `cursed_renderer.go` の `flush` と食い違っていないかを読み、
+6. `src/tuikit/framebench` が再現している flush の手順 (前のコマとの比較 → Clear → Draw → Render → Flush) が、新しいバージョンの `cursed_renderer.go` の `flush` と食い違っていないかを読み、
    pro-con `BenchmarkFrame*Rendered` / glogx `BenchmarkCursorMoveViewJARendered` を上げる前後で比べる (issue 607)
 
 ## 他の Go プロジェクト
@@ -136,10 +136,10 @@ v1 に残っていた `src/parallel-each` は **2026-09-08 にこの repo から
 `github.com/charmbracelet/bubbletea v1.3.10` + `lipgloss v1.1.0` のままで、
 移行コストが高い理由も変わらない: `tea.KeyMsg` / `tea.KeyRunes` の参照が桁違いに多く、
 `key.Type`/`Runes` → `Code`/`Text`/`Mod` の書き換えに加えて
-**space が `" "` → `"space"` になる変化はコンパイルエラーにならない** (静かに壊れる)。
+**space が `" "` → `"space"` になる変化はコンパイルエラーにならない** (気づかないうちに壊れる)。
 
-なお charm 依存を持つモジュールが**それぞれ独立に版を持つ**ため、揃え忘れは構造的に起きる
-(tuikit を使う module の x/ansi と bubbletea の版は `tests/scripts/test_tuikit_consumers_aligned.sh` が一致を見る。issue 603)。🚨 **「同じ依存の版がずれている」ではない — モジュールパスから違う**。
+なお charm 依存を持つモジュールが**それぞれ独立にバージョンを持つ**ため、揃え忘れは構造的に起きる
+(tuikit を使う module の x/ansi と bubbletea のバージョンは `tests/scripts/test_tuikit_consumers_aligned.sh` が一致を見る。issue 603)。🚨 **「同じ依存のバージョンがずれている」ではない — モジュールパスから違う**。
 実測 (2026-09-03。schedkeys は 2026-10-01 に v2.0.8 / v0.11.7 へ揃えた):
 
 | モジュール | bubbletea | x/ansi | lipgloss |
@@ -150,4 +150,4 @@ v1 に残っていた `src/parallel-each` は **2026-09-08 にこの repo から
 v2 は `charm.land/bubbletea/v2`、v1 は `github.com/charmbracelet/bubbletea` で**別モジュール**なので、
 `go get -u` で片方を上げてももう片方は動かない (この repo に残る 2 本はどちらも v2 で
 `ultraviolet` へ移行済み、`lipgloss` 依存は無い)。同じ v2 どうしの glogx と schedkeys も
-版がずれていた (2.0.8 / 2.0.9。2026-10-01 に揃え、上の検査で止める)。
+バージョンがずれていた (2.0.8 / 2.0.9。2026-10-01 に揃え、上の検査で止める)。

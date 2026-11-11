@@ -65,7 +65,7 @@ skill dupscan の 1〜4 節に従う。**grep より先に dupscan を試す場�
 - **タスクの変更を commit する前に、その repo の全体の検査を回す** (dotfiles ならルートの `make test`。test-lint・test-runtime・test-src を含む)。直した module の `test` / `lint` と `make test-lint` だけで代えない
   (2026-10-29 の treefiler では、それだけで commit と push を済ませ、ルートの `make test` を後から回した)。
   規約で実行を禁じた検査 (iOS のシミュレータのテストなど) はビルドまで回し、実行はユーザーに委ねると報告に書く
-- **既存の fixture・helper に寄せるときは、本体が同じに見えても、既定値と副作用が同じかを確かめてから置き換える**。今回、IA / PikPak の接続は fixture の既定 endpoint が違い (`https://mypikpak.com/webdav` と `PikPakWebDAVProviderConfig.defaultEndpointString`)、`makeBrowserUseCase()` は `InMemoryFileWriter` を足すが private 版は `StorageBrowserUseCase` の既定 (`UnsupportedFileWriter`) だった。違うなら引数を明示して挙動を保つ (置き換えて緑でも、既定が違うと検査していたものが変わる)。
+- **既存の fixture・helper に寄せるときは、本体が同じに見えても、既定値と副作用が同じかを確かめてから置き換える**。今回、IA / PikPak の接続は fixture の既定 endpoint が違い (`https://mypikpak.com/webdav` と `PikPakWebDAVProviderConfig.defaultEndpointString`)、`makeBrowserUseCase()` は `InMemoryFileWriter` を足すが private の方は `StorageBrowserUseCase` の既定 (`UnsupportedFileWriter`) だった。違うなら引数を明示して挙動を保つ (置き換えて緑でも、既定が違うと検査していたものが変わる)。
 - **build・test のような長い検証をバックグラウンドで回すときは、完了の目印を自分で作る**: 実行本体の終了コードを run 固有のファイルへ書き、最後に `run.done` を作る。
   待つのはそのファイルで、上限を決める (超えたら判定不能と報告)。**バックグラウンド起動の完了通知は「起動した subshell の終了」で、検証の完了とは限らない**
   (今回、起動直後の通知を完了と読みかけた)。結果は `run.rcs` と、ログの実行件数 (`Test run with N tests`・xcresult) で読む。回している間は同じ worktree のコードを編集しない。
@@ -134,7 +134,7 @@ dupscan の修正の作法 (dotfiles の `CLAUDE.md`「`src/` の Go を書く�
 - **dupscan の修正は dotfiles の repo (`~/dotfiles`) で行う**。開発タスクが別の repo (obaket など) でも、dotfiles の worktree を切って作業する (タスクの repo には dupscan の修正を混ぜない)。共有の checkout で編集しない。`src/dupscan` の同じファイルを触るセッションは 1 つだけ (0 節の 4)。
 - テストを書き、**変異を当てて赤を確認する** (`~/.claude/rules/mutation-verify-new-tests.md`)。結果を変えない最適化の変異は緑のままでよい (そう書く)。
 - `make -C src/dupscan test lint` と、ルートの `make test` (`make test-lint` を含む) を rc で確かめてから push する。文書 (README・skill・usage) が実体とずれたら同じ commit で直す。
-- 実機で再現した入力に対して、直す前後の出力を並べて確かめる (テストが緑でも、実物で効いたかは別)。
+- 実機で再現した入力に対して、直す前後の出力を並べて確かめる (テストが緑でも、実物で直ったかは別)。
   **起点を変えて、module の dir からと repo root からの両方で打つ**。dupscan は起点の中の単位だけを数えるので、片方の起点でしか出ない誤報がある
   (2026-10-29 に、sweep の allow-group の食い違いの表示を tuikit だけで確かめて push し、src/treefiler を起点にすると module をまたぐ正しい印 4 本を誤報した。issue 966 の F4)。
 - 直した内容と確かめた方法は commit message に書き、issue にも 1 行足す。
@@ -142,7 +142,7 @@ dupscan の修正の作法 (dotfiles の `CLAUDE.md`「`src/` の Go を書く�
 ## 5. issue に書く
 
 - 置き場所: **dotfiles の** epic 932 の下 (`issues/epic/932/`)。開発タスクが別の repo でも、dupscan の不満と提案は dotfiles の issue に書く (タスクの repo の issue には書かない)。種類が `research` / `feat` / `ux` / `perf` のうち近いもの。アーキテクチャの提案は `architecture` / `design`。dotfiles の issue 規約 (採番を `git fetch` して数える・採番したら即 push・`next/` の claim・反証レビュー) に従う。
-- 小さい所見が複数なら **1 本の issue にまとめてよい**。摩擦は **場面・期待・実際・数字・提案** の順で、提案は **場面・今の回避・提案・効く理由と確かめ方・失うもの** の順で書く。実際の出力は短く引用する。
+- 小さい所見が複数なら **1 本の issue にまとめてよい**。摩擦は **場面・期待・実際・数字・提案** の順で、提案は **場面・今の回避・提案・それで良くなる理由と確かめ方・失うもの** の順で書く。実際の出力は短く引用する。
 - 既存の issue への追記は、日付つきの節で足す (946 の「実装後の再測定」のような形)。
   **追記したい issue が別のセッションの担当中** (本文の `担当中` のバナーか `next/` の claim) **なら追記しない**。新しい issue を立て、本文で既存の番号と節を参照する
   (相手が書いている最中の本文を書き換えない。所見が 2 本に分かれるのは、相手の作業が終わった後に統合して直す)

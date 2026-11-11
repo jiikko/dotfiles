@@ -27,7 +27,7 @@ tmux の `kill-server` / `kill-session` を打たない (本番のサーバ。`~
      ディスク (`disk`。空き・スナップショット・掃除の候補)
    - 「よく使うソフトのどれを診ますか」(`multiSelect: true`): tmux (`tmux`) / nvim (`nvim`) / Chrome (`chrome`) / その他の常駐アプリ (`apps`。
      常駐量の上位と、動作中に更新で上書きされたアプリ)
-   - 「重い検査も回しますか」: 回さない (推奨) / 回線の品質も測る (`-explicit`。networkQuality が約 20 秒・数百 MB 通信する。ネットワークを選んだときだけ効く)
+   - 「重い検査も回しますか」: 回さない (推奨) / 回線の品質も測る (`-explicit`。networkQuality が約 20 秒・数百 MB 通信する。ネットワークを選んだときだけ適用される)
 
    どれも選ばれない・回答が無いなら、何もせずに終える
 3. **診断する**: 選ばれた観点をカンマでつないで (`<cats>`) 1 回だけ回す (ps を 5 秒あけて 2 回読むので、2 回回さない)
@@ -37,7 +37,7 @@ tmux の `kill-server` / `kill-session` を打たない (本番のサーバ。`~
    - `disk`: `diskdoctor > <D>/diskdoctor.txt 2>&1` (掃除の候補を占有量の順に) と `tmpclean count > <D>/tmpclean-count.txt 2>&1`
    - `proc`: `svcdoctor > <D>/svcdoctor.txt 2>&1` (壊れた launchd の登録)。`proc.kalloc` が注意・異常なら `kernel-alloc-watch` で増え方の記録を見る
 4. **寿命を判断する** (`hw` を選んだときだけ): `hw.model` の値の機種 ID (例 `Mac15,10`) で WebSearch を引き、発売年・Apple のサポートの区分
-   (ビンテージ / オブソリート)・今の macOS とその次の版の対象かを確かめる (手元に情報源が無い。引けなければ「未確認」と書く)。
+   (ビンテージ / オブソリート)・今の macOS とその次のバージョンの対象かを確かめる (手元に情報源が無い。引けなければ「未確認」と書く)。
    それと `hw.battery`・SSD の摩耗 (`hw.ssd.*` の「摩耗」と「通電時間」)・`proc.pressure`・`proc.swap` から、[`advice.md`](advice.md) の基準で
    **このまま使える / メンテナンスを勧める / 買い替えを検討する** の 1 つに決め、根拠の項目を添える
 5. **レポートを書く**: `<D>/report.md` に、上から次の順で書く

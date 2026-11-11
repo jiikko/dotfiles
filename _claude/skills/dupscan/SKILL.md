@@ -69,7 +69,7 @@ dupscan gate                    # upstream との merge-base から作業ツリ�
   json や text を自分で切り出す・前後で突き合わせる道具を作る前に、欲しいものが既に欄か `-v` の行に無いかを見る
 - **rc=1 (違反)**: 「新しい」に出た単位を、「同じ形」に出た既存の単位へ寄せる (呼び出しに置き換える・共通の置き場所へ移す)。寄せる前に 4 節で境界を確かめる。寄せてからもう一度回す
 - **誤検知・意図して分けている写し**: 寄せずに除外を書く。単位の直前に `// dupscan:allow <false-positive|intentional> <理由>`、
-  組ごとなら、メンバーの 1 つの直前に `// dupscan:allow-group <人数> <false-positive|intentional> <理由>` (人数が合う間だけ効き、写しが増えれば効かなくなって増えた写しが出る)、
+  組ごとなら、メンバーの 1 つの直前に `// dupscan:allow-group <人数> <false-positive|intentional> <理由>` (人数が合う間だけ適用され、写しが増えれば適用されなくなって増えた写しが出る)、
   または違反の `-v` に出る「除外の 1 行」に `kind` と `reason` を埋めて repo の root の `.dupscan.json` に貼る。
   まとめて書くなら `-format json` の `exclude` (report の各組・gate の各違反) を使う。釘に本体の hash まで入っているので、text の `-v` を切り出さない
   (見出しで切ると別の組のメンバーを拾う)。組に「印: 全員の本体が 1 つの呼び出しを 1 回するだけ」(json は `single_call`) が付いていたら、

@@ -59,7 +59,7 @@ brew の管理下 (cask・formula) は `brew uninstall`、それ以外 (App Stor
 7. **後片付けを確かめる** (どれも読み取りか、別の承認を取ってから):
    - `svcdoctor > <D>/svcdoctor.txt 2>&1`: 消したアプリの常駐が壊れた登録として残っていないか
    - formula を消したなら `brew autoremove --dry-run`: 依存として入っていて要らなくなったもの。消すなら一覧を見せて**別の承認**を取ってから `brew autoremove`
-   - `brew cleanup --dry-run`: 古い版とダウンロードの残り。消すなら同じく別の承認を取る
+   - `brew cleanup --dry-run`: 古いバージョンとダウンロードの残り。消すなら同じく別の承認を取る
    - 「手で確かめる」の行は、手順を 1 行ずつ示す (LaunchAgents なら `launchctl bootout gui/$(id -u) <plist>` の後にゴミ箱へ、など)
 8. **報告する**: 片付けたもの (件数と大きさ)・止めたものと理由・ゴミ箱の移し先 (`apply.json` の `trash`)・手で確かめるものを出す
 

@@ -27,7 +27,7 @@ description: pro-con (PM と PG を分けて Claude Code を並列に回すカ�
 ## やってはいけないこと
 
 - 状態の置き場 (`cards.json` など) を手で書く・消す。書き手は dispatcher だけ。変えたいことは `pro-con card …` で受付の箱に置く
-- 質問待ちのカードを黙って `pro-con card delete` する。質問ごと消え、削除中の間も回答を受け付けない。消す前に人に確かめる
+- 質問待ちのカードを人に確かめずに `pro-con card delete` する。質問ごと消え、削除中の間も回答を受け付けない。消す前に人に確かめる
 - PG の worktree やブランチを手で消す。`pro-con worktree clean` (一覧) → `--yes` を使う (取り込み済みで誰も居ないものだけ消す)
 - 人の番でない質問 (PM が受けている最中) に先回りして答える。答える前に `pro-con card show <カード>` を読む
 - 様子を見るためだけに `pro-con` (持ち主の画面) を開いて quit する。最後の持ち主の画面を閉じると dispatcher と PG が止まる。見るだけなら `pro-con --view`

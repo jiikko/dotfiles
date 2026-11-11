@@ -27,7 +27,7 @@ dotfiles が入れる道具の使い方。root の README からはここへ案�
 |---|---|---|
 | [`claude-mods.md`](claude-mods.md) | Claude Code の mods (関数 hook の plugin) の置き場所・読み込み (`CLAUDE_CODE_PLUGIN_DIRS`)・読まれる経路の実測・**このマシンで mod に届かないイベント**・pro-con の役に載せない理由・テストと CI の扱い | `_claude/mods/` に mod を足す / settings の hook を mod へ移す |
 | [`claude-mods-guide.md`](claude-mods-guide.md) | mods の全体像 (どのファイルが何をするか)・各 mod の仕組み (desktop-statusline のデータの流れ、`/statusline-refresh` とは何か)・変更と試し方の手順・反映のタイミング・つまずき | mod を初めて触る / 直す / 足す / desktop に出ない |
-| [`glogx-bubbletea-v2.md`](glogx-bubbletea-v2.md) | glogx が bubbletea v2 で動く前提、v2 の新機能を採らなかった判断、次に上げるとき測り直すもの。**v1 のまま repo の外へ出たモジュール (parallel-each) を上げない理由**と、charm 依存の版を module 間で揃える検査も | glogx の TUI を触る / bubbletea を上げる |
+| [`glogx-bubbletea-v2.md`](glogx-bubbletea-v2.md) | glogx が bubbletea v2 で動く前提、v2 の新機能を採らなかった判断、次に上げるとき測り直すもの。**v1 のまま repo の外へ出たモジュール (parallel-each) を上げない理由**と、charm 依存のバージョンを module 間で揃える検査も | glogx の TUI を触る / bubbletea を上げる |
 | [`nvim-ruby-lsp.md`](nvim-ruby-lsp.md) | nvim の Ruby LSP。定義ジャンプが索引をどう引くか、索引がいつ作られどこに在るか (ディスクには無い)、参照検索だけ 11 秒かかる理由、2026-09-08 の高速化で何を書き何を書かなかったか | Ruby のサーバ選択・`<C-k>`・ステータスラインの進捗を触る / 「遅い」と言われた |
 | [`theme-colors.md`](theme-colors.md) | 色は「意味 (role) → 定数」で管理する。**使用箇所ではなく定数を触る**。色の意味マップ | tmux か nvim の色を変えたい |
 | [`tmux-plugins.md`](tmux-plugins.md) | セッション永続化 (resurrect + continuum)。イベント駆動の debounce 保存と、全保存経路を直列化する単一 lock | tmux の保存・復元経路を触る |

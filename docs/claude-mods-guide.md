@@ -19,13 +19,13 @@ API・イベント・部品の一次情報は公式 (英語)。この文書は d
 - 見本: [公式の見本の mod](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods) / [Claude Code 組み込みの mod のソース](https://github.com/anthropics/claude-code/tree/main/mods)
 
 2026-10-03 に overview の実在と内容を確かめた (他のページは overview のリンクと検索結果から)。手元の `plugin-authoring` skill の型定義 (`claude-code.d.ts`) は、
-動いている版の API そのもので、公式ページより細かい。食い違ったら型定義を信じる。
+動いているバージョンの API そのもので、公式ページより細かい。食い違ったら型定義を信じる。
 
 ## mods とは
 
 - Claude Code の**中**で動く TypeScript の小さな plugin。イベント (`session.start` / `turn.complete` / `ui.render` …) に hook を掛けて、画面に帯を足すなどをする
 - dotfiles では**画面に足すものだけ**を mod にする (issue-band・desktop-statusline)。守りの hook (deny / block) は settings の hook のまま
-  (mod の hook は失敗すると黙ってスキップされるため。epic issue 618)
+  (mod の hook は失敗するとエラーを出さずにスキップされるため。epic issue 618)
 - API は early access でリリースごとに変わる。正本は `plugin-authoring` skill が書き出す型定義 `claude-code.d.ts`
 
 ## 全体像
@@ -126,15 +126,15 @@ mod が**同じ script** を呼んで、出力を desktop の部品に直して�
    repo 全体の検査は `bash tests/claude/test_claude_mods.sh` (`make test` に含まれる。CI は claude が無いので skip し、手元が正本)
 4. 新しいテストは**変異を 1 つ当てて red になる**ことを確かめる (`_claude/rules/mutation-verify-new-tests.md`)
 5. commit → `git push origin HEAD:master` → **`scripts/pull_main_checkout.sh`** で `~/dotfiles` を追い付かせる。
-   mod が読まれるのは `~/dotfiles` の実体なので、**pull するまで効かない**
-6. **新しい desktop のセッションを開いて確かめる** (desktop は mod のフォルダを見張らないので、既存のセッションは旧版のまま)
+   mod が読まれるのは `~/dotfiles` の実体なので、**pull するまで反映されない**
+6. **新しい desktop のセッションを開いて確かめる** (desktop は mod のフォルダを見張らないので、既存のセッションは旧バージョンのまま)
 
 反映のタイミングの違い:
 
 | 直したもの | 反映 |
 |---|---|
 | `_claude/statusline-command.sh` (表示内容) | pull 後、次の更新 (最大 60 秒 / `/statusline-refresh`) から。セッションの開き直しは不要 |
-| mod のコード (`hooks/*`) | 新しいセッションから。公式 (overview) によると、開いているセッションで `/reload-plugins` を打つと読み直す (desktop で効くかは未実測) |
+| mod のコード (`hooks/*`) | 新しいセッションから。公式 (overview) によると、開いているセッションで `/reload-plugins` を打つと読み直す (desktop で反映されるかは未実測) |
 
 ### 新しい mod を足す
 

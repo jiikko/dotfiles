@@ -7,7 +7,7 @@
 > 追加・置換したら forge.js も同期更新すること。**「条件付き必須」「追加エージェント（検出パターン）」の
 > 判定（async→swift-concurrency-expert 等）は main Claude がこのファイルを読んで `extraAgents` を決め、
 > forge.js に渡す**（コード内容を読む判断は skill 層）。プロンプトテンプレートは agentType の
-> システムプロンプトに委ねるため forge.js には簡潔版のみ持つ。
+> システムプロンプトに委ねるため forge.js には簡潔なバージョンのみ持つ。
 
 ---
 

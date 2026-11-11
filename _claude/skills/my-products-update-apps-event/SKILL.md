@@ -21,7 +21,7 @@ description: my-products の product-analytics (web/product-analytics) の apps/
    - label はディレクトリ名、description は events.yml の最後のエントリの `label` (例: `最後: v1.1.4 公開`)
    - 1 問の選択肢は 4 つまで。5 つ以上なら 4 つずつ別の問いに分けて 1 回の AskUserQuestion にまとめる
    - 依頼文で app が名指しされていて 1 つに決まるなら、問わずにそれを使う
-3. **ストアから最新版を取る** (選んだ app ごと):
+3. **ストアから最新バージョンを取る** (選んだ app ごと):
 
    ```sh
    for c in jp us; do

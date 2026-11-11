@@ -1,6 +1,6 @@
 # liquid-glass の出典
 
-この skill は外部の公開 repo から取り込んだもの。自分で書いた skill ではないので、本文を直したくなったら先に upstream の版を見る。
+この skill は外部の公開 repo から取り込んだもの。自分で書いた skill ではないので、本文を直したくなったら先に upstream のバージョンを見る。
 
 - repo: https://github.com/rshankras/claude-code-apple-skills
 - path: `skills/design/liquid-glass/SKILL.md`

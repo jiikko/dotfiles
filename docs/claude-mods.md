@@ -31,7 +31,7 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
 - 未確認のリスク: 組織が sideload (`--plugin-dir` / `CLAUDE_CODE_PLUGIN_DIRS`) を禁じるポリシーを入れると、`CLAUDE_CODE_PLUGIN_DIRS` を持つ claude は
   起動時にエラーで止まりうる (2.1.287 の二進を静的に読んだだけ。回復の案内は出る)。そうなったら settings の env の行を外す
 - user の settings を読む裏の `claude -p` (ratelimit の `claude -p /usage` 等) でも mods が走る。mod は `session.start` の
-  `e.isInteractive` / `e.surface` で、対話のセッションにだけ効かせる
+  `e.isInteractive` / `e.surface` で、対話のセッションにだけ適用する
   - 🚨 **ただし desktop が起こすセッションは `-p` / SDK と同じ作り**で、型定義 (`SessionStartInput` / `session.attach`) によると、開始時は
     `surface` が null・`isInteractive` が false・`$.session.surfaces()` (名簿) が空で、desktop は最初の描画の要求で名簿に載る (実機の値は未観測)。
     `session.start` や `turn.complete` で「desktop / 対話か」を名簿・`e.isInteractive` で聞くと、desktop では帯が一度も作られない (issue 625)。
@@ -39,7 +39,7 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
     🚨 この環境変数は子の `claude -p` にも**継承される** (desktop の Bash から起こした `claude -p` で `claude-desktop` を実測)。desktop 以外の -p も真になりうるので、起動を待たせる処理 (issue-band の数え直し) は裏で走らせ、描画は `e.surface` で決める
     テストの fixture も、この初期状態 (`surface: null` / `isInteractive: false` / 名簿空 / 環境変数あり) から始める
   - 見張り: 対話の CLI は `CLAUDE_CODE_PLUGIN_DIRS` のフォルダを見張って mod を読み直すが、desktop (長命の headless セッション) は `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` を env に持つときだけ見張る
-    (plugin-authoring の reference.md による。未実測)。見張っていない desktop のセッションは、mod を直しても**新しいセッションを開くまで旧版のまま**
+    (plugin-authoring の reference.md による。未実測)。見張っていない desktop のセッションは、mod を直しても**新しいセッションを開くまで旧バージョンのまま**
 
 ## 今ある mod
 
@@ -49,12 +49,12 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
 
 - 1 つの mod = `_claude/mods/<name>/` の 1 ディレクトリ。`.claude-plugin/plugin.json` / `hooks/hooks.json` / `hooks/register.ts(x)` と、`tests/*.test.ts(x)`
 - `_claude/settings.json` の `env` に `CLAUDE_CODE_PLUGIN_DIRS=~/dotfiles/_claude/mods` を 1 つ書いてある。親のフォルダを渡すと子の mod を全部読むので、
-  mod を足しても settings は書き換えない (2.1.287 で実測。プロセスの環境で渡した場合。`~` も効く)
+  mod を足しても settings は書き換えない (2.1.287 で実測。プロセスの環境で渡した場合。`~` も使える)
   - 子のうち `.claude-plugin/plugin.json` の無いディレクトリは読まれない (debug log に `no manifest in <dir>` が出るだけ)。
     子の 1 本の hooks module が壊れていても、他の子は読まれる
   - settings の `env` からも読まれる (対話・`claude -p`。2.1.287 で実測)。`--setting-sources` から `user` を外した起動 (pro-con の役) では読まれない。
     値はセッションの Bash の子へ継承される (`~` のまま) ので、Claude の中から起こした `claude -p` も mods を読む
-- 読まれるのは `~/dotfiles` の実体。hook と同じく、worktree で編集しても master へ push して `~/dotfiles` へ pull するまで効かない
+- 読まれるのは `~/dotfiles` の実体。hook と同じく、worktree で編集しても master へ push して `~/dotfiles` へ pull するまで反映されない
   (`.claude/rules/worktree-per-session.md`)。対話のセッションはフォルダを見張っていて、`hooks/` などを保存すると mod を読み直す
 - engine は mod を読むたびに `<mod>/.claude-plugin/types/` (その build の型) と、無ければ `<mod>/tsconfig.json` (types/ を extends するだけ) を書く。
   どちらも `.gitignore` 済み。types/ はセッションごとに中身 (MCP の型) が違い、共有の `~/dotfiles` で書き換え合うが、見張りは types/ を見ないので読み直しの往復にはならない (実測)
@@ -84,7 +84,7 @@ dispatcher が claude を起こす環境から `CLAUDE_CODE_PLUGIN_DIRS` を落�
 - `make test` が `tests/claude/test_claude_mods.sh` を回す。settings の env の値を確かめたうえで、`_claude/mods/*/` を自動で見つけ、各 mod に
   `claude plugin validate` と `claude plugin test` をかける。manifest の無いディレクトリ・mod が 0 件・テストが 0 件、はどれも失敗
   (mod を消した後に ignore 済みの生成物だけが残ったディレクトリも赤になる。そのときは消してよい)
-- **CI では claude の要る検査を skip する (exit 77)**。runner に claude が無く、入れると毎回その時点の最新版になって、手元で動いている engine と版が揃わない。手元の `make test` が正本
+- **CI では claude の要る検査を skip する (exit 77)**。runner に claude が無く、入れると毎回その時点の最新バージョンになって、手元で動いている engine とバージョンが揃わない。手元の `make test` が正本
 - `make test-changed` は `_claude/mods/` と `_claude/settings.json` の変更で tests/claude を回す
 - `claude plugin test` の `$` は engine そのもので、テストの `on` が engine の役 (plugin の下) に座る。engine の既定の答えは無いので、mod が呼ぶ `$` の口
   (`session.start` / `process.run` …) はテスト側で答える。`$` の口 (op のイベント: `process.run` / `session.id` …) は `{ value: … }` で包んで返す
@@ -92,7 +92,7 @@ dispatcher が claude を起こす環境から `CLAUDE_CODE_PLUGIN_DIRS` を落�
 
 ## settings の hook との分担
 
-- 守りの hook (deny / block) は移さない。**mod の hook は失敗すると黙ってスキップされ、chain が続く**。知らせは debug log か、見張っているフォルダなら transcript の 1 行だけ
+- 守りの hook (deny / block) は移さない。**mod の hook は失敗するとエラーを出さずにスキップされ、chain が続く**。知らせは debug log か、見張っているフォルダなら transcript の 1 行だけ
 - **注入の hook を mod へ移すときは、settings の hook を消さず fallback として残し、mod が「このプロンプトを判定できた」ときだけ黙らせる** (`ratelimit-warn`、issue 658):
   mod が `classic.UserPromptSubmit` の中で env に `<session_id>:<epoch ms>` の印を打ち、hook は同じ session で 10 秒以内の印のときだけ `exit 0`。
   順序は型定義 (ClassicEventOf の doc) のとおり managed の hook → modules → その他の settings の hook。永続の印 (`1`) にすると、mod が後で落ちた・`classic.*` が素通しになった・
