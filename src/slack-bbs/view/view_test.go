@@ -717,17 +717,22 @@ func TestGroupMembersChangedReloads(t *testing.T) {
 	stale := m.Init() // 前のメンバーで読み始める (結果はまだ渡さない)
 	g2 := g
 	g2.Members = append(slices.Clone(g.Members), subs.Channel{ID: "C2", Name: "ops"})
-	fresh := m.setChannels([]subs.Channel{g2})
-	if fresh == nil {
-		t.Fatal("メンバーが変わったのに読み直さない")
+	if cmd := m.setChannels([]subs.Channel{g2}); cmd != nil {
+		t.Fatal("走っている読み直しを追い越して、もう 1 本読み始めた")
 	}
-	run(m, stale)
+	_, fresh := m.Update(stale())
 	if m.chans[0].page != nil {
 		t.Error("前のメンバーで読んだ結果を受け取った")
 	}
+	if fresh == nil || !m.chans[0].loading {
+		t.Fatal("前のメンバーの結果を捨てた後に読み直さない")
+	}
 	run(m, fresh)
-	if m.chans[0].page == nil {
+	if m.chans[0].page == nil || m.chans[0].loading {
 		t.Fatal("読み直しの結果を受け取らない")
+	}
+	if cmd := m.setChannels([]subs.Channel{g}); cmd == nil {
+		t.Error("読み直しが走っていないときにメンバーが変わっても、すぐ読み直さない")
 	}
 	press(m, "d")
 	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "グループを消しますか") || !strings.Contains(screen, "既読は引き継がない") {
@@ -748,10 +753,30 @@ func TestGroupMembersChangedInBackgroundTab(t *testing.T) {
 	g2.Members = append(slices.Clone(g.Members), subs.Channel{ID: "C2", Name: "ops"})
 	m.setChannels([]subs.Channel{ch, g2})
 	run(m, stale)
-	if m.chans[1].page != nil {
-		t.Fatal("前のメンバーで読んだ結果を裏のタブで受け取った")
+	if m.chans[1].page != nil || m.chans[1].loading {
+		t.Fatal("前のメンバーで読んだ結果を裏のタブで受け取った・裏で読み直した")
 	}
 	if cmd := press(m, "tab"); cmd == nil {
 		t.Error("メンバーが変わった裏のタブを開いても読み直さない")
+	}
+}
+
+// 前の読み直しに失敗したグループも、メンバーを直したら失敗を消して、開いたときに読み直す。
+func TestGroupMembersChangedClearsError(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	g := subs.Channel{ID: "grp0123abcd", Name: "times", Members: []subs.Channel{{ID: "C1", Name: "dev"}}}
+	ch := subs.Channel{ID: "C9", Name: "news"}
+	m := quiet(New(context.Background(), []subs.Channel{ch, g}, l.load, nil, func() time.Time { return t0 }))
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+	run(m, m.Init())
+	m.chans[1].err = errors.New("分類に失敗")
+	g2 := g
+	g2.Members = append(slices.Clone(g.Members), subs.Channel{ID: "C2", Name: "ops"})
+	m.setChannels([]subs.Channel{ch, g2})
+	if m.chans[1].err != nil {
+		t.Error("メンバーを直しても前の失敗が残った")
+	}
+	if cmd := press(m, "tab"); cmd == nil {
+		t.Error("メンバーを直したタブを開いても読み直さない")
 	}
 }

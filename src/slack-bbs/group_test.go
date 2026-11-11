@@ -21,7 +21,7 @@ func TestReadGroup(t *testing.T) {
 		"C1": fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"リリースします"}]`, at),
 		"C2": fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"リリースの件、了解"}]`, at),
 	}, failHist: map[string]bool{"C3": true}, search: map[int]string{
-		// 同じグループの ops の発言が dev の発言のリンクを貼っている: 板の本文に出ているので、言及には出さない
+		// 同じグループの ops の発言が dev の発言のリンクを貼っている: 単独のチャンネルで別の単位から貼られたものと同じく言及に出す
 		1: "[" + found("C2", "ops", ts(since+200), "U1", "これ "+link("C1", at)) + "]",
 	}}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"リリース","state":"info","theme":"release","urgent":false,
@@ -45,8 +45,8 @@ func TestReadGroup(t *testing.T) {
 			t.Errorf("出力に %q が無い:\n%s", want, md)
 		}
 	}
-	if strings.Contains(md, "この話題への言及") {
-		t.Errorf("同じグループのチャンネルからのリンクを言及にも出した:\n%s", md)
+	if strings.Count(md, "へのリンク") != 1 {
+		t.Errorf("グループの別のチャンネルからの言及が 1 件出ない (言及の単位の ID を付け直していない):\n%s", md)
 	}
 	if strings.Contains(md, "未分類") {
 		t.Errorf("グループの単位を分類に当てられなかった:\n%s", md)

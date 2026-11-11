@@ -42,11 +42,14 @@ type chanState struct {
 	started  time.Time // 走っている読み直しを始めた時刻 (経過秒を出す)
 	gen      int       // 最後に頼んだ読み直しの通し番号 (Model.seq)。結果はこの値と照合する
 	loadedAt time.Time
-	stale    bool              // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
-	hl       highlighter       // page の本文の色付け (page を置き換えるたびに作り直す)
-	rows     []row             // 左の一覧の行 (日付の見出しと話題)。nil なら Model.rows が作り直す (page・隠した話題・z を変えたら捨てる)
-	read     map[string]string // 既読の印 (単位の ID → 読んだときの単位の最後の発言の ts)
-	hidden   map[string]string // x で隠した単位 (単位の ID → 隠したときの単位の最後の発言の ts)
+	stale    bool // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
+	// redo は、走っている読み直しを頼んだ後にグループのメンバーが変わったこと。その結果は前のメンバーの板なので捨て、読み直す
+	// (走っている読み直しを追い越してもう 1 本起こさない: 2 本が並ぶと、古い方が後で終わってキャッシュを前のメンバーの板で上書きする)
+	redo   bool
+	hl     highlighter       // page の本文の色付け (page を置き換えるたびに作り直す)
+	rows   []row             // 左の一覧の行 (日付の見出しと話題)。nil なら Model.rows が作り直す (page・隠した話題・z を変えたら捨てる)
+	read   map[string]string // 既読の印 (単位の ID → 読んだときの単位の最後の発言の ts)
+	hidden map[string]string // x で隠した単位 (単位の ID → 隠したときの単位の最後の発言の ts)
 	// unread は未読の話題の数の覚え (タブに出す。描くたびに全チャンネルの全発言を数え直さない)。page か read を変えたら捨てる
 	unread *int
 	// mentions は単位の ID → その単位の発言への言及 (page を置き換えるたびに作り直す。未読と既読の印に使う)
@@ -187,7 +190,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 	case loadedMsg:
-		m.loaded(msg)
+		if cmd := m.loaded(msg); cmd != nil {
+			return m, tea.Batch(append(m.frameCmds(), cmd)...)
+		}
 	case pickerMsg:
 		m.picking = false
 		if m.pickCached {
@@ -282,16 +287,19 @@ func (m *Model) spin(from time.Time) string {
 	return fmt.Sprintf("%s %d 秒", spinner.At(m.now(), spinnerStep), int(m.now().Sub(from)/time.Second))
 }
 
-func (m *Model) loaded(msg loadedMsg) {
+func (m *Model) loaded(msg loadedMsg) tea.Cmd {
 	idx := slices.IndexFunc(m.chans, func(c chanState) bool { return c.ch.ID == msg.ch })
 	if idx < 0 {
-		return // 読んでいる間に購読から外した
+		return nil // 読んでいる間に購読から外した
 	}
 	c := &m.chans[idx]
 	if msg.gen != c.gen {
-		return // 後から頼んだ読み直しに追い越された
+		return nil // 後から頼んだ読み直しに追い越された
 	}
 	c.loading = false
+	if c.redo {
+		return m.membersChanged(idx)
+	}
 	if msg.err != nil {
 		c.err = msg.err
 		verb := "読み直せなかった"
@@ -299,7 +307,7 @@ func (m *Model) loaded(msg loadedMsg) {
 			verb = "読めなかった"
 		}
 		m.toast.Show(c.ch.Label()+" を"+verb+": "+msg.err.Error(), false)
-		return
+		return nil
 	}
 	var keep string
 	if idx == m.cur {
@@ -321,6 +329,7 @@ func (m *Model) loaded(msg loadedMsg) {
 		// 読み直しは既読にしない (本文の欄に出ていても): 欄は先頭へ戻り、付いた返信は欄の外にありうる。小さい端末・購読の画面の裏では
 		// 欄が描かれていない。読んでいる最中に付いた返信は、選び直すまで ● で出す
 	}
+	return nil
 }
 
 // Page はチャンネル i の最後に読めた板 (まだ読めていなければ ok が偽)。
@@ -581,10 +590,6 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	for _, ch := range sel {
 		c, ok := old[ch.ID]
 		if ok && !sameMembers(c.ch, ch) {
-			// グループのメンバーが変わった: 板は前のメンバーのもの。走っている読み直し (前のメンバーで集めている) の結果は捨て
-			// (世代を進める)、読み直す。今のタブはすぐ、他のタブは開いたとき (stale)
-			m.seq++
-			c.gen, c.loading, c.stale = m.seq, false, c.page != nil
 			changed[ch.ID] = true
 		}
 		c.ch = ch
@@ -595,23 +600,30 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	}
 	m.chans = next
 	m.toast.Show(fmt.Sprintf("購読するチャンネルを保存した (%d 件)", len(next)), true)
-	if i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID }); i >= 0 {
+	i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID })
+	if i >= 0 {
 		m.cur = i
-		if changed[curID] {
-			return m.reload(i)
+	} else {
+		m.cur, m.body = 0, false
+		m.list = listnav.List{}
+		m.pager.Reset()
+	}
+	var cmds []tea.Cmd
+	for j := range m.chans {
+		switch {
+		case !changed[m.chans[j].ch.ID]:
+		case m.chans[j].loading:
+			m.chans[j].redo = true // 走っている読み直しが終わったら、その結果を捨てて読み直す (loaded)
+		default:
+			cmds = append(cmds, m.membersChanged(j))
 		}
-		return nil
 	}
-	m.cur, m.body = 0, false
-	m.list = listnav.List{}
-	m.pager.Reset()
-	if len(next) == 0 {
-		return nil
+	if i < 0 && len(next) > 0 {
+		if c := &m.chans[0]; (c.page == nil || c.stale) && !c.loading && c.err == nil {
+			cmds = append(cmds, m.reload(0))
+		}
 	}
-	if c := &m.chans[0]; (c.page == nil || c.stale) && !c.loading && c.err == nil {
-		return m.reload(0)
-	}
-	return nil
+	return tea.Batch(cmds...)
 }
 
 // openSelected は選んだ話題の最後の発言を Slack で開く。
@@ -1089,4 +1101,15 @@ func unsubBody(c subs.Channel) []string {
 		return []string{"のグループを消しますか？", "(メンバーのチャンネルの購読は変わらない。", "作り直しても既読は引き継がない)"}
 	}
 	return []string{"の購読を外しますか？", "(s の購読の画面でまた付けられる)"}
+}
+
+// membersChanged はグループ i のメンバーが変わった (読み直しが走っていない) ときの後始末: 板は前のメンバーのものなので、
+// 前の失敗を消して読み直しを待つ印 (stale) を立てる。今のタブならすぐ読み直し、他のタブは開いたときに読み直す (switchTo)。
+func (m *Model) membersChanged(i int) tea.Cmd {
+	c := &m.chans[i]
+	c.redo, c.err, c.stale = false, nil, c.page != nil
+	if i == m.cur {
+		return m.reload(i)
+	}
+	return nil
 }

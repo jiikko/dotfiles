@@ -103,7 +103,7 @@ func findMentions(ctx context.Context, cli source.Client, ch subs.Channel, since
 				}
 				m := render.Mention{
 					Unit: t.unit, Target: ts, Ts: f.Ts, Name: name, Mine: f.User == me,
-					ChannelName: f.Channel.Name, Channel: f.Channel.ID, Text: board.Plain(f.Text, us.Names), URL: f.Permalink,
+					ChannelName: f.Channel.Name, Text: board.Plain(f.Text, us.Names), URL: f.Permalink,
 				}
 				if t.ok {
 					m.TargetName, m.TargetMine = t.msg.Name, t.msg.Mine

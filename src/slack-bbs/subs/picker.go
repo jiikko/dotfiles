@@ -22,6 +22,9 @@ type item struct {
 	ch  source.Channel
 	on  bool
 	grp *Channel // グループの行 (一覧の頭に並べる。グループは在る限り購読している)。チャンネルの行では nil
+	// memberOnly はグループの編集で外すためだけに出す行 (アーカイブ済み・一覧から消えたメンバー)。購読の付け外しの画面には出さない
+	// (出すと、読めないチャンネルの購読を付けられる)
+	memberOnly bool
 }
 
 // Picker はチャンネルの一覧から購読を選ぶ画面の状態。キーは bubbletea の KeyPressMsg.String() の表記で受ける。
@@ -74,11 +77,12 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 	}
 	seen := map[string]bool{}
 	for _, c := range all {
-		if _, isMember := member[c.ID]; c.IsArchived && !on[c.ID] && !isMember {
+		_, isMember := member[c.ID]
+		if c.IsArchived && !on[c.ID] && !isMember {
 			continue
 		}
 		seen[c.ID] = true
-		p.items = append(p.items, item{ch: c, on: on[c.ID]})
+		p.items = append(p.items, item{ch: c, on: on[c.ID], memberOnly: c.IsArchived && !on[c.ID]})
 	}
 	sort.SliceStable(p.items, func(i, j int) bool {
 		if p.items[i].on != p.items[j].on {
@@ -101,7 +105,7 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 		for _, mem := range g.grp.Members {
 			if !seen[mem.ID] {
 				seen[mem.ID] = true
-				gone = append(gone, item{ch: source.Channel{ID: mem.ID, Name: mem.Name, IsArchived: true}})
+				gone = append(gone, item{ch: source.Channel{ID: mem.ID, Name: mem.Name, IsArchived: true}, memberOnly: true})
 			}
 		}
 	}
@@ -169,8 +173,8 @@ func (p *Picker) visible() []int {
 	}
 	var out []int
 	for i, it := range p.items {
-		if it.grp != nil && p.editing != nil {
-			continue // グループの出し入れの間は、チャンネルだけを並べる
+		if it.grp != nil && p.editing != nil || it.memberOnly && p.editing == nil {
+			continue // グループの出し入れの間はチャンネルだけを、購読の付け外しの間は購読できるものだけを並べる
 		}
 		name := strings.ToLower(it.ch.Name)
 		if !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(name, w) }) {
@@ -350,10 +354,13 @@ func (p *Picker) inEditing(id string) bool {
 func (p *Picker) Lines() []string {
 	vis := p.visible()
 	p.list.Fit(len(vis), p.rows())
-	n := 0
+	n, total := 0, 0
 	for _, it := range p.items {
 		if it.on {
 			n++
+		}
+		if !it.memberOnly {
+			total++
 		}
 	}
 	pageNo := fmt.Sprintf("ページ %d/%d", p.page()/p.rows()+1, p.pages(len(vis)))
@@ -364,7 +371,7 @@ func (p *Picker) Lines() []string {
 	if p.editing != nil {
 		head += fmt.Sprintf("グループ「%s」に入れるチャンネルを選ぶ (%d チャンネル)", termsafe.PlainLine(p.editing.Name), len(p.editing.Members))
 	} else {
-		head += fmt.Sprintf("購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", n, len(p.items))
+		head += fmt.Sprintf("購読するチャンネルを選ぶ (%d 件を購読中 / 全 %d 件)", n, total)
 	}
 	lines := []string{termwidth.Truncate(head, p.w, "…")}
 	switch {

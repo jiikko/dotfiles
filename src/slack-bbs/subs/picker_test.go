@@ -288,6 +288,9 @@ func TestPickerGroupStaleMembers(t *testing.T) {
 	if got := p.Selected()[0].Members[0].Name; got != "times_a_new" {
 		t.Errorf("メンバーの名前を今の名前に直していない: %q", got)
 	}
+	if lines := strings.Join(p.Lines(), "\n"); strings.Contains(lines, "#gone") || strings.Contains(lines, "#times_b") {
+		t.Fatalf("外すためだけのメンバーの行が、購読の付け外しの画面に出た (読めないチャンネルを購読できる):\n%s", lines)
+	}
 	p.Key("e")
 	lines := strings.Join(p.Lines(), "\n")
 	for _, w := range []string{"[x] #times_b", "[x] #gone"} {

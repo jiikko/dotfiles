@@ -23,7 +23,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -889,6 +888,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 		return c, nil
 	}
 	var notes, failed []string
+	var mentions []render.Mention
 	for _, mem := range ch.Members {
 		c.page.Members[mem.ID] = mem.Name
 		mc, err := collectChannel(ctx, o, cli, me, us, mem)
@@ -904,11 +904,8 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 			c.units = append(c.units, u.InChannel(mem.ID))
 		}
 		for _, mn := range mc.page.Mentions {
-			if slices.ContainsFunc(ch.Members, func(x subs.Channel) bool { return x.ID == mn.Channel }) {
-				continue // 同じグループのチャンネルの発言は板の本文に出ている。言及にも出すと 2 回出て、既読の印も動かす
-			}
 			mn.Unit = mem.ID + "/" + mn.Unit // 言及の振り分けと既読は単位の ID で引く
-			c.page.Mentions = append(c.page.Mentions, mn)
+			mentions = append(mentions, mn)
 		}
 		for _, n := range mc.page.Notes {
 			notes = append(notes, "#"+mem.Name+": "+n)
@@ -926,6 +923,9 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 	if err := board.ValidateUnits(c.units); err != nil {
 		return collected{}, err
 	}
+	// 言及は単独のチャンネルの板と同じ条件で付ける (同じ単位の中のリンクは findMentions が外す)。グループの別のチャンネルからの
+	// 言及は本文にも出るが、単独のチャンネルで別の単位から貼られたものと同じく「この話題への言及」にも出す
+	c.page.Mentions = mentions
 	return c, nil
 }
 

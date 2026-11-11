@@ -37,16 +37,15 @@ type Page struct {
 // Mention は板の発言へのリンクを貼った発言 1 件。Unit は言及された発言の単位 (話題への振り分けと既読の印に使う)。
 type Mention struct {
 	Unit        string `json:"unit"`
-	Target      string `json:"target"`            // 言及された発言の ts (スレッドだけを指すリンクならスレッドの親の ts)
-	TargetName  string `json:"target_name"`       // 言及された発言の書き手
-	TargetMine  bool   `json:"target_mine"`       // 言及された発言が自分のものか
-	Ts          string `json:"ts"`                // 言及した発言の ts
-	Name        string `json:"name"`              // 言及した人
-	Mine        bool   `json:"mine"`              // 言及したのが自分か (自分の言及では未読にしない)
-	ChannelName string `json:"channel_name"`      // 言及した発言のチャンネル
-	Channel     string `json:"channel,omitempty"` // 言及した発言のチャンネル ID (グループの中のチャンネルからの言及を外すのに使う)
-	Text        string `json:"text"`              // mrkdwn をほどいた本文
-	URL         string `json:"url"`               // 言及した発言の permalink
+	Target      string `json:"target"`       // 言及された発言の ts (スレッドだけを指すリンクならスレッドの親の ts)
+	TargetName  string `json:"target_name"`  // 言及された発言の書き手
+	TargetMine  bool   `json:"target_mine"`  // 言及された発言が自分のものか
+	Ts          string `json:"ts"`           // 言及した発言の ts
+	Name        string `json:"name"`         // 言及した人
+	Mine        bool   `json:"mine"`         // 言及したのが自分か (自分の言及では未読にしない)
+	ChannelName string `json:"channel_name"` // 言及した発言のチャンネル
+	Text        string `json:"text"`         // mrkdwn をほどいた本文
+	URL         string `json:"url"`          // 言及した発言の permalink
 }
 
 // MentionsOf は話題 t の発言への言及 (古い順)。
