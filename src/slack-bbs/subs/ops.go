@@ -60,7 +60,7 @@ func AddChannels(cur []Channel, chs ...Channel) ([]Channel, int) {
 func RemoveChannels(cur []Channel, ids ...string) ([]Channel, int) {
 	chans, groups := split(cur)
 	before := len(chans)
-	chans = slices.DeleteFunc(chans, func(c Channel) bool { return slices.Contains(ids, c.ID) })
+	chans = slices.DeleteFunc(chans, idIn(ids))
 	return append(chans, groups...), before - len(chans)
 }
 
@@ -91,7 +91,7 @@ func GroupAdd(cur []Channel, name string, members ...Channel) ([]Channel, int, e
 func GroupRemove(cur []Channel, name string, ids ...string) ([]Channel, int, error) {
 	return editGroup(cur, name, func(g *Channel) int {
 		before := len(g.Members)
-		g.Members = slices.DeleteFunc(g.Members, func(c Channel) bool { return slices.Contains(ids, c.ID) })
+		g.Members = slices.DeleteFunc(g.Members, idIn(ids))
 		return before - len(g.Members)
 	})
 }
@@ -116,6 +116,11 @@ func RenameGroup(cur []Channel, old, name string) ([]Channel, error) {
 	}
 	out, _, err := editGroup(cur, old, func(g *Channel) int { g.Name = name; return 1 })
 	return out, err
+}
+
+// idIn は、チャンネルの ID が ids のどれかかを返す述語 (外す操作の絞り込み)。
+func idIn(ids []string) func(Channel) bool {
+	return func(c Channel) bool { return slices.Contains(ids, c.ID) }
 }
 
 func split(cur []Channel) (chans, groups []Channel) {

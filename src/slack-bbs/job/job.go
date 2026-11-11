@@ -139,6 +139,7 @@ func Add(dir string, m *Manifest, r Request, prompt []byte) error {
 	return writeManifest(dir, *m)
 }
 
+// dupscan:allow intentional subs.version と同じ 3 行だが役割が違う (2 段の実行の依頼の改ざん検出と、購読のファイルの照合の印)
 func digest(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])

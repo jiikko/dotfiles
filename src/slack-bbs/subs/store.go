@@ -88,6 +88,7 @@ func LoadVersion(path string) ([]Channel, string, error) {
 	return append(f.Channels, f.Groups...), version(b), nil
 }
 
+// dupscan:allow intentional job.digest と同じ 3 行だが役割が違う (購読のファイルの照合の印と、2 段の実行の依頼の改ざん検出)。寄せると片方の都合 (長さ・形) を変えにくくなる
 func version(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
