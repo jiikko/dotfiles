@@ -6,7 +6,7 @@
 #   ja-textlint --stdin --stdin-filename x.md < text   # 標準入力の文を検査する (コミットメッセージ・UI の文言の下書き)
 #   (残りの引数は textlint にそのまま渡る。--fix も効く)
 #
-# 版と規則の正本: _claude/skills/ja-writing/textlint/ (package.json・package-lock.json・textlintrc.json)。
+# バージョンと規則の正本: _claude/skills/ja-writing/textlint/ (package.json・package-lock.json・textlintrc.json と、自作の規則の rules/)。
 # 依存は ${XDG_CACHE_HOME:-~/.cache}/ja-textlint/<lock の hash>/ に npm ci で入れる。dotfiles の作業ツリーに node_modules を作らない
 # (worktree ごとに入れ直さずに済み、gitignore の漏れで巨大な差分が出ることもない)。lock が変わると hash が変わり、入れ直す。
 #
@@ -22,6 +22,7 @@ src="$root/_claude/skills/ja-writing/textlint"
 for f in package.json package-lock.json textlintrc.json; do
   [ -f "$src/$f" ] || { echo "ja-textlint: $src/$f が無い" >&2; exit 3; }
 done
+[ -d "$src/rules" ] || { echo "ja-textlint: $src/rules が無い" >&2; exit 3; }
 
 hash="$(shasum -a 256 "$src/package-lock.json" | cut -c1-16)"
 base="${XDG_CACHE_HOME:-$HOME/.cache}/ja-textlint"
@@ -49,4 +50,4 @@ if [ ! -x "$bin" ]; then
   fi
 fi
 
-exec "$bin" --config "$src/textlintrc.json" "$@"
+exec "$bin" --config "$src/textlintrc.json" --rulesdir "$src/rules" "$@"

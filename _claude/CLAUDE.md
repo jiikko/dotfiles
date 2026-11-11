@@ -200,4 +200,4 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | 視認性, 色被り, UXレビュー | `ux-visibility-review` |
 | slack-bbs, Slack を話題ごとに読む, Slack に追いつきたい, チャンネルを掲示板風に | `slack-bbs` (分類はこのセッションのサブエージェント。購読を選ぶのは端末の `slack-bbs sub`) |
 | ずんだもん解説, VOICEVOX, ずんだもん, キャラ音声の掛け合い動画, 読み上げ動画 | `zundamon-kaisetsu` |
-| 自然な日本語, 日本語がおかしい, 主語がない, 文言を見直して, UI の文言・ストアの説明文を日本語で書く, ja-writing | `ja-writing` (書き癖の機械の検査は `ja-textlint` (dotfiles の `bin/`)。主語の抜け・語の選び方は機械では拾えない) |
+| 自然な日本語, 日本語がおかしい, 主語がない, 文言を見直して, UI の文言・ストアの説明文を日本語で書く, ja-writing | `ja-writing` (書き癖と AI が書きがちな語の機械の検査は `ja-textlint` (dotfiles の `bin/`)。主語の抜け・一覧の外の語の選び方は機械では拾えない) |

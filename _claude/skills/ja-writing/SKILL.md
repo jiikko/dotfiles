@@ -1,7 +1,7 @@
 ---
 name: ja-writing
 version: 1.0.0
-description: 人が読む日本語の文 (アプリの UI の文言・App Store の説明文・ヘルプ・issue・コミットメッセージ・コードのコメント・ユーザーへの報告) を、主語や目的語が抜けず、機能を利用者の動作で言い表す自然な日本語で書き、書いた後に ja-textlint (dotfiles の bin/) で機械の検査を通す。「自然な日本語にして」「日本語がおかしい」「主語がない」「日本語を直して」「文言を見直して」「ja-writing」で発火。英語の文の翻訳だけでなく、日本語で一から書くときにも使う。誤字・表記揺れだけの校正なら ja-textlint を単独で回せば足りる。
+description: 人が読む日本語の文 (アプリの UI の文言・App Store の説明文・ヘルプ・issue・コミットメッセージ・コードのコメント・ユーザーへの報告) を、主語や目的語が抜けず、機能を利用者の動作で言い表す自然な日本語で書き、書いた後に ja-textlint (dotfiles の bin/) で機械の検査を通す。AI が書きがちな比喩の語 (〜側に倒す・黙って・効く・版) を起きていることの言葉に直し、手直しでは意味を変えず情報を足さない。「自然な日本語にして」「AI っぽい日本語を直して」「日本語がおかしい」「主語がない」「日本語を直して」「文言を見直して」「ja-writing」で発火。英語の文の翻訳だけでなく、日本語で一から書くときにも使う。誤字・表記揺れだけの校正なら ja-textlint を単独で回せば足りる。
 ---
 
 # 自然な日本語で書く
@@ -12,7 +12,7 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
 規範は 2 層に分ける。
 
 - **人 (と Claude) が読んで守るもの**: 主語・目的語の抜け、語が機能を言い表しているか、直訳の硬さ。構文として整った文は機械の検査を素通りするので、ここが本体
-- **機械 (`ja-textlint`) が見るもの**: 冗長な表現・助詞の重複・長すぎる文・文体の混在などの書き癖
+- **機械 (`ja-textlint`) が見るもの**: 冗長な表現・助詞の重複・長すぎる文・文体の混在などの書き癖と、AI が書きがちな語の一部・表示されない太字
 
 ## まず避ける 3 つの失敗 (実例)
 
@@ -47,7 +47,7 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
   - ✗ `解析の結果を適用します。`
   - ✓ `無音の部分を飛ばして再生します。`
 <!-- textlint-enable ja-technical-writing/no-mix-dearu-desumasu -->
-- 機能の限界も同じ粒度で書く (どの動画には効かないか)。払う前に読む文なら特に
+- 機能の限界も同じ粒度で書く (どの動画では使えないか)。払う前に読む文なら特に
 
 ### 3. 英語を直訳しない
 
@@ -73,6 +73,28 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
 - UI のラベル (ボタン・見出し) は短く、句点を付けない。文には句点を付ける
 - 全角と半角の間の空白は、その repo の既存の書き方に揃える (dotfiles・my-products の文書は英数字の前後に半角の空白を入れる)
 - 数字は算用数字 (7 日・9 種類)
+- 閉じの `**` を約物 (「」」「)」) の直後・文字の直前に置くと、太字は表示されない (`**「x」**に`)。`**` の外側に空白を入れるか、約物を太字の外へ出す
+
+### 7. AI が書きがちな語を、起きていることの言葉に直す
+
+<!-- textlint-disable ja-ai-vocabulary -->
+- 比喩の動詞で済ませない。何がどう変わるかを書く
+  - 「〜側に倒す」→「〜を優先する」「〜に揃える」
+  - 「潰す」→「直す」「取り除く」
+  - 「効く」→「止まる」「反映される」
+  - 「前提が崩れる」→「〜という前提が成り立たなくなる」
+- 「黙って」「静かに壊れる」(silently の直訳) は、エラーや通知が出ないのか (「エラーを出さずに」)、人が気づけないのか (「気づかないうちに」) を書き分ける
+- ソフトウェアの「版」は「バージョン」と書く。出版物・製品の種類を表す「第 2 版」「日本語版」は残す
+- 語の候補は `ja-textlint` が warning で出す (下の「ja-textlint の中身」)。言い換えると意味が変わるときは元の語を残す。
+  定義した用語 (dotfiles の「正本」「ゲート」) は直さない
+<!-- textlint-enable ja-ai-vocabulary -->
+
+## 直すときに守ること (書いた文・人の文の手直し)
+
+- **意味を変えない**: 直す前と後で、主張・何を認め何を否定するか・言い切りの強さ (断定・推量・許可・義務)・文の働き (依頼・説明・予定・評価) を比べ、
+  1 つでも変わる案は捨てて元の文を残す。「〜してよい」を「〜する」に、「〜場合がある」を言い切りにしない
+- **情報を足さない**: 元の文・依頼・資料に書いていない動作主・原因・条件・数値を、推測で足さない。補えないなら書き手に聞く
+- **1 か所ずつ直す**: sed・perl などの置換で文書をまとめて書き換えない。同じ語でも、前後の文を読んで直すかを決める
 
 ## 書いた後に確かめること
 
@@ -87,24 +109,34 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
 
    - `ja-textlint` は dotfiles の `bin/` にあり、PATH から呼べる (どの repo の中からでも同じ)
    - 指摘は直す。直さないなら、理由を報告に書く (例: 引用した原文・固有名詞)
+   - `ja-ai-vocabulary` の warning は rc 0 のまま出る。rc だけを見ず、出力の warning も読む
    - rc 0 は「書き癖の指摘が無い」だけで、規範 1〜3 を守った証拠にはならない
 4. **文字列カタログ・翻訳がある場合**: 直した日本語に合わせて、英語の元の文と他の言語の訳も同じ意味に揃える
 
 ## ja-textlint の中身
 
-- 規則は textlint の [preset-ja-technical-writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing) (MIT)。
-  版と設定の正本は `textlint/` (`package.json`・`package-lock.json`・`textlintrc.json`)
+<!-- textlint-disable ja-ai-vocabulary -->
+- 規則は textlint の [preset-ja-technical-writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing) (MIT) と、
+  自作の 2 本 (`textlint/rules/`)。バージョンと設定の正本は `textlint/` (`package.json`・`package-lock.json`・`textlintrc.json`)
+  - `ja-ai-vocabulary` (warning。rc は 0 のまま): 規範 7 の語 (版・〜側に倒す・黙って・静かに壊れる・潰す・溶かす・効く・前提が崩れる)。
+    語の選び方は [yomiyasu](https://github.com/nanaism/yomiyasu) (MIT。`textlint/LICENSE-yomiyasu`) の語彙の一覧から、dotfiles で当たりの多いものを選んだ。
+    書き換えはしない (`--fix` でも変わらない)
+  - `ja-bold-not-rendered` (error): 表示されない `**` (規範 6)
+  - 自作の規則の重さは規則の中で決めている。`textlintrc.json` に書いても、`--rulesdir` で読ませた規則には届かない
+<!-- textlint-enable ja-ai-vocabulary -->
 - 外している規則: `ja-no-mixed-period` (文末の句点を求める)。箇条書き・コミットの件名・UI のラベルは句点で終わらないのが普通で、
   全部の行に出る指摘は読まれなくなるため
 - 例文の引用が文体の規則に引っかかるときは、その範囲を無効化のコメントで囲む。コメントは行頭に置く。
-  字下げした箇条書きの中に置くと効かない。形は `<!-- textlint-disable <規則> -->` と `<!-- textlint-enable <規則> -->` (`textlint-filter-rule-comments`)
-- 依存は初回の起動で `~/.cache/ja-textlint/<lock の hash>/` に `npm ci` で入れる (node と npm が要る)。版を上げるときは
+  字下げした箇条書きの中に置いたコメントは無視される。形は `<!-- textlint-disable <規則> -->` と `<!-- textlint-enable <規則> -->` (`textlint-filter-rule-comments`)
+- 依存は初回の起動で `~/.cache/ja-textlint/<lock の hash>/` に `npm ci` で入れる (node と npm が要る)。バージョンを上げるときは
   `textlint/package.json` を書き換えてから、そのディレクトリで `npm install --package-lock-only --ignore-scripts` を打って lock を作り直す
   (lock が変わると別の hash のディレクトリに入れ直す。古いディレクトリは消さずに残るので、`~/.cache/ja-textlint/` の中の古いものは手で消す)
-- 見ないもの: 主語・目的語の抜け・語の選び方・直訳の硬さ (「まず避ける 3 つの失敗」の 2 つの文は、どちらも rc 0 で通った)
+- 見ないもの: 主語・目的語の抜け・語の選び方 (`ja-ai-vocabulary` の一覧の外)・直訳の硬さ (「まず避ける 3 つの失敗」の 2 つの文は、どちらも rc 0 で通った)
 
 ## 参考にした規範
 
 - [JTF 日本語標準スタイルガイド](https://www.jtf.jp/tips/styleguide) (CC BY 4.0) — 表記と翻訳の文体
 - Apple の UX ライティングの Q&A (日本語) — 短く書く・結論から書く・声に出して読む
 - [SmartHR デザインシステムのライティング](https://smarthr.design/products/contents/) — UI の文言 (要点を参考にした。本文は写していない)
+- [yomiyasu](https://github.com/nanaism/yomiyasu) (MIT) — 規範 7 と「直すときに守ること」(意味の保持・情報を足さない・1 か所ずつ直す)。
+  推敲の全手順と Python の検査は取り込んでいない (要点だけを写した)

@@ -1,0 +1,59 @@
+// AI が書いた日本語に多い比喩の動詞と直訳語を、見直す候補として知らせる。書き換えはしない (fixer を持たない)。
+// 置き換え先を 1 つに決める辞書 (prh) にしない: 「黙って」が「エラーを出さずに」なのか「気づかないうちに」なのかは文脈で決まり、
+// ja-textlint は --fix をそのまま渡すので、辞書にすると意味の違う語へ機械的に書き換わる。
+// 語の選び方と言い換えの方向は yomiyasu (https://github.com/nanaism/yomiyasu, MIT。LICENSE-yomiyasu) の
+// references/slop-catalog.md と calques.md による。dotfiles の文書へ yomiyasu の lint をかけた結果 (2026-11-11) から、
+// 当たりの多い語だけを選んだ。「正本」「ゲート」「台帳」「入口」「印」は dotfiles で定義した用語として使っているので入れない (ユーザー決定 2026-11-11)。
+"use strict";
+
+const ENTRIES = [
+  {
+    // 「第2版」「日本語版」「出版」「版画」のような、出版物・製品の種類を表す定着した語は外す
+    pattern: /(?<![第初再改訂出原語料験用品全刷華定価及限常]\s*\d*\s*)版(?![画権元木図下面籍])/gu,
+    message: "「版」はソフトウェアの意味なら「バージョン」と書く (出版物・製品の種類の「第2版」「日本語版」は残す)",
+  },
+  {
+    pattern: /[側方]に倒[さしすせそ]/gu,
+    message: "「〜側に倒す」は比喩。「〜を優先する」「〜に揃える」「〜を選ぶ」など、何をどう決めたかを書く",
+  },
+  {
+    pattern: /黙って/gu,
+    message: "「黙って」は擬人化。エラーや通知が出ないなら「エラーを出さずに」、気づけないなら「気づかないうちに」と、どちらかを書く",
+  },
+  {
+    pattern: /静かに(?:壊れ|失敗|落ち|消え|止ま|死|通|抜け|外れ|変わ)/gu,
+    message: "「静かに〜する」は silently の直訳。「気づかないうちに」「エラーを出さずに」など、何が起きないのかを書く",
+  },
+  {
+    pattern: /潰[さしすせそ]/gu,
+    message: "「潰す」は比喩。「直す」「消す」「取り除く」「確かめて除外する」など、何をしたかを書く",
+  },
+  {
+    pattern: /溶か[さしすせそ]/gu,
+    message: "「時間を溶かす」は比喩。「時間を費やす」「時間がかかる」と書く",
+  },
+  {
+    pattern: /効[かきくけこい]/gu,
+    message: "「効く」は効き目をぼかす比喩。何がどう変わるか (止まる・速くなる・反映される・適用される) を書く",
+  },
+  {
+    pattern: /前提が崩れ/gu,
+    message: "「前提が崩れる」は比喩。「前提が成り立たなくなる」「〜という前提が外れる」と、どの前提がどうなるかを書く",
+  },
+];
+
+module.exports = function (context) {
+  const { Syntax, report, getSource, locator } = context;
+  return {
+    [Syntax.Str](node) {
+      const text = getSource(node);
+      for (const { pattern, message } of ENTRIES) {
+        for (const m of text.matchAll(pattern)) {
+          // severity を textlintrc で "warning" にしない: --rulesdir で読ませた規則には textlintrc の設定が届かない
+          // (textlint 15.8.0 で false にしても止まらなかった)。RuleError ではなく素のオブジェクトで報告すると、ここで決めた値が使われる
+          report(node, { message, padding: locator.range([m.index, m.index + m[0].length]), severity: 1 });
+        }
+      }
+    },
+  };
+};
