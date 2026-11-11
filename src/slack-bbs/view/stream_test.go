@@ -44,7 +44,7 @@ func TestStreamAcrossTabs(t *testing.T) {
 		t.Fatalf("新着のタブに入っていない: %q", m.tabsLine())
 	}
 	got := strings.Join(leftPlain(m), "\n")
-	order := []string{"未読 2", "#dev dev-new", "#ops ops-mid", "既読", "#dev dev-old"}
+	order := []string{"未読", "#dev dev-new", "#ops ops-mid", "既読", "#dev dev-old"}
 	at := 0
 	for _, w := range order {
 		i := strings.Index(got[at:], w)
@@ -94,5 +94,72 @@ func TestStreamShowsWhatIsNew(t *testing.T) {
 	mark := strings.Index(body, strings.TrimSpace(render.NewMark))
 	if mark < 0 || mark > strings.Index(body, "直りました") || mark < strings.Index(body, "障害") {
 		t.Errorf("「ここから新着」の区切りが、前に読んだ所と増えた発言の間に無い:\n%s", body)
+	}
+}
+
+// 新着のタブで x で隠しても並べ直さず、隠した行だけを抜く (読んだ話題がまとめて動いてカーソルが無関係な行に乗らない)。
+// 話題を選んでいないときの r と d は、前に見ていたチャンネルに効かせず断る。
+func TestStreamHideKeepsOrder(t *testing.T) {
+	m := streamModel(t,
+		[]board.Topic{topicAt("a", day0), topicAt("b", day0.Add(-time.Hour)), topicAt("c", day0.Add(-2*time.Hour))}, nil, map[string]int{})
+	run(m, press(m, "tab"))
+	run(m, press(m, "tab")) // 新着のタブ (並び: 未読 a b c)
+	press(m, "j")           // b を読む (既読になるが並びは動かない)
+	press(m, "x")           // b を隠す → カーソルは次の c
+	if tp, ok := m.selected(); !ok || tp.Title != "c" {
+		t.Errorf("隠した後のカーソルが次の話題に無い: %q\n%s", tp.Title, strings.Join(leftPlain(m), "\n"))
+	}
+	empty := streamModel(t, nil, nil, map[string]int{})
+	run(empty, press(empty, "tab"))
+	run(empty, press(empty, "tab")) // 話題の無い新着のタブ
+	if cmd := empty.key("r"); cmd != nil || empty.chans[1].loading || !strings.Contains(empty.LastToast(), "選んでから") {
+		t.Errorf("話題を選んでいない r が、前に見ていたタブを読み直した: %q", empty.LastToast())
+	}
+	empty.SetSubscriptions(&Subscriptions{Save: func([]subs.Channel) error { return nil }})
+	if empty.key("d"); empty.unsub != "" {
+		t.Error("話題を選んでいない d が、前に見ていたタブの購読を外そうとした")
+	}
+}
+
+// +N は言及も数え、本文の区切りは他の人の発言の前にだけ入れる (自分の発言だけ増えた単位は区切らない)。
+func TestStreamNewCountAndMarkRules(t *testing.T) {
+	tp := topicAt("x", day0.Add(-time.Hour))
+	u := tp.Units[0]
+	mark := u.Msgs[0].Ts
+	mine := board.Msg{Ts: tsAt(day0), Name: "me", Text: "自分", New: true, Mine: true}
+	u.Msgs = append(u.Msgs, mine)
+	tp.Units[0] = u
+	ms := map[string][]render.Mention{u.ID: {{Unit: u.ID, Ts: tsAt(day0.Add(time.Minute)), Name: "sato"}}}
+	if n := newCount(tp, map[string]string{u.ID: mark}, ms); n != 1 {
+		t.Errorf("+N = %d, want 1 (他の人の言及 1・自分の発言は数えない)", n)
+	}
+	p := render.Page{}
+	if body := strings.Join(p.BodySince(tp, false, map[string]string{u.ID: mark}), "\n"); strings.Contains(body, strings.TrimSpace(render.NewMark)) {
+		t.Errorf("自分の発言だけ増えた単位に区切りを入れた:\n%s", body)
+	}
+}
+
+// 新着のタブで購読を保存しても、選んでいた話題に戻す (並びが変わって同じ添字の別の話題の本文に替えない)。
+// メンバーを変えたグループは、新着のタブにいるならすぐ読み直す (前のメンバーの板を並べ続けない)。
+func TestStreamKeepsSelectionAndReloadsChangedGroups(t *testing.T) {
+	m := streamModel(t, []board.Topic{topicAt("a", day0.Add(-time.Hour)), topicAt("b", day0.Add(-2*time.Hour)), topicAt("c", day0.Add(-3*time.Hour))},
+		[]board.Topic{topicAt("ops", day0)}, map[string]int{})
+	run(m, press(m, "tab"))
+	run(m, press(m, "tab")) // 新着: ops a b c (b は最後でない: 添字が収まっただけで b に当たらないように)
+	press(m, "j")
+	press(m, "j") // b
+	press(m, "l")
+	m.setChannels([]subs.Channel{m.chans[0].ch}) // ops を外す
+	if tp, ok := m.selected(); !ok || tp.Title != "b" || !m.body {
+		t.Errorf("購読を保存した後に、選んでいた b の本文から替わった: %q body=%v", tp.Title, m.body)
+	}
+
+	g := subs.Channel{ID: "grp0123abcd", Name: "times", Members: []subs.Channel{{ID: "C1", Name: "dev"}}}
+	m.setChannels([]subs.Channel{m.chans[0].ch, g})
+	run(m, m.reload(1))
+	g2 := g
+	g2.Members = append(g2.Members, subs.Channel{ID: "C2", Name: "ops"})
+	if cmd := m.setChannels([]subs.Channel{m.chans[0].ch, g2}); cmd == nil || !m.chans[1].loading {
+		t.Error("新着のタブにいるのに、メンバーを変えたグループを読み直さない")
 	}
 }

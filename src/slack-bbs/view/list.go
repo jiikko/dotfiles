@@ -148,7 +148,7 @@ func (m *Model) leftLines() []string {
 		text := firstMark(t) + " " + termsafe.PlainLine(t.Title)
 		if m.stream {
 			text = firstMark(t) + " " + c.ch.Label() + " " + termsafe.PlainLine(t.Title) // どのタブの話題か
-			if n := newCount(t, c.read); unread && n > 0 {
+			if n := newCount(t, c.read, c.mentions); unread && n > 0 {
 				count = fmt.Sprintf(" +%d", n) // 前に読んだ後に増えた他の人の発言
 			}
 		}

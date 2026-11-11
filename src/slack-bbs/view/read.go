@@ -1,7 +1,6 @@
 package view
 
 import (
-	"fmt"
 	"slices"
 
 	"slack-bbs/board"
@@ -198,7 +197,12 @@ func (m *Model) toggleHidden() {
 			delete(c.hidden, u.ID)
 		}
 	}
-	c.rows, c.unread, m.streamRows = nil, nil, nil
+	c.rows, c.unread = nil, nil
+	if m.stream && hide && !m.showHidden && len(m.streamRows) > m.list.Cursor {
+		// 新着のタブは並べ直さず、隠した行だけをその場で抜く (並べ直すと、読んで既読になった話題もまとめて動き、カーソルが
+		// 無関係な行に乗る)。z で出しているときと戻すときは行をそのまま残す (淡い色が変わるだけ)
+		m.streamRows = slices.Delete(m.streamRows, m.list.Cursor, m.list.Cursor+1)
+	}
 	switch {
 	case !hide:
 		m.toast.Show("この話題を隠すのをやめた", true)
@@ -244,13 +248,19 @@ func zHint(showing bool) string {
 	return "隠した話題も出す"
 }
 
-// newCount は話題の、既読の印より後の他の人の期間内の発言の数 (新着のタブの「+N」。印の無い単位は全部を数える)。
-func newCount(t board.Topic, read map[string]string) int {
+// newCount は話題の、既読の印より後の他の人の期間内の発言と言及の数 (新着のタブの「+N」。印の無い単位は全部を数える)。
+// 数えるものは未読の判定 (unitUnread) と同じ。
+func newCount(t board.Topic, read map[string]string, mentions map[string][]render.Mention) int {
 	n := 0
 	for _, u := range t.Units {
 		mark, ok := read[u.ID]
 		for _, msg := range u.Msgs {
 			if msg.New && !msg.Mine && (!ok || board.TsBefore(mark, msg.Ts)) {
+				n++
+			}
+		}
+		for _, mn := range mentions[u.ID] {
+			if !mn.Mine && (!ok || board.TsBefore(mark, mn.Ts)) {
 				n++
 			}
 		}
@@ -301,7 +311,7 @@ func (m *Model) buildStream() []row {
 	for _, g := range []struct {
 		label string
 		es    []entry
-	}{{fmt.Sprintf("未読 %d", len(unread)), unread}, {"既読", read}} {
+	}{{"未読", unread}, {"既読", read}} { // 数は付けない: 選ぶたびには並べ直さないので、数が見出しに残って古くなる (数はタブの丸に出す)
 		if len(g.es) == 0 {
 			continue
 		}

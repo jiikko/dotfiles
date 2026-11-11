@@ -420,6 +420,10 @@ func (m *Model) key(k string) tea.Cmd {
 	m.fitList(1)
 	switch k {
 	case "r":
+		if m.stream && !m.hasSel() {
+			m.toast.Show("新着のタブでは、読み直すタブの話題を選んでから r を押す (R で全部を読み直す)", false)
+			return nil
+		}
 		oi := m.selOwner() // 新着のタブでは、選んだ話題のタブを読み直す
 		if m.chans[oi].loading {
 			// 走っている読み直しを待つ (連打で claude を何本も起こさない)
@@ -476,6 +480,10 @@ func (m *Model) key(k string) tea.Cmd {
 	case "d":
 		if m.subs == nil {
 			m.toast.Show("購読を外せるのは、チャンネルを指定しないで起動したときだけ (端末の slack-bbs sub でも外せる)", false)
+			return nil
+		}
+		if m.stream && !m.hasSel() {
+			m.toast.Show("新着のタブでは、購読を外すタブの話題を選んでから d を押す", false)
 			return nil
 		}
 		m.unsub = m.chans[m.selOwner()].ch.ID // 新着のタブでは、選んだ話題のタブ (確認の板に名前を出す)
@@ -611,6 +619,7 @@ func (m *Model) pickKey(k, text string) tea.Cmd {
 // setChannels はタブを購読 sel に合わせる。残るチャンネルは読んだ板と読み直しの状態をそのまま持ち (走っている読み直しの結果も
 // ID で照合して受け取る)、新しいチャンネルは開いたときに読む。見ていたチャンネルが残れば、そのまま見続ける。
 func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
+	keep := m.selKey() // 新着のタブは並びが変わるので、選んでいた話題に戻す (戻せなければ本文を閉じる)
 	curID := ""
 	if len(m.chans) > 0 {
 		curID = m.chans[m.cur].ch.ID
@@ -641,9 +650,12 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	}
 	m.toast.Show(fmt.Sprintf("購読するチャンネルを保存した (%d 件)", len(next)), true)
 	i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID })
-	if i >= 0 {
+	switch {
+	case i >= 0:
 		m.cur = i
-	} else {
+	case m.stream:
+		m.cur = 0 // 新着のタブの一覧と本文は選んでいた話題で決める (下の reselect)。最後に見たチャンネルが消えても閉じない
+	default:
 		m.cur, m.body = 0, false
 		m.list = listnav.List{}
 		m.pager.Reset()
@@ -662,6 +674,9 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 		if c := &m.chans[0]; (c.page == nil || c.stale) && !c.loading && c.err == nil {
 			cmds = append(cmds, m.reload(0))
 		}
+	}
+	if m.stream {
+		m.reselect(keep) // 先頭へ戻した後でも、選んでいた話題が残っていればそこへ戻す
 	}
 	return tea.Batch(cmds...)
 }
@@ -1051,7 +1066,11 @@ func (m *Model) helpLines() []string {
 	}
 	// 本文の欄では Tab が 1 行目に入らず幅 100 で落ちるが、案内に無くても効く
 	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"), h(4, "x", "話題を隠す"), h(5, "z", zHint(m.showHidden)))
-	chans := []hintfit.Item{h(4, "Tab", "次のタブ (最後は新着)"), h(3, "r", "今のチャンネルを読み直す"), h(4, "R", "全チャンネルを読み直す")}
+	rHint := "今のチャンネルを読み直す"
+	if m.stream {
+		rHint = "選んだ話題のタブを読み直す"
+	}
+	chans := []hintfit.Item{h(4, "Tab", "次のタブ (最後は新着)"), h(3, "r", rHint), h(4, "R", "全チャンネルを読み直す")}
 	if m.subs != nil { // d が効くのは購読を変えられる起動だけ (案内に出したキーは必ず効く。TUI ガイド)
 		chans = append(chans, h(5, "d", "購読を外す"))
 	}
@@ -1180,7 +1199,7 @@ func unsubBody(c subs.Channel) []string {
 func (m *Model) membersChanged(i int) tea.Cmd {
 	c := &m.chans[i]
 	c.redo, c.err, c.stale = false, nil, c.page != nil
-	if i == m.cur {
+	if i == m.cur || m.stream { // 新着のタブは全部のタブの板を並べるので、前のメンバーの板を並べ続けない
 		return m.reload(i)
 	}
 	return nil
@@ -1232,4 +1251,10 @@ func (m *Model) streamState() string {
 		s = m.spin(oldest) + fmt.Sprintf(" %d タブを読んでいます・", loading) + s
 	}
 	return s
+}
+
+// hasSel は話題を選んでいるか (見出しに乗っている・一覧が空なら偽)。
+func (m *Model) hasSel() bool {
+	_, ok := m.selRow()
+	return ok
 }

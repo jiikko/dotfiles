@@ -209,7 +209,8 @@ func (p Page) Body(t board.Topic, md bool) []string { return p.BodySince(t, md, 
 const NewMark = "    ── ここから新着 ──"
 
 // BodySince は Body に、前に読んだ所の区切りを入れたもの。since は単位の ID → 前に読んだときの単位の最後の発言の ts
-// (無い単位・空の印の単位は、全部が初めてなので区切らない)。区切りは印より後の期間内の発言の前に 1 つだけ入れる。
+// (無い単位・空の印の単位は、全部が初めてなので区切らない)。区切りは単位ごとに、印より後の他の人の期間内の発言の前に 1 つ入れる
+// (自分の発言だけが増えた単位は区切らない: 未読の判定と同じく、自分の発言は新着に数えない)。
 func (p Page) BodySince(t board.Topic, md bool, since map[string]string) []string {
 	var out []string
 	ref := func(refs []string) string {
@@ -332,7 +333,7 @@ func (p Page) unit(u board.Unit, links bool, since string) []string {
 		if i == 1 && u.Omitted > 0 {
 			out = append(out, fmt.Sprintf("    … 期間前の返信 %d 件を省略", u.Omitted))
 		}
-		if !marked && m.New && board.TsBefore(since, m.Ts) {
+		if !marked && m.New && !m.Mine && board.TsBefore(since, m.Ts) {
 			out, marked = append(out, NewMark), true
 		}
 		prefix := "    "
