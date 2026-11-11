@@ -100,6 +100,8 @@ type Model struct {
 	subs    *Subscriptions
 	picker  *subs.Picker // 購読の画面を開いている間だけ非 nil
 	picking bool         // 購読の画面の一覧を読んでいる
+	// pickCancel は購読の画面で走らせている最終投稿の取り直しを止める (画面を閉じたとき。nil なら走らせていない)
+	pickCancel context.CancelFunc
 	// pickCached は、読んでいる間に前に取った一覧で購読の画面を開いたこと (読み終えたら開いている画面の一覧を差し替える。
 	// 閉じた後なら捨てる: 閉じた画面を取り直しの終わりに勝手に開き直さない)
 	pickCached bool
@@ -114,6 +116,8 @@ type Subscriptions struct {
 	// Cached は前に取ったチャンネルの一覧と今の購読で、すぐ開ける画面を作る (一覧を取った時刻と一緒に)。無ければ ok が偽。nil なら使わない
 	Cached func() (p *subs.Picker, at time.Time, ok bool)
 	Save   func([]subs.Channel) error // 選んだ購読を保存する
+	// Posts は参加しているチャンネルの最終投稿を、画面を開いている間に裏で取り直す口 (nil なら取り直さない)
+	Posts *subs.LastPosts
 }
 
 // New は画面を作る。chans は 1 つ以上。
@@ -251,7 +255,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.picker.SetNote("前に取った一覧 (取り直せなかった: " + msg.err.Error() + ")")
 			default:
 				m.picker.Refresh(msg.p)
-				m.picker.SetNote("")
+				m.picker.SetNote(msg.p.Note())
+				return m, m.picker.ResumeFetch()
 			}
 			break
 		}
@@ -265,6 +270,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast.Show("購読を外すのをやめた (購読の画面を開いた)", false)
 		}
 		m.picker = msg.p
+		return m, m.startFetch()
+	case subs.LastPostMsg:
+		if m.picker != nil {
+			return m, m.picker.HandleLastPost(msg)
+		}
 	case tea.PasteMsg:
 		if m.picker != nil {
 			m.picker.Paste(msg.Content) // 読む画面には入力欄が無いので、貼った文字はキーとして解釈しない
@@ -614,14 +624,16 @@ func (m *Model) openPicker() tea.Cmd {
 	// 前に取った一覧があれば、すぐその一覧で開いて裏で取り直す (取り直しは slack-cli が数十秒かけることがある。
 	// slack-cli の一覧の覚えは 1 時間で、ページの間を空けて取るので 18 ページで約 1 分)
 	cached := false
+	var fetch tea.Cmd
 	if m.subs.Cached != nil {
 		if p, at, ok := m.subs.Cached(); ok {
 			p.SetNote(at.Format("01/02 15:04") + " に取った一覧・取り直し中")
 			m.picker, m.pickCached, cached = p, true, true
+			fetch = m.startFetch()
 		}
 	}
 	if m.picking {
-		return nil
+		return fetch
 	}
 	m.picking, m.pickStarted = true, m.now()
 	if !cached {
@@ -629,10 +641,20 @@ func (m *Model) openPicker() tea.Cmd {
 		m.toast.ShowInfo("チャンネルの一覧を読んでいます…")
 	}
 	open, ctx := m.subs.Open, m.ctx
-	return func() tea.Msg {
+	return tea.Batch(fetch, func() tea.Msg {
 		p, err := open(ctx)
 		return pickerMsg{p: p, err: err}
+	})
+}
+
+// startFetch は開いた購読の画面で、参加しているチャンネルの最終投稿の取り直しを始める。画面を閉じたら (closePicker) 取り消す。
+func (m *Model) startFetch() tea.Cmd {
+	if m.pickCancel != nil {
+		m.pickCancel()
 	}
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.pickCancel = cancel
+	return m.picker.StartFetch(ctx, m.subs.Posts)
 }
 
 // pickKey は購読の画面を開いている間のキー。保存したら画面を閉じずにタブを入れ替える。
@@ -643,6 +665,10 @@ func (m *Model) pickKey(k, text string) tea.Cmd {
 		return nil
 	}
 	m.picker = nil
+	if m.pickCancel != nil {
+		m.pickCancel() // 閉じた画面の最終投稿の取り直しを止める (Slack の呼び出しの列を空ける)
+		m.pickCancel = nil
+	}
 	if !p.Saved() {
 		return nil
 	}

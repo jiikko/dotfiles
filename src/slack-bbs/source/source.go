@@ -269,6 +269,18 @@ func (c Client) History(ctx context.Context, channel, oldest string) (Fetched, e
 	return f, nil
 }
 
+// LastPost は channel の最新の発言の ts (発言が無ければ空)。history を 1 件だけ読む (conversations.history は新しい順に返す)。
+func (c Client) LastPost(ctx context.Context, channel string) (string, error) {
+	var msgs []Message
+	if _, err := c.decode(ctx, &msgs, "history", "-json", "-n", "1", channel); err != nil {
+		return "", err
+	}
+	if len(msgs) == 0 {
+		return "", nil
+	}
+	return msgs[len(msgs)-1].Ts, nil
+}
+
 // Thread はスレッドの親と返信 (古い順)。
 func (c Client) Thread(ctx context.Context, channel, parentTs string) (Fetched, error) {
 	var f Fetched

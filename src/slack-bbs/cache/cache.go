@@ -22,6 +22,7 @@ import (
 	"slack-bbs/board"
 	"slack-bbs/render"
 	"slack-bbs/source"
+	"slack-bbs/subs"
 )
 
 // Version はファイルの形の版。形を変えたら上げる (古い版のファイルは読まずに捨てたものとして扱う)。
@@ -326,7 +327,8 @@ func (g *expiring) touched(now time.Time, mtime func(string) (time.Time, bool)) 
 // expireGroup はキャッシュのファイル名を、まとめて期限を数える組の鍵と残す期間にする。キャッシュの形でなければ ok が偽。
 func expireGroup(name string) (key string, keep time.Duration, ok bool) {
 	if atomicfile.IsTemp(name) {
-		if id, _, found := strings.Cut(name, "."); (found && source.IsBoardID(id)) || strings.HasPrefix(name, channelsFile+".") || strings.HasPrefix(name, tabFile+".") {
+		if id, _, found := strings.Cut(name, "."); (found && source.IsBoardID(id)) || strings.HasPrefix(name, channelsFile+".") || strings.HasPrefix(name, tabFile+".") ||
+			strings.HasPrefix(name, lastPostsFile+".") {
 			return "tmp:" + name, CacheKeep, true
 		}
 		return "", 0, false
@@ -411,4 +413,37 @@ func (s Store) SaveTab(tab string) error {
 		return nil
 	}
 	return s.saveFile(filepath.Join(s.Dir, tabFile), lastTab{Version: TabVersion, Tab: tab})
+}
+
+// LastPostsVersion は最終投稿のファイルの形の版。
+const LastPostsVersion = 1
+
+// lastPostsFile は購読の画面に出すチャンネルの最終投稿の置き場 (本文は入らない。チャンネル ID と ts と取った時刻)。
+// Expire はこのファイルを消さない (購読の画面を開くたびに書き直す。書きかけの一時ファイルだけを消す)。
+const lastPostsFile = "lastposts.json"
+
+type lastPosts struct {
+	Version int                      `json:"version"`
+	Posts   map[string]subs.LastPost `json:"posts"`
+}
+
+// LoadLastPosts は前に取った最終投稿を読む。無い・版が違うときは空 (誤りではない)。
+func (s Store) LoadLastPosts() (map[string]subs.LastPost, error) {
+	if s.Dir == "" {
+		return nil, nil
+	}
+	var l lastPosts
+	ok, err := loadFile(filepath.Join(s.Dir, lastPostsFile), &l, func() bool { return l.Version == LastPostsVersion })
+	if err != nil || !ok {
+		return nil, err
+	}
+	return l.Posts, nil
+}
+
+// SaveLastPosts は最終投稿を書く。
+func (s Store) SaveLastPosts(posts map[string]subs.LastPost) error {
+	if s.Dir == "" {
+		return nil
+	}
+	return s.saveFile(filepath.Join(s.Dir, lastPostsFile), lastPosts{Version: LastPostsVersion, Posts: posts})
 }

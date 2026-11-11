@@ -818,3 +818,57 @@ func TestStartOpensLastTab(t *testing.T) {
 		t.Errorf("前回の板のままのタブを、新着のタブの起動で読み直していない: calls=%v", l.calls)
 	}
 }
+
+// 購読の画面を開くと参加しているチャンネルの最終投稿を裏で取り直し、届いた分から表に出す。画面を閉じたら取り直しを取り消す
+// (閉じた後に Slack の呼び出しの列を使い続けない)。
+func TestPickerFetchesLastPostsUntilClosed(t *testing.T) {
+	m := newModel(&loader{calls: map[string]int{}})
+	chs := []source.Channel{{ID: "C1", Name: "dev", IsMember: true}, {ID: "C2", Name: "ops", IsMember: true}}
+	var ctxs []context.Context
+	m.SetSubscriptions(&Subscriptions{
+		Open:   func(context.Context) (*subs.Picker, error) { return subs.NewPicker(chs, nil), nil },
+		Cached: func() (*subs.Picker, time.Time, bool) { return subs.NewPicker(chs, nil), t0, true },
+		Save:   func([]subs.Channel) error { return nil },
+		Posts: &subs.LastPosts{Get: func(ctx context.Context, _ string) (string, error) {
+			ctxs = append(ctxs, ctx)
+			return "1794400000.000000", ctx.Err()
+		}, Now: func() time.Time { return t0 }},
+	})
+	// drive は Cmd を流し、Update が返した Cmd も尽きるまで流す (取り直しは 1 件ずつ次の Cmd を返す)
+	var drive func(tea.Cmd)
+	drive = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		if b, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range b {
+				drive(c)
+			}
+			return
+		}
+		_, next := m.Update(msg)
+		drive(next)
+	}
+	pending := press(m, "s")
+	drive(pending)
+	if len(ctxs) != 2 || !strings.Contains(strings.Join(m.Lines(), "\n"), "2026/11") { // テストの今 (t0) は 1970 年なので年月で出る
+		t.Fatalf("開いている間に最終投稿を取って表に出していない: %d 件\n%s", len(ctxs), strings.Join(m.Lines(), "\n"))
+	}
+	press(m, "q")
+	ctxs = nil
+	pending = press(m, "s") // 開き直す (前に取った値は 1 時間より新しいが、Cached の画面は値を持たないので取り直す)
+	press(m, "q")
+	drive(pending)
+	if len(ctxs) == 0 {
+		t.Fatal("開き直した画面で取り直しを始めていない (取り消しを確かめられない)")
+	}
+	for _, ctx := range ctxs {
+		if ctx.Err() == nil {
+			t.Error("閉じた購読の画面の取り直しを取り消していない")
+		}
+	}
+	if len(ctxs) > 1 {
+		t.Errorf("閉じた後も列を進めた: %d 件", len(ctxs))
+	}
+}

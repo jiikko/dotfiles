@@ -38,12 +38,12 @@ func TestPickerPages(t *testing.T) {
 		all = append(all, source.Channel{ID: fmt.Sprintf("C%02d", i), Name: fmt.Sprintf("ch%02d", i), IsMember: true})
 	}
 	p := NewPicker(all, nil)
-	p.Resize(80, 14) // 1 ページ 10 行 → 3 ページ
+	p.Resize(80, 16) // 1 ページ 10 行 (見出し・検索・タブ・列の見出しの 4 行と案内の 2 行を除く) → 3 ページ
 	shown := func() string {
 		var names []string
-		for _, l := range p.Lines()[2:12] {
+		for _, l := range p.Lines()[4:14] {
 			if i := strings.Index(l, "#"); i >= 0 {
-				names = append(names, l[i+1:])
+				names = append(names, strings.Fields(l[i+1:])[0]) // 名前の後ろは最終投稿と人数の列
 			}
 		}
 		return strings.Join(names, ",")
@@ -101,7 +101,7 @@ func TestPickerFitsWidthAndKeepsPage(t *testing.T) {
 		all = append(all, source.Channel{ID: fmt.Sprintf("C%02d", i), Name: fmt.Sprintf("ch%02d", i), IsMember: true})
 	}
 	p := NewPicker(all, nil)
-	p.Resize(80, 14)
+	p.Resize(80, 16)
 	lines := p.Lines()
 	for i, l := range lines {
 		if strings.Contains(l, "…") {
@@ -117,7 +117,7 @@ func TestPickerFitsWidthAndKeepsPage(t *testing.T) {
 	if p.list.Cursor != 10 {
 		t.Errorf("検索で語を変えずに Esc でページを失った: cursor=%d", p.list.Cursor)
 	}
-	p.Resize(30, 14)
+	p.Resize(30, 16)
 	if !strings.HasPrefix(p.Lines()[0], "ページ 2/3") {
 		t.Errorf("狭い端末でページ番号が先に切れた: %q", p.Lines()[0])
 	}
@@ -166,7 +166,7 @@ func TestPickerSearchIsLineEdit(t *testing.T) {
 	}
 }
 
-// 検索していない購読の画面では、Ctrl-C は保存せずに閉じ、Ctrl-F は → (次のページ) の別名。
+// 検索していない購読の画面では、Ctrl-C は保存せずに閉じ、Ctrl-F は → の別名 (タブのある画面では次のタブ。TUI ガイド §1・§2)。
 func TestPickerCtrlKeys(t *testing.T) {
 	var all []source.Channel
 	for i := range 25 {
@@ -175,8 +175,8 @@ func TestPickerCtrlKeys(t *testing.T) {
 	p := NewPicker(all, nil)
 	p.Resize(80, 14)
 	p.Key("ctrl+f")
-	if p.list.Cursor != p.rows() {
-		t.Errorf("Ctrl-F で次のページへ進まない: cursor=%d", p.list.Cursor)
+	if p.tab != 1 {
+		t.Errorf("Ctrl-F で「参加していない」タブへ移らない: tab=%d", p.tab)
 	}
 	p.Key("ctrl+c")
 	if !p.Done() || p.Saved() {

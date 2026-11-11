@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"slack-bbs/cache"
 	"slack-bbs/job"
 	"slack-bbs/llm"
 	"slack-bbs/render"
+	"slack-bbs/source"
 	"slack-bbs/subs"
 	"slack-bbs/view"
 )
@@ -135,7 +137,7 @@ func newDeps(t *testing.T, sl *fakeSlack, cl *fakeClaude) deps {
 	return deps{
 		slack: sl, claude: cl, now: func() time.Time { return now },
 		subsPath: func() (string, error) { return path, nil },
-		pick:     func(*subs.Picker) error { return nil },
+		pick:     func(*subs.Picker, ...tea.Cmd) error { return nil },
 		tty:      func() bool { return false },
 	}
 }
@@ -253,7 +255,7 @@ func TestNoSubscriptions(t *testing.T) {
 func TestSubThenRead(t *testing.T) {
 	sl := &fakeSlack{history: `[]`}
 	d := newDeps(t, sl, &fakeClaude{})
-	d.pick = func(p *subs.Picker) error {
+	d.pick = func(p *subs.Picker, _ ...tea.Cmd) error {
 		p.Key("x")
 		p.Key("enter")
 		return nil
@@ -776,5 +778,50 @@ func TestBrowseRewritesBrokenLastTab(t *testing.T) {
 	errb.Reset()
 	if rc := run(context.Background(), nil, &out, &errb, d); rc != 0 || first != "C2" {
 		t.Errorf("書き直した覚えで C2 を開いていない: rc=%d first=%s stderr=%s", rc, first, errb.String())
+	}
+}
+
+// slack-bbs sub は、前に取ったチャンネルの一覧があればそれですぐ開き (Slack を呼ばずに)、一覧の取り直しと最終投稿の取り直しは
+// 開いた画面の裏の仕事として渡す。取り直した一覧は ChannelsMsg で届き、最終投稿は取るたびにキャッシュへ書く。
+func TestSubOpensFromCacheAndRefreshesBehind(t *testing.T) {
+	sl := &fakeSlack{history: fmt.Sprintf(`[{"ts":%q,"user":"U1","text":"x"}]`, ts(now.Unix()-60))}
+	d := newDeps(t, sl, &fakeClaude{})
+	dir := t.TempDir()
+	d.cacheDir = func() (string, error) { return dir, nil }
+	if err := (cache.Store{Dir: dir}).SaveChannels([]source.Channel{{ID: "C1", Name: "dev", IsMember: true}}, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var fresh *subs.Picker
+	var opened bool
+	d.pick = func(p *subs.Picker, cmds ...tea.Cmd) error {
+		opened = true
+		if len(sl.calls) != 0 {
+			t.Errorf("開く前に Slack を呼んだ: %v", sl.calls)
+		}
+		if !strings.Contains(p.Note(), "取り直し中") {
+			t.Errorf("前に取った一覧の注記が無い: %q", p.Note())
+		}
+		for _, c := range cmds {
+			switch msg := c().(type) {
+			case subs.ChannelsMsg:
+				fresh = msg.P
+			case subs.LastPostMsg:
+				for next := p.HandleLastPost(msg); next != nil; {
+					next = p.HandleLastPost(next().(subs.LastPostMsg))
+				}
+			}
+		}
+		return nil
+	}
+	var out, errb bytes.Buffer
+	if rc := run(context.Background(), []string{"sub"}, &out, &errb, d); rc != 0 || !opened {
+		t.Fatalf("rc=%d opened=%v %s", rc, opened, errb.String())
+	}
+	if fresh == nil {
+		t.Error("一覧の取り直しを裏の仕事として渡していない")
+	}
+	posts, err := (cache.Store{Dir: dir}).LoadLastPosts()
+	if err != nil || posts["C1"].Ts != ts(now.Unix()-60) {
+		t.Errorf("最終投稿をキャッシュに書いていない: %v %v", posts, err)
 	}
 }

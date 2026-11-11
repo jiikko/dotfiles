@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,6 +28,9 @@ type item struct {
 	memberOnly bool
 }
 
+// joined は「参加している」タブに出す行か。グループと、購読していてアーカイブ済み・一覧から消えたチャンネル (外すために出す) もこちら。
+func (it item) joined() bool { return it.grp != nil || it.ch.IsMember || it.ch.IsArchived }
+
 // Picker はチャンネルの一覧から購読を選ぶ画面の状態。キーは bubbletea の KeyPressMsg.String() の表記で受ける。
 type Picker struct {
 	all       []source.Channel // NewPicker に渡した一覧 (Refresh で新しい一覧に差し替える元)
@@ -41,6 +45,9 @@ type Picker struct {
 	name    lineedit.Line // 作るグループの名前
 	// deleting は d で消すか確かめているグループの行 (items の添字。確かめていなければ -1)
 	deleting int
+	tab      int                 // 0: 参加している、1: 参加していない (h / l で切り替える)
+	last     map[string]LastPost // チャンネル ID → 最終投稿 (前に取った値。取り直した分から書き換える)
+	fetch    *fetch              // 最終投稿を裏で取り直している間の状態 (nil なら取り直していない)
 	w, h     int
 	done     bool
 	save     bool
@@ -137,7 +144,11 @@ func (p *Picker) Refresh(fresh *Picker) {
 			break
 		}
 	}
+	p.queueFetch() // 取り直した一覧で増えた参加しているチャンネルも、最終投稿を取る
 }
+
+// Note は見出しに添える注記 (Refresh で差し替えるときに、取り直した画面の注記を引き継ぐ)。
+func (p *Picker) Note() string { return p.note }
 
 // SetNote は見出しに添える一覧の出所を決める (空なら出さない)。
 func (p *Picker) SetNote(note string) { p.note = termsafe.PlainLine(note) }
@@ -180,6 +191,9 @@ func (p *Picker) visible() []int {
 			// 見る: 見ないと、グループに読めないチャンネルを入れられる。グループのメンバーとしてだけ残る行は購読の付け外しに出さない
 			continue
 		}
+		if it.joined() != (p.tab == 0) {
+			continue
+		}
 		name := strings.ToLower(it.ch.Name)
 		if !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(name, w) }) {
 			out = append(out, i)
@@ -188,8 +202,8 @@ func (p *Picker) visible() []int {
 	return out
 }
 
-// rows は 1 ページの行数 (見出し 2 行・空行・案内の 1 行を除いた残り)。
-func (p *Picker) rows() int { return max(p.h-4, 1) }
+// rows は 1 ページの行数 (見出し・検索・タブ・列の見出しの 4 行と、案内の 2 行を除いた残り)。
+func (p *Picker) rows() int { return max(p.h-6, 1) }
 
 // page は今のページの先頭の添字 (visible の中)。窓はページの区切りで動かす (1 行ずつ流さない): 数百のチャンネルを j で送ると、
 // 画面が毎行動いて今どこにいるか追えない
@@ -308,13 +322,22 @@ func (p *Picker) Press(k, text string) {
 	case "/":
 		p.filtering = true
 		return
-	case "n", "right", "l":
+	case "n":
 		if len(vis) > 0 {
 			p.list.Cursor = min(p.page()+p.rows(), len(vis)-1) // 次のページの先頭 (最後のページなら末尾)
 		}
 		return
-	case "p", "left", "h":
+	case "p":
 		p.list.Cursor = max(p.page()-p.rows(), 0)
+		return
+	case "l", "right", "h", "left": // TUI ガイド §1: タブのある画面では h / l がタブの移動
+		tab := 0
+		if k == "l" || k == "right" {
+			tab = 1
+		}
+		if tab != p.tab {
+			p.tab, p.list.Cursor, p.list.Offset = tab, 0, 0
+		}
 		return
 	case "enter":
 		p.done, p.save = true, true
@@ -372,6 +395,14 @@ func (p *Picker) Lines() []string {
 	if p.note != "" {
 		head += p.note + "  " // 一覧が古い・取り直せなかったことは、狭い端末でも見出しの後ろより先に切らない
 	}
+	if f := p.fetch; f != nil {
+		if len(f.queue) > 0 {
+			head += fmt.Sprintf("最終投稿を取得中 (残り %d)  ", len(f.queue))
+		}
+		if f.errs > 0 {
+			head += fmt.Sprintf("最終投稿を取れなかった %d 件  ", f.errs)
+		}
+	}
 	if p.editing != nil {
 		head += fmt.Sprintf("グループ「%s」に入れるチャンネルを選ぶ (%d チャンネル)", termsafe.PlainLine(p.editing.Name), len(p.editing.Members))
 	} else {
@@ -391,6 +422,7 @@ func (p *Picker) Lines() []string {
 	default:
 		lines = append(lines, termwidth.Truncate("/ でチャンネルの名前を検索 (名前の一部。空白で区切ると全部を含むもの)", p.w, "…"))
 	}
+	lines = append(lines, termwidth.Truncate(p.tabsLine(), p.w, "…"), p.row("  ", "   ", "チャンネル", "最終投稿", "人数"))
 	off := p.page()
 	end := min(off+p.rows(), len(vis))
 	for row, i := range vis[min(off, len(vis)):end] {
@@ -400,7 +432,8 @@ func (p *Picker) Lines() []string {
 			cur = "▶ "
 		}
 		if it.grp != nil {
-			lines = append(lines, termwidth.Truncate(fmt.Sprintf("%s📂%s (%d チャンネル)", cur, termsafe.PlainLine(it.grp.Name), len(it.grp.Members)), p.w, "…"))
+			lines = append(lines, p.row(cur, "   ", fmt.Sprintf("📂%s (%d チャンネル)", termsafe.PlainLine(it.grp.Name), len(it.grp.Members)),
+				p.groupPosted(it.grp), fmt.Sprintf("%dch", len(it.grp.Members))))
 			continue
 		}
 		box := "[ ]"
@@ -411,17 +444,18 @@ func (p *Picker) Lines() []string {
 		if it.ch.IsPrivate {
 			notes = append(notes, "非公開")
 		}
-		switch {
-		case it.ch.IsArchived:
+		if it.ch.IsArchived {
 			notes = append(notes, "一覧に無い・アーカイブ済み")
-		case !it.ch.IsMember:
-			notes = append(notes, "自分は未参加")
 		}
-		line := cur + box + " #" + termsafe.PlainLine(it.ch.Name)
+		name := "#" + termsafe.PlainLine(it.ch.Name)
 		if len(notes) > 0 {
-			line += "  (" + strings.Join(notes, "・") + ")"
+			name += "  (" + strings.Join(notes, "・") + ")"
 		}
-		lines = append(lines, termwidth.Truncate(line, p.w, "…"))
+		members := ""
+		if it.ch.NumMembers > 0 {
+			members = strconv.Itoa(it.ch.NumMembers)
+		}
+		lines = append(lines, p.row(cur, box, name, p.posted(it.ch.ID), members))
 	}
 	if len(vis) == 0 {
 		lines = append(lines, "  (一致するチャンネルがありません)")
@@ -432,7 +466,7 @@ func (p *Picker) Lines() []string {
 	// キーの案内の 2 行。書き方は TUI ガイドの「キー: 説明」で、語は略さない。閉じ方の 2 つ (どちらも抜ける手段 = 優先度 1) は
 	// 1 行に並べると幅 40 に入らないので、1 行ずつ末尾に置く。幅に入らない項目は hintfit が優先度の低い方から落とす
 	line1 := []hintfit.Item{{Prio: 2, Text: "Space/x: 購読を付け外し"}, {Prio: 2, Text: "/: 名前で検索"}, {Prio: 1, Text: "Enter: 保存して閉じる"}}
-	line2 := []hintfit.Item{{Prio: 3, Text: "n/p: 次・前のページ"}, {Prio: 1, Text: "q: 保存せずに閉じる"}}
+	line2 := []hintfit.Item{{Prio: 2, Text: "h/l: タブ"}, {Prio: 3, Text: "n/p: 次・前のページ"}, {Prio: 1, Text: "q: 保存せずに閉じる"}}
 	onGroup := len(vis) > 0 && p.items[vis[min(p.list.Cursor, len(vis)-1)]].grp != nil
 	switch {
 	case p.naming:
@@ -447,7 +481,7 @@ func (p *Picker) Lines() []string {
 		line2 = []hintfit.Item{{Prio: 3, Text: "Ctrl-W: 1 語消す"}, {Prio: 3, Text: "Ctrl-U: 前を全部消す"}, {Prio: 1, Text: "Esc: 検索を消す"}}
 	case p.editing != nil:
 		line1 = []hintfit.Item{{Prio: 2, Text: "Space/x: グループに入れる・外す"}, {Prio: 2, Text: "/: 名前で検索"}, {Prio: 1, Text: "Enter/Esc: グループの編集を終える"}}
-		line2 = []hintfit.Item{{Prio: 3, Text: "n/p: 次・前のページ"}}
+		line2 = []hintfit.Item{{Prio: 2, Text: "h/l: タブ"}, {Prio: 3, Text: "n/p: 次・前のページ"}}
 	case onGroup:
 		line1 = []hintfit.Item{{Prio: 2, Text: "e: グループを編集"}, {Prio: 2, Text: "d: グループを消す"}, {Prio: 1, Text: "Enter: 保存して閉じる"}}
 	default:
@@ -491,12 +525,31 @@ func (p *Picker) Cursor() *tea.Cursor {
 	return caret.At(termwidth.Of(searchLabel)+col, 1, p.w, p.h)
 }
 
-type program struct{ p *Picker }
+type program struct {
+	p    *Picker
+	init []tea.Cmd
+}
 
-func (m program) Init() tea.Cmd { return nil }
+func (m program) Init() tea.Cmd { return tea.Batch(m.init...) }
+
+// ChannelsMsg は裏で取り直したチャンネルの一覧 (Run に渡す Cmd が返す)。P は取り直した一覧で作った画面で、開いている画面を Refresh で差し替える。
+type ChannelsMsg struct {
+	P   *Picker
+	Err error
+}
 
 func (m program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case ChannelsMsg:
+		if msg.Err != nil {
+			m.p.SetNote("一覧を取り直せなかった (前に取った一覧を出している): " + msg.Err.Error())
+			return m, nil
+		}
+		m.p.Refresh(msg.P)
+		m.p.SetNote(msg.P.Note()) // 取り直した画面の注記 (キャッシュに書けなかった等)。無ければ「前に取った一覧」の注記を消す
+		return m, m.p.ResumeFetch()
+	case LastPostMsg:
+		return m, m.p.HandleLastPost(msg)
 	case tea.WindowSizeMsg:
 		m.p.Resize(msg.Width, msg.Height)
 	case tea.PasteMsg:
@@ -517,9 +570,9 @@ func (m program) View() tea.View {
 	return v
 }
 
-// Run は画面を開き、閉じるまで待つ。
-func Run(p *Picker) error {
-	_, err := tea.NewProgram(program{p}).Run()
+// Run は画面を開き、閉じるまで待つ。cmds は開いたときに裏で流す仕事 (一覧の取り直しは ChannelsMsg、最終投稿は StartFetch の Cmd)。
+func Run(p *Picker, cmds ...tea.Cmd) error {
+	_, err := tea.NewProgram(program{p: p, init: cmds}).Run()
 	return err
 }
 
@@ -538,4 +591,37 @@ func Names(chs []Channel) []string {
 		out = append(out, line)
 	}
 	return slices.Clip(out)
+}
+
+// 表の列の幅 (最終投稿は「2025/12」「11/11」「(取得中)」が入る幅。人数は 4 桁と「ch」)。
+const (
+	postedW  = 8
+	membersW = 6
+)
+
+// row は表の 1 行: カーソル・印・名前・最終投稿・人数。名前の列は残りの幅で、収まらなければ切る。
+func (p *Picker) row(cur, box, name, posted, members string) string {
+	nameW := max(p.w-termwidth.Of(cur)-termwidth.Of(box)-1-2-postedW-1-membersW, 4)
+	name = termwidth.Truncate(name, nameW, "…")
+	posted = termwidth.Truncate(posted, postedW, "…")
+	line := cur + box + " " + name + termwidth.PadSpaces(nameW-termwidth.Of(name)) + "  " +
+		posted + termwidth.PadSpaces(postedW-termwidth.Of(posted)) + " " +
+		termwidth.PadSpaces(membersW-termwidth.Of(members)) + members
+	return termwidth.Truncate(line, p.w, "…")
+}
+
+// tabsLine はタブの行 (今のタブを反転で出す。数は今の検索に一致する行の数)。
+func (p *Picker) tabsLine() string {
+	cur := p.tab
+	var parts []string
+	for t, label := range []string{"参加している", "参加していない"} {
+		p.tab = t
+		text := fmt.Sprintf(" %s (%d) ", label, len(p.visible()))
+		if t == cur {
+			text = "\x1b[7m" + text + "\x1b[27m"
+		}
+		parts = append(parts, text)
+	}
+	p.tab = cur
+	return strings.Join(parts, " ")
 }

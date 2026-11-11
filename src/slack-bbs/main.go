@@ -30,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"slack-bbs/board"
 	"slack-bbs/cache"
@@ -87,8 +88,8 @@ type deps struct {
 	claude   llm.Runner
 	now      func() time.Time
 	subsPath func() (string, error)
-	pick     func(*subs.Picker) error
-	tty      func() bool // stdout が端末か (端末なら読む画面を開く)
+	pick     func(*subs.Picker, ...tea.Cmd) error // 購読の画面を開いて閉じるまで待つ (Cmd は開いたときに裏で流す仕事)
+	tty      func() bool                          // stdout が端末か (端末なら読む画面を開く)
 	browse   func(*view.Model) error
 	openURL  func(string) error
 	cacheDir func() (string, error) // キャッシュの置き場。nil ならキャッシュしない
@@ -311,6 +312,11 @@ func newPicker(ctx context.Context, d deps, cli source.Client, st cache.Store) (
 		return nil, "", err
 	}
 	p := subs.NewPicker(all, cur)
+	if posts, err := st.LoadLastPosts(); err != nil {
+		p.SetNote("前に取った最終投稿を読めなかった (取り直す): " + err.Error())
+	} else {
+		p.SetLastPosts(posts)
+	}
 	if err := st.SaveChannels(all, d.now()); err != nil {
 		p.SetNote("チャンネルの一覧をキャッシュに書けなかった: " + err.Error())
 	}
@@ -332,15 +338,37 @@ func cachedPicker(d deps, st cache.Store) (*subs.Picker, time.Time, bool) {
 	if err != nil {
 		return nil, time.Time{}, false
 	}
-	return subs.NewPicker(list.Channels, cur), list.SavedAt, true
+	p := subs.NewPicker(list.Channels, cur)
+	posts, _ := st.LoadLastPosts() // 読めなければ空のまま開き、すぐ後の newPicker が同じファイルを読んで見出しに出す
+	p.SetLastPosts(posts)
+	return p, list.SavedAt, true
 }
 
+// cmdSub は購読の画面を開く。前に取ったチャンネルの一覧があればそれですぐ開き、一覧の取り直しを裏で流して、届いたら差し替える
+// (取り直しは slack-cli がページの間を空けて取るので 1 分ほどかかる)。参加しているチャンネルの最終投稿も裏で取り直す。
 func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
-	p, path, err := newPicker(ctx, d, source.Client{R: d.slack}, openStore(d, io.Discard))
+	cli := source.Client{R: d.slack}
+	st := openStore(d, io.Discard)
+	p, at, cached := cachedPicker(d, st)
+	var cmds []tea.Cmd
+	if cached {
+		p.SetNote(at.Format("01/02 15:04") + " に取った一覧・取り直し中")
+		cmds = append(cmds, func() tea.Msg {
+			fresh, _, err := newPicker(ctx, d, cli, st)
+			return subs.ChannelsMsg{P: fresh, Err: err}
+		})
+	} else {
+		var err error
+		if p, _, err = newPicker(ctx, d, cli, st); err != nil {
+			return err
+		}
+	}
+	path, err := d.subsPath()
 	if err != nil {
 		return err
 	}
-	if err := d.pick(p); err != nil {
+	cmds = append(cmds, p.StartFetch(ctx, lastPosts(cli, st, d.now)))
+	if err := d.pick(p, cmds...); err != nil {
 		return err
 	}
 	if !p.Saved() {
@@ -359,6 +387,16 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "%d 件のチャンネルと %d 件のグループを購読する (%s)\n", len(sel)-groups, groups, path)
 	return nil
+}
+
+// lastPosts は購読の画面が最終投稿を取り直す口 (slack-cli の history で最新の 1 件を読み、キャッシュに書く)。前に取った分は
+// 呼び出し側が SetLastPosts で先に出す (newPicker / cachedPicker)。
+func lastPosts(cli source.Client, st cache.Store, now func() time.Time) *subs.LastPosts {
+	return &subs.LastPosts{
+		Get:  cli.LastPost,
+		Save: st.SaveLastPosts,
+		Now:  now,
+	}
 }
 
 func cmdSubs(d deps, stdout io.Writer) error {
@@ -694,6 +732,7 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 				return p, err
 			},
 			Cached: func() (*subs.Picker, time.Time, bool) { return cachedPicker(d, st) },
+			Posts:  lastPosts(cli, st, d.now),
 			Save: func(sel []subs.Channel) error {
 				path, err := d.subsPath()
 				if err != nil {
