@@ -716,3 +716,65 @@ func TestFlagErrors(t *testing.T) {
 		t.Errorf("知らないフラグ: rc=%d %s", rc, errb.String())
 	}
 }
+
+// 購読を読む起動では、終わるときに見ていたタブを覚え、次の起動でそのタブを最初に開く。チャンネルを引数で渡した起動では覚えない。
+func TestBrowseRemembersLastTab(t *testing.T) {
+	sl := &fakeSlack{history: `[]`}
+	d := newDeps(t, sl, &fakeClaude{})
+	dir := t.TempDir()
+	d.cacheDir = func() (string, error) { return dir, nil }
+	d.tty = func() bool { return true }
+	path, _ := d.subsPath()
+	if err := subs.Save(path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	press := true
+	d.browse = func(m *view.Model) error {
+		first = m.Tab()
+		if press {
+			m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		}
+		return nil
+	}
+	for i, args := range [][]string{nil, nil, {"C1"}, nil} {
+		press = args == nil // 引数の起動は C1 のまま終える (覚えると、4 回目が新着のタブでなく C1 で開く)
+		var out, errb bytes.Buffer
+		if rc := run(context.Background(), args, &out, &errb, d); rc != 0 {
+			t.Fatalf("%d: rc=%d %s", i, rc, errb.String())
+		}
+		want := []string{"C1", "C2", "C1", view.StreamTab}[i] // 2 回目は前回 Tab で移った C2、4 回目は 2 回目の C2 から Tab で移った新着のタブ
+		if first != want {
+			t.Errorf("%d 回目の起動で最初に開いたタブ = %s, want %s", i+1, first, want)
+		}
+	}
+}
+
+// 覚えのファイルが壊れていたら、先頭のタブで開いて知らせ、終わるときに書き直す (次の起動ではそのタブを開く)。
+func TestBrowseRewritesBrokenLastTab(t *testing.T) {
+	d := newDeps(t, &fakeSlack{history: `[]`}, &fakeClaude{})
+	dir := t.TempDir()
+	d.cacheDir = func() (string, error) { return dir, nil }
+	d.tty = func() bool { return true }
+	path, _ := d.subsPath()
+	if err := subs.Save(path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "view.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	d.browse = func(m *view.Model) error {
+		first = m.Tab()
+		m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		return nil
+	}
+	var out, errb bytes.Buffer
+	if rc := run(context.Background(), nil, &out, &errb, d); rc != 0 || first != "C1" || !strings.Contains(errb.String(), "前回見ていたタブを読めなかった") {
+		t.Fatalf("壊れた覚え: rc=%d first=%s stderr=%s", rc, first, errb.String())
+	}
+	errb.Reset()
+	if rc := run(context.Background(), nil, &out, &errb, d); rc != 0 || first != "C2" {
+		t.Errorf("書き直した覚えで C2 を開いていない: rc=%d first=%s stderr=%s", rc, first, errb.String())
+	}
+}

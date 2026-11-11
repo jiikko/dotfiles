@@ -380,3 +380,35 @@ func (s Store) SaveChannels(chs []source.Channel, now time.Time) error {
 	}
 	return s.saveFile(filepath.Join(s.Dir, channelsFile), Channels{Version: ChannelsVersion, SavedAt: now, Channels: chs})
 }
+
+// TabVersion は最後に見ていたタブのファイルの形の版。
+const TabVersion = 1
+
+// tabFile は読む画面で最後に見ていたタブの置き場 (次の起動で最初に開く)。名前が ID の形でないので Expire は触らない。
+const tabFile = "view.json"
+
+type lastTab struct {
+	Version int    `json:"version"`
+	Tab     string `json:"tab"` // view.Model.Tab の値
+}
+
+// LoadTab は最後に見ていたタブを読む。無い・版が違うときは空 (誤りではない)。
+func (s Store) LoadTab() (string, error) {
+	if s.Dir == "" {
+		return "", nil
+	}
+	var t lastTab
+	ok, err := loadFile(filepath.Join(s.Dir, tabFile), &t, func() bool { return t.Version == TabVersion })
+	if err != nil || !ok {
+		return "", err
+	}
+	return t.Tab, nil
+}
+
+// SaveTab は最後に見ていたタブを書く。
+func (s Store) SaveTab(tab string) error {
+	if s.Dir == "" {
+		return nil
+	}
+	return s.saveFile(filepath.Join(s.Dir, tabFile), lastTab{Version: TabVersion, Tab: tab})
+}

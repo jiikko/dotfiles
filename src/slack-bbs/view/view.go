@@ -191,7 +191,36 @@ func (m *Model) Init() tea.Cmd {
 	if len(m.chans) == 0 {
 		return tea.Quit
 	}
-	return m.reload(0)
+	if m.stream {
+		return m.enterStream()
+	}
+	return m.reload(m.cur)
+}
+
+// StreamTab は新着のタブを指す Tab / Start の値 (チャンネルとグループの ID は英大文字か grp で始まるので重ならない)。
+const StreamTab = "stream"
+
+// Start は起動のときに最初に開くタブ (前回最後に見ていたタブ。Tab が返した値) を決める。Init より前に呼ぶ。
+// 購読に無いタブ (外した・消えた) なら先頭のタブのまま。
+func (m *Model) Start(tab string) {
+	if tab == StreamTab && len(m.chans) > 0 {
+		m.stream = true
+		return
+	}
+	if i := slices.IndexFunc(m.chans, func(c chanState) bool { return c.ch.ID == tab }); i >= 0 {
+		m.cur = i
+	}
+}
+
+// Tab は今見ているタブ (チャンネルかグループの ID、新着のタブなら StreamTab。タブが無ければ空)。
+func (m *Model) Tab() string {
+	switch {
+	case len(m.chans) == 0:
+		return ""
+	case m.stream:
+		return StreamTab
+	}
+	return m.chans[m.cur].ch.ID
 }
 
 // Update はメッセージを処理する。

@@ -782,3 +782,29 @@ func TestGroupMembersChangedClearsError(t *testing.T) {
 		t.Error("メンバーを直したタブを開いても読み直さない")
 	}
 }
+
+// 起動のときに前回最後に見ていたタブ (Start) を開き、最初の読み込みもそのタブにする。購読から消えたタブなら先頭のタブ。
+// 新着のタブも覚えられる。Tab は今のタブ (終わるときに覚える値)。
+func TestStartOpensLastTab(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	m := newModel(l)
+	m.Start("C2")
+	run(m, m.Init())
+	if m.Tab() != "C2" || l.calls["C2"] != 1 || l.calls["C1"] != 0 {
+		t.Errorf("前回のタブ C2 を開いて読んでいない: tab=%s calls=%v", m.Tab(), l.calls)
+	}
+	l = &loader{calls: map[string]int{}}
+	m = newModel(l)
+	m.Start("C9")
+	run(m, m.Init())
+	if m.Tab() != "C1" || l.calls["C1"] != 1 {
+		t.Errorf("購読に無いタブなら先頭を開く: tab=%s calls=%v", m.Tab(), l.calls)
+	}
+	l = &loader{calls: map[string]int{}}
+	m = newModel(l)
+	m.Start(StreamTab)
+	run(m, m.Init())
+	if m.Tab() != StreamTab || l.calls["C1"] != 1 || l.calls["C2"] != 1 {
+		t.Errorf("新着のタブを開いて全部のタブを読んでいない: tab=%s calls=%v", m.Tab(), l.calls)
+	}
+}

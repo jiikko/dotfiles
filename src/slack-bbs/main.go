@@ -437,7 +437,7 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		}
 	}
 	if !o.json && !o.dryRun && !o.md && d.tty() {
-		return browse(ctx, o, d, st)
+		return browse(ctx, o, d, st, stderr)
 	}
 	var pages []render.Page
 	err := eachChannel(ctx, o, d, stderr, func(c collected) error {
@@ -583,7 +583,7 @@ type identity struct {
 
 // browse は読む画面を開く。読み直しのたびに取得から分類までをやり直す (分類は claude -p)。画面の中では stderr が見えないので、
 // slack-cli の警告と分類から捨てたものは板の注記に載せる。
-func browse(ctx context.Context, o options, d deps, st cache.Store) error {
+func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Writer) error {
 	targets, err := channelsToRead(o, d)
 	if err != nil {
 		return err
@@ -710,7 +710,26 @@ func browse(ctx context.Context, o options, d deps, st cache.Store) error {
 			}
 		}
 	}
-	return d.browse(m)
+	// 購読を読む起動では、前回最後に見ていたタブを最初に開き、終わるときに今のタブを覚える。チャンネルを引数で渡した起動は、
+	// 購読のタブと並びが違うので、覚えも書き換えもしない (書くと、次の購読の起動で引数のチャンネルを探して先頭に戻る)
+	remember := len(o.channels) == 0
+	var loadErr error
+	if remember {
+		var tab string
+		tab, loadErr = st.LoadTab()
+		m.Start(tab) // 読めなければ空で、先頭のタブのまま
+	}
+	err = d.browse(m)
+	if remember {
+		// 画面を閉じた後に出す (画面の中では stderr が見えない)。読めなかったファイルも、ここで書き直せば次の起動で読める
+		if loadErr != nil {
+			fmt.Fprintf(stderr, "slack-bbs: 🚨 前回見ていたタブを読めなかったので、先頭のタブから開いた: %s\n", clean(loadErr.Error()))
+		}
+		if serr := st.SaveTab(m.Tab()); serr != nil {
+			fmt.Fprintf(stderr, "slack-bbs: 🚨 今見ていたタブを覚えられなかった (次の起動は先頭のタブから): %s\n", clean(serr.Error()))
+		}
+	}
+	return err
 }
 
 func writeMarkdown(w io.Writer, p render.Page) error {
