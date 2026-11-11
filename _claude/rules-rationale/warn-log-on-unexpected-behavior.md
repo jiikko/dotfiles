@@ -15,7 +15,7 @@
 
 ## 新規の rule にした理由 (既存へ追記しなかった理由)
 
-近い既存の規範は `adversarial-review-own-safeguards.md` の「沈黙 = 成功」と「`2>/dev/null` / `|| true` で失敗を捨てたまま
+近い既存の規範は `adversarial-review-own-safeguards.md` の「沈黙 = 成功」と「`2>/dev/null` / `|| true` で失敗を握り潰したまま
 緑を返す」だが、発動点が「自分で新設した安全機構」に限られる。この rule の発動点は、production のどのコードでも
 「失敗を捨てる形を書いた瞬間」で、安全機構を作っていなくても踏む。
 
