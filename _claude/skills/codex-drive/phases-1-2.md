@@ -51,16 +51,16 @@
     試みる。ThumbnailThumb 542)。sandbox があった頃は失敗していたが、いまは**成功する**ので検閲の項目に格上げ
   - 依頼していない破壊的操作 (rm -rf / 他 checkout の編集 / プロセス・tmux 操作) が要約と log に無いかを `[3]` で読む
     (`bin/tmux` shim は非 TTY からの本番 kill を拒否するが、それ以外は無防備)
-  - 効いたかは計測で言う (issue 369 案 1)。obaket の次マイルストーンで Error 74 の有無・型エラー往復数・危険操作の有無を
+  - 効果があったかは計測で言う (issue 369 案 1)。obaket の次マイルストーンで Error 74 の有無・型エラー往復数・危険操作の有無を
     checkpoint に残す
 - **sandbox を外せない環境 (danger-full-access を許可していないマシン / repo) では、旧規律で分担を最初に切る**:
   codex に任せるのは shared の `swift build` / `swift test` (上の cache フラグつき) まで、xcodebuild 系は **Claude が
   素の環境で回す**と `[2]` のプロンプトに書く。codex の全体 `swift test` が赤を報告しても sandbox 由来の偽赤が
   ありうる (613 で同日 2 回観測。素の環境では 0 failure) ので、赤も緑と同じく Claude の再実行で判定する。
-  **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を溶かす。617 M3)。
+  **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を費やす。617 M3)。
   codex に渡せる構文確認は **`swiftc -parse` まで** (型検査は依存モジュールが要り sandbox で組めない)。**型 error は
   Claude の `make test` で 1 往復として織り込む** (542: memberwise init の引数順 1 件で `passed 0` の往復)。
-  shared SPM を触るマイルストーンでは、実装プロンプトに**「返す前に `cd shared && swift build --build-tests` を通す」を
+  shared SPM を触るマイルストーンでは、実装プロンプトに **「返す前に `cd shared && swift build --build-tests` を通す」を
   固定文で入れる** (sandbox で走るかは repo ごとに最初のマイルストーンで確かめてから固定する。issue 369 1-2)。
   この環境では未実行の理由が sandbox 由来なので、`[3.8]` の実行ループも最初から Claude のハーネスで当てる
   (変異 patch の生成だけ codex read-only に作らせる。codex に回しても typecheck だけで「成功」と書く: 650 M1)
@@ -79,7 +79,7 @@
   **`project.pbxproj` は触らない (xcodegen が `project.yml` から生成する)** — 書かないと codex が新規テストファイルを
   pbxproj に手で登録する (obaket 686, 2026-09-01。再生成で上書きされるので実害は無いが diff がノイズになる)。
   codex が書いた macOS target のテストは **Claude が baseline 緑 + 変異 red を xcodebuild で確認するまで未検証扱い**
-  (617 M5: codex 版の macOS テスト 2 本が baseline red / 変異検知が vacuous だった。macOS 側の変異は Claude が worktree で
+  (617 M5: codex が書いた macOS テスト 2 本が baseline red / 変異検知が vacuous だった。macOS 側の変異は Claude が worktree で
   `xcodebuild -only-testing:<suite>` を当てる)。
   codex が `Package.swift` (依存の追加) を触ったら要約に明示させる (617 M5: test target の依存追加が要約に無く diff で気づいた)。
   **codex の要約に「未実行」「実行できなかった」がある成果物は、採用判定 (`[3]`) より先に Claude がその検証を回す**
@@ -178,7 +178,7 @@ EOF
   **まだ走っている run を「空振り」と誤判定する**。fanout なら `runs.tsv` の rc、単発なら `$?` を保存してから成果物を見る。
   実害 (2026-08-25 obaket 581): 4 本を空振りと報告したが**少なくとも 2 本は遅れて完了**していた。
   さらに、空振り判定後に Claude が書き直したテストを、遅れて完了した codex の出力が同じパスに
-  上書きし、**commit されたのは codex 版だった** (テスト名が同じで取り違えた)。誤判定のコストは
+  上書きし、**commit されたのは codex が書いたテストだった** (テスト名が同じで取り違えた)。誤判定のコストは
   待ち直しではなく「**codex が壊れている**」という誤った因果を作ること。
   🚨 **判定できるように、出力先は run 固有のパス (`<D>/<タスク>/`) にする**。`-o` と JSONL/stdout を scratchpad に出すと
   再起動で消え、「空振りだったのか」を後から検証できない (581 で実際に残らなかった)。一般則は
@@ -267,7 +267,7 @@ git apply --check "$patch" && git apply "$patch"   # --check が落ちたら適�
 
 - **worktree とブランチは勝敗が決まった時点で必ず消す**。両 worktree は dirty なので通常の `remove` は拒否される。
   **patch の適用と内容確認が済んでから**、捨てる操作を明示 (`reset --hard` + `clean -fd`) してから `git worktree remove` で消す。
-  `--force` は使わない (未移送の成果物ごと黙って消すので、PreToolUse の hook `deny-force-worktree-remove.sh` が止める)。
+  `--force` は使わない (未移送の成果物ごと気づかないうちに消すので、PreToolUse の hook `deny-force-worktree-remove.sh` が止める)。
   **`-b` で作ったブランチは別途 `git branch -D` する** (`worktree remove` はブランチを消さない)。放置しない (CLAUDE.md「並行作業者がいるときの worktree 退避」)。
 
 ```bash

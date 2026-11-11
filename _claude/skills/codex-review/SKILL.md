@@ -152,7 +152,7 @@ command codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="high" 
    - **すぐ直すべきもの**（バグ、クラッシュ、データ破壊など）
    - **後回しでよいもの**（コードスタイル、軽微な改善など）
    - **指摘なし** の場合はその旨を報告
-6. 敵対的モードのときは上の 3 カテゴリに加えて、**「未確認リスク」**（codex が発火条件を具体的に示せなかったもの）と**「攻めたが壊せなかった箇所」**を分けて報告する。前者は blind fix せず観測で潰す候補、後者は「安全の証明」ではなく攻め手の記録として扱う（下記「敵対的レビューの作法」参照）
+6. 敵対的モードのときは上の 3 カテゴリに加えて、「**未確認リスク**」（codex が発火条件を具体的に示せなかったもの）と「**攻めたが壊せなかった箇所**」を分けて報告する。前者は blind fix せず観測で確かめる候補、後者は「安全の証明」ではなく攻め手の記録として扱う（下記「敵対的レビューの作法」参照）
 7. 高重大度の指摘があれば、修正するか確認する
 
 ### 5. 一時ファイルの削除
@@ -193,7 +193,7 @@ rm -f "$review_out"
 4. **「起こりえないが念のため」系の提案** → 原則採らない。取るなら「その入力がどこから来るか」を示せた時だけ
 5. **壊せなかった報告** → green の根拠にしない（攻め手が浅かった可能性が常に残る）。重要な不変条件はテストで固定して初めて閉じる
 
-`subagent-model-tiering.md` の「下位主体の出力は main が必ず検閲する」が敵対レビューにもそのまま効く。**敵対レビューの結論に敵対するのは Claude の仕事**。
+`subagent-model-tiering.md` の「下位主体の出力は main が必ず検閲する」が敵対レビューにもそのまま当てはまる。**敵対レビューの結論に敵対するのは Claude の仕事**。
 
 ## 自動化向けの出力
 
@@ -216,7 +216,7 @@ Codex はリポジトリ内のコンテキストをある程度拾えるが、�
 
 - `command codex` を使うこと（`codex` 直接呼び出しは zsh 関数オーバーライドでエラーになる場合がある）
 - **全ての `command codex exec` 呼び出しに `</dev/null` を必ず付ける**。Claude Code の Bash ツールの stdin は非TTYのパイプ（書き込み側が開いたまま EOF が来ない）なので、prompt を引数で渡しても codex が「Reading additional input from stdin...」で stdin の EOF を待ち続け、コマンドがタイムアウトまでハングする。`</dev/null` で stdin を即 EOF にすると解消する（[openai/codex#20919](https://github.com/openai/codex/issues/20919)）。selector モード・プロンプトモードのどちらでも必要。codex 側が stdin チェックにタイムアウトを実装する等で修正されたら本対処は不要になる
-- 常に `--ephemeral -o "$review_out"` を付与する。通常の exec/fallback の sandbox は `-s read-only` を明示する（`--full-auto` は使わず権限を明示する。互換フラグの有無は CLI の版に依存するので、過去の引数エラーを全バージョンに一般化しない）
+- 常に `--ephemeral -o "$review_out"` を付与する。通常の exec/fallback の sandbox は `-s read-only` を明示する（`--full-auto` は使わず権限を明示する。互換フラグの有無は CLI のバージョンに依存するので、過去の引数エラーを全バージョンに一般化しない）
 - `codex exec` fallback を使う時は `-s read-only` を付ける
 - **モデルと effort は `-m gpt-6.1-sol -c model_reasoning_effort="high"` で明示する**。省略すると `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる) を拾い、実行ごとにモデルが変わる。🚨 **effort も省かない** — モデルだけ指定すると effort は config.toml の値になる (対話の都合で変わるので、組を固定するのはここ)。codex-drive の「読む run」と同じ組に揃える (ユーザー決定 2026-10-02 で sol、2026-10-03 で effort を medium から high へ。それまでは `gpt-6-luna`)。high は運用上の既定。特定ベンチマークの優劣や API の価格を個別レビューの精度・5h 枠に一般化しない。effort を変えるときの比較方法は codex-drive のモデル表を参照
 - レビュー結果はそのままユーザーに見せる（要約しすぎない）
