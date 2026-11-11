@@ -350,7 +350,7 @@ func TestAssembleThemeAndUrgent(t *testing.T) {
 		{Title: "urgent", State: StateOpen, Theme: ThemeIncident, Urgent: true, Members: []string{"b"}},
 		{Title: "odd", State: StateInfo, Theme: "weather", Members: []string{"x"}},
 	}}
-	topics, d := Assemble(us, resp)
+	topics, _ := Assemble(us, resp)
 	var got []string
 	for _, tp := range topics {
 		got = append(got, tp.Title+":"+tp.Theme)
@@ -358,7 +358,7 @@ func TestAssembleThemeAndUrgent(t *testing.T) {
 	if want := []string{"urgent:incident", "action:question", "未分類:other"}; !slices.Equal(got, want) {
 		t.Errorf("並びとテーマ = %v, want %v", got, want)
 	}
-	topics, d = Assemble(us[:1], Response{Topics: []RespTopic{{Title: "odd", State: StateInfo, Theme: "weather", Members: []string{"a"}}}})
+	topics, d := Assemble(us[:1], Response{Topics: []RespTopic{{Title: "odd", State: StateInfo, Theme: "weather", Members: []string{"a"}}}})
 	if d.BadTheme != 1 || topics[0].Theme != ThemeOther {
 		t.Errorf("知らないテーマ: %+v / %q", d, topics[0].Theme)
 	}
