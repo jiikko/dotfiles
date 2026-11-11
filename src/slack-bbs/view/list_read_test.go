@@ -668,3 +668,21 @@ func TestShowHiddenToggleKeepsSelection(t *testing.T) {
 		t.Errorf("全部隠したときの右の欄: %q", lines)
 	}
 }
+
+// z で隠した話題を出しても出さなくしても、選んでいた (隠れていない) 話題にカーソルが留まり、本文の欄も開いたまま。
+func TestShowHiddenToggleStaysOnSelected(t *testing.T) {
+	m := datedModel(t, func() []board.Topic {
+		return []board.Topic{topicAt("雑談", day0), topicAt("障害", day0.Add(-time.Hour))}
+	})
+	press(m, "x") // 雑談を隠す: カーソルは障害へ
+	if tp, ok := m.selected(); !ok || tp.Title != "障害" {
+		t.Fatalf("隠した後に障害を選んでいない: %+v", tp.Title)
+	}
+	press(m, "l")
+	for _, k := range []string{"z", "z"} { // 雑談が上に増えて、また消える
+		press(m, k)
+		if tp, ok := m.selected(); !ok || tp.Title != "障害" || !m.body {
+			t.Fatalf("z の後に選んでいた話題から外れた・本文を閉じた: %q body=%v", tp.Title, m.body)
+		}
+	}
+}
