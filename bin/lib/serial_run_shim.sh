@@ -1,7 +1,7 @@
 # serial_run_shim.sh — 重いコマンドの PATH shim (bin/swift・bin/xcodebuild) の共通部分。bash 3.2 から source する。
 # shellcheck shell=bash
 #
-# shim は PATH の先頭 (~/dotfiles/bin) で同名のコマンドを受け、直列化の対象の呼び出しを serial-run の順番待ち (既定は repo ごとの列) に通す。
+# shim は PATH の先頭 (~/dotfiles/bin) で同名のコマンドを受け、直列化の対象の呼び出しを serial-run の順番待ち (SERIAL_RUN_SCOPE を指定しなければ repo ごとの列) に通す。
 # Claude Code の hook (_claude/hooks/serial-run-wrap.sh) は Bash ツールが打った字面しか包めない。スクリプトの中・コマンド置換の中・
 # 人の端末から打ったものは、PATH の shim でしか拾えない。
 # 直列化の対象かの判定は serial-run --if-heavy (src/serialrun/hook.go の isHeavy) に任せ、ここに写さない。
@@ -14,7 +14,7 @@
 # (列の中で背景に回した孫) で、走っている他の 1 本と重なる。札・nonce・祖先の照合は serial-run の入れ子の判定にだけ置く
 # (その代わり、列の中の呼び出しも serial-run の起動の分だけ遅くなる)。
 #
-# 待ちの上限は serial-run の既定 (1 時間。hook が包んだ経路と同じ) のままにする。--max-wait 0 にしない: 下の「パイプで止まる形」が
+# 待ちの上限は --max-wait を渡さないときの 1 時間のままにする (hook が包んだ経路と同じ)。--max-wait 0 にしない: 下の「パイプで止まる形」が
 # 永久に解けなくなる。上限で抜けたら rc 125 で、stderr の serial-run: の行に待ちの上限と出る (呼び出し元のスクリプトはビルドの失敗と読む)。
 # serial-run がビルドできない日は SERIAL_RUN_FAIL_OPEN で、順番を待たずに実体を起こす (bin/serial-run の冒頭)。
 # 呼ぶ serial-run はこの shim と同じ checkout のもの (bin/serial-run)。本体 checkout に固定すると、shim と serial-run のバージョンが

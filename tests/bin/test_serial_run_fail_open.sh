@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/serial-run の入口がビルドできないとき: 既定は 125 で落ち、SERIAL_RUN_FAIL_OPEN=1 (PATH shim が付ける) なら
+# bin/serial-run の入口がビルドできないとき: SERIAL_RUN_FAIL_OPEN が無ければ 125 で落ち、SERIAL_RUN_FAIL_OPEN=1 (PATH shim が付ける) なら
 # -- の後のコマンドを順番を待たずに起こすことを固定する。ビルドの失敗は go_autobuild を偽物に差し替えたコピーで作る
 set -uo pipefail
 unset CDPATH
@@ -33,7 +33,7 @@ check() {  # $1=説明 $2=期待する rc $3=期待する stdout 残り=serial-r
 
 # shellcheck disable=SC2016 # $ は子の sh が展開する
 child='echo "[${SERIAL_RUN_FAIL_OPEN-unset}]"; exit 4'
-check "ビルドできなければ 125 (既定)" 125 "" :: -- /bin/sh -c "$child"
+check "ビルドできなければ 125 (SERIAL_RUN_FAIL_OPEN が無いとき)" 125 "" :: -- /bin/sh -c "$child"
 check "SERIAL_RUN_FAIL_OPEN なら -- の後を起こし、その rc を返す (子へは印を渡さない)" 4 "[unset]" \
   SERIAL_RUN_FAIL_OPEN=1 :: --if-heavy --max-wait 0 -- /bin/sh -c "$child"
 check "SERIAL_RUN_FAIL_OPEN でも -- の後が空なら 125" 125 "" SERIAL_RUN_FAIL_OPEN=1 :: --if-heavy --

@@ -53,7 +53,7 @@ ok() { echo "✓ $1"; PASS=$((PASS + 1)); }
 ng() { echo "✗ $1"; FAIL=$((FAIL + 1)); }
 
 # run <コマンド名> <PATH> <env の足し…> -- <引数…>: 素の名前で起こし (PATH の探索を通す)、rc と記録を返す。
-# SERIAL_RUN_BIN は偽物に向ける (空を渡すと shim の既定 = shim と同じ checkout の serial-run)
+# SERIAL_RUN_BIN は偽物に向ける (空を渡すと shim と同じ checkout の serial-run を呼ぶ)
 run() {
   local tool="$1" p="$2"
   shift 2
@@ -79,7 +79,7 @@ expect_log "swift: build / test 以外は serial-run を起こさない" "real[-
 run swift "$P" --
 expect_log "swift: 引数の無い swift (REPL) もそのまま渡す" "real[] held= failopen="
 run swift "$P" -- build -c release
-expect_log "swift: build は serial-run --if-heavy を通る (待ちの上限は serial-run の既定)" \
+expect_log "swift: build は serial-run --if-heavy を通る (--max-wait を渡さない)" \
   "sr[--if-heavy -- $td/real/swift build -c release] failopen=1
 real[build -c release] held= failopen=1"
 
@@ -89,14 +89,14 @@ expect_log "xcodebuild: test は serial-run --if-heavy を通る" \
   "sr[--if-heavy -- $td/real/xcodebuild -scheme X test] failopen=1
 real[-scheme X test] held= failopen=1"
 run xcodebuild "$P" --
-expect_log "xcodebuild: 引数なし (既定の scheme のビルド) も serial-run を通る" \
+expect_log "xcodebuild: 引数なし (scheme を指定しないビルド) も serial-run を通る" \
   "sr[--if-heavy -- $td/real/xcodebuild] failopen=1
 real[] held= failopen=1"
 
 # --- 共通の部分 (bin/lib/serial_run_shim.sh) は両方で見る
 for tool in swift xcodebuild; do
   run "$tool" "$P" FAKE_RC=5 -- test
-  [ "$rc" = 5 ] && ok "$tool: serial-run を通しても実体の rc を返す" || ng "$tool: rc=$rc (5 のはず)"
+  if [ "$rc" = 5 ]; then ok "$tool: serial-run を通しても実体の rc を返す"; else ng "$tool: rc=$rc (5 のはず)"; fi
   run "$tool" "$P" SERIAL_RUN_HELD=x -- test
   expect_log "$tool: 列の中 (SERIAL_RUN_HELD) でも serial-run に照合を任せる (値をそのまま渡す)" "sr[--if-heavy -- $td/real/$tool test] failopen=1
 real[test] held=x failopen=1"
@@ -106,6 +106,7 @@ real[test] held=x failopen=1"
   expect_log "$tool: SERIAL_RUN_SHIM_DISABLE で外せる" "real[test] held= failopen="
   # serial-run (zsh) を起こすときに ~/.zshenv を読まない (そこで xcodebuild / swift を呼ぶ設定があると shim と再帰する)
   mkdir -p "$td/zdot"
+  # shellcheck disable=SC2016 # $LOG は .zshenv を読んだ zsh が展開する
   printf 'print zshenv-read >> "$LOG"\n' > "$td/zdot/.zshenv"
   run "$tool" "$P" ZDOTDIR="$td/zdot" -- test
   expect_log "$tool: serial-run を起こすときに .zshenv を読まない" "sr[--if-heavy -- $td/real/$tool test] failopen=1
@@ -133,7 +134,7 @@ from-stdin"
     ng "$tool: readlink の無い PATH: rc=$rc out=$out log=$got"
   fi
   run "$tool" "$td/other/bin:$td/real" SERIAL_RUN_BIN= -- test
-  expect_log "$tool: 既定では shim と同じ checkout の serial-run を呼ぶ" "sibling-sr[--if-heavy -- $td/real/$tool test] failopen=1
+  expect_log "$tool: SERIAL_RUN_BIN が空なら shim と同じ checkout の serial-run を呼ぶ" "sibling-sr[--if-heavy -- $td/real/$tool test] failopen=1
 real[test] held= failopen=1"
 
   # / の無い名前で起こしても lib を読める (bash swift)

@@ -59,7 +59,7 @@ serial-run -h                                                       # usage (rc=
 
 ## PATH shim (`bin/swift`・`bin/xcodebuild`)
 
-`swift build` / `swift test` と xcodebuild のビルド・テストは、PATH の先頭の `bin/swift`・`bin/xcodebuild` が `serial-run --if-heavy --` に通す (待ちの上限は既定のまま)。
+`swift build` / `swift test` と xcodebuild のビルド・テストは、PATH の先頭の `bin/swift`・`bin/xcodebuild` が `serial-run --if-heavy --` に通す (`--max-wait` は渡さないので、待ちの上限は 1 時間)。
 字面の見えないスクリプトの中・人の端末も並ぶ。共通部分は `bin/lib/serial_run_shim.sh`。
 並ばない条件・届かない経路・起動の遅れの実測は [docs/tools/serial-run.md](../../docs/tools/serial-run.md) の 1.5。
 shim は exec した後に rc 125 を道具の失敗と包んだコマンドの失敗に分けられないので、`SERIAL_RUN_FAIL_OPEN=1` を付けて呼び、`bin/serial-run` はビルドできないときに `--` の後を順番を待たずに起こす。

@@ -76,7 +76,7 @@ repo ごとに書き足す。shim は要らないが、人の端末は拾えず�
 - [x] 情報だけの呼び出しと `--help` は待たない (`isHeavy` と shim のテスト)。
 - [x] `serial-run` の列の中から呼んでも止まらず、二重に並ばない (入れ子)。**読み替え**: 「`serial-run` を二重に起動しない」から変えた。`SERIAL_RUN_HELD` の有無だけで素通しにすると、終わった列から漏れて残った値で排他を外れるので、列の中でも serial-run を起こして札を照合させる (1 回 約 27 ms)
 - [x] `serial-run` が壊れていても `swift` は動く。(`SERIAL_RUN_FAIL_OPEN`。`tests/bin/test_serial_run_fail_open.sh`)
-- [x] 待ちの上限を超えたときに、ビルドの失敗と区別できる。(上限は既定の 1 時間のまま。rc 125 と stderr の `serial-run:` の行で区別する。`--max-wait 0` にしない理由は下の決着)
+- [x] 待ちの上限を超えたときに、ビルドの失敗と区別できる。(上限は `--max-wait` を渡さないときの 1 時間のまま。rc 125 と stderr の `serial-run:` の行で区別する。`--max-wait 0` にしない理由は下の決着)
 - [x] shim が自分自身を呼び続けない (実体の解決に失敗したら落ちる)。
 - [x] shim の起動の遅れを `swift --version` の前後で測り、結果を本文に書く。
 - [x] `swift run` と `swift package` を対象にするかを決め、`hook_test.go` の期待値に反映する。(どちらも対象にしない)

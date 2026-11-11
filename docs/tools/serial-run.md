@@ -41,7 +41,7 @@ dotfiles の `_claude/settings.json` の PreToolUse hook が、**どの repo で
 
 - 並ばないとき: `CI` / `SERIAL_RUN_SHIM_DISABLE=1` / shim の隣に serial-run が無い。
   列の中 (hook が包んだ `serial-run -- swift build` も shim を通る) は serial-run が札を照合して素通しにする (2 度目は並ばない)
-- 待ちの上限は serial-run の既定 (1 時間。hook の経路と同じ)。超えたら rc 125 で、`if ! swift build` はビルドの失敗と読む (stderr の `serial-run:` の行に待ちの上限と出る)。
+- 待ちの上限は 1 時間 (shim は `--max-wait` を渡さない。hook の経路と同じ)。超えたら rc 125 で、`if ! swift build` はビルドの失敗と読む (stderr の `serial-run:` の行に待ちの上限と出る)。
   serial-run がビルドできない日は順番を待たずに実体を起こす
 - 届かない経路: PATH に `~/dotfiles/bin` が無い起動元 (Dock から起動した Xcode・launchd・cron・`xcodebuild test` が起こすテストのプロセス)、
   `/usr/bin/swift` などの絶対パス、`xcrun swift`・`xcrun xcodebuild`、`swift-build` の直叩き
