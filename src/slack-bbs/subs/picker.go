@@ -173,8 +173,10 @@ func (p *Picker) visible() []int {
 	}
 	var out []int
 	for i, it := range p.items {
-		if it.grp != nil && p.editing != nil || it.memberOnly && p.editing == nil {
-			continue // グループの出し入れの間はチャンネルだけを、購読の付け外しの間は購読できるものだけを並べる
+		if it.grp != nil && p.editing != nil || it.memberOnly && (p.editing == nil || !p.inEditing(it.ch.ID)) {
+			// グループの出し入れの間はチャンネルだけを並べる。外すためだけの行 (アーカイブ済み・消えたメンバー) は、編集している
+			// グループのメンバーのときだけ出す (他のグループや購読に、読めないチャンネルを入れさせない)
+			continue
 		}
 		name := strings.ToLower(it.ch.Name)
 		if !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(name, w) }) {

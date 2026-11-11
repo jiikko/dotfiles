@@ -307,3 +307,17 @@ func TestPickerGroupStaleMembers(t *testing.T) {
 		t.Errorf("消えたメンバーを外せない: %+v", m)
 	}
 }
+
+// 外すためだけの行 (アーカイブ済み・消えたメンバー) は、そのチャンネルを持たない別のグループの編集には出さない。
+func TestPickerMemberOnlyRowsStayInTheirGroup(t *testing.T) {
+	all := []source.Channel{{ID: "C1", Name: "dev", IsMember: true}}
+	a := Channel{ID: "grp0000000a", Name: "a", Members: []Channel{{ID: "C9", Name: "gone"}}}
+	b := Channel{ID: "grp0000000b", Name: "b", Members: []Channel{{ID: "C1", Name: "dev"}}}
+	p := NewPicker(all, []Channel{a, b})
+	p.Resize(100, 14)
+	p.list.Cursor = 1 // グループ b の行
+	p.Key("e")
+	if lines := strings.Join(p.Lines(), "\n"); strings.Contains(lines, "#gone") {
+		t.Errorf("a の消えたメンバーが b の編集に出た (b に読めないチャンネルを入れられる):\n%s", lines)
+	}
+}
