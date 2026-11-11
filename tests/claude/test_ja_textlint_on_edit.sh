@@ -130,16 +130,34 @@ manyl="$TMP_ROOT/manyl.md"
 { printf '黙って捨てる。\n'; for _ in $(seq 4000); do printf -- '- 項目です\n'; done; } > "$manyl"
 expect_lines "3000 行を超えるファイルは見ない" "$(run "$(write_input "$manyl")")" ""
 
-# 行の多い new_string でも上限の内に終わる (行ごとに前を数え直すと、行の数の 2 乗で伸びる)
+# 行の多い new_string でも上限の内に終わる (行ごとに前を数え直すと、行の数の 2 乗で伸びる)。
+# 1000 行にするのは、hook の中の textlint の上限 (10 秒) に負荷の高い日でも余裕を残すため (普段は約 2 秒)
 biged="$TMP_ROOT/biged.md"
-{ for n in $(seq 2000); do printf '行 %s で潰す。\n' "$n"; done; } > "$biged"
-expect_contains "2000 行の new_string でも上限の内に終わり、知らせる" "$(run "$(edit_input "$biged" "$(cat "$biged")")")" "ほか 1980 件"
+{ for n in $(seq 1000); do printf '行 %s で潰す。\n' "$n"; done; } > "$biged"
+expect_contains "1000 行の new_string でも上限の内に終わり、知らせる" "$(run "$(edit_input "$biged" "$(cat "$biged")")")" "ほか 980 件"
 
 # 同じ行の多い new_string で範囲が大きくなっても、知らせが消えない (範囲を引数で渡すと argument list too long で jq が起動できない)
 same="$TMP_ROOT/same.md"
 { for _ in $(seq 1000); do printf '黙って捨てる。\n'; done; } > "$same"
 block=$(for _ in $(seq 500); do printf '黙って捨てる。\n'; done)
 expect_contains "同じ行の多い new_string でも知らせる" "$(run "$(edit_input "$same" "$block")")" "ほか 980 件"
+
+# 行の区切りを textlint に揃える: 行の中の U+2028 (LS) で textlint は行を分ける。hook が分けないと行の番号が食い違って知らせが消える
+ls_f="$TMP_ROOT/ls.md"
+printf '一行目。\n二行目。\n前置き\xe2\x80\xa8後ろで潰す。\n' > "$ls_f"
+ls_new=$(printf '前置き\xe2\x80\xa8後ろで潰す。')
+expect_lines "行の中の U+2028 で textlint が行を分けても知らせる" "$(run "$(edit_input "$ls_f" "$ls_new")")" "4"
+
+# CR だけで改行したファイルでも、textlint と同じ行の番号で知らせる
+cr_f="$TMP_ROOT/cr.md"
+printf '一。\r二。\r黙って捨てる。\r' > "$cr_f"
+expect_lines "CR だけで改行したファイルでも正しい行で知らせる" "$(run "$(edit_input "$cr_f" "黙って捨てる。")")" "3"
+
+# textlint が遅い入力でも、hook は上限 (15 秒) の内に黙って終わる (textlint は 10 秒で止める)。
+# 入力は指摘の多い和文を空行なしで並べたもの。大きさ・行数の上限の内側 (159.5KB・2750 行) で、textlint 単独で 19 秒 (負荷の低いとき)
+slow="$TMP_ROOT/slow.md"
+{ for _ in $(seq 2750); do printf '黙って黙って黙って黙って黙って黙って。\n'; done; } > "$slow"
+expect_lines "textlint が遅い入力でも上限の内に黙って終わる" "$(run "$(write_input "$slow")")" ""
 
 # 読めないファイルでは何も出さず、stderr にも出さない
 ro="$TMP_ROOT/ro.md"
