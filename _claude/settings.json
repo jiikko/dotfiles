@@ -70,6 +70,11 @@
             "command": "~/dotfiles/_claude/hooks/comment-provenance-on-edit.sh",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/ja-textlint-on-edit.sh",
+            "timeout": 15,
+            "type": "command"
           }
         ],
         "matcher": "Write|Edit"

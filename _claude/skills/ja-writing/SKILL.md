@@ -108,6 +108,10 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
    ```
 
    - `ja-textlint` は dotfiles の `bin/` にあり、PATH から呼べる (どの repo の中からでも同じ)
+   - Claude Code が Markdown を書くと、hook が書いた行の指摘を知らせる。
+     知らせるのは `ja-ai-vocabulary` と `ja-bold-not-rendered` だけ。hook の実体は `_claude/hooks/ja-textlint-on-edit.sh` (PostToolUse の Write / Edit)。
+     preset の指摘 (文の長さなど) と前からある行の指摘は知らせないので、書き上げた後の全体の検査は手で打つ。
+     依存が未導入なら hook は黙る (一度手で打てば入る)
    - 指摘は直す。直さないなら、理由を報告に書く (例: 引用した原文・固有名詞)
    - `ja-ai-vocabulary` の warning は rc 0 のまま出る。rc だけを見ず、出力の warning も読む
    - rc 0 は「書き癖の指摘が無い」だけで、規範 1〜3 を守った証拠にはならない
