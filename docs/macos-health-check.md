@@ -16,7 +16,7 @@ skill `mac-healthcheck` が観点の選択・レポート・直すかの確認�
 1. 落ちていないか (カーネルパニック・クラッシュ・メモリ不足による強制終了)
 2. 落ちる前兆が無いか (カーネルのメモリリーク・資源の逼迫)
 3. ハードウェアが傷んでいないか (SSD・バッテリー・温度)
-4. 守りが効いているか (SIP / Gatekeeper / FileVault / XProtect / 自動更新)
+4. 守りが有効になっているか (SIP / Gatekeeper / FileVault / XProtect / 自動更新)
 5. 失っても戻せるか (バックアップ)
 6. 常駐が壊れていないか (Apple 以外のカーネル拡張・異常終了した常駐)
 7. 推奨の設定になっているか (ログインと共有の設定・開発環境の作り。1〜6 と違い、外れていても壊れてはいない)
@@ -89,7 +89,7 @@ SSD の状態のように、何気なく開いた画面で毎回調べるので�
   (`src/pro-con/dispatcher/execrunner_test.go` の `TestRunCommandKeepsMeaningAndExitCode`。1 回走らせて 1 件増えるのを確認)。
   macOS の `/bin/sh` の実体は `/bin/bash` なので名前が bash になる。形は「寿命 3ms・親は終了済み・`main` から直接 `__kill`」
 - **`ExcUserFault_<アプリ>-*.ips`**: 動いているアプリを Homebrew の cask が上書きしたとき (`EXC_GUARD`・落ちない記録)。
-  アプリを再起動すれば止まる。Chrome はこの状態で新しいタブが開けなくなる (補助プロセスの旧版のファイルが消えるため)
+  アプリを再起動すれば止まる。Chrome はこの状態で新しいタブが開けなくなる (補助プロセスの古いバージョンのファイルが消えるため)
 - **`WebThumbnailExtension-*.ips`**: Finder / Spotlight の HTML のサムネイル生成が WebKit の assert で落ちる。OS 側の不具合
 - **`tmux-*.ips` (寿命 約 3 秒・親は launchd)**: tmux 3.7b のサーバが pane を閉じるときのレイアウト処理 (`layout_close_pane`) で落ちる。
   普段使いのサーバではなく短命のサーバで起きていた。どこが立てたサーバかは未特定
@@ -118,7 +118,7 @@ load average は判定に使わない。テストや Spotlight の再インデ�
 |---|---|---|---|
 | SSD (合否) | `diskutil info disk0` の `SMART Status:` | `Verified` = ok、それ以外 = 異常 | rc=0 / stdout 29 行 / 0.1 秒。合否しか出ないので、摩耗は下の行で見る |
 | SSD の摩耗 (**明示の段**) | `smartctl -a disk0` (Homebrew の `smartmontools`。sudo なしで内蔵の SSD を読めた) の `Percentage Used` / `Available Spare` / `Media and Data Integrity Errors` / `Critical Warning` | `Percentage Used` 80% 以上 = 注意 (閾値は仮)。`Available Spare` が `Available Spare Threshold` 以下・整合性エラーが 1 以上・`Critical Warning` が 0x00 以外 = 異常 | 🚨 **rc=4 で返るが正常**: Apple の SSD はエラー履歴のページ (`Error Information Log`) の読み出しを受け付けず、最後に `GetLogPage failed` が出る。rc はビットの組み合わせなので、`4` のビットだけを無視し、`8` (ディスクが壊れている) 以上のビットと出力の本体で判定する。stdout 44 行。`smartctl` が無ければ判定不能。🚨 **シリアル番号が含まれる** |
-| SSD の使われ方 (**明示の段**) | 同じ出力の `Data Units Written` / `Power On Hours` / `Unsafe Shutdowns` | 表示だけ | 実測 (2026-09-28): 使用率 7%、書き込み 119TB、通電 3,982 時間、安全でない電源断 11 回 (パニックや強制終了が数えられる)。書き込みの多さは Go のビルドキャッシュのような大量の小さなファイルの作り直しが効いていると思われる (未確認) |
+| SSD の使われ方 (**明示の段**) | 同じ出力の `Data Units Written` / `Power On Hours` / `Unsafe Shutdowns` | 表示だけ | 実測 (2026-09-28): 使用率 7%、書き込み 119TB、通電 3,982 時間、安全でない電源断 11 回 (パニックや強制終了が数えられる)。書き込みの多さは Go のビルドキャッシュのような大量の小さなファイルの作り直しが影響していると思われる (未確認) |
 | バッテリー | `system_profiler SPPowerDataType` の `Condition:` / `Maximum Capacity:` / `Cycle Count:` | `Condition` が `Normal` 以外 = 注意。バッテリーの無い Mac (デスクトップ) では対象外 | rc=0 / stdout 約 60 行 / 0.2 秒。🚨 **シリアル番号が含まれる**ので、出力をそのまま画面やログに流さず、必要な 3 行だけ抜く |
 | バッテリーの容量の記録 | `ioreg -r -c AppleSmartBattery -a` の `NominalChargeCapacity` と `DesignCapacity`、`PermanentFailureStatus` | 満充電の容量 ÷ 設計容量 が 80% 未満 = 注意。`PermanentFailureStatus` が 0 以外 = 異常 | plist (XML) で出る。実測: 6,324 / 6,249 mAh (100% を超えることがある)、`PermanentFailureStatus` の欄は出力に無かった (無い = 故障の記録なし、と読むのは未確認)。設計上の寿命の充放電回数 (`DesignCycleCount9C`) は 1,000 |
 | 本体の温度 | `macmon pipe -s 1` (Homebrew の `macmon`。**sudo なしで読めた**) の `temp.cpu_temp_avg` / `temp.gpu_temp_avg` | 表示だけ (閾値は未決。Apple Silicon がどの温度で性能を落とすかは確かめていない)。性能を落とした事実は `pmset -g therm` の警告で見る | rc=0 / stdout に JSON 1 行 / 約 1 秒 (1 回の測定の間隔)。実測 CPU 68.7℃ / GPU 59.5℃ (Go のテストが並列で走っていた時間)。🚨 1 回目の測定で `cpu_power` が 0.0 だった (測定を 2 回以上取れば埋まるのかは未確認)。Apple の `powermetrics` でも読めるが sudo が要る。`macmon` が無ければ判定不能 |
@@ -168,7 +168,7 @@ load average は判定に使わない。テストや Spotlight の再インデ�
 | Gatekeeper | `spctl --status` | `assessments enabled` = ok | rc=0 / stdout 1 行 |
 | FileVault | `fdesetup status` | `FileVault is On.` = ok | rc=0 / stdout 1 行 |
 | ファイアウォール | `/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate` | 無効 = 注意 | rc=0 / stdout 1 行 (`Firewall is disabled. (State = 0)`) |
-| XProtect の定義 | `defaults read /Library/Apple/System/Library/CoreServices/XProtect.bundle/Contents/Info CFBundleShortVersionString` | 表示だけ (最新かどうかを知る手段が手元に無い) | 🚨 **`xprotect version` を使わない**。iCloud 経由で最後に取った版の記録を返し、実際に入っている版と食い違う (実測: `xprotect version` は 5331、バンドルは 5360) |
+| XProtect の定義 | `defaults read /Library/Apple/System/Library/CoreServices/XProtect.bundle/Contents/Info CFBundleShortVersionString` | 表示だけ (最新かどうかを知る手段が手元に無い) | 🚨 **`xprotect version` を使わない**。iCloud 経由で最後に取ったバージョンの記録を返し、実際に入っているバージョンと食い違う (実測: `xprotect version` は 5331、バンドルは 5360) |
 | 自動更新の設定 | `defaults read /Library/Preferences/com.apple.SoftwareUpdate` の `CriticalUpdateInstall` / `ConfigDataInstall` / `AutomaticDownload` | どれか 0 = 注意 | `LastSuccessfulDate` (最後に更新の確認が成功した日時) も同じ出力にある |
 | 保留中のアップデート (**明示の段**) | `softwareupdate --list` | 保留あり = 注意 | 🚨 **遅い (4.7 秒)**。🚨 「保留なし」の 1 行 `No new software available.` は **stderr** に出る (stdout は見出しの 3 行だけ)。保留なしのときは rc=0。**保留があるときの出力と rc は未実測** (その状態に居なかったため) |
 
@@ -212,9 +212,9 @@ Apple Silicon での開発環境の定番 (Homebrew の置き場所・Brewfile�
 | 項目 | 取得 | 判定 | 出力の契約 (実測) |
 |---|---|---|---|
 | Homebrew の置き場所 | `/opt/homebrew/bin/brew --prefix` | `/opt/homebrew` = ok | Apple Silicon の標準の置き場所 |
-| Intel 版の Homebrew の残り | `/usr/local/bin/brew` があるか | ある = 注意 (2 つの brew が同居すると PATH の順で別の版を掴む) | 無ければ `ls` が rc=1 |
-| Rosetta | `arch -x86_64 /usr/bin/true` | 入っていない = ok。入っている = 注意 (Intel 用のバイナリが動いてしまうので、Apple Silicon 版への移行漏れに気づけない) | 入っていないときは rc=1 で stderr に `Bad CPU type in executable`。入っているときの出力は未実測 (この Mac に Rosetta が無いため。rc=0 になるはず) |
-| Command Line Tools | `pkgutil --pkg-info=com.apple.pkg.CLTools_Executables` の `version:` と `xcode-select -p` | CLT のメジャー版 = OS のメジャー版 = ok。古い = 注意 (brew のソースビルドや native gem のビルドが失敗しうる) | Xcode が無いなら `xcode-select -p` は `/Library/Developer/CommandLineTools` |
+| Intel 向けの Homebrew の残り | `/usr/local/bin/brew` があるか | ある = 注意 (2 つの brew が同居すると PATH の順で別のバージョンを掴む) | 無ければ `ls` が rc=1 |
+| Rosetta | `arch -x86_64 /usr/bin/true` | 入っていない = ok。入っている = 注意 (Intel 用のバイナリが動いてしまうので、Apple Silicon 向けへの移行漏れに気づけない) | 入っていないときは rc=1 で stderr に `Bad CPU type in executable`。入っているときの出力は未実測 (この Mac に Rosetta が無いため。rc=0 になるはず) |
+| Command Line Tools | `pkgutil --pkg-info=com.apple.pkg.CLTools_Executables` の `version:` と `xcode-select -p` | CLT のメジャーバージョン = OS のメジャーバージョン = ok。古い = 注意 (brew のソースビルドや native gem のビルドが失敗しうる) | Xcode が無いなら `xcode-select -p` は `/Library/Developer/CommandLineTools` |
 | Brewfile との一致 (**明示の段**) | `HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --file <dotfiles>/Brewfile` | **表示だけ (採点しない)**。趣味と仕事でマシンごとに入れるものが違い、1 つの Brewfile とは一致しないのが正常なため (2026-09-28 のユーザーの判断)。マシンごとに分けた Brewfile (共通 + 仕事用 / 趣味用) を作ったら、そのマシンの組み合わせと比べて採点に戻す | 🚨 **`HOMEBREW_NO_AUTO_UPDATE=1` を付ける**。付けないと、検査のたびに brew の自動更新 (ネットワーク) が走る。入っているのに Brewfile に無いものは `brew bundle cleanup --file ...` が一覧する (引数なしは dry-run で、消さない)。実測では、`brew leaves --installed-on-request` の 72 個に対して Brewfile の `brew` の行は 19 行で、cask もほとんど載っていなかった = **Brewfile からこのマシンを作り直せない** |
 | brew の依存情報の傷み | `brew bundle` などが stderr に出す `found a circular dependency` | 出る = 注意 | 実測: `libtiff, webp` で出た。keg の記録が古いときに出る。直し方は brew が同じ警告の中で案内する |
 | ログインシェル | `dscl . -read /Users/<user> UserShell` | 表示だけ | Homebrew の zsh (`/opt/homebrew/bin/zsh`) にしているなら、`/etc/shells` に載っているかも見る (載っていないとログインできない)。brew を壊すとログインシェルごと起動しなくなる点に注意 |

@@ -89,7 +89,7 @@ bind S command-prompt -p 'host:' "new-window -n %1 'ssh %1'"
 bind w choose-tree -Zw   # window をズーム表示の木から選ぶ
 ```
 
-【この repo の実例】標準の choose-tree を fzf popup（`/Users/koji/dotfiles/scripts/tmux_fzf_jump.sh`）に**置換していた**（`bind f`。2026-10-22 に `f` を treefiler の popup へ転用し、スクリプトは今はどのキーにも割り当てていない）。fzf 版は「全セッションの window をアクティビティ順 + 相対時刻 + capture-pane プレビュー付き」で出し、choose-tree より情報量が多い。choose-tree は「ゴチャついて見づらい」として不採用（`_tmux.conf` の `bind g/G` コメント参照）。外部 fuzzy finder に寄せた設計実例。
+【この repo の実例】標準の choose-tree を fzf popup（`/Users/koji/dotfiles/scripts/tmux_fzf_jump.sh`）に**置換していた**（`bind f`。2026-10-22 に `f` を treefiler の popup へ転用し、スクリプトは今はどのキーにも割り当てていない）。fzf の実装は「全セッションの window をアクティビティ順 + 相対時刻 + capture-pane プレビュー付き」で出し、choose-tree より情報量が多い。choose-tree は「ゴチャついて見づらい」として不採用（`_tmux.conf` の `bind g/G` コメント参照）。外部 fuzzy finder に寄せた設計実例。
 
 【バージョン注意】`choose-tree` は 2.7+ で現形に。`-Z` は 2.7+、`-K` は 3.2+。3.5a で利用可。
 
@@ -250,7 +250,7 @@ if-shell 'v=$(tmux -V | sed "s/[^0-9.]//g"); maj=${v%%.*}; min=${v#*.}; min=${mi
   'display-message "3.6+ 推奨"'
 ```
 
-【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の `pane-scrollbars` ガード（3.6 で追加されたオプション。**3.5 以前で素に set すると "invalid option" 警告が出る**ため、if-shell で版数比較し 3.6+ のときだけ set、未満は upgrade を促す `display-message`）。本環境は 3.7b なので then 節（`pane-scrollbars off`）が発火する。
+【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の `pane-scrollbars` ガード（3.6 で追加されたオプション。**3.5 以前で素に set すると "invalid option" 警告が出る**ため、if-shell でバージョン比較し 3.6+ のときだけ set、未満は upgrade を促す `display-message`）。本環境は 3.7b なので then 節（`pane-scrollbars off`）が発火する。
 
 ---
 
@@ -301,7 +301,7 @@ setw -g window-status-current-format "#{?window_zoomed_flag,#[bg=colour160#,fg=w
 
 【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の `#{?window_zoomed_flag,...}` と pane-border-format 末尾の 🔍 ZOOM（colour160）。
 
-【バージョン注意】`window_zoomed_flag` は 2.x から有効。版ガード不要。
+【バージョン注意】`window_zoomed_flag` は 2.x から有効。バージョンガード不要。
 
 #### アクティブ/非アクティブペインを面の背景色で識別
 
@@ -318,7 +318,7 @@ set -g pane-active-border-style fg=colour46,bg=colour46
 
 【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の window-style/window-active-style、pane-active-border-style、cursor-style blinking-block + cursor-colour。
 
-【バージョン注意】window-style/window-active-style は古くからある。`cursor-style` / `cursor-colour` は 3.4+。nvim 等が自前で背景を塗るアプリ内では効かず、素のプロンプトのペインで最も効く。
+【バージョン注意】window-style/window-active-style は古くからある。`cursor-style` / `cursor-colour` は 3.4+。nvim 等が自前で背景を塗るアプリ内では反映されず、素のプロンプトのペインで最も反映が目立つ。
 
 #### 非表示ペインの状態遷移で macOS 通知
 
@@ -422,9 +422,9 @@ set -g status-right "#{?client_prefix,#{p39:@keyguide},#{p39:@nothing}}"
 
 ## アイデア集（まだ作っていない小ツール案）
 
-- **汎用コマンドランチャー（dmenu 風）**: `display-popup -E` + fzf で候補を出し、選択を `send-keys -t !` でアクティブ pane へ流し込む。既存の `bind f/g/G/x/q/t` と同じ土台で組める。fzf 無しなら `display-menu` で静的版も可。
+- **汎用コマンドランチャー（dmenu 風）**: `display-popup -E` + fzf で候補を出し、選択を `send-keys -t !` でアクティブ pane へ流し込む。既存の `bind f/g/G/x/q/t` と同じ土台で組める。fzf 無しなら `display-menu` で静的な一覧も可。
 - **popup 電卓 / メモ**: `display-popup -E -w 50% -h 40%` の中で `bc` や `$EDITOR ~/notes.md` を起動するだけ。`-E` で終了時に自動クローズ。
-- **セッションランチャー**: `list-sessions -F` を fzf にかけて `switch-client -t`。プロジェクト一覧から飛ぶ。jump.sh の window 版を session 版にするだけ（参考: sesh / tmux-sm）。
+- **セッションランチャー**: `list-sessions -F` を fzf にかけて `switch-client -t`。プロジェクト一覧から飛ぶ。jump.sh の window 向けの処理を session 向けにするだけ（参考: sesh / tmux-sm）。
 - **git ブランチ fzf 切替**: popup 内で `git branch | fzf` → `git switch`。ブランチ名のプレビューに `git log --oneline` を出す。
 - **ログ tail ダッシュボード**: `split-window` でログ枠を作り `send-keys 'tail -f ./tmp/app.log' Enter`。複数ログを `select-layout tiled` で並べる。
 - **アクションメニューの統合**: 現在 kill / pane 移動などが個別 bind だが、`display-menu` で「pane を kill / 移動 / zoom / scratch を開く」を 1 メニューに集約する案（未使用 primitive の活用）。
@@ -439,10 +439,10 @@ set -g status-right "#{?client_prefix,#{p39:@keyguide},#{p39:@nothing}}"
 
 - **display-popup**: 3.2+。`-e` / `-x/-y` / `#{popup_*}` は 3.3 前後。3.5a で利用可。
 - **popup 内 shell-command の制約**: `#{...}` フォーマット・`-e` の値が展開されず `TMUX_PANE` も無い（3.6a で実測）。対象 pane は popup 内から `tmux display-message -p '#{pane_id}'` で都度解決する（`bind x/q/M-c` のコメント参照）。
-- **popup overlay 再描画バグ（issue #4920）**: 3.5a〜3.6b で popup を閉じた後に枠が ~1 秒残るアーティファクトがあった。fix は 3.7 で収録。本 repo は閉じた直後に `refresh-client` で潰す回避（旧 `scripts/tmux_refresh_all_clients.sh`）を入れていたが、実機が 3.7b になったため回避は撤去済み。
+- **popup overlay 再描画バグ（issue #4920）**: 3.5a〜3.6b で popup を閉じた後に枠が ~1 秒残るアーティファクトがあった。fix は 3.7 で収録。本 repo は閉じた直後に `refresh-client` で消す回避（旧 `scripts/tmux_refresh_all_clients.sh`）を入れていたが、実機が 3.7b になったため回避は撤去済み。
 - **`#()` パーサの落とし穴**: format の `#(...)` 内に `$(...)` を直書きすると `)` を閉じ括弧と誤認して壊れる（実測）。外部スクリプト化が定石。
 - **display-menu**: 3.0+、スタイル系は 3.4+。`command-prompt -N/-T` は 3.1+、`-b` は 3.3+。`confirm-before -b` は 3.2+。
-- **pane-scrollbars**: 3.6 で追加。3.5 以前で素に `set` すると "invalid option" 警告が出るため if-shell で版数ガードしている（本環境 3.7b では then 節 = off 設定が発火）。3.6a ではバー表示中にペインが 1 列 narrow され本文が reflow されるため off 運用。
+- **pane-scrollbars**: 3.6 で追加。3.5 以前で素に `set` すると "invalid option" 警告が出るため if-shell でバージョンガードしている（本環境 3.7b では then 節 = off 設定が発火）。3.6a ではバー表示中にペインが 1 列 narrow され本文が reflow されるため off 運用。
 - **pane-border-indicators**: 3.4+。`pane-border-lines double/heavy`: 3.2+。`cursor-style` / `cursor-colour`: 3.4+。`window_zoomed_flag` / `#{P:...}` / `#{m:}` / `window_active_clients`: 3.x（3.5a 動作確認済み）。
 - **control mode（`tmux -CC`、iTerm2 統合）**: 3.5a の CONTROL MODE 節に実在。本 repo は Terminal.app 前提で未使用（`_tmux.conf` の mouse off コメントで将来の移行候補として言及）。
 

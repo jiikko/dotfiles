@@ -45,7 +45,7 @@ toast 用の `new-pane` 自体が `after-split-window` hook を**再発火する
 そのため分割 hook から素朴に呼ぶと「toast が toast を生む」無限増殖になる
 (実測で pane 60 個超)。抑止は tmux-toast 側の再入ガードが担う:
 
-- 直近 2 秒以内に toast 済み (`@tmux_toast_last_epoch`) なら黙って skip
+- 直近 2 秒以内に toast 済み (`@tmux_toast_last_epoch`) なら何も出さずに skip
 - 副作用として 2 秒以内の連続通知は 1 つに間引かれる (通知 UI としては許容)
 - **hook 側 (`_tmux.conf`) に増殖抑止の条件分岐を足さないこと** (二重管理になる。
   この契約は conf 側にもコメントしてある)

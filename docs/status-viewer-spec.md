@@ -36,7 +36,7 @@ git status --porcelain --branch -z   # v1 形式 (-z で NUL 区切り)
   repo root と結合する (pathspec では解決できないため)
 - **解釈できなかったレコードは数えて画面に出す。** 壊れた行は捨てて「読めた分だけ出す」が、
   捨てた数を伏せると「出力を解釈できなかった」が「変更なし = クリーン」と同じ絵になり、
-  変更を見せるための画面が黙って嘘をつく (0 件なら本文に、一部なら ヘッダーに `🚨 N 件解釈不能`)
+  変更を見せるための画面が気づかないうちに嘘をつく (0 件なら本文に、一部なら ヘッダーに `🚨 N 件解釈不能`)
 
 ## 2. XY コードとセクションの写像
 
@@ -68,7 +68,7 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 | `g` `G` `C-d` `C-u` | 先頭 / 末尾 / 半ページ | — |
 | `Space` | **セクションを移す** (Unstaged/Untracked → Staged / Staged → Unstaged) | `add` / `restore --staged` |
 | `a` | Unstaged + Untracked をまとめて Staged へ | `add --` (対象パスを列挙) |
-| `X` | **作業ツリーの変更を捨てる** (y/N 確認。4 節。Staged 行では受けない。🚨 一覧の `X` = codex update はこの画面では効かない — `C` = claude update は効く) | `restore` / `clean -fd` |
+| `X` | **作業ツリーの変更を捨てる** (y/N 確認。4 節。Staged 行では受けない。🚨 一覧の `X` = codex update はこの画面では使えない — `C` = claude update は使える) | `restore` / `clean -fd` |
 | `Enter` `l` `→` `d` | そのファイルの diff を全画面 pager で開く | `diff` / `diff --cached` |
 | `J` `K` | **全画面 diff を開いたまま隣のファイルへ** (閉じて開き直さない。`glogx-ui-guide.md` §6 の項目送りと同じ語彙) | `diff` / `diff --cached` |
 | `r` | 手動で読み直す | `status` |
@@ -94,7 +94,7 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 「今の幅で確実に読めるもの」だけにする。issues viewer と同じ作法)。
 
 🚨 組む側の予算と描画側が切る幅は `browseModel.hintWidth` の 1 か所から取る。2 か所に式を
-書くと「収まるつもりで組んだ hint が黙って切られる」形でずれる。
+書くと「収まるつもりで組んだ hint が知らせずに切られる」形でずれる。
 
 - **`u` を unstage に割り当てない。** glogx の `u` は `git pull --rebase` で、remote に触るキーを
   画面ごとに別の意味へ再利用すると誤爆の被害が大きい (tig は `u` だが、ここでは踏襲しない)
@@ -111,7 +111,7 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 - pull の確認モーダルは **viewer の上に重ねて描く**。キーは viewer より先に action モーダルが
   捌くので、描かないと「見えないモーダルが y/N を持つ」状態になる (押した先が画面と食い違う)
 - pull の成功後は viewer をその場で読み直す (自動更新の 1.5 秒を待たせるとヘッダーの
-  ahead/behind が古いまま残り「効いていない」ように見える)
+  ahead/behind が古いまま残り「反映されていない」ように見える)
 - Conflicted 行では `Space` / `a` / `X` を受けない (`d` で差分を見るだけ)。conflict の解決は
   シェルの仕事という `git pull --rebase` の自動 abort と同じ方針
 - **`X` は Staged 行では受けない** (「先に `Space` で unstage してください」と返す)。staged の変更を

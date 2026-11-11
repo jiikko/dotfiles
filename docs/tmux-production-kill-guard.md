@@ -70,7 +70,7 @@ Claude が**直接打った** Bash コマンドを境界で検査し、ソケッ
 - **`{ }` コマンドグループ / `command-alias` 経由** — 故意の tmux プログラム構文。alias 名に `kill-s` を含まないので fast path を通る。
 - **`tmux -c <shell-command>` の中の kill** — `-c` の値は shim が読み飛ばす (socket ではない)。run-shell と同じ「別レイヤーが実行する」族。
 - **pty がチェーンに入った状態での単一 kill-session** — `script`/`expect`/pty driver/tmux ペイン内では `[ -t ]` が TTY を返すため、kill-session の TTY ゲートが非対話でも開く。kill-server と `kill-session -a` (catastrophic) はこの穴を負わないよう TTY を通さない。残るのは**個別 1 セッションの kill-session** だけで (`-a` なし)、これは housekeeping 優先で許可を残している。1 セッションずつ消す形は非 catastrophic。
-- **REAL のハードコード** (`/opt/homebrew/bin/tmux`) — tmux が別位置に移ると全 tmux 呼び出しが失敗する。Homebrew の symlink は版更新をまたいで安定なので現実的リスクは低い。
+- **REAL のハードコード** (`/opt/homebrew/bin/tmux`) — tmux が別位置に移ると全 tmux 呼び出しが失敗する。Homebrew の symlink はバージョン更新をまたいで安定なので現実的リスクは低い。
 - **第二防御 (hook) の basename 判定** — hook は文字列検査なので、`-S <非本番dir>/default` のように basename が `default` の隔離 socket を過剰 deny しうる。第一防御 (shim) は full-path で正しく判定するので、実行時の最終判断は shim が持つ。
 
 load-bearing な前提 (最終ゲートのレビューが指摘。破れると無音の under-block が開く):

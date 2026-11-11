@@ -46,7 +46,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
   variant の優劣を比較して選んだわけではない)。
   **復元/既定化**: `scripts/terminal_profile_restore.sh` が登録 + 既定
   プロファイル化まで行う (手でプリセットを選ぶ操作を根絶。setup.sh が macOS で自動実行)。
-  🚨 **フォントが未導入でも Terminal はエラーを出さず代替フォントへ黙って差し替える**ので、
+  🚨 **フォントが未導入でも Terminal はエラーを出さず代替フォントへ差し替える**ので、
   restore スクリプトは在庫を確認し、無ければ設定せず WARN を出す (実測 2026-09-23)。
   **変えるには**: Terminal.app 設定→プロファイルで調整し、書き出しでこの .terminal を上書きして
   restore スクリプトを再実行 (色もフォントもこのファイルが単一ソース)。
@@ -108,7 +108,7 @@ window を切り替えると、current 島が **切替直前の表示色 → 暗
   描き直すので、1 フレームごとに入れ子の画面全体が端末へ送り直される (1 回の切替が約 570KB → 約 30KB。issue 567)
   算術は `TT_IGNITE_DRYRUN=1 scripts/tmux_ignite_current.sh colour201` で決定的に確認できる
 - CPU: 各フレームは「世代一致なら set+refresh」を `tmux if -F` でサーバ側原子実行 (1 フレーム 1 fork)。
-  実測 = 最長 8 フレームだった版の 1 回で user+sys ~60ms (12 フレームの現行は未実測。フレーム数に比例するなら ~90ms の見込み)。切替イベント時のみで常時負荷ゼロ
+  実測 = 最長 8 フレームだったバージョンの 1 回で user+sys ~60ms (12 フレームの現行は未実測。フレーム数に比例するなら ~90ms の見込み)。切替イベント時のみで常時負荷ゼロ
   (毎秒の status 再描画が常設で回っている構成なので、この瞬間バーストは誤差の範囲)
 - 文字単位のスイープ (一文字ずつ色が変わる) は不可: format に部分文字列×スタイル分割の手段が無く、
   幅可変の reveal 方式は「セル幅が変わると列がずれる」で却下済み (チップ案と同根)
@@ -117,7 +117,7 @@ window を切り替えると、current 島が **切替直前の表示色 → 暗
 
 - **主環境は 256色** (~/.zshenv の SUPPORT_TRUECOLOR=false → termguicolors=off。_nviminit.lua
   冒頭の WORKAROUND 参照)。**hex が設計の真・cterm はその忠実な近似**。新しい色は必ず
-  {hex, cterm} の組で定義する (gui だけだと 256色で無言に効かない。hl.set が WARN で検知)
+  {hex, cterm} の組で定義する (gui だけだと 256色でエラーを出さずに反映されない。hl.set が WARN で検知)
 - **colorscheme を替える場合**: 256色主環境では cterm 完備のスキームが必須。gruvbox.nvim は
   gui 色のみのため、非 truecolor では nvim 同梱 retrobox に分岐している (truecolor-only の
   テーマ (tokyonight 等) へ全面移行するには主環境の truecolor 化が先)

@@ -25,7 +25,7 @@
 
 ## 1. Neovim 本体
 
-| 版 | 日付 | 入ったもの | 設定への影響 |
+| バージョン | 日付 | 入ったもの | 設定への影響 |
 |---|---|---|---|
 | 0.11 | 2025-03 | `vim.lsp.config()` / `vim.lsp.enable()` (lspconfig 無しで LSP を定義・有効化。`after/lsp/<name>.lua` 配置)、`vim.lsp.completion.enable()` (標準の自動補完)、既定キーマップ (`grn` / `gra` / `grr` / `K` 等) | lspconfig は「設定データの供給元」に役割が縮む。`require("lspconfig").X.setup{}` は旧 API |
 | 0.12 | 2026-03-29 | **`vim.pack`** (`vim.pack.add` / `update` / `del`、lockfile `nvim-pack-lock.json`)、`:lsp` サブコマンド (`:LspInfo` / `:LspRestart` / `:LspLog` は廃止)、`:restart`、`ui2` (「Press ENTER」の排除。experimental)、`:Undotree` / `:DiffTool` (`packadd nvim.undotree` 等で有効化)、`vim.net.request()`、`vim.list.unique` / `bisect`、`nvim_set_hl` の `update`、LSP の `inlineCompletion` / `linkedEditingRange` / `onTypeFormatting`、標準 statusline が式化され `vim.diagnostic.status()` を表示、端末の synchronized output (DEC 2026) | 破壊的変更: `i_CTRL-R` がレジスタを literal 挿入、`sign_define` による診断サインは無効、`vim.diagnostic.disable/is_disabled` 削除、`vim.diff` → `vim.text.diff`、LSP の JSON null が `vim.NIL`、treesitter `Query:iter_matches` の `all` オプション削除 |

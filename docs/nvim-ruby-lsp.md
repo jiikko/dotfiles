@@ -7,7 +7,7 @@
 
 ## 1. 何が壊れていて、何が遅かったか
 
-症状は「Rails の `.rb` で `gd` も `<C-k>` も効かない」。原因は**別々の 2 つ**だった。
+症状は「Rails の `.rb` で `gd` も `<C-k>` も動かない」。原因は**別々の 2 つ**だった。
 
 **(a) サーバが project と違う Ruby で走っていた。** mason の solargraph 0.60.2 が rbenv 3.2.2 で
 起動し、project (ruby 3.1.6 / bundle は `vendor/bundle/ruby/3.1.0`) の `GEM_PATH` として
@@ -68,10 +68,10 @@ composed bundle** (ruby-lsp 自身を project の Gemfile に足した `Gemfile`
 | **編集中 (`didChange`)** | `@store.push_edits` のみ。**索引は触らない**。書きかけのメソッドは索引に載らない |
 | **保存・外部変更 (`didChangeWatchedFiles`)** | ファイル単位で差分更新。開いていれば `index.handle_change(uri, content)`、閉じていれば `index_single(uri, content)`、削除なら `index.delete(uri)` |
 
-**nvim 側の前提**: 差分更新は client がファイル監視を登録して初めて効く。nvim 0.11.5 は
+**nvim 側の前提**: 差分更新は client がファイル監視を登録して初めて働く。nvim 0.11.5 は
 `workspace.didChangeWatchedFiles.dynamicRegistration` を **macOS では true** で広告する
 (`protocol.lua:565`)。この repo は macOS 専用なので (CLAUDE.md「対象プラットフォーム」/ issue 133)、
-差分更新は効く前提で書いてよい。
+差分更新は働く前提で書いてよい。
 
 **帰結**: nvim を起動するたびに 10 秒級の索引が走る。永続キャッシュが無い以上、
 現実的な緩和は「**nvim の起動回数を減らす**」だけ (gem 除外は効果 15% で割に合わない。4 節)。
@@ -164,7 +164,7 @@ composed bundle の `bundle install` を実際に走らせるので初回は分�
 
 → 近似で選び、**外したら倒す**。`servers.ruby_lsp.on_exit` が異常終了 (正常終了と SIGTERM は除く)
 を見て、その root のキャッシュを `solargraph` へ書き換え、`doautoall nvim.lsp.enable FileType`
-(= `vim.lsp.enable` 自身が既存バッファへ効かせるのに使う経路) で選び直させる。
+(= `vim.lsp.enable` 自身が既存バッファへ反映させるのに使う経路) で選び直させる。
 `exit 78` は `Gemfile.lock` が無いときの `SetupBundler::BundleNotLocked` なので、名指しで
 `bundle install` を案内する。
 
@@ -192,7 +192,7 @@ nvim/ruby-refs-index/measure.rb   148 行  (プロトタイプ。どこにも繋
 tests/nvim/*                      674 行  ← 一番多い
 ```
 
-| 関数 | 責務 | 速度への効き方 |
+| 関数 | 責務 | 速度への影響 |
 |---|---|---|
 | `M.has_gemfile` / `M.ruby_lsp_runnable` / `M.ruby_server_for` / `ruby_root_dir` | サーバ選択 | ①の本体。速い探索を書いたのではなく「正しい ruby で動くサーバを選ぶ」だけ |
 | `M.use_ripgrep_references` + `<C-k>` | 参照の振り分け | ②の本体。検索は telescope + ripgrep がやる。行き先を決めているだけ |
@@ -217,11 +217,11 @@ tests/nvim/*                      674 行  ← 一番多い
 キャッシュを消して attach し直すだけだと、既に付いている solargraph は「もう選ばれない」ことを
 検出できずに残り、新しく起動する ruby_lsp と二重 attach = rubocop の診断が二重に出る。
 
-- **`~/dotfiles` へ pull しても、開きっぱなしの nvim には効かない**。`vim.lsp.enable` は起動時に
+- **`~/dotfiles` へ pull しても、開きっぱなしの nvim には反映されない**。`vim.lsp.enable` は起動時に
   走るので、終了して開き直すまで古い設定のまま動く (この件で 2 往復した)
 - **索引中は要求が返らない**。「押しても無反応」に見えたら、まずステータスラインの
   `Ruby LSP: indexing files: NN%` を見る
-- **`excludedPatterns` は索引にしか効かない**。`references` は別経路 (生 `Dir.glob`) なので、
+- **`excludedPatterns` は索引にしか適用されない**。`references` は別経路 (生 `Dir.glob`) なので、
   ここを増やしても参照検索は速くならない
 - **gem 除外は効果 15%** (A-B 実測: 大きい gem 10 個を外して索引 10.7 秒 → 9.1 秒)。
   gem へのジャンプを失う対価に見合わない

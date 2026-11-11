@@ -18,7 +18,7 @@
 
 | 現行 | 主な役割 | 最終更新 | デファクト候補 | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
 | ---- | -------- | -------- | -------------- | ------------ | ------------- | -------------- | ---- |
-| ✅ ellisonleao/gruvbox.nvim | カラースキーム | 2025-09-04 | 同プラグイン, `folke/tokyonight.nvim` | × | × | いいえ | Vimscript 版から移行済み。Lua 版で truecolor/透明度設定が容易。 |
+| ✅ ellisonleao/gruvbox.nvim | カラースキーム | 2025-09-04 | 同プラグイン, `folke/tokyonight.nvim` | × | × | いいえ | Vimscript 実装から移行済み。Lua 実装で truecolor/透明度設定が容易。 |
 | ✅ folke/which-key.nvim | キーマップチートシート | 2025-10-28 | 同プラグインがデファクト | × | × | いいえ | 定番。置き換え不要。 |
 | ✅ nvim-lualine/lualine.nvim | ステータスライン | 2025-11-23 | 同プラグイン | × | × | いいえ | Lightline から移行済み。診断表示はネイティブ LSP (vim.diagnostic) の `diagnostics` コンポーネントを統合。 |
 | ✅ akinsho/bufferline.nvim | タブライン | 2025-01-14 | `romgrk/barbar.nvim`, 標準タブライン | × | × | いいえ | Barbar から移行済み。LSP/診断アイコンも扱える Lua 実装で軽量。 |
@@ -56,7 +56,7 @@
 
 | 現行                      | 主な役割     | 最終更新   | デファクト候補                                           | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
 | ------------------------- | ------------ | ---------- | -------------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
-| ~~tpope/vim-rails~~       | Rails 支援   | — | — | — | — | — | **✅ 削除済み**(2026-07-10)。def ジャンプは native LSP (solargraph) が代替、minitest では `:A` が効きにくく不使用だったため廃止。 |
+| ~~tpope/vim-rails~~       | Rails 支援   | — | — | — | — | — | **✅ 削除済み**(2026-07-10)。def ジャンプは native LSP (solargraph) が代替、minitest では `:A` が使いにくく不使用だったため廃止。 |
 | ✅ terraform-ls + treesitter + conform | Terraform | - | 同構成 | × | × | いいえ | **2026-07: hashivim/vim-terraform (Vimscript) を置換**。ft は nvim 標準検出、構文/fold は treesitter(terraform/hcl)、補完/診断は terraform-ls、整形は conform terraform_fmt を terraform ft の保存時に発火 (旧 terraform_fmt_on_save 相当)。 |
 | ✅ gopls + treesitter + conform + treesitter-textobjects | Go | - | 同構成 | × | × | いいえ | **2026-07: fatih/vim-go (Vimscript 19k 行) を置換**。ハイライトは treesitter(go/gomod/gosum)、定義/実装/参照/hover は gopls (native LSP)、整形は conform goimports を go 保存時に発火 (旧 go_fmt_autosave/go_imports_autosave 相当)、関数ジャンプ `]]`/`[[` とテキストオブジェクト `af`/`if`/`ac`/`ic` は treesitter-textobjects、GoDecls は telescope symbols で置換 (Go 限定は nvim/ftplugin/go.lua)。`K`=hover は nvim 0.11 native 既定。 |
 | ~~github/copilot.vim~~    | AI 補完      | — | — | — | — | — | **✅ 削除済み**(2026-07。残骸掃除まで完了)。AI 支援は nvim 外の Claude Code に集約。 |
@@ -67,7 +67,7 @@
 | ✅ stevearc/conform.nvim  | 整形         | - | 同プラグイン | × | × | いいえ | `:Format`/`<leader>f`。prettier/shfmt、他は `lsp_format=fallback`。 |
 | ✅ mfussenegger/nvim-lint | Lint         | - | 同プラグイン | × | × | いいえ | sh の shellcheck（旧 coc-diagnostic 相当）。他言語は LSP 診断。 |
 | ✅ nvim-treesitter/nvim-treesitter-context | 囲むスコープの固定表示 | 2026-09 導入 | 同プラグイン | × | × | いいえ | **2026-09 ソースリーディング支援として導入**。画面上部に囲んでいる func/if/for を最大 3 行固定。`[C` で外側スコープへジャンプ。vim.treesitter 直叩きなので treesitter main と併用可。 |
-| ✅ stevearc/aerial.nvim | 宣言アウトライン | 2026-09 導入 | 同プラグイン, `hedyhli/outline.nvim` | × | × | いいえ | `<leader>o` サイドバー / `<leader>O` パンくず float。`<leader>gd` (telescope symbols) の常駐版。🚨 main は nvim 0.12 専用なので `branch = "nvim-0.11"` 固定 (0.12 へ上げたら外す)。 |
+| ✅ stevearc/aerial.nvim | 宣言アウトライン | 2026-09 導入 | 同プラグイン, `hedyhli/outline.nvim` | × | × | いいえ | `<leader>o` サイドバー / `<leader>O` パンくず float。`<leader>gd` (telescope symbols) の常駐する形。🚨 main は nvim 0.12 専用なので `branch = "nvim-0.11"` 固定 (0.12 へ上げたら外す)。 |
 | ✅ folke/trouble.nvim | 呼び出し階層 / LSP 一覧 | 2026-09 導入 | 同プラグイン | × | × | いいえ | `<leader>ci`/`<leader>co` = incoming/outgoing calls (gopls callHierarchy)、`<leader>cl` = 定義/参照/実装/呼び出しの 1 ペイン。telescope の `<C-k>` は「飛ぶ」、trouble は「開いたまま辿る」で使い分け。 |
 | ✅ dnlhc/glance.nvim | 定義/参照のピーク | 2026-09 導入 | 同プラグイン, `rmagatti/goto-preview` | × | × | いいえ | `gp`/`gP`/`gI` = 定義/参照/実装をジャンプせずフロートで覗く。1 件なら直接ジャンプ (gd と同じ体感)。 |
 
@@ -82,8 +82,8 @@
 
 ## 乗り換え優先度の目安
 
-1. **軽量化を急ぐ**: 重い Vimscript プラグインは順次 Lua 版へ。✅ vim-toggle / vim-ambiwidth は vendor 化 + Lua 移植済み (2026-07)。残る Vimscript 依存は vim-matchup のみ（Lua 化は低ROIで対象外）。
-2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 版。
+1. **軽量化を急ぐ**: 重い Vimscript プラグインは順次 Lua 実装へ。✅ vim-toggle / vim-ambiwidth は vendor 化 + Lua 移植済み (2026-07)。残る Vimscript 依存は vim-matchup のみ（Lua 化は低ROIで対象外）。
+2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 実装。
 3. **Git/開発補助**: mini.trailspace など Lua ツールへ処理を寄せて重複を解消。
 4. **言語/LSP**: ✅ coc.nvim はネイティブ LSP 構成 (nvim-lspconfig + mason + blink.cmp + conform + nvim-lint) へ移行済み (2026-07)。✅ vim-terraform も terraform-ls + treesitter + conform へ置換済み (2026-07)。✅ vim-go も native (gopls + treesitter + conform goimports + treesitter-textobjects) へ置換済み (2026-07。go.nvim は採らず native 構成を選択)。
 5. **AI 補完**: ✅ copilot.vim は削除済み (2026-07)。✅ sidekick.nvim も削除済み (2026-07-22)。AI 支援は nvim 外の Claude Code に集約したため copilot.lua への移行も不要。
@@ -129,11 +129,11 @@
 | 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否 |
 | --------- | ------------------ | ---------- | ----------------------------------------- | --------------------------------------------------- | ------------------------ |
 | [`echasnovski/mini.trailspace`](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（導入済み）                  | Lua 実装で Trim/可視化を一本化済み。                 | -: `<leader>lr` も mini.trailspace の API を呼ぶよう更新済み。                              |
-| [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（導入済み）                | Lua 版で truecolor/透明度の調整が容易。             | -: Vimscript 版から移行済み。                                                              |
+| [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（導入済み）                | Lua 実装で truecolor/透明度の調整が容易。             | -: Vimscript 実装から移行済み。                                                              |
 | [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 4.9k             | 2025-10-03 | ステータスライン（導入済み）              | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | -: Lightline→lualine へ切り替え済み。                                                      |
 | [`ray-x/go.nvim`](https://github.com/ray-x/go.nvim)                                                            | 2.1k            | 2025-09-15 | Go 開発（→ `vim-go`）                     | gopls + 補助ツールを一括管理。軽量。                | -: **不採用** (2026-07)。vim-go は native 構成 (gopls + treesitter + conform) で置換済み。 |
 | [`hashicorp/terraform-ls`](https://github.com/hashicorp/terraform-ls) + `nvim-lspconfig`                       | 3.5k            | 2025-10-23 | Terraform LSP（→ `vim-terraform`）        | 公式 Language Server で整形/補完を統合。            | -: ✅ **導入済み** (2026-07)。vim-terraform を terraform-ls + treesitter + conform で置換。 |
-| [`zbirenbaum/copilot.lua`](https://github.com/zbirenbaum/copilot.lua)                                          | 3.8k            | 2025-09-27 | Copilot（→ `copilot.vim`）                | Lua 版で遅延ロード・cmp 連携が簡単。                | -: **対象外** (2026-07)。copilot.vim ごと削除し AI 支援は nvim 外の Claude Code へ。 |
+| [`zbirenbaum/copilot.lua`](https://github.com/zbirenbaum/copilot.lua)                                          | 3.8k            | 2025-09-27 | Copilot（→ `copilot.vim`）                | Lua 実装で遅延ロード・cmp 連携が簡単。                | -: **対象外** (2026-07)。copilot.vim ごと削除し AI 支援は nvim 外の Claude Code へ。 |
 
 > Note: Stars/Push dates are取得時点 (2025-11-14) の GitHub API レスポンスより。採用前に再チェック推奨。
 
@@ -199,7 +199,7 @@
 | [`nathom/filetype.nvim`](https://github.com/nathom/filetype.nvim)         | 547             | **Archived** (2024-05) | 高速 filetype 判定       | Neovim 0.9 未満なら有効。0.10 以降は `vim.filetype.add()` + 標準 `vim.filetype` で代替。                                                             |
 | [`stevearc/profile.nvim`](https://github.com/stevearc/profile.nvim)       | 182             | Active (2025-03 push)  | Lua プロファイラ         | `require('profile').instrument_autocmds()` などで起動/ランタイムのホットスポット可視化。Lazy プラグインの負荷特定に便利。                            |
 | [`dstein64/vim-startuptime`](https://github.com/dstein64/vim-startuptime) | 649             | Active (2025-02 push)  | 起動イベント計測         | 純正 `nvim --startuptime` の結果をフローティングで整形表示。履歴比較ができる。                                                                       |
-| [`lewis6991/impatient.nvim`](https://github.com/lewis6991/impatient.nvim) | 1.1k            | **Archived** (2023-05) | Lua `require` キャッシュ | Neovim 0.9+ では `vim.loader.enable()` が同等機能を標準提供。旧版を使う場合のみ導入価値あり。                                                        |
+| [`lewis6991/impatient.nvim`](https://github.com/lewis6991/impatient.nvim) | 1.1k            | **Archived** (2023-05) | Lua `require` キャッシュ | Neovim 0.9+ では `vim.loader.enable()` が同等機能を標準提供。古いバージョンを使う場合のみ導入価値あり。                                                        |
 | `vim.loader.enable()` (Neovim builtin)                                    | -               | Core                   | Lua モジュールキャッシュ | `if vim.loader then vim.loader.enable() end` を早期に実行すると `require` キャッシュが高速化。`impatient` の後継的存在。                             |
 | Lazy.nvim `performance.rtp.disabled_plugins`                              | -               | Core                   | 不要プラグイン停止       | `require("lazy").setup(..., { performance = { rtp = { disabled_plugins = { ... } } } })` を使うと組み込み `netrw` 等を無効化して起動を軽量化できる。 |
 
