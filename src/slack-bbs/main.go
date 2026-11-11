@@ -67,7 +67,8 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
 読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。前回の板 (キャッシュ) があればすぐ出して、裏で読み直す。
   r で今のチャンネル、R で全部を読み直す (取り直して、新しい発言・編集された発言があれば claude -p で分類し直す)。
   j/k: 移動  l/Enter: 本文を読む  h/q/Esc/Enter: 本文から一覧へ  J/K: 本文を開いたまま隣の話題へ  Tab: 次のチャンネル
-  o: Slack で開く  u: 既読と未読の切り替え  s: 購読するチャンネルを選ぶ  q: 終わる (一覧で)  Ctrl-C: すぐ終わる
+  o: Slack で開く  u: 既読と未読の切り替え  x: 話題を隠す  z: 隠した話題も出す  s: 購読するチャンネルを選ぶ
+  d: 今のチャンネルの購読を外す (確かめてから)  q: 終わる (一覧で)  Ctrl-C: すぐ終わる
   キーの語彙は dotfiles の docs/glogx-ui-guide.md (TUI ガイド) に揃えている
 
 環境変数:
@@ -664,8 +665,10 @@ func browse(ctx context.Context, o options, d deps, st cache.Store) error {
 	m := view.New(ctx, targets, load, d.openURL, d.now)
 	if st.Dir != "" {
 		m.SetReads(&view.Reads{
-			Load: st.LoadRead,
-			Save: func(ch string, read map[string]string) error { return st.SaveRead(ch, read, d.now()) },
+			Load:       st.LoadRead,
+			Save:       func(ch string, read map[string]string) error { return st.SaveRead(ch, read, d.now()) },
+			LoadHidden: st.LoadHidden,
+			SaveHidden: func(ch string, hidden map[string]string) error { return st.SaveHidden(ch, hidden, d.now()) },
 		})
 	}
 	// 購読の画面 (s) は、購読を読む起動のときだけ付ける。チャンネルを引数で渡した起動で開くと、保存したときにタブが購読に

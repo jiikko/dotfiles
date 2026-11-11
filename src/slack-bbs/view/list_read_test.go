@@ -593,3 +593,54 @@ func TestListShowsStateAndThemeIcons(t *testing.T) {
 		}
 	}
 }
+
+// x で選んだ話題を隠す: 一覧とタブの未読の数から外し、隠した単位を残す。z で隠した話題も淡く出し、その上で x を押すと戻す。
+// 隠した後に他の人が自分を名指ししたら、隠したままにしない。
+func TestHideTopic(t *testing.T) {
+	var saved []map[string]string
+	m := datedModel(t, func() []board.Topic {
+		return []board.Topic{topicAt("雑談", day0), topicAt("障害", day0.Add(-time.Hour))}
+	})
+	m.SetReads(&Reads{
+		Load:       func(string) (map[string]string, error) { return nil, nil },
+		Save:       func(string, map[string]string) error { return nil },
+		LoadHidden: func(string) (map[string]string, error) { return nil, nil },
+		SaveHidden: func(_ string, h map[string]string) error { saved = append(saved, maps.Clone(h)); return nil },
+	})
+	if n := m.unreadCount(0); n != 2 {
+		t.Fatalf("未読の数 = %d, want 2", n)
+	}
+	press(m, "x") // 先頭の「雑談」を隠す
+	got := strings.Join(leftPlain(m), "\n")
+	if strings.Contains(got, "雑談") || !strings.Contains(got, "障害") || m.unreadCount(0) != 1 {
+		t.Fatalf("隠した話題が一覧か未読の数に残った (未読 %d):\n%s", m.unreadCount(0), got)
+	}
+	if len(saved) != 1 || len(saved[0]) != 1 {
+		t.Fatalf("隠した単位を残していない: %v", saved)
+	}
+	press(m, "z")
+	if got := strings.Join(leftPlain(m), "\n"); !strings.Contains(got, "雑談") {
+		t.Fatalf("z で隠した話題が出ない:\n%s", got)
+	}
+	for i, r := range m.rows() {
+		if !r.header() && m.chans[0].page.Topics[r.topic].Title == "雑談" {
+			m.list.Cursor = i
+		}
+	}
+	press(m, "x") // 戻す
+	press(m, "z")
+	if got := strings.Join(leftPlain(m), "\n"); !strings.Contains(got, "雑談") || len(saved[len(saved)-1]) != 0 {
+		t.Fatalf("x で隠すのをやめられない:\n%s", got)
+	}
+
+	hidden := topicAt("名指し", day0)
+	mark := hidden.Units[0].Msgs[0].Ts
+	if !topicHidden(hidden, map[string]string{hidden.Units[0].ID: mark}) {
+		t.Fatal("隠した話題を隠れていないと判定した")
+	}
+	later := tsAt(day0.Add(time.Minute))
+	hidden.Units[0].Msgs = append(hidden.Units[0].Msgs, board.Msg{Ts: later, Name: "sato", New: true, ToMe: true})
+	if topicHidden(hidden, map[string]string{hidden.Units[0].ID: mark}) {
+		t.Error("隠した後に名指しされた話題を隠したままにした")
+	}
+}

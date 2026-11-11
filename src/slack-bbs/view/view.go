@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -43,8 +44,9 @@ type chanState struct {
 	loadedAt time.Time
 	stale    bool              // page はキャッシュから出した前回の板で、この起動ではまだ読み直せていない
 	hl       highlighter       // page の本文の色付け (page を置き換えるたびに作り直す)
-	rows     []row             // 左の一覧の行 (日付の見出しと話題。page を置き換えるたびに作り直す)
+	rows     []row             // 左の一覧の行 (日付の見出しと話題)。nil なら Model.rows が作り直す (page・隠した話題・z を変えたら捨てる)
 	read     map[string]string // 既読の印 (単位の ID → 読んだときの単位の最後の発言の ts)
+	hidden   map[string]string // x で隠した単位 (単位の ID → 隠したときの単位の最後の発言の ts)
 	// unread は未読の話題の数の覚え (タブに出す。描くたびに全チャンネルの全発言を数え直さない)。page か read を変えたら捨てる
 	unread *int
 	// mentions は単位の ID → その単位の発言への言及 (page を置き換えるたびに作り直す。未読と既読の印に使う)
@@ -62,6 +64,11 @@ type Model struct {
 	list  listnav.List
 	pager listnav.Pager
 	body  bool // 右の欄を操作しているか
+	// showHidden は x で隠した話題も一覧に出すか (z で切り替える。出すときは淡い色)
+	showHidden bool
+	// unsub は d で購読を外すか確かめているチャンネルの ID (確かめていなければ空)。チャンネルは ID で持つ
+	// (確かめている間に読み直し・購読の保存でタブの番号がずれても、別のチャンネルを外さない)
+	unsub string
 	w, h  int
 	// toast は右下に数秒出す知らせ (読み直しの始まりと終わり・開けなかった・読み込み中で読み直せない等)。中立の知らせ (ShowInfo) は
 	// 既定の水色が背景が青い端末で沈むので (style.go の色の約束)、端末の文字色 (toastInfoColor) で出す
@@ -101,7 +108,7 @@ func New(ctx context.Context, chans []subs.Channel, load Loader, open func(strin
 	m := &Model{ctx: ctx, load: load, open: open, now: now, w: 100, h: 30, after: tea.Tick}
 	m.toast.InfoColor = toastInfoColor
 	for _, c := range chans {
-		m.chans = append(m.chans, chanState{ch: c, read: map[string]string{}})
+		m.chans = append(m.chans, chanState{ch: c, read: map[string]string{}, hidden: map[string]string{}})
 	}
 	return m
 }
@@ -120,7 +127,7 @@ func (m *Model) Preload(i int, p render.Page, at time.Time) {
 // setPage は板を p に置き換える (色付けと一覧の行も作り直す)。
 func (c *chanState) setPage(p render.Page, at time.Time, stale bool) {
 	c.page, c.err, c.loadedAt, c.stale, c.hl = &p, nil, at, stale, newHighlighter(p)
-	c.rows = buildRows(p.Topics, time.Local)
+	c.rows = nil // 一覧の行は描くときに作る (隠した話題を出すかは画面の状態で決まる。Model.rows)
 	c.mentions = map[string][]render.Mention{}
 	for _, mn := range p.Mentions {
 		c.mentions[mn.Unit] = append(c.mentions[mn.Unit], mn)
@@ -209,6 +216,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case msg.String() == "ctrl+c":
 			m.quitting = true // どの画面 (購読の画面・検索の欄の中) からでも、すぐ終わる (TUI ガイド §1)
+		case m.unsub != "":
+			cmd = m.confirmUnsubscribe(msg.String())
 		case m.picker != nil:
 			cmd = m.pickKey(msg.String(), msg.Text)
 		default:
@@ -303,7 +312,7 @@ func (m *Model) loaded(msg loadedMsg) {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
 		found := false
-		for i, r := range c.rows {
+		for i, r := range m.rows() {
 			if !r.header() && slices.ContainsFunc(c.page.Topics[r.topic].Units, func(u board.Unit) bool { return u.ID == keep }) {
 				m.list.Cursor, found = i, true
 				break
@@ -417,6 +426,19 @@ func (m *Model) key(k string) tea.Cmd {
 		return nil
 	case "u":
 		m.toggleRead()
+		return nil
+	case "x":
+		m.toggleHidden()
+		return nil
+	case "z":
+		m.toggleShowHidden()
+		return nil
+	case "d":
+		if m.subs == nil {
+			m.toast.Show("購読を外せるのは、チャンネルを指定しないで起動したときだけ (端末の slack-bbs sub でも外せる)", false)
+			return nil
+		}
+		m.unsub = m.chans[m.cur].ch.ID
 		return nil
 	}
 	if m.body {
@@ -709,6 +731,10 @@ func (m *Model) tiny() bool { return m.w < MinWidth || m.h < MinHeight }
 // Lines は画面の行。toast は右下 (キーの案内の上) に重ねる。
 func (m *Model) Lines() []string {
 	lines := m.screen()
+	if i := m.unsubIndex(); i >= 0 && m.picker == nil {
+		box := confirm.Dialog(" 購読を外す ", []string{"#" + termsafe.PlainLine(m.chans[i].ch.Name), "の購読を外しますか？", "(s の購読の画面でまた付けられる)"}, confirm.HintYesNo, m.w, true)
+		lines = layout.OverlayCentered(lines, box, m.w, len(lines), true)
+	}
 	if box := m.toast.BoxLines(true, max(len(lines)-1-helpRows, 1), m.w); len(box) > 0 && len(lines) > len(box)+helpRows {
 		lines = layout.OverlayRight(lines, box, m.w, true, len(lines)-helpRows-len(box)) // キーの案内の上
 	}
@@ -940,8 +966,11 @@ func (m *Model) helpLines() []string {
 		pane = []hintfit.Item{h(2, "j/k", "話題を選ぶ"), h(2, "l/Enter", "本文を読む")}
 	}
 	// 本文の欄では Tab が 1 行目に入らず幅 100 で落ちるが、案内に無くても効く
-	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"))
+	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"), h(4, "x", "話題を隠す"), h(5, "z", "隠した話題も出す"))
 	chans := []hintfit.Item{h(4, "Tab", "次のチャンネル"), h(3, "r", "今のチャンネルを読み直す"), h(4, "R", "全チャンネルを読み直す")}
+	if m.subs != nil { // d が効くのは購読を変えられる起動だけ (案内に出したキーは必ず効く。TUI ガイド)
+		chans = append(chans, h(5, "d", "購読を外す"))
+	}
 	if !m.body {
 		chans = append(chans, h(1, "q", "終わる"))
 	}
@@ -974,4 +1003,36 @@ func Run(m *Model) error {
 	}
 	_, err := tea.NewProgram(m, opts...).Run()
 	return err
+}
+
+// unsubIndex は d で購読を外すか確かめているチャンネルのタブの番号 (確かめていない・もうタブに無いなら -1)。
+func (m *Model) unsubIndex() int {
+	if m.unsub == "" {
+		return -1
+	}
+	return slices.IndexFunc(m.chans, func(c chanState) bool { return c.ch.ID == m.unsub })
+}
+
+// confirmUnsubscribe は購読を外す確認の板のキー: y / Enter で外して保存し、それ以外は取り消す (confirm.IsYes)。
+func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
+	i := m.unsubIndex()
+	m.unsub = ""
+	if i < 0 || !confirm.IsYes(k) {
+		m.toast.Show("購読を外すのをやめた", true)
+		return nil
+	}
+	name := m.chans[i].ch.Name
+	sel := make([]subs.Channel, 0, len(m.chans)-1)
+	for j, c := range m.chans {
+		if j != i {
+			sel = append(sel, c.ch)
+		}
+	}
+	if err := m.subs.Save(sel); err != nil {
+		m.toast.Show("購読を保存できなかった (外していない): "+err.Error(), false)
+		return nil
+	}
+	cmd := m.setChannels(sel)
+	m.toast.Show("#"+name+" の購読を外した (s でまた付けられる)", true)
+	return cmd
 }

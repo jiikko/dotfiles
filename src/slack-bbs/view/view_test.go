@@ -659,3 +659,25 @@ func TestPickerOpensFromCachedListAndRefreshes(t *testing.T) {
 		t.Error("閉じた購読の画面を、取り直しの結果で開き直した")
 	}
 }
+
+// d は今のチャンネルの購読を外すか確認の板で確かめ、y / Enter で外して保存する。それ以外のキーは取り消して何も保存しない。
+func TestUnsubscribeAsksFirst(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	m := subsModel(l, &saved, &opened)
+	run(m, m.Init())
+	press(m, "d")
+	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "購読を外す") || !strings.Contains(screen, "#dev") {
+		t.Fatalf("確認の板が出ない:\n%s", screen)
+	}
+	press(m, "n")
+	if len(saved) != 0 || ids(m) != "C1,C2" || strings.Contains(strings.Join(m.Lines(), "\n"), "購読を外しますか") {
+		t.Fatalf("取り消したのに外した・板が残った: saved=%v tabs=%s", saved, ids(m))
+	}
+	press(m, "d")
+	run(m, press(m, "y"))
+	if len(saved) != 1 || ids(m) != "C2" || saved[0][0].ID != "C2" {
+		t.Fatalf("y で外していない: saved=%v tabs=%s", saved, ids(m))
+	}
+}

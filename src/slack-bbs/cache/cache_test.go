@@ -143,6 +143,8 @@ func TestExpire(t *testing.T) {
 		"USED.raw.json.tmp.789": CacheKeep + time.Hour, // 組 (USED) が新しくても、古い一時ファイルは消す
 		"COLD.read.json":        CacheKeep + time.Hour, // 既読は ReadKeep まで残す
 		"OLD.read.json":         ReadKeep + time.Hour,  // 消す
+		"OLD.hidden.json":       ReadKeep + time.Hour,  // 消す (隠した話題も既読と同じ期限)
+		"COLD.hidden.json":      CacheKeep + time.Hour,
 		"WARM.raw.json":         CacheKeep - time.Hour,
 		"slack-cli.lock":        ReadKeep * 2,
 		"notes.json":            ReadKeep * 2,
@@ -158,15 +160,15 @@ func TestExpire(t *testing.T) {
 		}
 	}
 	n, err := st.Expire(now)
-	if err != nil || n != 5 {
-		t.Fatalf("Expire = %d, %v; want 5 件", n, err)
+	if err != nil || n != 6 {
+		t.Fatalf("Expire = %d, %v; want 6 件", n, err)
 	}
 	var left []string
 	ents, _ := os.ReadDir(dir)
 	for _, e := range ents {
 		left = append(left, e.Name())
 	}
-	want := "COLD.read.json,USED.raw.json,USED.summary.json,WARM.raw.json,WARM.raw.json.tmp.456,notes.json,slack-cli.lock,x.y.json"
+	want := "COLD.hidden.json,COLD.read.json,USED.raw.json,USED.summary.json,WARM.raw.json,WARM.raw.json.tmp.456,notes.json,slack-cli.lock,x.y.json"
 	if got := strings.Join(left, ","); got != want {
 		t.Errorf("残ったファイル: %s, want %s", got, want)
 	}

@@ -21,10 +21,14 @@ func (r row) header() bool { return r.topic < 0 }
 
 // buildRows は話題を最後の発言の日 (新しい日が上) で組み、日ごとに見出しを入れる。同じ日の中は板の並び
 // (要対応 → 必読 → 新しい順。board.Assemble) を保つ。未分類は日をまたいで集めた話題なので、日の見出しの下に入れず、最後に別の見出しで出す。
-func buildRows(ts []board.Topic, loc *time.Location) []row {
+// skip が真の話題 (隠した話題) は出さない。
+func buildRows(ts []board.Topic, loc *time.Location, skip func(int) bool) []row {
 	idx := make([]int, 0, len(ts))
 	var other []int
 	for i, t := range ts {
+		if skip != nil && skip(i) {
+			continue
+		}
 		if t.Unclassified {
 			other = append(other, i)
 			continue
@@ -71,7 +75,14 @@ func dayLabel(r row, now time.Time) string {
 	return s
 }
 
-func (m *Model) rows() []row { return m.chans[m.cur].rows }
+func (m *Model) rows() []row {
+	c := &m.chans[m.cur]
+	if c.rows == nil && c.page != nil {
+		ts := c.page.Topics
+		c.rows = buildRows(ts, time.Local, func(i int) bool { return !m.showHidden && topicHidden(ts[i], c.hidden) })
+	}
+	return c.rows
+}
 
 // fitList はカーソルと窓を一覧に収め、見出しに乗ったカーソルを話題へ逃がす (dir の向きを先に探す)。
 func (m *Model) fitList(dir int) {
@@ -122,7 +133,10 @@ func (m *Model) leftLines() []string {
 		room := max(w-3-termwidth.Of(count), 1)
 		text = termwidth.Truncate(text, room, "…")
 		pad := termwidth.PadSpaces(room - termwidth.Of(text))
-		if unread || i == m.list.Cursor {
+		switch {
+		case topicHidden(t, c.hidden):
+			text = dim(text) // z で出している隠した話題
+		case unread || i == m.list.Cursor:
 			text = boldText(text)
 		}
 		line := cur + dot + " " + text + pad + dim(count)

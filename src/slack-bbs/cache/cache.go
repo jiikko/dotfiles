@@ -190,17 +190,31 @@ type Read struct {
 }
 
 // LoadRead は ch の既読の印を読む。無い・版が違うときは空 (誤りではない)。
-func (s Store) LoadRead(ch string) (map[string]string, error) {
+func (s Store) LoadRead(ch string) (map[string]string, error) { return s.loadMarks(ch, "read") }
+
+// SaveRead は ch の既読の印を書く。印の値が now から ReadKeep より古い印は落とす。
+func (s Store) SaveRead(ch string, units map[string]string, now time.Time) error {
+	return s.saveMarks(ch, "read", units, now)
+}
+
+// LoadHidden は ch の隠した単位 (単位の ID → 隠したときの単位の最後の発言の ts) を読む。形と期限は既読の印と同じ。
+func (s Store) LoadHidden(ch string) (map[string]string, error) { return s.loadMarks(ch, "hidden") }
+
+// SaveHidden は ch の隠した単位を書く (印の値が ReadKeep より古いものは落とす: 動きの無くなった単位は板に戻らない)。
+func (s Store) SaveHidden(ch string, units map[string]string, now time.Time) error {
+	return s.saveMarks(ch, "hidden", units, now)
+}
+
+func (s Store) loadMarks(ch, kind string) (map[string]string, error) {
 	var r Read
-	ok, err := s.load(ch, "read", &r, func() bool { return r.Version == ReadVersion })
+	ok, err := s.load(ch, kind, &r, func() bool { return r.Version == ReadVersion })
 	if err != nil || !ok || r.Units == nil {
 		return map[string]string{}, err
 	}
 	return r.Units, nil
 }
 
-// SaveRead は ch の既読の印を書く。印の値が now から ReadKeep より古い印は落とす。
-func (s Store) SaveRead(ch string, units map[string]string, now time.Time) error {
+func (s Store) saveMarks(ch, kind string, units map[string]string, now time.Time) error {
 	keep := make(map[string]string, len(units))
 	cut := board.TsOf(now.Add(-ReadKeep).Unix())
 	for id, ts := range units {
@@ -208,7 +222,7 @@ func (s Store) SaveRead(ch string, units map[string]string, now time.Time) error
 			keep[id] = ts
 		}
 	}
-	return s.save(ch, "read", Read{Version: ReadVersion, Units: keep})
+	return s.save(ch, kind, Read{Version: ReadVersion, Units: keep})
 }
 
 // CacheKeep は取得の結果 (Raw) と分類 (Summary) のファイルを残す期間 (ユーザーの決定 2026-11-11: 2 週間ほどで捨ててよい)。
@@ -219,7 +233,7 @@ const CacheKeep = 14 * 24 * time.Hour
 // Expire は置き場の中で、書き換えの無いまま残す期間を過ぎたキャッシュのファイルを消し、消した数を返す。
 //   - <ID>.raw.json と .summary.json は組で数え、新しい方の時刻から CacheKeep を過ぎたら両方消す。summary だけで数えない:
 //     分類を使い回した読み直し (main.go の classify) は raw だけを書き直すので、毎日読んでいるチャンネルの summary も古い時刻のまま残る
-//   - <ID>.read.json は ReadKeep
+//   - <ID>.read.json と .hidden.json は ReadKeep
 //   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>) は CacheKeep
 //
 // この形でないファイル (slack-cli の lock など) には触らない。消す直前に時刻を取り直す (並んで起動した別の slack-bbs が
@@ -325,6 +339,8 @@ func expireGroup(name string) (key string, keep time.Duration, ok bool) {
 		return "board:" + id, CacheKeep, true
 	case "read":
 		return "read:" + id, ReadKeep, true
+	case "hidden":
+		return "hidden:" + id, ReadKeep, true
 	}
 	return "", 0, false
 }

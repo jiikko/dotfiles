@@ -9,6 +9,9 @@ import (
 type Reads struct {
 	Load func(ch string) (map[string]string, error)
 	Save func(ch string, read map[string]string) error
+	// LoadHidden / SaveHidden は隠した単位 (x で隠した話題の単位の ID → 隠したときの単位の最後の発言の ts)。nil なら画面を閉じるまで
+	LoadHidden func(ch string) (map[string]string, error)
+	SaveHidden func(ch string, hidden map[string]string) error
 }
 
 // SetReads は既読の印を読み書きする口を付け、今のチャンネルの印を読む。
@@ -22,10 +25,17 @@ func (m *Model) SetReads(r *Reads) {
 // loadRead はチャンネル i の印を読む (読めなければ空から始め、知らせる)。
 func (m *Model) loadRead(i int) {
 	c := &m.chans[i]
-	c.read = map[string]string{}
-	c.unread = nil // 印を置き換えたら未読の数も数え直す (読めない・口が無くて空から始める道も)
+	c.read, c.hidden = map[string]string{}, map[string]string{}
+	c.unread, c.rows = nil, nil // 印を置き換えたら未読の数と一覧の行も作り直す (読めない・口が無くて空から始める道も)
 	if m.reads == nil {
 		return
+	}
+	if m.reads.LoadHidden != nil {
+		if hidden, err := m.reads.LoadHidden(c.ch.ID); err != nil {
+			m.toast.Show("#"+c.ch.Name+" の隠した話題を読めなかった (全部出す): "+err.Error(), false)
+		} else if hidden != nil {
+			c.hidden = hidden
+		}
 	}
 	read, err := m.reads.Load(c.ch.ID)
 	if err != nil {
@@ -87,7 +97,7 @@ func (m *Model) unreadCount(i int) int {
 	}
 	n := 0
 	for _, t := range c.page.Topics {
-		if topicUnread(t, c.read, c.mentions) {
+		if !topicHidden(t, c.hidden) && topicUnread(t, c.read, c.mentions) {
 			n++
 		}
 	}
@@ -146,4 +156,72 @@ func (m *Model) toggleRead() {
 	}
 	m.setRead(false)
 	m.toast.Show("この話題を未読に戻した", true)
+}
+
+// topicHidden は話題が隠れているか: 全部の単位を x で隠していて、隠した後に他の人が自分を名指しした発言が無い
+// (名指しされたら隠したままにしない: 自分への用件を見落とす)。隠した後に付いた他の返信では戻さない (読まないと決めた話題なので)。
+func topicHidden(t board.Topic, hidden map[string]string) bool {
+	if len(t.Units) == 0 {
+		return false
+	}
+	for _, u := range t.Units {
+		mark, ok := hidden[u.ID]
+		if !ok {
+			return false
+		}
+		for _, msg := range u.Msgs {
+			if msg.ToMe && !msg.Mine && board.TsBefore(mark, msg.Ts) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// toggleHidden は x キー: 選んだ話題を隠す。隠した話題も出している (z) ときに隠れた話題で押すと、隠すのをやめる。
+func (m *Model) toggleHidden() {
+	t, ok := m.selected()
+	if !ok {
+		return
+	}
+	c := &m.chans[m.cur]
+	hide := !topicHidden(t, c.hidden)
+	for _, u := range t.Units {
+		if hide {
+			c.hidden[u.ID] = unitLast(u, c.mentions[u.ID])
+		} else {
+			delete(c.hidden, u.ID)
+		}
+	}
+	c.rows, c.unread = nil, nil
+	switch {
+	case !hide:
+		m.toast.Show("この話題を隠すのをやめた", true)
+	case m.showHidden:
+		m.toast.Show("この話題を隠した (z で隠した話題を出すのをやめる)", true)
+	default:
+		m.toast.Show("この話題を隠した (z で隠した話題も出し、その上で x を押すと戻す)", true)
+		m.body = false // 隠した話題の本文を開いたままにしない
+	}
+	m.fitList(1)
+	if m.reads == nil || m.reads.SaveHidden == nil {
+		return
+	}
+	if err := m.reads.SaveHidden(c.ch.ID, c.hidden); err != nil {
+		m.toast.Show("隠した話題を保存できなかった: "+err.Error(), false)
+	}
+}
+
+// toggleShowHidden は z キー: 隠した話題も一覧に出すか (出すときは淡い色で出す)。
+func (m *Model) toggleShowHidden() {
+	m.showHidden = !m.showHidden
+	for i := range m.chans {
+		m.chans[i].rows = nil
+	}
+	m.fitList(1)
+	if m.showHidden {
+		m.toast.Show("隠した話題も出す (淡い色。x で隠すのをやめる)", true)
+	} else {
+		m.toast.Show("隠した話題を出さない", true)
+	}
 }
