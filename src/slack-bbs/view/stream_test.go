@@ -115,7 +115,7 @@ func TestStreamHideKeepsOrder(t *testing.T) {
 	if cmd := empty.key("r"); cmd != nil || empty.chans[1].loading || !strings.Contains(empty.LastToast(), "選んでから") {
 		t.Errorf("話題を選んでいない r が、前に見ていたタブを読み直した: %q", empty.LastToast())
 	}
-	empty.SetSubscriptions(&Subscriptions{Save: func([]subs.Channel) error { return nil }})
+	empty.SetSubscriptions(&Subscriptions{Save: func([]subs.Channel, string) error { return nil }})
 	if empty.key("d"); empty.unsub != "" {
 		t.Error("話題を選んでいない d が、前に見ていたタブの購読を外そうとした")
 	}
@@ -187,7 +187,7 @@ func TestStreamRound2(t *testing.T) {
 		t.Errorf("+N = %d, want 1 (話題の中の発言からの言及を 2 回数えた)", n)
 	}
 
-	m.SetSubscriptions(&Subscriptions{Save: func([]subs.Channel) error { return nil }})
+	m.SetSubscriptions(&Subscriptions{Save: func([]subs.Channel, string) error { return nil }})
 	m.setChannels([]subs.Channel{m.chans[0].ch, m.chans[1].ch, {ID: "C3", Name: "qa"}})
 	if !m.chans[2].loading { // 読み始めた (loading) ことを見る (load は Cmd を走らせたときに呼ばれる)
 		t.Errorf("新着のタブにいる間に足したタブを読み始めない: loading=%v", m.chans[2].loading)

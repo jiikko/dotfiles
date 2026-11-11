@@ -341,3 +341,22 @@ func TestPickerSubscribedButUnreadableRowsStayOutOfGroups(t *testing.T) {
 		t.Errorf("グループの編集に読めないチャンネルを出した (または読めるチャンネルを出していない):\n%s", lines)
 	}
 }
+
+// g で作るグループの名前が、あるグループと同じなら作らない (slack-bbs group で名前で指せなくなる)。
+func TestPickerRefusesDuplicateGroupName(t *testing.T) {
+	p := NewPicker([]source.Channel{{ID: "C1", Name: "dev", IsMember: true}}, []Channel{{ID: "grp00000001", Name: "times"}})
+	p.Key("g")
+	for _, r := range "times" {
+		p.Press(string(r), string(r))
+	}
+	p.Key("enter")
+	groups := 0
+	for _, c := range p.Selected() {
+		if c.IsGroup() {
+			groups++
+		}
+	}
+	if groups != 1 || !strings.Contains(p.Note(), "もうある") {
+		t.Errorf("同じ名前のグループを作った: %d 個 / 注記 %q", groups, p.Note())
+	}
+}

@@ -29,15 +29,16 @@ var now = time.Unix(2_000_000, 0)
 
 // fakeSlack は slack-cli の代わり。呼ばれた引数を記録し、サブコマンドごとに JSON を返す。
 type fakeSlack struct {
-	calls   [][]string
-	history string
-	threads map[string]string
-	warn    string         // history の stderr (slack-cli の案内の行と、途中で切れたときの警告の行を模す)
-	failTh  bool           // thread を全部失敗させる (消えたスレッド・認証切れを模す)
-	failWho bool           // whoami を失敗させる (認証切れ・ネットワークが無いを模す)
-	search  map[int]string // search のページ番号 → 返す JSON (無いページは空の結果)
-	failSe  bool           // search を失敗させる
-	me      string         // whoami が返す user ID (空なら ME)
+	calls    [][]string
+	history  string
+	threads  map[string]string
+	warn     string         // history の stderr (slack-cli の案内の行と、途中で切れたときの警告の行を模す)
+	failTh   bool           // thread を全部失敗させる (消えたスレッド・認証切れを模す)
+	failWho  bool           // whoami を失敗させる (認証切れ・ネットワークが無いを模す)
+	search   map[int]string // search のページ番号 → 返す JSON (無いページは空の結果)
+	failSe   bool           // search を失敗させる
+	me       string         // whoami が返す user ID (空なら ME)
+	channels string         // channels が返す JSON (空なら #dev だけ)
 	// histByCh はチャンネル ID → history が返す JSON (無いチャンネルは history)。failHist のチャンネルの history は失敗させる
 	histByCh map[string]string
 	failHist map[string]bool
@@ -65,6 +66,9 @@ func (f *fakeSlack) run(args []string) ([]byte, error) {
 	case "users":
 		return []byte(`[{"id":"U1","name":"tanaka"},{"id":"ME","name":"me"},{"id":"B1","name":"ai-bot","is_bot":true}]`), nil
 	case "channels":
+		if f.channels != "" {
+			return []byte(f.channels), nil
+		}
 		return []byte(`[{"id":"C1","name":"dev","is_member":true}]`), nil
 	case "history":
 		for _, a := range args {

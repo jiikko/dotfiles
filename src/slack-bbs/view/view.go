@@ -116,7 +116,9 @@ type Subscriptions struct {
 	Open func(ctx context.Context) (*subs.Picker, error)
 	// Cached は前に取ったチャンネルの一覧と今の購読で、すぐ開ける画面を作る (一覧を取った時刻と一緒に)。無ければ ok が偽。nil なら使わない
 	Cached func() (p *subs.Picker, at time.Time, ok bool)
-	Save   func([]subs.Channel) error // 選んだ購読を保存する
+	// Save は購読を保存する。from は購読の画面の Base (画面を開いたときの購読の印)。空なら読む画面のタブを作ったときの購読と照合する。
+	// 開いてから別の操作が書き換えていたら subs.ErrChanged を返して書かない
+	Save func(sel []subs.Channel, from string) error
 	// Posts は参加しているチャンネルの最終投稿を、画面を開いている間に裏で取り直す口 (nil なら取り直さない)
 	Posts *subs.LastPosts
 }
@@ -689,7 +691,7 @@ func (m *Model) pickKey(k, text string) tea.Cmd {
 		return nil
 	}
 	sel := p.Selected()
-	if err := m.subs.Save(sel); err != nil {
+	if err := m.subs.Save(sel, p.Base()); err != nil {
 		m.toast.Show("購読するチャンネルを保存できなかった: "+err.Error(), false)
 		return nil
 	}
@@ -1230,7 +1232,7 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 			sel = append(sel, c.ch)
 		}
 	}
-	if err := m.subs.Save(sel); err != nil {
+	if err := m.subs.Save(sel, ""); err != nil {
 		m.toast.Show("購読を保存できなかった (外していない): "+err.Error(), false)
 		return nil
 	}

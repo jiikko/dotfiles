@@ -50,6 +50,15 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
   slack-bbs [オプション] [<チャンネルID>...]   購読しているチャンネル (引数があればそのチャンネル) を読む
   slack-bbs sub                               購読するチャンネルとグループを一覧から選ぶ (g でグループを作る)
   slack-bbs subs                              購読しているチャンネルを出す
+  slack-bbs sub add|rm <チャンネル>...         購読を付け外しする (画面を開かずに。チャンネルは ID・#名前・名前)
+  slack-bbs group list                        グループと、そのチャンネルを出す
+  slack-bbs group create <名前> [<チャンネル>...]
+  slack-bbs group add|rm <名前> <チャンネル>...
+  slack-bbs group delete <名前>               グループを消す (チャンネルの購読は変わらない)
+  slack-bbs group rename <名前> <新しい名前>  名前を変える (既読とキャッシュは引き継ぐ)
+  slack-bbs channels [-all] [-json] [-refresh]
+                                              チャンネルの一覧を、購読しているか・人数・最終投稿と出す (既定は参加しているものだけ。
+                                              前に取った一覧を使い、無ければ取る。-refresh で取り直す。最終投稿は購読の画面が取った値)
   slack-bbs prepare [オプション] [-out <dir>] [<チャンネルID>...]
                                               分類せず、分類の依頼をディレクトリに書く (2 段の 1 段目。出力は JSON)
   slack-bbs show -key <鍵> [-json] [-keep] <dir>
@@ -140,7 +149,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 	if len(args) > 0 {
 		switch args[0] {
 		case "sub":
+			if len(args) > 1 {
+				return cliRC(stderr, cmdSubOps(ctx, d, args[1:], stdout))
+			}
 			return report(stderr, cmdSub(ctx, d, stdout))
+		case "group":
+			return cliRC(stderr, cmdGroup(ctx, d, args[1:], stdout))
+		case "channels":
+			return cmdChannels(ctx, d, args[1:], stdout, stderr)
 		case "subs":
 			return report(stderr, cmdSubs(d, stdout))
 		case "prepare":
@@ -303,7 +319,7 @@ func newPicker(ctx context.Context, d deps, cli source.Client, st cache.Store) (
 	if err != nil {
 		return nil, "", err
 	}
-	cur, err := subs.Load(path)
+	cur, base, err := subs.LoadVersion(path)
 	if err != nil {
 		return nil, "", err
 	}
@@ -312,6 +328,7 @@ func newPicker(ctx context.Context, d deps, cli source.Client, st cache.Store) (
 		return nil, "", err
 	}
 	p := subs.NewPicker(all, cur)
+	p.SetBase(base)
 	if posts, err := st.LoadLastPosts(); err != nil {
 		p.SetNote("前に取った最終投稿を読めなかった (取り直す): " + err.Error())
 	} else {
@@ -334,11 +351,12 @@ func cachedPicker(d deps, st cache.Store) (*subs.Picker, time.Time, bool) {
 	if err != nil {
 		return nil, time.Time{}, false
 	}
-	cur, err := subs.Load(path)
+	cur, base, err := subs.LoadVersion(path)
 	if err != nil {
 		return nil, time.Time{}, false
 	}
 	p := subs.NewPicker(list.Channels, cur)
+	p.SetBase(base)
 	posts, _ := st.LoadLastPosts() // 読めなければ空のまま開き、すぐ後の newPicker が同じファイルを読んで見出しに出す
 	p.SetLastPosts(posts)
 	return p, list.SavedAt, true
@@ -391,7 +409,7 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 		return nil
 	}
 	sel := p.Selected()
-	if err := subs.Save(path, sel); err != nil {
+	if _, err := subs.SaveIf(path, sel, p.Base()); err != nil {
 		return err
 	}
 	groups := 0
@@ -464,11 +482,7 @@ func (g *guard) closeAndWait(cancel context.CancelFunc) {
 }
 
 func cmdSubs(d deps, stdout io.Writer) error {
-	path, err := d.subsPath()
-	if err != nil {
-		return err
-	}
-	cur, err := subs.Load(path)
+	_, cur, _, err := loadSubs(d)
 	if err != nil {
 		return err
 	}
@@ -690,6 +704,11 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 	if err != nil {
 		return err
 	}
+	// tabsBase は今のタブ (購読) を読んだときの購読のファイルの印 (d で外すときに、起動の後に別の操作が書き換えていないかを照合する)
+	var tabsBase string
+	if path, err := d.subsPath(); err == nil {
+		_, tabsBase, _ = subs.LoadVersion(path) // 読めなければ空: 照合で ErrChanged になり、外さずに知らせる
+	}
 	cli := source.Client{R: source.Quiet(d.slack)}
 	// 自分とユーザーの名前は最初の読み直しの中で 1 回だけ取る (取れなければ次の読み直しで取り直す)。画面を開く前に取ると、
 	// キャッシュの前回の板を出せるのに slack-cli の 2 回の呼び出し (数秒) のあいだ画面が空になる。
@@ -781,12 +800,19 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 			},
 			Cached: func() (*subs.Picker, time.Time, bool) { return cachedPicker(d, st) },
 			Posts:  lastPosts(cli, st, d.now, start),
-			Save: func(sel []subs.Channel) error {
+			Save: func(sel []subs.Channel, from string) error {
 				path, err := d.subsPath()
 				if err != nil {
 					return err
 				}
-				return subs.Save(path, sel)
+				if from == "" {
+					from = tabsBase // 購読の画面を通さない保存 (d で外す) は、タブを作ったときの購読と照合する
+				}
+				v, err := subs.SaveIf(path, sel, from)
+				if err == nil {
+					tabsBase = v
+				}
+				return err
 			},
 		})
 	}

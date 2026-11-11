@@ -5,6 +5,7 @@ package subs
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -58,40 +59,88 @@ func Path() (string, error) {
 	return userdirs.ConfigFile("slack-bbs", "subscriptions.json", "")
 }
 
+// ErrChanged は、購読の一覧を読んでから保存するまでの間に、ファイルが別の操作 (slack-bbs sub add・別の画面) で書き換えられたこと。
+// そのまま書くと、その変更を知らせずに消す。
+var ErrChanged = errors.New("購読の一覧が、開いてから別の操作 (slack-bbs sub / group・別の画面) で書き換えられた。開き直して選び直す")
+
 // Load は購読の一覧を読む。ファイルが無ければ空 (まだ選んでいない)。
 func Load(path string) ([]Channel, error) {
+	chs, _, err := LoadVersion(path)
+	return chs, err
+}
+
+// LoadVersion は購読の一覧と、ファイルの中身の印 (SaveIf で、読んでから書き換えられていないかを照合する。ファイルが無ければ空) を読む。
+func LoadVersion(path string) ([]Channel, string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var f file
 	if err := json.Unmarshal(b, &f); err != nil {
-		return nil, fmt.Errorf("%s を読めない: %w", path, err)
+		return nil, "", fmt.Errorf("%s を読めない: %w", path, err)
+	}
+	if err := validate(path, f); err != nil {
+		return nil, "", err
+	}
+	return append(f.Channels, f.Groups...), version(b), nil
+}
+
+func version(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+// validate は購読の一覧の形を確かめる (読むときと書くときの両方)。チャンネルの ID はファイル名にも使うので形を確かめ、グループは
+// ID の形と、メンバーの形・重複を確かめる (同じメンバーが 2 回あると同じ単位の ID が 2 つでき、グループの板ごと読めなくなる)。
+func validate(path string, f file) error {
+	for _, c := range f.Channels {
+		if !source.IsChannelID(c.ID) {
+			return fmt.Errorf("%s のチャンネル %q の ID %q が読めない形 (slack-bbs sub で直す)", path, c.Name, c.ID)
+		}
 	}
 	for _, g := range f.Groups {
 		if !source.IsGroupID(g.ID) {
-			return nil, fmt.Errorf("%s のグループ %q の ID %q が読めない形", path, g.Name, g.ID)
+			return fmt.Errorf("%s のグループ %q の ID %q が読めない形", path, g.Name, g.ID)
 		}
 		seen := map[string]bool{}
 		for _, m := range g.Members {
 			if !source.IsChannelID(m.ID) || seen[m.ID] {
-				// 同じメンバーが 2 回あると同じ単位の ID が 2 つでき、グループの板ごと読めなくなる
-				return nil, fmt.Errorf("%s のグループ %q のメンバー %q が読めない形か重複している (slack-bbs sub で直す)", path, g.Name, m.ID)
+				return fmt.Errorf("%s のグループ %q のメンバー %q が読めない形か重複している (slack-bbs sub で直す)", path, g.Name, m.ID)
 			}
 			seen[m.ID] = true
 		}
 	}
-	return append(f.Channels, f.Groups...), nil
+	return nil
 }
 
-// Save は購読の一覧 (チャンネルとグループ。Load と同じ並び) を書く (途中の状態を残さない。本人だけが読める権限)。
+// Save は購読の一覧 (チャンネルとグループ。Load と同じ並び) を書く (読むときと同じ形の検査を通してから。途中の状態を残さない。本人だけが読める権限)。
+// 読んでから書き換えられていないかは照合しない (照合するなら SaveIf)。
 func Save(path string, chs []Channel) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+	_, err := save(path, chs)
+	return err
+}
+
+// SaveIf は、ファイルの中身が base (LoadVersion が返した印) のままなら書き、新しい印を返す。書き換えられていたら ErrChanged を返して書かない。
+// 照合と書き込みの間は lock していない (その間に別の操作が書いた変更は消えうる。人が打つ操作どうしでは起きにくい窓として受け入れる)。
+func SaveIf(path string, chs []Channel, base string) (string, error) {
+	b, err := os.ReadFile(path)
+	cur := ""
+	switch {
+	case err == nil:
+		cur = version(b)
+	case !errors.Is(err, fs.ErrNotExist):
+		return "", err
 	}
+	if cur != base {
+		return "", ErrChanged
+	}
+	return save(path, chs)
+}
+
+func save(path string, chs []Channel) (string, error) {
 	f := file{Channels: []Channel{}}
 	for _, c := range chs {
 		if c.IsGroup() {
@@ -100,9 +149,19 @@ func Save(path string, chs []Channel) error {
 			f.Channels = append(f.Channels, c)
 		}
 	}
+	if err := validate(path, f); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
 	b, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
-		return err
+		return "", err
 	}
-	return atomicfile.Write(path, append(b, '\n'), 0o600)
+	b = append(b, '\n')
+	if err := atomicfile.Write(path, b, 0o600); err != nil {
+		return "", err
+	}
+	return version(b), nil
 }

@@ -50,6 +50,7 @@ type Picker struct {
 	last     map[string]LastPost // チャンネル ID → 最終投稿 (前に取った値。取り直した分から書き換える)
 	fetch    *fetch              // 最終投稿を裏で取り直している間の状態 (nil なら取り直していない)
 	status   func() string       // 案内の 2 行目の右端に出す文字列 (SetStatus。nil なら出さない)
+	base     string              // 画面を作ったときの購読のファイルの印 (SetBase。保存の SaveIf で照合する)
 	w, h     int
 	done     bool
 	save     bool
@@ -167,6 +168,13 @@ func HintLine(lead string, items []hintfit.Item, right string, w int, style func
 	return left + termwidth.PadSpaces(w-termwidth.Of(left)-rw) + style(right)
 }
 
+// SetBase は画面を作った購読の一覧の印 (LoadVersion が返したもの) を覚える。Base は保存のときに SaveIf へ渡す
+// (開いている間に別の操作が書き換えた購読を、画面の保存で知らせずに消さない)。Refresh では変えない (購読はこの画面の選んだもの)。
+func (p *Picker) SetBase(v string) { p.base = v }
+
+// Base は SetBase で覚えた印。
+func (p *Picker) Base() string { return p.base }
+
 // Note は見出しに添える注記 (Refresh で差し替えるときに、取り直した画面の注記を引き継ぐ)。
 func (p *Picker) Note() string { return p.note }
 
@@ -267,7 +275,12 @@ func (p *Picker) Press(k, text string) {
 		switch k {
 		case "enter":
 			p.naming = false
-			if name := strings.TrimSpace(p.name.String()); name != "" {
+			name := strings.TrimSpace(p.name.String())
+			if slices.ContainsFunc(p.items, func(it item) bool { return it.grp != nil && it.grp.Name == name }) {
+				p.SetNote("グループ「" + name + "」はもうある (別の名前にする)") // 同じ名前だと、slack-bbs group で名前で指せない
+				name = ""
+			}
+			if name != "" {
 				g := &Channel{ID: NewGroupID(), Name: name}
 				p.items = append([]item{{ch: source.Channel{ID: g.ID, Name: name}, on: true, grp: g}}, p.items...)
 				p.editing = g // 作ったらすぐ、チャンネルを入れる編集に入る

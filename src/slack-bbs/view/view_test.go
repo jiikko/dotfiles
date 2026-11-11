@@ -460,7 +460,7 @@ func subsModel(l *loader, saved *[][]subs.Channel, opened *int) *Model {
 			}
 			return subs.NewPicker(all, cur), nil
 		},
-		Save: func(sel []subs.Channel) error { *saved = append(*saved, sel); return nil },
+		Save: func(sel []subs.Channel, _ string) error { *saved = append(*saved, sel); return nil },
 	})
 	return m
 }
@@ -575,7 +575,7 @@ func TestSubscriptionsEdgeCases(t *testing.T) {
 		t.Errorf("見ていたチャンネルを外した後: タブ %s cur=%d C3 を読んだ回数 %d", ids(m), m.cur, l.calls["C3"])
 	}
 
-	m.subs.Save = func([]subs.Channel) error { return errors.New("書けない") }
+	m.subs.Save = func([]subs.Channel, string) error { return errors.New("書けない") }
 	run(m, press(m, "s"))
 	for _, k := range []string{"j", "x", "enter"} {
 		run(m, press(m, k))
@@ -635,7 +635,7 @@ func TestPickerOpensFromCachedListAndRefreshes(t *testing.T) {
 	m.SetSubscriptions(&Subscriptions{
 		Open:   func(context.Context) (*subs.Picker, error) { return subs.NewPicker(fresh, cur), nil },
 		Cached: func() (*subs.Picker, time.Time, bool) { return subs.NewPicker(old, cur), t0, true },
-		Save:   func(sel []subs.Channel) error { saved = append(saved, sel); return nil },
+		Save:   func(sel []subs.Channel, _ string) error { saved = append(saved, sel); return nil },
 	})
 	run(m, m.Init())
 	pending := press(m, "s")
@@ -716,7 +716,7 @@ func TestGroupMembersChangedReloads(t *testing.T) {
 	var saved [][]subs.Channel
 	m := quiet(New(context.Background(), []subs.Channel{g}, l.load, nil, func() time.Time { return t0 }))
 	m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
-	m.SetSubscriptions(&Subscriptions{Save: func(sel []subs.Channel) error { saved = append(saved, sel); return nil }})
+	m.SetSubscriptions(&Subscriptions{Save: func(sel []subs.Channel, _ string) error { saved = append(saved, sel); return nil }})
 	stale := m.Init() // 前のメンバーで読み始める (結果はまだ渡さない)
 	g2 := g
 	g2.Members = append(slices.Clone(g.Members), subs.Channel{ID: "C2", Name: "ops"})
@@ -829,7 +829,7 @@ func TestPickerFetchesLastPostsUntilClosed(t *testing.T) {
 	m.SetSubscriptions(&Subscriptions{
 		Open:   func(context.Context) (*subs.Picker, error) { return subs.NewPicker(chs, nil), nil },
 		Cached: func() (*subs.Picker, time.Time, bool) { return subs.NewPicker(chs, nil), t0, true },
-		Save:   func([]subs.Channel) error { return nil },
+		Save:   func([]subs.Channel, string) error { return nil },
 		Posts: &subs.LastPosts{Get: func(ctx context.Context, _ string) (string, error) {
 			ctxs = append(ctxs, ctx)
 			return "1794400000.000000", ctx.Err()
@@ -899,7 +899,7 @@ func TestAPIStatsBottomRight(t *testing.T) {
 		t.Errorf("呼び出しが無いのに描き直しを張った: %v", waits)
 	}
 	m.SetSubscriptions(&Subscriptions{Cached: func() (*subs.Picker, time.Time, bool) { return subs.NewPicker(nil, nil), t0, true },
-		Open: func(context.Context) (*subs.Picker, error) { return subs.NewPicker(nil, nil), nil }, Save: func([]subs.Channel) error { return nil }})
+		Open: func(context.Context) (*subs.Picker, error) { return subs.NewPicker(nil, nil), nil }, Save: func([]subs.Channel, string) error { return nil }})
 	press(m, "s")
 	lines = m.Lines()
 	if last := sgrRe.ReplaceAllString(lines[len(lines)-1], ""); !strings.Contains(last, "Slack 12回/分") {
