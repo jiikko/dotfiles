@@ -189,11 +189,13 @@ type IssuesView struct {
 	// 即着地するので、描画だけが遅れる。
 	curGlide anim.CursorGlide
 
-	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
-	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
-	// pushSlides と同じ方式)。演出中の tick 周期は tickInterval が上げる (slideAnimating)。
-	// 閉じる演出 (closing) でも同じ時計を使う — 開く演出の逆再生なので所要も同じ。
-	animStart time.Time
+	// slide は viewer 全体の開閉スライドの状態 (zero value = 閉じて静止)。演出中の tick 周期は
+	// tickInterval が上げる (SlideAnimating)。
+	//
+	// 🚨 閉じる演出のあいだ shown を false にしない: 閉じていく画面が見えている必要がある。実際の
+	// 片付け (本文の破棄・watcher の停止) は FinishClose に一本化する。片付けを二箇所に書くと、
+	// 演出の着地とキーによる即着地のどちらかが stopWatch を通らず watcher が二重に走る。
+	slide anim.Slide
 	// wantCross は横断キー (crosskey.Is) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
 	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。"" = 無し
 	wantCross string
@@ -203,12 +205,6 @@ type IssuesView struct {
 	// wantPull は一覧の u で「git pull --rebase の確認を出したい」の一度きりの信号 (同上。確認と実行は
 	// browseModel の actModal の仕事で、git log 一覧の u と同じ経路を通す)。
 	wantPull bool
-	// closing は閉じる演出 (開く演出の逆再生) の途中か (ユーザー要望 2026-08-01)。
-	//
-	// 🚨 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
-	// 片付け (本文の破棄・watcher の停止) は finishClose に一本化する。片付けを二箇所に書くと、
-	// 演出の着地とキーによる即着地のどちらかが stopWatch を通らず watcher が二重に走る。
-	closing bool
 	// closeAnimOff は閉じる演出を出さない (テスト用)。🚨 zero value = 演出あり: 本番の既定を
 	// 「演出する」に置く。テストは「close したら即座に畳まれている」前提で書かれており、演出を
 	// 挟むと全てが 1 拍待ちになって読めなくなる (アプリ開閉演出の appZoom.off と同じ作法)。
@@ -263,7 +259,7 @@ func (v *IssuesView) Loading() bool { return v.scanning }
 // 実際に 37 件発生している事故)。スキャンは非同期かつ実測 2.5〜13.6ms なので、開くたびに
 // 取り直しても体感は変わらない: 取得中も前回の結果を出したまま差し替わる (emptyMessage)。
 func (v *IssuesView) Toggle(cwd string) tea.Cmd {
-	if v.closing {
+	if v.slide.Closing() {
 		v.FinishClose() // 閉じる演出の途中の i は「閉じ切ってから開き直す」(watcher を二重に張らない)
 	} else if v.shown {
 		v.close()
@@ -273,7 +269,7 @@ func (v *IssuesView) Toggle(cwd string) tea.Cmd {
 	// 右から左へ流し込む演出を開始 (lines が窓を変形する)。🚨 時計は app.TimeNow で取る:
 	// 引き出し (drawer) と同じ差し替え点に揃えないと、この 1 つのビューの中で
 	// 「止められる時計」と「止められない時計」が混在する。
-	v.animStart = app.TimeNow()
+	v.slide.Open(app.TimeNow(), issuesAnimDuration)
 	return tea.Batch(v.scanCmd(cwd), v.watchCmd())
 }
 
@@ -289,7 +285,7 @@ func (v *IssuesView) Restore(cwd string, s IssuesScreen) tea.Cmd {
 		return nil
 	}
 	v.shown = true
-	v.animStart = time.Time{}
+	v.slide.Show()
 	v.pending = &s
 	return tea.Batch(v.scanCmd(cwd), v.watchCmd())
 }
@@ -302,7 +298,7 @@ func (v *IssuesView) Restore(cwd string, s IssuesScreen) tea.Cmd {
 func (v *IssuesView) screen(now time.Time) (IssuesScreen, bool) {
 	// 🚨 閉じる演出の途中 = ユーザーは既に閉じている。shown はまだ true だが覚えない
 	// (覚えると「q で閉じてすぐ終了した」次の起動で、閉じたはずの viewer が蘇る)。
-	if !v.shown || v.closing || v.root == "" {
+	if !v.shown || v.slide.Closing() || v.root == "" {
 		return IssuesScreen{}, false
 	}
 	// doc を開いていたら底の issue とその位置を覚える (doc は一覧に無いので、復元の照合で外れる)
@@ -368,17 +364,16 @@ func (v *IssuesView) applyScreen(s IssuesScreen) {
 
 // close は viewer を閉じる (スキャン結果は保持する。再表示は前回の結果を出しながら取り直す)。
 //
-// 閉じる演出 (開く演出の逆再生) を挟んでから片付ける (ユーザー要望 2026-08-01)。ここで画面を
-// 落とさないのは、逆再生のあいだ一覧が見えている必要があるため (引き出しの startClose と同じ)。
+// 閉じる演出を挟んでから片付ける (ユーザー要望 2026-08-01)。ここで画面を落とさないのは、
+// 閉じる演出のあいだ一覧が見えている必要があるため (引き出しの startClose と同じ)。
 func (v *IssuesView) close() {
-	if !v.shown || v.closing {
+	if !v.shown || v.slide.Closing() {
 		return
 	}
-	v.closing = true
 	// 閉じたらカーソルの滑走を残さない (本文 pager の glide と同じ理由: 再表示の一瞬だけ古い位置から滑るのを
 	// 防ぐ)。close は toggle 経由だと handleKey を通らないので finishAnim が効かない。
 	v.curGlide.Stop()
-	v.animStart = app.TimeNow()
+	v.slide.Close(app.TimeNow(), IssuesCloseDuration)
 	if v.closeAnimOff {
 		v.FinishClose() // 演出なしの設定では同じ出口を即座に通す (片付けの経路を分けない)
 	}
@@ -386,7 +381,7 @@ func (v *IssuesView) close() {
 
 // settleClose は閉じる演出が着地していれば片付ける (browseModel の tick から毎拍呼ばれる)。
 func (v *IssuesView) SettleClose() {
-	if !v.closing || anim.Elapsed(v.animStart, app.TimeNow(), IssuesCloseDuration) < 1 {
+	if !v.slide.CloseLanded(app.TimeNow()) {
 		return
 	}
 	v.FinishClose()
@@ -400,12 +395,10 @@ func (v *IssuesView) SettleClose() {
 // 戻り値は「この呼び出しで実際に畳んだか」。🚨 browse_keys.go の handleKey が演出中のキーを 1 つだけ捨てる判定に使う
 // (素通しで別ターゲットを開いてしまう e。理由はそちらのコメント)。
 func (v *IssuesView) FinishClose() bool { //nolint:unparam // 戻り値は main (browse_keys.go の演出中のキーの判定) が使う。unparam はパッケージの外の呼び出しを見ない
-	if !v.closing {
+	if !v.slide.EndClose() {
 		return false
 	}
-	v.closing = false
 	v.shown = false
-	v.animStart = time.Time{}
 	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
 	v.StopWatch()   // 見張りの watcher を閉じる (fd を残さない。issues_watch.go)
 	// 🚨 取り直しの予約も捨てる。残すと閉じた後に「非表示の viewer のための」スキャンが 1 回走り、
@@ -427,23 +420,20 @@ func (v *IssuesView) finishAnim() {
 	// 半ページ移動のカーソル滑走も即着地させる: 次のキーは必ず論理カーソル (着地点) に効くので、
 	// 描画だけが遅れて「見えている行と操作対象が違う」時間を残さない。
 	v.curGlide.Stop()
-	if v.closing {
+	if v.slide.Closing() {
 		v.FinishClose()
 		return
 	}
-	v.animStart = time.Time{}
+	v.slide.LandOpen()
 }
 
 // slideAnimating は viewer 全体の開閉スライド中か。tickInterval が 125fps へ上げる判定に使う
 // (引き出しと pager glide は含めない: あちらは他の glide と同じ 60fps で足りる)。
+// dupscan:allow intentional 開閉の約束は tuikit の anim.Slide が持ち、ここは main (browse_anim.go の tick の周期) が呼ぶ口の 1 行の委譲。statusview の同名の口と寄せる先は Slide そのもの
 func (v *IssuesView) SlideAnimating() bool {
-	// 🚨 閉じる演出は「時間が過ぎたら false」にしない: tick は animating が false になった拍で
-	// 止まるので、時間で降ろすと片付けの settleClose が呼ばれる前にチェーンが切れ、閉じかけの姿で
-	// 固まる。settleClose が closing を下ろして初めて false になる (自分で終われる形にする)。
-	if v.closing {
-		return true
-	}
-	return v.shown && anim.Elapsed(v.animStart, app.TimeNow(), issuesAnimDuration) < 1
+	// 🚨 Animating でなく Unsettled: 片付けの SettleClose は tick からしか呼ばれないので、閉じる演出の
+	// 時間が過ぎた拍で tick を止めると閉じかけの姿で固まる。
+	return v.slide.Unsettled(app.TimeNow())
 }
 
 // animating は演出の途中か (tick チェーンを回し続ける spinnerActive の判定に使う)。
@@ -2145,22 +2135,12 @@ func (v *IssuesView) Lines(o IssuesRenderOpts) []string {
 	if box := v.markNextBox(o.Width, o.Colored); len(box) > 0 {
 		body = term.OverlayCenteredBox(body, box, o.Width, o.Page, o.Colored)
 	}
-	if p := v.animProgress(); p < 1 {
-		body = layout.SlideIn(body, p, o.Width, v.closing, IssuesAnimStagger)
+	// 🚨 閉じるときに反転するのは進みの向きだけで、見え方 (緩急・行ごとのずらし) まで開く演出の逆再生には
+	// しない (理由は tuikit layout.RowOffsetRatio の doc)。
+	if p := v.slide.Progress(app.TimeNow()); p < 1 {
+		body = layout.SlideIn(body, p, o.Width, v.slide.Closing(), IssuesAnimStagger)
 	}
 	return body
-}
-
-// animProgress は開く演出の進み (0..1)。演出していないときは 1 (= 変形しない)。
-//
-// 閉じるときは進捗を 1 → 0 へ落とす (所要も別で、issuesCloseDuration の方が短い)。🚨 反転する
-// のは進捗の向きだけで、見え方 (緩急・行ごとのずらし) まで開く演出の逆再生にはしない
-// (理由は tuikit layout.RowOffsetRatio の doc)。
-func (v *IssuesView) animProgress() float64 {
-	if v.closing {
-		return 1 - anim.Elapsed(v.animStart, app.TimeNow(), IssuesCloseDuration)
-	}
-	return anim.Elapsed(v.animStart, app.TimeNow(), issuesAnimDuration)
 }
 
 // headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
@@ -2338,7 +2318,7 @@ func (v *IssuesView) TypingInput() bool { return v.urlPick.active || v.numFilter
 // 変えたらここも直す (input_caret_test.go が描画結果の上で固定している)。
 // 演出中 (開く・閉じる) と確認の板が出ている間は置かない (行がずれる・板の下に隠れる)。
 func (v *IssuesView) CaretCol(o IssuesRenderOpts) (x int, ok bool) {
-	if v.markNext.active || v.animProgress() < 1 {
+	if v.markNext.active || v.slide.Progress(app.TimeNow()) < 1 {
 		return 0, false
 	}
 	switch {

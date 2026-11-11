@@ -6,9 +6,8 @@
 package statusview
 
 import (
-	"time"
-
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
 	"glogx/internal/app"
@@ -59,11 +58,16 @@ func fixtureStatus(porcelain string) worktreeStatus {
 }
 
 // SetShown は開いているかを置く (取得や演出を起こさない)。SetCloseAnim は閉じる演出の有無。
-func (f Fixture) SetShown(on bool)     { f.v.shown = on }
+func (f Fixture) SetShown(on bool) {
+	f.v.shown = on
+	if !on {
+		f.v.slide = anim.Slide{} // 閉じたのに演出の相だけ残ると SlideAnimating が真を返し続ける
+	}
+}
 func (f Fixture) SetCloseAnim(on bool) { f.v.closeAnimOff = !on }
 
 // ResetAnim は開く演出を着地済みにする。
-func (f Fixture) ResetAnim() { f.v.animStart = time.Time{} }
+func (f Fixture) ResetAnim() { f.v.slide.Show() }
 
 func (f Fixture) Loading() bool             { return f.v.loading }
 func (f Fixture) SetLoading(on bool)        { f.v.loading = on }

@@ -165,3 +165,30 @@ func TestElapsed(t *testing.T) {
 		}
 	}
 }
+
+// 閉じる途中は時間が過ぎても、閉じ切るまで Unsettled が真 (tick で片付ける使い方が固まらない)。
+// 開く途中は時間が過ぎたら偽 (Settle を待たずに tick を止めてよい)。
+func TestTransitionUnsettledHoldsClosingUntilSettled(t *testing.T) {
+	var tr Transition
+	if tr.Unsettled(t0) {
+		t.Fatal("閉じて静止しているのに Unsettled が真")
+	}
+	tr.Open(t0, d)
+	if !tr.Unsettled(at(0.5)) {
+		t.Fatal("開く途中なのに Unsettled が偽")
+	}
+	if tr.Unsettled(at(1)) {
+		t.Fatal("開く演出の時間が過ぎたのに Unsettled が真")
+	}
+	tr = NewOpen()
+	if tr.Unsettled(t0) {
+		t.Fatal("開いて静止しているのに Unsettled が真")
+	}
+	tr.Close(t0, d)
+	if !tr.Unsettled(at(2)) {
+		t.Fatal("閉じる演出の時間が過ぎただけで Unsettled が偽になった (片付けの前に tick が止まる)")
+	}
+	if closed := tr.Settle(at(2)); !closed || tr.Unsettled(at(2)) {
+		t.Fatalf("閉じ切った後も Unsettled が真: closed=%v", closed)
+	}
+}

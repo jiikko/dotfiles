@@ -21,7 +21,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `termcaps` | `SyncedOutput(環境変数を読む口, 起こす口)`: 同期出力 (DECSET 2026) が外側の端末まで届くか (tmux の中は `#{client_termfeatures}` に sync があるか、外は Terminal.app 以外か)。`TmuxClientFeatures` は機能の名前の列 (termcolor も使う)。`TmuxPrefix(TMUX の値, 起こす口)` は tmux サーバの今の prefix を bubbletea の表記 (`ctrl+t`) で返す (C-<英字> 以外・tmux の外は "") | false なら、画面全体が動くアニメを減らし、tmux の中では bubbletea に同期出力を使わせない (使うと tmux が外側へ書く量が増える)。treefiler (bin/treefiler と glogx の F)。`TmuxPrefix` は popup の中に素通りしてくる prefix を捌く glogx (案内) と bin/treefiler (prefix f で閉じる) |
 | `termcolor` | `TrueColorThroughTmux(TMUX の値, 起こす口)`: tmux の中で外側の端末が 24bit の色に対応しているか (`#{client_termfeatures}` に RGB があるか。`HasRGB`)。bubbletea v2 の色の判定は tmux の中では tmux の端末の定義しか見ず、24bit の色を 256 色に落とすので、その補い | true なら `tea.WithColorProfile(colorprofile.TrueColor)` を渡す。24bit の色を描く glogx (treefiler・mac-lan-manager の板) と bin/mac-lan-manager |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …)・256 色の番号の RGB (`XtermRGB`。色を混ぜる・暗くする計算用)・`ReapplyAfterReset` (行を地色で塗るとき、行内のリセットの後に地を張り直す) | 色を付けるときの値の単一の出典 |
-| `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
+| `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Slide` (画面全体の開閉。逆再生せず、閉じる途中は片付けるまで tick を回す) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
 | `spinner` | 回る印 (点字 10 コマ・各 1 桁) の字形: `Frame(i)` (i 番目。負や Len 超えも回す) / `At(時刻, 1 コマの長さ)` (時刻から選ぶ。描き直しの回数に依らない) / `Len`。状態も tea.Cmd も持たない | 処理中の印を画面ごとに定義しない。いつ tick するか・いつ止めるかは各画面が持つ (回すものがある間だけ回す) |
 | `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板。`PanelStyle.Fill` で枠の内側にだけ地を敷ける) と `PanelContentWidth` (Panel に渡す幅から中身の幅を出す) / `Overlay` / `OverlayCentered` / `OverlayRight` (右端に寄せて重ねる) / `PadTo` | 画面の合成 |
 | `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `WideDialog` (幅の上限を `WideMaxWidth` = 64 にした `Dialog`。揃えた行が 44 では切れる確認用) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` / `FitHint(案内, 幅)` (`Box` に案内の行を自分で並べるとき、`Dialog` と同じ規則で狭い板では短い形に替える) | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
@@ -64,6 +64,22 @@ if drawer.Settle(now) { detail = nil }
 
 - 閉じる動きは開く動きの**逆再生** (同じカーブを反転して通る)。途中で向きを変えても見えている位置は跳ばない
 - 開いたまま隣の項目へ送るときは `Open` を呼ばずに中身だけ差し替える (板が動かないので、左に覗く一覧のカーソルが追従して見える)
+
+### 画面全体を開閉する: 逆再生しない
+
+画面を丸ごと出し入れする (閉じ切ったら見張りや中身を片付ける) ものは `anim.Slide` を使う。引き出しと違い、
+向きを変えても途中の位置から引き返さない: 開く途中で閉じたら開いた姿から閉じ、閉じる途中で開き直すときは先に片付けて (`EndClose`) 閉じた姿から開く。
+
+```go
+var slide anim.Slide // zero value = 閉じている
+slide.Open(now, 175*time.Millisecond)
+slide.Close(now, 112*time.Millisecond)
+
+// tick のたびに: 閉じる演出が着地したら片付けを 1 か所で行う
+if slide.CloseLanded(now) && slide.EndClose() { teardown() }
+// tick を回し続けるかは Unsettled (閉じる途中は時間が過ぎても真。Animating だと片付けの前に tick が止まる)
+keepTicking := slide.Unsettled(now)
+```
 
 ### 一覧を開く: 上から順に右から流れ込む
 
@@ -172,7 +188,7 @@ if confirm.IsYes(key) { run() }
 
 ## 使う側の約束
 
-- **tick は使う側が回す**。`Transition.Animating(now)` / `List.Animating()` / `Pager.Animating()`
+- **tick は使う側が回す**。`Transition.Animating(now)` / `Slide.Unsettled(now)` (片付けを tick で行うもの。閉じる途中は時間が過ぎても真) / `List.Animating()` / `Pager.Animating()`
   (直接使うなら `ScrollGlide.Active()` / `CursorGlide.Active()`) のどれかが真のあいだは再描画を続ける (tuikit は tick を持たない。フレームワーク非依存にするため)
 - **時刻は引数で渡す** (部品の中で `time.Now` を呼ばない。lint が止める)。使う側のテストで時刻を固定できる
 - **演出中に来たキーは、先に着地させてから反映する** (`Finish()` / `Stop()`)。演出の終わりまで入力を待たせない

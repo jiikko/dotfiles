@@ -38,7 +38,12 @@ func FixtureScanDir(root string) IssuesScanMsg { return scanIssues(root) }
 func FixtureScanDirs(msg IssuesScanMsg) []string { return msg.dirs }
 
 // SetShown は開いているかを置く (走査や演出を起こさない)。
-func (f Fixture) SetShown(on bool) { f.v.shown = on }
+func (f Fixture) SetShown(on bool) {
+	f.v.shown = on
+	if !on {
+		f.v.slide = anim.Slide{} // 閉じたのに演出の相だけ残ると SlideAnimating が真を返し続ける
+	}
+}
 
 // SetCloseAnim は閉じる演出の有無を置く (テストの既定は演出なし。演出そのものを見るテストだけが入れる)。
 func (f Fixture) SetCloseAnim(on bool) { f.v.closeAnimOff = !on }
@@ -53,13 +58,15 @@ func (f Fixture) FinishDrawer() { f.v.drawer.finish() }
 func (f Fixture) DrawerTargetWidth(w int) int { return f.v.drawer.targetWidth(w) }
 
 // RestartAnim は開く演出の起点を今にする (演出の途中の描画を見るテスト用)。
-func (f Fixture) RestartAnim() { f.v.animStart = app.TimeNow() }
+func (f Fixture) RestartAnim() {
+	f.v.slide.Open(app.TimeNow(), issuesAnimDuration)
+}
 
 // Close は閉じる (演出ありなら閉じる演出に入る)。
 func (f Fixture) Close() { f.v.close() }
 
 // Closing は閉じる演出の途中か。
-func (f Fixture) Closing() bool { return f.v.closing }
+func (f Fixture) Closing() bool { return f.v.slide.Closing() }
 
 // SetCwd / SetRoot は走査の起点と repo root を置く。
 func (f Fixture) SetCwd(dir string)  { f.v.cwd = dir }

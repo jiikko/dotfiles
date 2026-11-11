@@ -112,10 +112,9 @@ type StatusView struct {
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
 
-	// 開閉の演出 (下からせり上がる / 下へ沈む)。issuesView と同じく closing 中も shown を
-	// 立てたままにして、片付けは finishClose に一本化する。
-	animStart    time.Time
-	closing      bool
+	// 開閉の演出 (左端から生える / 左へ縮む)。issuesView と同じく閉じる途中も shown を
+	// 立てたままにして、片付けは FinishClose に一本化する。
+	slide        anim.Slide
 	closeAnimOff bool // テスト用 (zero value = 演出あり。本番の既定を「演出する」に置く)
 
 	// pollArmed / gen は自動更新チェーンの single-flight と世代 (閉じ → 開き直しで古い tick を弾く)。
@@ -228,11 +227,11 @@ func (v *StatusView) Fetching() bool { return v.loading || v.preview.Fetching() 
 
 // slideAnimating は開閉のスライド演出中か。tickInterval が 125fps へ上げる判定に使う
 // (pager glide は含めない: あちらは他の glide と同じ 60fps で足りる)。
+// dupscan:allow intentional 開閉の約束は tuikit の anim.Slide が持ち、ここは main (browse_anim.go の tick の周期) が呼ぶ口の 1 行の委譲。issuesview の同名の口と寄せる先は Slide そのもの
 func (v *StatusView) SlideAnimating() bool {
-	if v.closing {
-		return true
-	}
-	return v.shown && anim.Elapsed(v.animStart, app.TimeNow(), statusOpenDuration) < 1
+	// 🚨 Animating でなく Unsettled: 片付けの SettleClose は tick からしか呼ばれないので、閉じる演出の
+	// 時間が過ぎた拍で tick を止めると閉じかけの姿で固まる。
+	return v.slide.Unsettled(app.TimeNow())
 }
 
 // animating は開閉の演出中か。spinnerActive (tick チェーンを回すか) がこれを見る
@@ -246,23 +245,24 @@ func (v *StatusView) Animating() bool {
 
 // toggle は viewer の開閉。開くときは status を読み直し、自動更新チェーンを張る。
 func (v *StatusView) Toggle() tea.Cmd {
-	if v.closing {
+	if v.slide.Closing() {
 		v.FinishClose() // 閉じる演出の途中の s は「閉じ切ってから開き直す」
 	} else if v.shown {
 		v.close()
 		return nil
 	}
 	v.shown = true
-	if !v.closeAnimOff {
-		v.animStart = app.TimeNow()
+	if v.closeAnimOff {
+		v.slide.Show()
+	} else {
+		v.slide.Open(app.TimeNow(), statusOpenDuration)
 	}
 	return tea.Batch(v.LoadCmd(), v.pollCmd(), v.previewTickCmd())
 }
 
 // close は閉じる演出へ入る (演出を切っているときは即座に畳む)。
 func (v *StatusView) close() {
-	v.closing = true
-	v.animStart = app.TimeNow()
+	v.slide.Close(app.TimeNow(), statusCloseDuration)
 	if v.closeAnimOff {
 		v.FinishClose()
 	}
@@ -271,7 +271,7 @@ func (v *StatusView) close() {
 // settleClose は閉じる演出が終わっていたら畳む (描画・tick のどちらが先でも進むように、
 // 判定は 1 箇所へ寄せる。issuesView.settleClose と同じ作法)。
 func (v *StatusView) SettleClose() {
-	if v.closing && anim.Elapsed(v.animStart, app.TimeNow(), statusCloseDuration) >= 1 {
+	if v.slide.CloseLanded(app.TimeNow()) {
 		v.FinishClose()
 	}
 }
@@ -282,11 +282,10 @@ func (v *StatusView) SettleClose() {
 // 🚨 gen を進めるのは、閉じる前に張った自動更新チェーンが開き直した後の状態へ効かないため。
 // 戻り値の意味は issuesView.finishClose と同じ契約 (実際に畳んだか)。
 func (v *StatusView) FinishClose() bool {
-	if !v.closing {
+	if !v.slide.EndClose() {
 		return false
 	}
-	v.shown, v.closing = false, false
-	v.animStart = time.Time{}
+	v.shown = false
 	v.pagerKey, v.pagerTitle = "", ""
 	v.pager.Reset()
 	v.discarding, v.discard = false, worktreeRow{}
@@ -305,13 +304,6 @@ func (v *StatusView) FinishClose() bool {
 	v.seenPrints = nil // 閉じたら最後に見せた diff も画面から消える (seenPrints の doc)
 	v.gen++
 	return true
-}
-
-// settleAnim は開く演出が終わっていたら時計を捨てる (animating の判定を軽くする)。
-func (v *StatusView) settleAnim() {
-	if !v.closing && !v.animStart.IsZero() && anim.Elapsed(v.animStart, app.TimeNow(), statusOpenDuration) >= 1 {
-		v.animStart = time.Time{}
-	}
 }
 
 // advanceGlide は全画面 diff のスクロール glide を 1 フレーム進める。
@@ -702,9 +694,7 @@ func (v *StatusView) visibleKey() string {
 func (v *StatusView) HandleKey(key string, vp StatusViewport) tea.Cmd {
 	// 開く演出中のキーは即着地させる (issues viewer の finishAnim と同じ契約。spec 7 節)。
 	// 閉じ演出中のキーはここへ届かない (browseModel が finishClose してから routing する)
-	if !v.closing {
-		v.animStart = time.Time{}
-	}
+	v.slide.LandOpen()
 	if v.discarding {
 		return v.discardKey(key)
 	}
@@ -1065,7 +1055,6 @@ func (v *StatusView) Hint(width int) string {
 // lines は全画面ビューの page 行を返す (issuesView.lines と同じ契約: 常にちょうど page 行)。
 func (v *StatusView) Lines(o StatusRenderOpts) []string {
 	v.SettleClose()
-	v.settleAnim()
 	// ヘッダー (ブランチ + 件数) は 2 カラムに割らず**全幅**で描く。一覧カラムの中に入れると
 	// 幅 48 桁ほどで件数が切り落とされる (実測 2026-08-03: "unstaged 15 / stage…")。
 	head := []string{v.headerLine(o, o.Width)}
@@ -1102,8 +1091,8 @@ func (v *StatusView) Lines(o StatusRenderOpts) []string {
 	if box := v.discardBox(o); len(box) > 0 {
 		body = term.OverlayCenteredBox(body, box, o.Width, o.Page, o.Colored)
 	}
-	if p := v.animProgress(); p < 1 {
-		body = slideLeftWindow(body, p, o.Width, v.closing, o.Colored)
+	if p := v.slide.Progress(app.TimeNow()); p < 1 {
+		body = slideLeftWindow(body, p, o.Width, v.slide.Closing(), o.Colored)
 	}
 	return body
 }
@@ -1123,14 +1112,6 @@ func statusListWidth(total int) int {
 		return total
 	}
 	return max(min(total*4/10, statusListMaxWidth), statusListMinWidth)
-}
-
-// animProgress は演出の進み (0..1。演出していないときは 1 = 変形しない)。
-func (v *StatusView) animProgress() float64 {
-	if v.closing {
-		return 1 - anim.Elapsed(v.animStart, app.TimeNow(), statusCloseDuration)
-	}
-	return anim.Elapsed(v.animStart, app.TimeNow(), statusOpenDuration)
 }
 
 // slideLeftWindow は窓を「板が左端から生えてくる」途中の姿にする (closing なら左へ縮んで消える

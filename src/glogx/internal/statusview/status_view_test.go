@@ -580,23 +580,22 @@ func TestStatusOpenAnimationThenSettles(t *testing.T) {
 	advance := testenv.StubClock(t)
 	v := NewStatusView()
 	v.shown = true
-	v.animStart = app.TimeNow()
+	v.slide.Open(app.TimeNow(), statusOpenDuration)
 	// 経過 0 だけでなく「開いて僅かに経った」正の経過でも見る (0 は境界の退化ケースで、
 	// 「経過 > 0 で即 1 に跳ぶ」型のミスを素通りさせる)
 	advance(time.Millisecond)
 	if !v.Animating() {
 		t.Fatal("開いた直後に animating() = false")
 	}
-	if p := v.animProgress(); p <= 0 || p >= 1 {
+	if p := v.slide.Progress(app.TimeNow()); p <= 0 || p >= 1 {
 		t.Fatalf("開いた直後の進捗 = %v, want 0 < p < 1", p)
 	}
 	advance(statusOpenDuration)
 	if v.Animating() {
 		t.Error("所要を過ぎても animating() = true")
 	}
-	v.settleAnim()
-	if !v.animStart.IsZero() {
-		t.Error("settleAnim が時計を捨てていない")
+	if p := v.slide.Progress(app.TimeNow()); p != 1 {
+		t.Errorf("所要を過ぎた進捗 = %v, want 1", p)
 	}
 }
 
@@ -1010,7 +1009,7 @@ func TestStatusLatePreviewAfterCloseIsDropped(t *testing.T) {
 	}
 	staleGen := v.gen
 
-	v.closing = true
+	v.slide.Close(app.TimeNow(), statusCloseDuration)
 	if !v.FinishClose() {
 		t.Fatal("前提が崩れた: finishClose が閉じ切っていない")
 	}
@@ -1067,7 +1066,7 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 		t.Fatal("前提が崩れた: 取得を始められない")
 	}
 
-	v.closing = true
+	v.slide.Close(app.TimeNow(), statusCloseDuration)
 	if !v.FinishClose() {
 		t.Fatal("前提が崩れた: finishClose が閉じ切っていない")
 	}
@@ -1098,7 +1097,7 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	if v.TakeWantCross() != "" {
 		t.Error("takeWantCross が 2 回横断先を返す (横断が二重に起きる)")
 	}
-	if !v.closing && v.shown {
+	if !v.slide.Closing() && v.shown {
 		t.Error("R で viewer が閉じない (全画面は同時に 1 枚)")
 	}
 	if !strings.Contains(v.Hint(200), "R: 残量") {
@@ -1742,5 +1741,26 @@ func TestStatusDiscardRefusesWhenLastStatExceedsPrintTime(t *testing.T) {
 	v.HandleKey("X", testViewport())
 	if v.discarding {
 		t.Fatal("最後の stat で時間の上限を越えたのに確認に入った")
+	}
+}
+
+// 閉じる演出は時間が過ぎても、片付けるまで tick を回し続ける (止めると SettleClose が呼ばれず、
+// 閉じかけの姿で固まる)。
+func TestStatusCloseKeepsTickingUntilSettled(t *testing.T) {
+	advance := testenv.StubClock(t)
+	v := NewStatusView()
+	v.Toggle()
+	advance(statusOpenDuration)
+	v.close()
+	advance(statusCloseDuration * 3) // とっくに時間は過ぎている
+	if !v.Animating() {
+		t.Fatal("片付け前に animating が false になった (最後の 1 拍が届かず閉じかけで固まる)")
+	}
+	v.SettleClose()
+	if v.Animating() {
+		t.Fatal("片付けた後も animating が true (tick が回り続ける)")
+	}
+	if v.shown {
+		t.Fatal("着地しても viewer が閉じていない")
 	}
 }

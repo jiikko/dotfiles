@@ -91,6 +91,16 @@ func (t *Transition) Animating(now time.Time) bool {
 	return (t.phase == Opening || t.phase == Closing) && t.Progress(now) < 1
 }
 
+// Unsettled は演出がまだ片付いていないか。Animating と違い、閉じる途中は時間が過ぎても
+// Settle / Finish が閉じ切るまで true を返す。
+//
+// 片付け (Settle) を tick からしか呼ばない使い方では、Animating で tick を止めると時間が過ぎた拍で
+// tick が止まり、Settle が呼ばれないまま閉じかけの姿で固まる。そういう使い方はこちらで tick を回す。
+// 描画からも Settle を呼ぶ使い方 (引き出し) は Animating でよい。
+func (t *Transition) Unsettled(now time.Time) bool {
+	return t.phase == Closing || t.Animating(now)
+}
+
 // Settle は演出が終わっていれば静止状態へ進める。閉じ切ったときだけ true を返す
 // (中身を捨ててよい合図)。描画とキー処理の両方から呼んでよい (どちらが先でも状態が進む)。
 func (t *Transition) Settle(now time.Time) (closed bool) {

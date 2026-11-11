@@ -24,7 +24,7 @@ import (
 
 // atProgress は演出の進みを p (0..1) に固定した viewer を返す (壁時計を巻き戻して作る)。
 func atProgress(v *IssuesView, p float64) *IssuesView {
-	v.animStart = app.TimeNow().Add(-time.Duration(float64(issuesAnimDuration) * p))
+	v.slide.Open(app.TimeNow().Add(-time.Duration(float64(issuesAnimDuration)*p)), issuesAnimDuration)
 	return v
 }
 
@@ -1990,7 +1990,7 @@ func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
 
 	v.handleBodyKey("i", IssuesViewport{width: 80, page: 20}, 20)
 
-	if !v.closing && v.shown {
+	if !v.slide.Closing() && v.shown {
 		t.Error("本文モードの i で viewer が閉じない (--help の案内が嘘になる)")
 	}
 }
@@ -2008,7 +2008,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 		if v.TakeWantCross() != "R" {
 			t.Error("一覧モードの R でダッシュボードへの横断を要求しない")
 		}
-		if !v.closing && v.shown {
+		if !v.slide.Closing() && v.shown {
 			t.Error("一覧モードの R で viewer が閉じない")
 		}
 	})
@@ -2022,7 +2022,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 		if v.TakeWantCross() != "R" {
 			t.Error("本文モードの R でダッシュボードへの横断を要求しない (--help の案内が嘘になる)")
 		}
-		if !v.closing && v.shown {
+		if !v.slide.Closing() && v.shown {
 			t.Error("本文モードの R で viewer が閉じない")
 		}
 	})

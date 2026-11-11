@@ -25,7 +25,7 @@ func TestIssuesCloseProgressFallsToZero(t *testing.T) {
 	advance := testenv.StubClock(t)
 
 	v := openAnimView(t)
-	if p := v.animProgress(); p != 1 {
+	if p := v.slide.Progress(app.TimeNow()); p != 1 {
 		t.Fatalf("前提が崩れた: 開き切っているのに進捗が 1 でない (%v)", p)
 	}
 
@@ -33,21 +33,21 @@ func TestIssuesCloseProgressFallsToZero(t *testing.T) {
 	if !v.Visible() {
 		t.Fatal("閉じる演出の前に画面が消えた (抜けていく中身が無い)")
 	}
-	if p := v.animProgress(); p != 1 {
+	if p := v.slide.Progress(app.TimeNow()); p != 1 {
 		t.Fatalf("閉じ始めが開き切った姿から始まっていない: %v", p)
 	}
 	advance(IssuesCloseDuration / 2)
-	mid := v.animProgress()
+	mid := v.slide.Progress(app.TimeNow())
 	if mid <= 0 || mid >= 1 {
 		t.Fatalf("途中の進捗が 0..1 でない: %v", mid)
 	}
 	advance(IssuesCloseDuration / 2)
-	if p := v.animProgress(); p != 0 {
+	if p := v.slide.Progress(app.TimeNow()); p != 0 {
 		t.Fatalf("所要を過ぎても画面外まで抜けていない: %v", p)
 	}
 	// 🚨 進捗は 0 で止まる (負に走らない)。負になると layout.SlideIn の局所進捗が壊れる。
 	advance(IssuesCloseDuration)
-	if p := v.animProgress(); p != 0 {
+	if p := v.slide.Progress(app.TimeNow()); p != 0 {
 		t.Fatalf("進捗が 0 を下回った: %v", p)
 	}
 }
@@ -155,7 +155,7 @@ func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 	if !v.Visible() {
 		t.Fatal("開き直せていない")
 	}
-	if v.closing {
+	if v.slide.Closing() {
 		t.Fatal("閉じる演出が残ったまま開き直した (次の settleClose が開いた viewer を畳む)")
 	}
 	if v.watch.Gen == gen {
