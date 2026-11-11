@@ -181,6 +181,9 @@ func TestReloadShowsSpinnerAndElapsed(t *testing.T) {
 		t.Errorf("読み直し中の状態に経過秒が無い: %q", s)
 	}
 	frame := strings.Fields(m.state())[0]
+	if tabs := sgrRe.ReplaceAllString(m.tabsLine(), ""); !strings.Contains(tabs, frame+" #") {
+		t.Errorf("読み込み中の今のタブに回る印が無い: %q", tabs)
+	}
 	now = now.Add(spinnerStep)
 	if next := strings.Fields(m.state())[0]; next == frame {
 		t.Errorf("時刻が進んでも回る印が変わらない: %q", next)

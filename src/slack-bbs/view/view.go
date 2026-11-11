@@ -752,8 +752,9 @@ func (m *Model) tabsLine() string {
 	names := make([]string, len(m.chans))
 	for i, c := range m.chans {
 		names[i] = "#" + termsafe.PlainLine(c.ch.Name)
-		if c.loading && i != m.cur {
-			// R で読み直している他のチャンネルも、どれが終わっていないか見える。今のチャンネルは状態の行に出す
+		if c.loading {
+			// 今のチャンネルにも出す (状態の行だけでは、タブを見たときに読み込み中か分からない。ユーザー要望 2026-11-11)。
+			// R で読み直している他のチャンネルも、どれが終わっていないか見える
 			names[i] = spinner.At(m.now(), spinnerStep) + " " + names[i]
 		}
 		if n := m.unreadCount(i); n > 0 {
