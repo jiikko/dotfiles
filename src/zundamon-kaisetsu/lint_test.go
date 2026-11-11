@@ -136,6 +136,13 @@ func TestLintRules(t *testing.T) {
 		"チャプターの境で数えるのをやめる (残りは show-across-chapter が出す)": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"), m("metan", "c"),
 			m("zundamon", "d？", "chapter", "次"), m("metan", "e")}, []string{"3:show-across-chapter"}},
+		"段のある図解を書き直すと段が最初に戻るので、そこから数え直す": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "list", "items": []any{"x", "y", "z"}, "build": true}), m("metan", "b", "show", "next"),
+			m("zundamon", "c？", "show", "next"), m("metan", "d", "show", map[string]any{"type": "list", "items": []any{"x", "y", "z"}, "build": true}),
+			m("zundamon", "e？"), m("metan", "f")}, nil},
+		"build と同じく、書き方だけ違う同じ図解を 1 つとして数える": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "list", "items": []any{"x", "y"}}), m("zundamon", "b？"), m("metan", "c"),
+			m("zundamon", "d", "show", map[string]any{"type": "list", "items": []any{"x", "y"}, "build": false}), m("metan", "e", "show", nil)}, []string{"0:show-linger"}},
 		// 図解の数字 (目安。issue 1055): 図解の中の数字が、出ている区間の字幕に無い。区切りの「,」は除いて比べ、コードの図解は見ない
 		"図解の数字が字幕に無い": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "約10920件", "sub": "前の年の約1.5倍"}), m("zundamon", "多いのだ", "show", nil)},

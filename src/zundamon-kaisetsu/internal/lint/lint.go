@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -18,6 +17,7 @@ import (
 	"zundamon-kaisetsu/internal/paths"
 	"zundamon-kaisetsu/internal/pyjson"
 	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/show"
 )
 
 // 台本の校正のうち、文字列と台本の構造だけで決まるもの (zundamon-kaisetsu lint)。
@@ -435,17 +435,26 @@ func CmdLint(env *app.Env, scriptArg, sourceArg string) error {
 }
 
 // showSpan は 1 つの図解が出ている区間。lines[start] が図解を出した行、end は消える手前の行 (チャプターの境の手前で切る)。
-// from は残りを数え始める行: 段の無い図解は start、段のある図解 (比較・箇条書きの build、コードの steps) は最後に段を進めた行。
+// from は残りを数え始める行: 段の無い図解は start、段のある図解 (比較・箇条書きの build、コードの steps) は最後に段が変わった行
+// ("next" の行と、同じ図解を書き直して段が最初に戻った行)。
 type showSpan struct {
 	start, from, end int
-	show             map[string]any
+	n, step          int            // 図解の表の番号と、今の段 (段の無い図解は -1)
+	show             map[string]any // 図解を書いた行の show (画面に出る文字を引く)
 }
 
-// showSpans は台本の図解の区間を出した順に返す。null・次の図解・チャプターの境・台本の終わりで区間を閉じる
-// (チャプターをまたいで残る図解は show-across-chapter が警告するので、ここでは境の手前で切る)。
+// showSpans は台本の図解の区間を出した順に返す。どの行に何が出ているかは build と同じ show.LineShows で決める
+// (lint で別に組み直すと、同じ中身の書き直し・書き方だけ違う同じ図解・書き直しで段が戻る形で build とずれる)。
+// null・別の図解・チャプターの境・台本の終わりで区間を閉じる。チャプターをまたいで残る図解は show-across-chapter が警告するので、
+// 境の手前で切り、境の後は同じ図解のあいだ数えない。
 func showSpans(s *script.Script) []showSpan {
+	idx, steps, _, err := show.LineShows(s.Path, s.Lines)
+	if err != nil {
+		return nil // script.LoadScript が読み込みで同じ検査を通している (ここには来ない)
+	}
 	var out []showSpan
 	var cur *showSpan
+	skip := -1 // チャプターの境で切った図解の番号 (別の図解になるまで数えない)
 	end := func(i int) {
 		if cur != nil {
 			cur.end = i - 1
@@ -453,27 +462,34 @@ func showSpans(s *script.Script) []showSpan {
 			cur = nil
 		}
 	}
+	var last map[string]any
 	for i, line := range s.Lines {
-		if i > 0 && pyjson.Truthy(line["chapter"]) {
+		if m, ok := line["show"].(map[string]any); ok {
+			last = m
+		}
+		if i > 0 && pyjson.Truthy(line["chapter"]) && cur != nil {
+			skip = cur.n
 			end(i)
 		}
-		show, ok := line["show"]
-		if !ok {
+		if idx[i] == nil {
+			end(i)
+			skip = -1
 			continue
 		}
-		switch v := show.(type) {
-		case nil:
-			end(i)
-		case string:
-			if v == "next" && cur != nil {
-				cur.from = i
+		n, step := *idx[i], -1
+		if steps[i] != nil {
+			step = *steps[i]
+		}
+		switch {
+		case cur != nil && cur.n == n:
+			if step != cur.step {
+				cur.from, cur.step = i, step
 			}
-		case map[string]any:
-			if cur != nil && reflect.DeepEqual(cur.show, v) {
-				continue // 同じ中身の図解を書き直しても、build (show.LineShows) は 1 つにまとめ、画面では出たまま続く
-			}
+		case cur == nil && n == skip:
+		default:
 			end(i)
-			cur = &showSpan{start: i, from: i, show: v}
+			skip = -1
+			cur = &showSpan{start: i, from: i, n: n, step: step, show: last}
 		}
 	}
 	end(len(s.Lines))
