@@ -215,7 +215,7 @@ const CacheKeep = 14 * 24 * time.Hour
 //   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>) は CacheKeep
 //
 // この形でないファイル (slack-cli の lock など) には触らない。消す直前に時刻を取り直す (並んで起動した別の slack-bbs が
-// 書き直したばかりのファイルを、先に読んだ古い時刻で消さない。窓は残る)。1 つ消せなくても残りは続け、消せなかったものをまとめて返す。
+// 書き直したばかりのファイルを、先に読んだ古い時刻で消さない。組のどれかが新しくなっていたら組ごと残す。窓は残る)。1 つ消せなくても残りは続け、消せなかったものをまとめて返す。
 // 時刻が未来のファイル (時計を戻した等) は、その時刻から数えるので期限が延びる (害は残るだけなので受け入れる)。
 func (s Store) Expire(now time.Time) (int, error) {
 	if s.Dir == "" {
@@ -239,12 +239,7 @@ func (s Store) Expire(now time.Time) (int, error) {
 		}
 		return info.ModTime(), info.Mode().IsRegular()
 	}
-	type entry struct {
-		names  []string
-		newest time.Time
-		keep   time.Duration
-	}
-	groups := map[string]*entry{}
+	groups := map[string]*expiring{}
 	for _, e := range ents {
 		if !e.Type().IsRegular() {
 			continue
@@ -259,7 +254,7 @@ func (s Store) Expire(now time.Time) (int, error) {
 		}
 		g := groups[key]
 		if g == nil {
-			g = &entry{keep: keep}
+			g = &expiring{keep: keep}
 			groups[key] = g
 		}
 		g.names = append(g.names, e.Name())
@@ -269,13 +264,10 @@ func (s Store) Expire(now time.Time) (int, error) {
 	}
 	n := 0
 	for _, g := range groups {
-		if now.Sub(g.newest) <= g.keep {
+		if now.Sub(g.newest) <= g.keep || g.touched(now, mtime) {
 			continue
 		}
 		for _, name := range g.names {
-			if at, ok := mtime(name); !ok || now.Sub(at) <= g.keep {
-				continue
-			}
 			if err := os.Remove(filepath.Join(s.Dir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				errs = append(errs, err)
 				continue
@@ -284,6 +276,24 @@ func (s Store) Expire(now time.Time) (int, error) {
 		}
 	}
 	return n, errors.Join(errs...)
+}
+
+// expiring は期限をまとめて数えるファイルの組。
+type expiring struct {
+	names  []string
+	newest time.Time
+	keep   time.Duration
+}
+
+// touched は、組のどれかが期限の内に書き直されたか (消す直前に組の全部の時刻を取り直す)。1 つずつ取り直して古いものだけ消すと、
+// 並んで起動した slack-bbs が分類を使い回して raw だけを書き直したとき、組が割れて分類だけが消える。
+func (g *expiring) touched(now time.Time, mtime func(string) (time.Time, bool)) bool {
+	for _, name := range g.names {
+		if at, ok := mtime(name); ok && now.Sub(at) <= g.keep {
+			return true
+		}
+	}
+	return false
 }
 
 // expireGroup はキャッシュのファイル名を、まとめて期限を数える組の鍵と残す期間にする。キャッシュの形でなければ ok が偽。

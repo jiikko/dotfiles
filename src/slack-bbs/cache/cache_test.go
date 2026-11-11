@@ -140,6 +140,7 @@ func TestExpire(t *testing.T) {
 		"USED.raw.json":         time.Hour,
 		"COLD.raw.json.tmp.123": CacheKeep + time.Hour, // 書きかけで残った一時ファイル: 消す
 		"WARM.raw.json.tmp.456": time.Hour,
+		"USED.raw.json.tmp.789": CacheKeep + time.Hour, // 組 (USED) が新しくても、古い一時ファイルは消す
 		"COLD.read.json":        CacheKeep + time.Hour, // 既読は ReadKeep まで残す
 		"OLD.read.json":         ReadKeep + time.Hour,  // 消す
 		"WARM.raw.json":         CacheKeep - time.Hour,
@@ -157,8 +158,8 @@ func TestExpire(t *testing.T) {
 		}
 	}
 	n, err := st.Expire(now)
-	if err != nil || n != 4 {
-		t.Fatalf("Expire = %d, %v; want 4 件", n, err)
+	if err != nil || n != 5 {
+		t.Fatalf("Expire = %d, %v; want 5 件", n, err)
 	}
 	var left []string
 	ents, _ := os.ReadDir(dir)
@@ -171,5 +172,20 @@ func TestExpire(t *testing.T) {
 	}
 	if n, err := (Store{Dir: filepath.Join(dir, "none")}).Expire(now); n != 0 || err != nil {
 		t.Errorf("置き場が無いとき: %d, %v", n, err)
+	}
+}
+
+// 消す直前に取り直した時刻で、組のどれか 1 つでも期限の内に書き直されていたら、組ごと残す (raw だけ新しくなった組を割らない)。
+func TestExpireKeepsPairTouchedJustBefore(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	at := map[string]time.Time{"C1.raw.json": now.Add(-time.Minute), "C1.summary.json": now.Add(-CacheKeep * 2)}
+	g := &expiring{names: []string{"C1.summary.json", "C1.raw.json"}, keep: CacheKeep}
+	mtime := func(name string) (time.Time, bool) { t, ok := at[name]; return t, ok }
+	if !g.touched(now, mtime) {
+		t.Error("raw が書き直された組を、消してよい組と判定した")
+	}
+	at["C1.raw.json"] = now.Add(-CacheKeep * 2)
+	if g.touched(now, mtime) {
+		t.Error("どれも古い組を、書き直された組と判定した")
 	}
 }
