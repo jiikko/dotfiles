@@ -4,7 +4,7 @@
 
 ## 概要
 
-`/all-audit-on-diy slack-bbs` (dupscan の dogfood を兼ねる。所見は [1066](epic/932/1066-research-dupscan-dogfood-slack-bbs-audit-2026-11-11.md))。
+`/all-audit-on-diy slack-bbs` (dupscan の dogfood を兼ねる。所見は [1066](../epic/932/1066-research-dupscan-dogfood-slack-bbs-audit-2026-11-11.md))。
 対象は src/slack-bbs (`git ls-files src/slack-bbs` で 45 ファイル・11,912 行、`732df8baa` 時点)。slack-bbs の初めての監査。
 直したのは 4 点 (グループかの判定を ID に寄せた・チャンネルの一覧の一時ファイルの掃除・README の残すもの・購読しているアーカイブ済みのチャンネルをグループに入れられた)、起票は 0 本。
 4 点目は、自分の読みでは見つけられず、敵対的レビューが見つけた (picker のキー処理は「読んでいない」範囲だった)。

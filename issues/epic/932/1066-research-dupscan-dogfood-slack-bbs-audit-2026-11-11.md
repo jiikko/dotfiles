@@ -4,7 +4,7 @@
 
 ## 概要
 
-`/all-audit-on-diy slack-bbs` (監査の記録は [1065](../../1065-research-slack-bbs-audit-2026-11-11.md)) を dupscan を使って回した所見。
+`/all-audit-on-diy slack-bbs` (監査の記録は [1065](../../done/1065-research-slack-bbs-audit-2026-11-11.md)) を dupscan を使って回した所見。
 摩擦 2 件・役に立った場面 2 件。既存の issue との重複は epic 932 の本文と done の dogfood を「起点の外」「呼び出しの数」で grep して確かめた (見つからなかった)。
 観察の記録だけなので、反証レビューは省いた (skill dupscan-dogfood の 5 節)。dupscan は直していない: epic 932 の `next/` に別の担当 (1034) がいるため (skill の 0 節の 4)。
 
