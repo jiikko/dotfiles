@@ -126,6 +126,10 @@ func (m *Model) leftLines() []string {
 	m.fitList(1)
 	w := m.leftWidth() - cardChrome(cardPadX(m.w))
 	var out []string
+	if len(rows) == 0 {
+		head, hint := m.emptyList()
+		out = emptyBlock(head, hint, w, m.listRows())
+	}
 	end := min(m.list.Offset+m.listRows(), len(rows))
 	for i := m.list.Offset; i < end; i++ {
 		r := rows[i]
@@ -199,4 +203,53 @@ func stateIcon(t board.Topic) string {
 		return "🟡"
 	}
 	return "⚪"
+}
+
+// emptyList は一覧に出す話題が無いときに、一覧の真ん中に出す見出しと案内 (案内は区切りのよい所で行を分けておく)。
+// 読み込み中なら、話題が無いのは読み終わっていないからだと出す (前に読んだ板が無いか、あっても話題が 0 件のとき。
+// 話題のある前の板を出しているなら一覧は空にならない)。
+func (m *Model) emptyList() (head string, hint []string) {
+	if m.stream {
+		oldest := time.Time{}
+		for _, c := range m.chans {
+			if c.loading && (oldest.IsZero() || c.started.Before(oldest)) {
+				oldest = c.started
+			}
+		}
+		if !oldest.IsZero() {
+			return m.spin(oldest) + " 読み込み中", []string{"読み終わったタブから、", "ここに話題が並びます"}
+		}
+		return "📭 新着はありません", []string{"どのタブにも", "期間内の話題がありません"}
+	}
+	c := m.chans[m.cur]
+	switch {
+	case c.loading && (c.page == nil || len(c.page.Topics) == 0):
+		return m.spin(c.started) + " 読み込み中", []string{"読み終わると、", "ここに話題が並びます"}
+	case c.page == nil && c.err != nil:
+		return "🚨 読めませんでした", []string{"r で読み直す"}
+	case c.page == nil:
+		return "まだ読んでいません", []string{"r で読む"}
+	case len(c.page.Topics) == 0:
+		return "📭 話題はありません", []string{"期間内の発言が", "ありません"}
+	}
+	return "隠した話題だけです", []string{"z で隠した話題も出す"}
+}
+
+// emptyBlock は見出しと案内 (淡い色) を、幅 w・rows 行の欄の真ん中に置いた行。欄に収まらない行は折り返す (切ると案内が読めない)。
+func emptyBlock(head string, hint []string, w, rows int) []string {
+	lines := wrap(head, w)
+	heads := len(lines)
+	for _, h := range hint {
+		lines = append(lines, wrap(h, w)...)
+	}
+	top := max((rows-len(lines))/2, 0)
+	out := make([]string, top, top+len(lines)) // 上の余白の空行
+	for i, l := range lines {
+		l = termwidth.PadSpaces(max((w-termwidth.Of(l))/2, 0)) + l
+		if i >= heads {
+			l = dim(l)
+		}
+		out = append(out, l)
+	}
+	return out
 }

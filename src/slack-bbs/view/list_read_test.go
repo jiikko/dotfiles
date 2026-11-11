@@ -686,3 +686,55 @@ func TestShowHiddenToggleStaysOnSelected(t *testing.T) {
 		}
 	}
 }
+
+// 一覧に出す話題が無いときは、空の欄にせず、なぜ無いか (読み込み中・読めない・話題が 0 件・全部隠した) と次に押すキーを
+// 一覧の真ん中に出す。読み込み中は、前に読んだ板が無いか話題が 0 件のときだけ「読み込み中」と出す (話題のある板は一覧に出す)。
+func TestEmptyListSaysWhy(t *testing.T) {
+	plain := regexp.MustCompile("\x1b\\[[0-9;:]*[a-zA-Z]")
+	left := func(m *Model) string {
+		return plain.ReplaceAllString(strings.Join(m.leftLines(), "\n"), "")
+	}
+	never := func(context.Context, subs.Channel) (render.Page, error) { select {} }
+	mk := func() *Model {
+		m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}, never, nil, func() time.Time { return day0 }))
+		m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+		return m
+	}
+	empty := render.Page{Channel: "C1", ChannelName: "dev"}
+	full := render.Page{Channel: "C1", ChannelName: "dev", Topics: []board.Topic{topicAt("リリース", day0.Add(-time.Hour))}}
+	for name, tc := range map[string]struct {
+		set  func(m *Model)
+		want []string
+	}{
+		"まだ板が無く読み込み中": {func(m *Model) { m.chans[0].loading, m.chans[0].started = true, day0 }, []string{"読み込み中", "ここに話題が並びます"}},
+		"話題が 0 件の板を読み直し中": {func(m *Model) {
+			m.chans[0].setPage(empty, day0, true)
+			m.chans[0].loading, m.chans[0].started = true, day0
+		}, []string{"読み込み中"}},
+		"読めなかった":   {func(m *Model) { m.chans[0].err = errors.New("x") }, []string{"読めませんでした", "r で読み直す"}},
+		"まだ読んでいない": {func(*Model) {}, []string{"まだ読んでいません", "r で読む"}},
+		"話題が 0 件":  {func(m *Model) { m.chans[0].setPage(empty, day0, false) }, []string{"話題はありません", "ありません"}},
+		"全部隠した": {func(m *Model) {
+			m.chans[0].setPage(full, day0, false)
+			u := full.Topics[0].Units[0]
+			m.chans[0].hidden[u.ID] = u.Last()
+		}, []string{"隠した話題だけです", "z で隠した話題も出す"}},
+		"新着のタブで読み込み中のタブがある": {func(m *Model) { m.stream = true; m.chans[1].loading, m.chans[1].started = true, day0 }, []string{"読み込み中", "読み終わったタブから"}},
+		"新着のタブで話題が無い":       {func(m *Model) { m.stream = true }, []string{"新着はありません"}},
+	} {
+		m := mk()
+		tc.set(m)
+		got := left(m)
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: 一覧に「%s」が無い:\n%s", name, w, got)
+			}
+		}
+	}
+	m := mk()
+	m.chans[0].setPage(full, day0, true)
+	m.chans[0].loading = true
+	if got := left(m); strings.Contains(got, "読み込み中") || !strings.Contains(got, "リリース") {
+		t.Errorf("話題のある前の板を読み直している間は、話題を出す:\n%s", got)
+	}
+}
