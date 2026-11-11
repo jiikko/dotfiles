@@ -55,6 +55,11 @@ func (p *Picker) StartFetch(ctx context.Context, lp *LastPosts) tea.Cmd {
 	if lp == nil || lp.Get == nil {
 		return nil
 	}
+	if lp.Now == nil { // 時計を渡されなければ実の時刻 (渡された LastPosts は書き換えない)
+		c := *lp
+		c.Now = time.Now
+		lp = &c
+	}
 	p.fetch = &fetch{ctx: ctx, lp: lp, failed: map[string]bool{}}
 	p.queueFetch()
 	return p.nextFetch()
@@ -66,7 +71,7 @@ func (p *Picker) queueFetch() {
 	if f == nil {
 		return
 	}
-	now := f.lp.now()
+	now := f.lp.Now()
 	targets := p.fetchTargets()
 	// 取る対象でなくなった (一覧から消えた・参加をやめた) ものは列から外す。取っている最中の先頭は、結果の照合のために残す
 	// (結果が失敗でも、対象でなければ「取れなかった」に数えない。HandleLastPost)
@@ -110,13 +115,6 @@ func (p *Picker) fetchTargets() map[string]bool {
 	return out
 }
 
-func (lp *LastPosts) now() time.Time {
-	if lp.Now != nil {
-		return lp.Now()
-	}
-	return time.Now()
-}
-
 // nextFetch は列の先頭を取る Cmd (列が空なら取り直しを終える)。
 func (p *Picker) nextFetch() tea.Cmd {
 	f := p.fetch
@@ -155,7 +153,7 @@ func (p *Picker) HandleLastPost(msg LastPostMsg) tea.Cmd {
 		if p.last == nil {
 			p.last = map[string]LastPost{}
 		}
-		p.last[msg.id] = LastPost{Ts: msg.ts, At: f.lp.now()}
+		p.last[msg.id] = LastPost{Ts: msg.ts, At: f.lp.Now()}
 		if f.lp.Save != nil {
 			if err := f.lp.Save(p.last); err != nil {
 				p.SetNote("最終投稿をキャッシュに書けなかった: " + err.Error())
@@ -225,7 +223,7 @@ func (p *Picker) groupPosted(g *Channel) string {
 
 func (p *Picker) nowOr() time.Time {
 	if p.fetch != nil {
-		return p.fetch.lp.now()
+		return p.fetch.lp.Now()
 	}
 	return time.Now()
 }
