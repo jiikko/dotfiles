@@ -381,8 +381,5 @@ const localCmdTimeout = 5 * time.Second
 var loadTmuxPrefix = func() string {
 	// ctx の kill は直接の子にしか効かず、tmux サーバ側が I/O fd を握ると Wait が戻らない
 	// (理由は subproc.WaitDelay の doc。以降のクリップボード系も同じ)
-	return termcaps.TmuxPrefix(os.Getenv("TMUX"), func(ctx context.Context, name string, args ...string) (string, error) {
-		out, err := subproc.CommandContext(ctx, name, args...).Output()
-		return string(out), err
-	})
+	return termcaps.TmuxPrefix(os.Getenv("TMUX"), subproc.Output)
 }

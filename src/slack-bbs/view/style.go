@@ -23,8 +23,10 @@ func hex(s string) rgb {
 	return c
 }
 
-func (c rgb) fg() string { return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", c.r, c.g, c.b) }
-func (c rgb) bg() string { return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", c.r, c.g, c.b) }
+// sgr は 24bit の色の指定 (layer は前景 38・地 48)。
+func (c rgb) sgr(layer int) string { return fmt.Sprintf("\x1b[%d;2;%d;%d;%dm", layer, c.r, c.g, c.b) }
+func (c rgb) fg() string           { return c.sgr(38) }
+func (c rgb) bg() string           { return c.sgr(48) }
 
 var (
 	cBg      = hex("#1F1E1D") // カードの下辺の欠けを埋める色 (mac-lan-manager の端末の地)

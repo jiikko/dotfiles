@@ -44,6 +44,13 @@ func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd 
 	return cmd
 }
 
+// Output は CommandContext で起こしたコマンドの標準出力を文字列で返す (termcaps.Runner の形。tmux や端末の機能を聞く呼び出しが使う)。
+// 誤りのときも、読めた分の標準出力を返す (exec.Cmd.Output と同じ)。
+func Output(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := CommandContext(ctx, name, args...).Output()
+	return string(out), err
+}
+
 // Command は exec.Command に WaitDelay を張って返す。ctx を持たない起動 (終わるまで待つだけの ps・前景で端末に直結する
 // claude attach・supervisor が止め方を持つ子・自分のバイナリの別 session への起動) 用。ctx 無しでも WaitDelay は効く
 // (子が終わった後に孫がパイプを握っていれば、この時間で Wait が戻る)。止めたい側に ctx があるなら CommandContext。

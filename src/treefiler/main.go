@@ -82,13 +82,8 @@ func (a *app) Init() tea.Cmd {
 	}
 	// 起動時の描画を tmux への問い合わせで待たせない (glogx の prefix の取得と同じ)
 	return tea.Batch(waitChange(a.f.Changed()), func() tea.Msg {
-		return prefixMsg{termcaps.TmuxPrefix(os.Getenv("TMUX"), runCmd)}
+		return prefixMsg{termcaps.TmuxPrefix(os.Getenv("TMUX"), subproc.Output)}
 	})
-}
-
-func runCmd(ctx context.Context, name string, args ...string) (string, error) {
-	out, err := subproc.CommandContext(ctx, name, args...).Output()
-	return string(out), err
 }
 
 // quit は前回の場所を覚え (Remember place。savePlace は Close の中)、ライブ更新を止めて終える。
@@ -267,7 +262,7 @@ func main() {
 	os.Unsetenv(perfLogEnv) //nolint:errcheck // `!` / `s` で起こす子 (その中の treefiler) に同じログへ追記させない
 	debugPath := os.Getenv(debugEnv)
 	os.Unsetenv(debugEnv) //nolint:errcheck // 同じ理由
-	unsynced := !termcaps.SyncedOutput(os.Getenv, runCmd)
+	unsynced := !termcaps.SyncedOutput(os.Getenv, subproc.Output)
 	f, err := filer.New(dir, filer.Options{Unsynced: unsynced})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "treefiler:", err)

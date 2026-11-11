@@ -79,8 +79,7 @@ func AdvertPlistExists() bool {
 
 // RunOut はコマンドを起こして標準出力を返す (subproc の WaitDelay 付き)。
 func RunOut(ctx context.Context, name string, args ...string) (string, error) {
-	out, err := subproc.CommandContext(ctx, name, args...).Output()
-	return string(out), err
+	return subproc.Output(ctx, name, args...)
 }
 
 func localHost() string {

@@ -940,10 +940,7 @@ func (m *Model) View() tea.View {
 // を引き上げる (カードの面と枠の色の流れが 256 色では段になる)。
 func Run(m *Model) error {
 	var opts []tea.ProgramOption
-	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), func(ctx context.Context, name string, args ...string) (string, error) {
-		out, err := subproc.CommandContext(ctx, name, args...).Output()
-		return string(out), err
-	}) {
+	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), subproc.Output) {
 		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
 	}
 	_, err := tea.NewProgram(m, opts...).Run()
