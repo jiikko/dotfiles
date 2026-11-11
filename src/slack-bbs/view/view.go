@@ -186,15 +186,24 @@ func (m *Model) reload(i int) tea.Cmd {
 	}
 }
 
-// Init は最初のチャンネルだけを読む (他は開いたときに読む。起動のたびに全チャンネル分 claude を呼ばない)。
+// Init は開いたタブ (Start。無ければ先頭) だけを読む (他は開いたときに読む。起動のたびに全チャンネル分 claude を呼ばない)。
+// 新着のタブで起動したら、全部のタブを読む: 新着のタブは全部のタブの話題を並べるので、前回の板 (Preload) のままのタブも読み直さないと、
+// 起動しても新しい話題が 1 つも来ない (Tab で新着のタブへ入るときは、それまでに開いたタブが読み直されている)。
+// 分類は新しい発言が無ければ claude を呼ばない (main.go の classify) ので、費用が増えるのは新しい発言のあるタブだけ。
 func (m *Model) Init() tea.Cmd {
 	if len(m.chans) == 0 {
 		return tea.Quit
 	}
-	if m.stream {
-		return m.enterStream()
+	if !m.stream {
+		return m.reload(m.cur)
 	}
-	return m.reload(m.cur)
+	cmds := []tea.Cmd{m.enterStream()}
+	for i := range m.chans {
+		if c := &m.chans[i]; c.stale && !c.loading {
+			cmds = append(cmds, m.reload(i))
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 // StreamTab は新着のタブを指す Tab / Start の値 (チャンネルとグループの ID は英大文字か grp で始まるので重ならない)。

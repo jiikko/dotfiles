@@ -807,4 +807,14 @@ func TestStartOpensLastTab(t *testing.T) {
 	if m.Tab() != StreamTab || l.calls["C1"] != 1 || l.calls["C2"] != 1 {
 		t.Errorf("新着のタブを開いて全部のタブを読んでいない: tab=%s calls=%v", m.Tab(), l.calls)
 	}
+	// 全部のタブに前回の板 (キャッシュ) があっても、新着のタブで起動したら全部を読み直す
+	l = &loader{calls: map[string]int{}}
+	m = newModel(l)
+	m.Preload(0, page("C1", "前"), t0)
+	m.Preload(1, page("C2", "前"), t0)
+	m.Start(StreamTab)
+	run(m, m.Init())
+	if l.calls["C1"] != 1 || l.calls["C2"] != 1 {
+		t.Errorf("前回の板のままのタブを、新着のタブの起動で読み直していない: calls=%v", l.calls)
+	}
 }
