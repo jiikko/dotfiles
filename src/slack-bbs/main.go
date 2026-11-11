@@ -508,7 +508,7 @@ type collected struct {
 
 // eachChannel は読むチャンネルごとに集めて fn へ渡す。1 チャンネルの失敗では止めず、最後に失敗したチャンネルを返す。
 func eachChannel(ctx context.Context, o options, d deps, stderr io.Writer, fn func(c collected) error) error {
-	targets, err := channelsToRead(o, d)
+	targets, _, err := channelsToRead(o, d)
 	if err != nil {
 		return err
 	}
@@ -700,14 +700,10 @@ type identity struct {
 // browse は読む画面を開く。読み直しのたびに取得から分類までをやり直す (分類は claude -p)。画面の中では stderr が見えないので、
 // slack-cli の警告と分類から捨てたものは板の注記に載せる。
 func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Writer) error {
-	targets, err := channelsToRead(o, d)
+	// tabsBase は今のタブ (購読) を読んだときの購読のファイルの印 (d で外すときに、起動の後に別の操作が書き換えていないかを照合する)
+	targets, tabsBase, err := channelsToRead(o, d)
 	if err != nil {
 		return err
-	}
-	// tabsBase は今のタブ (購読) を読んだときの購読のファイルの印 (d で外すときに、起動の後に別の操作が書き換えていないかを照合する)
-	var tabsBase string
-	if path, err := d.subsPath(); err == nil {
-		_, tabsBase, _ = subs.LoadVersion(path) // 読めなければ空: 照合で ErrChanged になり、外さずに知らせる
 	}
 	cli := source.Client{R: source.Quiet(d.slack)}
 	// 自分とユーザーの名前は最初の読み直しの中で 1 回だけ取る (取れなければ次の読み直しで取り直す)。画面を開く前に取ると、
@@ -967,20 +963,21 @@ func show(dir, key string, asJSON, keep bool, stdout, stderr io.Writer) error {
 	return err
 }
 
-func channelsToRead(o options, d deps) ([]subs.Channel, error) {
+// channelsToRead は読む板と、それを読んだ購読のファイルの印 (base。読む画面の d が保存のときに照合する。タブと同じ 1 回の読み込みから取る)。
+func channelsToRead(o options, d deps) ([]subs.Channel, string, error) {
 	path, err := d.subsPath()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	cur, err := subs.Load(path)
+	cur, base, err := subs.LoadVersion(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(o.channels) == 0 {
 		if len(cur) == 0 {
-			return nil, errors.New("購読しているチャンネルが無い。slack-bbs sub で選ぶか、チャンネル ID を引数に渡す")
+			return nil, "", errors.New("購読しているチャンネルが無い。slack-bbs sub で選ぶか、チャンネル ID を引数に渡す")
 		}
-		return cur, nil
+		return cur, base, nil
 	}
 	known := map[string]subs.Channel{}
 	for _, c := range cur {
@@ -989,18 +986,18 @@ func channelsToRead(o options, d deps) ([]subs.Channel, error) {
 	var out []subs.Channel
 	for _, id := range o.channels {
 		if strings.HasPrefix(id, "#") {
-			return nil, fmt.Errorf("%s: チャンネルは名前でなく ID (C…) で渡す (名前で渡すと slack-cli がチャンネル一覧を保存する)", id)
+			return nil, "", fmt.Errorf("%s: チャンネルは名前でなく ID (C…) で渡す (名前で渡すと slack-cli がチャンネル一覧を保存する)", id)
 		}
 		if c, ok := known[id]; ok {
 			out = append(out, c) // 購読しているグループの ID も渡せる (メンバーごと読む)
 			continue
 		}
 		if source.IsGroupID(id) {
-			return nil, fmt.Errorf("%s: 購読の一覧に無いグループ", id)
+			return nil, "", fmt.Errorf("%s: 購読の一覧に無いグループ", id)
 		}
 		out = append(out, subs.Channel{ID: id, Name: id})
 	}
-	return out, nil
+	return out, base, nil
 }
 
 // maxThreadErrNotes は、読めなかったスレッドを 1 本ずつ注記に出す上限。

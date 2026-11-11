@@ -45,7 +45,7 @@ func cmdSubOps(ctx context.Context, d deps, args []string, stdout io.Writer) err
 		return err
 	}
 	if args[0] == "rm" {
-		ids, err := resolveIDs(ctx, d, cur, args[1:])
+		ids, err := resolveIDs(d, cur, args[1:])
 		if err != nil {
 			return err
 		}
@@ -119,7 +119,7 @@ func cmdGroup(ctx context.Context, d deps, args []string, stdout io.Writer) erro
 		}
 		return saveSubs(path, next, base, stdout, fmt.Sprintf("グループ「%s」に %d 件入れた", name, n))
 	case "rm":
-		ids, err := resolveIDs(ctx, d, cur, args[2:])
+		ids, err := resolveIDs(d, cur, args[2:])
 		if err != nil {
 			return err
 		}
@@ -245,6 +245,7 @@ func channelList(ctx context.Context, d deps, st cache.Store, refresh bool, stde
 func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, error) {
 	st := openStore(d, io.Discard)
 	var list []source.Channel
+	refreshed := false // 一覧を取り直したら真 (取り直すのは 1 回だけ。1 回約 1 分かかる)
 	if l, ok, err := st.LoadChannels(); err == nil && ok {
 		list = l.Channels
 	} else if slices.ContainsFunc(args, func(a string) bool { return !source.IsChannelID(strings.TrimPrefix(a, "#")) }) {
@@ -252,9 +253,9 @@ func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, err
 		if list, err = channelList(ctx, d, st, true, io.Discard); err != nil {
 			return nil, err
 		}
+		refreshed = true
 	}
 	out := make([]subs.Channel, 0, len(args))
-	refreshed := false
 	for _, a := range args {
 		c, err := subs.Resolve(list, a)
 		if errors.Is(err, subs.ErrNoChannel) && !refreshed && len(list) > 0 {
@@ -275,9 +276,10 @@ func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, err
 	return out, nil
 }
 
-// resolveIDs は外すチャンネルの ID を引く。名前は、今の購読 (グループのメンバーを含む) にある名前から先に引く
-// (一覧から消えたチャンネルも外せるように)。
-func resolveIDs(ctx context.Context, d deps, cur []subs.Channel, args []string) ([]string, error) {
+// resolveIDs は外すチャンネルの ID を引く。名前は、今の購読 (グループのメンバーを含む) にある名前から先に引き、無ければ前に取った
+// チャンネルの一覧で引く (一覧から消えたチャンネルも外せるように)。外す操作では Slack を呼ばない (購読に無いものは外せないので、
+// 一覧を取り直しても結果は変わらない)。
+func resolveIDs(d deps, cur []subs.Channel, args []string) ([]string, error) {
 	var known []source.Channel
 	for _, c := range cur {
 		if !c.IsGroup() {
@@ -287,15 +289,14 @@ func resolveIDs(ctx context.Context, d deps, cur []subs.Channel, args []string) 
 			known = append(known, source.Channel{ID: m.ID, Name: m.Name})
 		}
 	}
+	if l, ok, err := openStore(d, io.Discard).LoadChannels(); err == nil && ok {
+		known = append(known, l.Channels...)
+	}
 	ids := make([]string, 0, len(args))
 	for _, a := range args {
 		c, err := subs.Resolve(known, a)
 		if err != nil {
-			cs, lerr := resolveAll(ctx, d, []string{a})
-			if lerr != nil {
-				return nil, err
-			}
-			c = cs[0]
+			return nil, err
 		}
 		ids = append(ids, c.ID)
 	}

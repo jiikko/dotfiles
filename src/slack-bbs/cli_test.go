@@ -204,3 +204,27 @@ func TestCLIAndUnsubscribeDoNotClobber(t *testing.T) {
 		t.Errorf("d が CLI の変更を上書きした: 購読=%+v 知らせ=%q", cur, toast)
 	}
 }
+
+// 一覧を取るのは 1 回だけ (1 回約 1 分): キャッシュが無いまま無い名前を足しても 2 回取らない。外す操作は Slack を呼ばない。
+func TestCLIFetchesChannelListAtMostOnce(t *testing.T) {
+	sl := &fakeSlack{history: `[]`}
+	d := newDeps(t, sl, &fakeClaude{})
+	dir := t.TempDir()
+	d.cacheDir = func() (string, error) { return dir, nil }
+	if _, _, rc := runCLI(t, d, "sub", "add", "typo-name"); rc != 1 {
+		t.Fatalf("無い名前を足せた: rc=%d", rc)
+	}
+	n := 0
+	for _, c := range sl.calls {
+		if c[0] == "channels" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("一覧を %d 回取った (1 回まで)", n)
+	}
+	sl.calls = nil
+	if _, _, rc := runCLI(t, d, "sub", "rm", "typo1", "typo2"); rc != 1 || len(sl.calls) != 0 {
+		t.Errorf("外す操作で Slack を呼んだ: rc=%d calls=%v", rc, sl.calls)
+	}
+}
