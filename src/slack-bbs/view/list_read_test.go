@@ -339,7 +339,7 @@ func TestReloadWhileReadingShowsNewReplyUnread(t *testing.T) {
 // 印は進めるだけ: 後の返信まで読んだ印は、返信を含まない古い板 (前回のキャッシュ) の上で選び直しても戻さない。
 func TestReadMarkNeverMovesBack(t *testing.T) {
 	m := datedModel(t, func() []board.Topic { return []board.Topic{topicAt("a", day0), topicAt("b", day0.Add(-time.Hour))} })
-	id := m.topics()[1].Units[0].ID
+	id := m.chans[m.cur].page.Topics[1].Units[0].ID
 	later := tsAt(day0.Add(time.Hour))
 	m.chans[0].read[id] = later
 	press(m, "j")
@@ -354,8 +354,8 @@ func TestTinyTerminalKeysAfterTabSwitch(t *testing.T) {
 	m := newModel(l)
 	run(m, m.Init())
 	m.Update(tea.WindowSizeMsg{Width: 30, Height: 6})
-	run(m, press(m, "tab")) // C2 を読む (読み終えたときにカーソルを話題へ収める)
-	run(m, press(m, "tab")) // 読んである C1 へ戻る (読み直さないので、カーソルは一覧の先頭 = 見出しから始まる)
+	run(m, press(m, "tab"))       // C2 を読む (読み終えたときにカーソルを話題へ収める)
+	run(m, press(m, "shift+tab")) // 読んである C1 へ戻る (読み直さないので、カーソルは一覧の先頭 = 見出しから始まる)
 	press(m, "l")
 	if !m.body {
 		t.Error("タブを替えた直後の l で本文を開けない")
@@ -382,7 +382,7 @@ func TestHelpIsUnabbreviatedAndFits(t *testing.T) {
 		exit string // 抜ける手段の項目
 		line int    // exit が出る行
 	}{
-		{false, append([]string{"j/k: 話題を選ぶ", "l/Enter: 本文を読む", "Tab: 次のチャンネル", "q: 終わる"}, common...), "q: 終わる", 1},
+		{false, append([]string{"j/k: 話題を選ぶ", "l/Enter: 本文を読む", "Tab: 次のタブ (最後は新着)", "q: 終わる"}, common...), "q: 終わる", 1},
 		{true, append([]string{"j/k: 本文を送る", "J/K: 隣の話題へ", "h/q: 話題の一覧へ戻る"}, common...), "h/q: 話題の一覧へ戻る", 0},
 	} {
 		m.body = tc.body
@@ -450,7 +450,7 @@ func TestToggleUnreadableKeepsMarks(t *testing.T) {
 		tp.Units[0].Msgs[0].Mine = true
 		return []board.Topic{tp}
 	})
-	id := m.topics()[0].Units[0].ID
+	id := m.chans[m.cur].page.Topics[0].Units[0].ID
 	m.chans[0].read[id] = id
 	press(m, "u")
 	if _, ok := m.chans[0].read[id]; !ok || !strings.Contains(m.LastToast(), "未読にできない") {

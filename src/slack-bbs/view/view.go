@@ -50,6 +50,11 @@ type chanState struct {
 	rows   []row             // 左の一覧の行 (日付の見出しと話題)。nil なら Model.rows が作り直す (page・隠した話題・z を変えたら捨てる)
 	read   map[string]string // 既読の印 (単位の ID → 読んだときの単位の最後の発言の ts)
 	hidden map[string]string // x で隠した単位 (単位の ID → 隠したときの単位の最後の発言の ts)
+	// before は単位を最後に読んだとき、その前に読んでいた所 (単位の ID → それまでの既読の印)。本文の「ここから新着」の区切りに使う。
+	// 印を進めるたびに書き直す (この起動の間だけ。次の起動では、既読の印そのものが前に読んだ所になる)
+	before map[string]string
+	// beforeGen は before を書き直した回数 (本文の折り返しの覚えを捨てる鍵)
+	beforeGen int
 	// unread は未読の話題の数の覚え (タブに出す。描くたびに全チャンネルの全発言を数え直さない)。page か read を変えたら捨てる
 	unread *int
 	// mentions は単位の ID → その単位の発言への言及 (page を置き換えるたびに作り直す。未読と既読の印に使う)
@@ -69,6 +74,11 @@ type Model struct {
 	body  bool // 右の欄を操作しているか
 	// showHidden は x で隠した話題も一覧に出すか (z で切り替える。出すときは淡い色)
 	showHidden bool
+	// stream は新着のタブ (全部のタブの話題を新着順に並べる。タブの最後) を開いているか。開いている間も cur は最後に見たチャンネル
+	stream bool
+	// streamRows は新着のタブの行。nil なら rows が作り直す。並べ直すのは新着のタブを開いたとき・読み直しが終わったとき・隠した話題を
+	// 変えたときだけ: 選ぶたびに既読が変わって並べ直すと、選んだ話題が下へ動いてカーソルが跳ぶ
+	streamRows []row
 	// unsub は d で購読を外すか確かめているチャンネルの ID (確かめていなければ空)。チャンネルは ID で持つ
 	// (確かめている間に読み直し・購読の保存でタブの番号がずれても、別のチャンネルを外さない)
 	unsub string
@@ -111,7 +121,7 @@ func New(ctx context.Context, chans []subs.Channel, load Loader, open func(strin
 	m := &Model{ctx: ctx, load: load, open: open, now: now, w: 100, h: 30, after: tea.Tick}
 	m.toast.InfoColor = toastInfoColor
 	for _, c := range chans {
-		m.chans = append(m.chans, chanState{ch: c, read: map[string]string{}, hidden: map[string]string{}})
+		m.chans = append(m.chans, chanState{ch: c, read: map[string]string{}, hidden: map[string]string{}, before: map[string]string{}})
 	}
 	return m
 }
@@ -309,18 +319,22 @@ func (m *Model) loaded(msg loadedMsg) tea.Cmd {
 		m.toast.Show(c.ch.Label()+" を"+verb+": "+msg.err.Error(), false)
 		return nil
 	}
-	var keep string
-	if idx == m.cur {
-		if t, ok := m.selected(); ok {
-			keep = t.Units[0].ID
-		}
-	}
+	keep, owner := m.selKey(), m.selOwner()
 	verb := "読み直した"
 	if c.page == nil {
 		verb = "読んだ"
 	}
 	c.setPage(msg.page, msg.at, false)
-	m.toast.Show(fmt.Sprintf("#%s を%s (未読の話題 %d 件)", c.ch.Name, verb, m.unreadCount(idx)), true)
+	m.toast.Show(fmt.Sprintf("%s を%s (未読の話題 %d 件)", c.ch.Label(), verb, m.unreadCount(idx)), true)
+	if m.stream {
+		// 新着のタブは読み直しが終わったら並べ直し、見ていた話題に戻す。読み直したタブの話題を見ていたなら、本文は先頭から
+		m.streamRows = nil
+		m.reselect(keep)
+		if owner == idx {
+			m.pager.Reset()
+		}
+		return nil
+	}
 	if idx == m.cur {
 		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
 		m.list = listnav.List{}
@@ -340,32 +354,45 @@ func (m *Model) Page(i int) (render.Page, bool) {
 	return *m.chans[i].page, true
 }
 
-func (m *Model) topics() []board.Topic {
-	if p := m.chans[m.cur].page; p != nil {
-		return p.Topics
+// ownerOf は行の話題を持つタブの番号 (チャンネルのタブの行は今のタブ)。
+func (m *Model) ownerOf(r row) int {
+	if r.owner > 0 {
+		return r.owner - 1
 	}
-	return nil
+	return m.cur
 }
 
-func (m *Model) selected() (board.Topic, bool) {
-	i, ok := m.selectedIndex()
-	if !ok {
-		return board.Topic{}, false
-	}
-	return m.topics()[i], true
-}
-
-// selectedIndex は選んだ話題の page.Topics の添字。
-func (m *Model) selectedIndex() (int, bool) {
+// selRow は選んだ行 (見出しなら ok が偽)。
+func (m *Model) selRow() (row, bool) {
 	rows := m.rows()
 	if len(rows) == 0 {
-		return 0, false
+		return row{}, false
 	}
 	r := rows[min(max(m.list.Cursor, 0), len(rows)-1)]
 	if r.header() {
-		return 0, false // 描く前 (fitList の前) に見出しに乗っている
+		return row{}, false // 描く前 (fitList の前) に見出しに乗っている
 	}
-	return r.topic, true
+	return r, true
+}
+
+// selOwner は選んだ話題を持つタブの番号 (選んでいなければ今のタブ)。既読・隠す・Slack で開く・本文は、このタブの板と印を使う。
+func (m *Model) selOwner() int {
+	if r, ok := m.selRow(); ok {
+		return m.ownerOf(r)
+	}
+	return m.cur
+}
+
+func (m *Model) selected() (board.Topic, bool) {
+	r, ok := m.selRow()
+	if !ok {
+		return board.Topic{}, false
+	}
+	p := m.chans[m.ownerOf(r)].page
+	if p == nil || r.topic >= len(p.Topics) {
+		return board.Topic{}, false
+	}
+	return p.Topics[r.topic], true
 }
 
 // key は読む画面のキー。語彙は docs/glogx-ui-guide.md (TUI ガイド) に揃える: q は 1 段戻る (本文の欄から一覧へ、一覧なら終わる)・
@@ -393,12 +420,13 @@ func (m *Model) key(k string) tea.Cmd {
 	m.fitList(1)
 	switch k {
 	case "r":
-		if m.chans[m.cur].loading {
+		oi := m.selOwner() // 新着のタブでは、選んだ話題のタブを読み直す
+		if m.chans[oi].loading {
 			// 走っている読み直しを待つ (連打で claude を何本も起こさない)
-			m.toast.Show(m.chans[m.cur].ch.Label()+" は読み込み中なので、読み直せない (終わってからもう一度押す)", false)
+			m.toast.Show(m.chans[oi].ch.Label()+" は読み込み中なので、読み直せない (終わってからもう一度押す)", false)
 			return nil
 		}
-		return m.reload(m.cur)
+		return m.reload(oi)
 	case "R":
 		var cmds []tea.Cmd
 		busy := 0
@@ -424,7 +452,15 @@ func (m *Model) key(k string) tea.Cmd {
 		if k == "shift+tab" {
 			d = -1
 		}
-		return m.switchTo(listnav.Cycle(m.cur, d, len(m.chans)))
+		// 新着のタブは最後 (len(m.chans) 番目) に置く
+		pos := m.cur
+		if m.stream {
+			pos = len(m.chans)
+		}
+		if next := listnav.Cycle(pos, d, len(m.chans)+1); next < len(m.chans) {
+			return m.switchTo(next)
+		}
+		return m.enterStream()
 	case "o":
 		m.openSelected()
 		return nil
@@ -442,7 +478,7 @@ func (m *Model) key(k string) tea.Cmd {
 			m.toast.Show("購読を外せるのは、チャンネルを指定しないで起動したときだけ (端末の slack-bbs sub でも外せる)", false)
 			return nil
 		}
-		m.unsub = m.chans[m.cur].ch.ID
+		m.unsub = m.chans[m.selOwner()].ch.ID // 新着のタブでは、選んだ話題のタブ (確認の板に名前を出す)
 		return nil
 	}
 	if m.body {
@@ -510,10 +546,10 @@ func (m *Model) step(dir int) {
 }
 
 func (m *Model) switchTo(i int) tea.Cmd {
-	if i == m.cur {
+	if i == m.cur && !m.stream {
 		return nil
 	}
-	m.cur, m.body = i, false
+	m.cur, m.body, m.stream = i, false, false
 	m.list = listnav.List{}
 	m.pager.Reset()
 	c := &m.chans[i]
@@ -599,6 +635,10 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 		}
 	}
 	m.chans = next
+	m.streamRows = nil
+	if len(next) == 0 {
+		m.stream = false
+	}
 	m.toast.Show(fmt.Sprintf("購読するチャンネルを保存した (%d 件)", len(next)), true)
 	i := slices.IndexFunc(next, func(c chanState) bool { return c.ch.ID == curID })
 	if i >= 0 {
@@ -629,7 +669,7 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 // openSelected は選んだ話題の最後の発言を Slack で開く。
 func (m *Model) openSelected() {
 	t, ok := m.selected()
-	p := m.chans[m.cur].page
+	p := m.chans[m.selOwner()].page
 	if !ok || p == nil || m.open == nil {
 		return
 	}
@@ -675,7 +715,13 @@ func (m *Model) bodyWidth() int { return max(m.bodyInner()-layout.ScrollbarWidth
 // first[i] は lines[i] が元の行の 1 行目か (折り返しの続きでないか)。見出し・発言の頭の色は 1 行目にだけ付ける
 // (続きの行は、狭い端末では字下げ無しで始まり、本文の「▍」や「時刻 名前: 」が行の頭へ来うる)。
 func (m *Model) bodyLines() (lines []string, first []bool) {
-	c := m.chans[m.cur]
+	if m.stream {
+		if _, ok := m.selRow(); !ok {
+			return []string{"新着の話題はまだありません (タブを読み込むと、ここに全部のタブの話題が新しい順に並ぶ)。"}, nil
+		}
+	}
+	oi := m.selOwner()
+	c := m.chans[oi]
 	if c.page == nil {
 		switch {
 		case c.err != nil:
@@ -684,18 +730,19 @@ func (m *Model) bodyLines() (lines []string, first []bool) {
 			return []string{"読んでいます…"}, nil
 		}
 	}
-	ti, ok := m.selectedIndex()
+	r, ok := m.selRow()
+	ti := r.topic
 	if !ok {
 		if len(c.page.Topics) > 0 {
 			return []string{"話題は全部隠している (z で隠した話題も出す)。"}, nil
 		}
 		return []string{"期間内の発言はありません。"}, nil
 	}
-	key := bodyKey{page: c.page, topic: ti, width: m.bodyWidth()}
+	key := bodyKey{page: c.page, topic: ti, width: m.bodyWidth(), before: c.beforeGen}
 	if m.body1.key == key {
 		return m.body1.lines, m.body1.first
 	}
-	for _, l := range c.page.Body(c.page.Topics[ti], false) {
+	for _, l := range c.page.BodySince(c.page.Topics[ti], false, c.before) {
 		for i, w := range wrap(l, m.bodyWidth()) { // 色は rightLines が、折り返した後の画面に出す行にだけ付ける
 			lines, first = append(lines, w), append(first, i == 0)
 		}
@@ -706,9 +753,10 @@ func (m *Model) bodyLines() (lines []string, first []bool) {
 
 // bodyKey は本文の欄の折り返しの覚えの鍵。板 (読み直すと別の値になる)・話題・幅が同じなら同じ行になる。
 type bodyKey struct {
-	page  *render.Page
-	topic int
-	width int
+	page   *render.Page
+	topic  int
+	width  int
+	before int // chanState.beforeGen (「ここから新着」の区切りの位置が変わったら折り返し直す)
 }
 
 // bodyCache は最後に折り返した本文の欄の行。描くたびに話題の全文を折り返し直さない (発言が数百ある話題で、知らせが動く間の
@@ -840,10 +888,21 @@ func (m *Model) tabsLine() string {
 			names[i] += fmt.Sprintf("  未読 %d", n)
 		}
 	}
-	return tabWindow(names, m.cur, m.w)
+	cur := m.cur
+	if m.stream {
+		cur = len(names)
+	}
+	stream := "🆕 新着"
+	if n := m.streamUnread(); n > 0 {
+		stream += fmt.Sprintf("  未読 %d", n)
+	}
+	return tabWindow(append(names, stream), cur, m.w)
 }
 
 func (m *Model) state() string {
+	if m.stream {
+		return m.streamState()
+	}
 	c := m.chans[m.cur]
 	switch {
 	case c.loading && c.stale:
@@ -928,7 +987,7 @@ func tabWindow(names []string, cur, room int) string {
 }
 
 func (m *Model) noteLine() string {
-	c := m.chans[m.cur]
+	c := m.chans[m.selOwner()]
 	var s string
 	switch {
 	case c.err != nil && c.page != nil:
@@ -963,7 +1022,7 @@ func (m *Model) rightLines() []string {
 	shown := slices.Clone(lines[off:min(off+m.bodyRows(), len(lines))])
 	for i := range shown {
 		if off+i < len(first) {
-			shown[i] = m.chans[m.cur].hl.line(shown[i], first[off+i])
+			shown[i] = m.chans[m.selOwner()].hl.line(shown[i], first[off+i])
 		}
 	}
 	// 本文が欄に収まらないときだけ右端に出る (収まるなら Scrollbar は行をそのまま返す)
@@ -992,7 +1051,7 @@ func (m *Model) helpLines() []string {
 	}
 	// 本文の欄では Tab が 1 行目に入らず幅 100 で落ちるが、案内に無くても効く
 	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"), h(4, "x", "話題を隠す"), h(5, "z", zHint(m.showHidden)))
-	chans := []hintfit.Item{h(4, "Tab", "次のチャンネル"), h(3, "r", "今のチャンネルを読み直す"), h(4, "R", "全チャンネルを読み直す")}
+	chans := []hintfit.Item{h(4, "Tab", "次のタブ (最後は新着)"), h(3, "r", "今のチャンネルを読み直す"), h(4, "R", "全チャンネルを読み直す")}
 	if m.subs != nil { // d が効くのは購読を変えられる起動だけ (案内に出したキーは必ず効く。TUI ガイド)
 		chans = append(chans, h(5, "d", "購読を外す"))
 	}
@@ -1066,12 +1125,25 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 	return cmd
 }
 
-// reselect は一覧の行を作り直した後、最初の単位が keep の話題にカーソルを戻し、戻せたかを返す。戻せなければ (話題が消えた・隠れた)
+// selKey は選んだ話題の鍵 (持ち主のタブの ID と最初の単位の ID。reselect に渡す)。選んでいなければ空。
+// タブの ID まで持つのは、新着のタブで同じチャンネルの同じ単位が、単独の購読とグループの両方から並びうるため。
+func (m *Model) selKey() string {
+	if t, ok := m.selected(); ok {
+		return m.chans[m.selOwner()].ch.ID + "|" + t.Units[0].ID
+	}
+	return ""
+}
+
+// reselect は一覧の行を作り直した後、selKey が keep の話題にカーソルを戻し、戻せたかを返す。戻せなければ (話題が消えた・隠れた)
 // 本文の欄を閉じる: 黙って別の話題の本文に替えない (替えると、選んでいない話題を読んだことになる)。
 func (m *Model) reselect(keep string) bool {
-	topics := m.topics()
+	ch, unit, _ := strings.Cut(keep, "|")
 	for i, r := range m.rows() {
-		if !r.header() && slices.ContainsFunc(topics[r.topic].Units, func(u board.Unit) bool { return u.ID == keep }) {
+		if r.header() {
+			continue
+		}
+		c := &m.chans[m.ownerOf(r)]
+		if c.ch.ID == ch && c.page != nil && slices.ContainsFunc(c.page.Topics[r.topic].Units, func(u board.Unit) bool { return u.ID == unit }) {
 			m.list.Cursor = i
 			m.fitList(1)
 			return true
@@ -1112,4 +1184,52 @@ func (m *Model) membersChanged(i int) tea.Cmd {
 		return m.reload(i)
 	}
 	return nil
+}
+
+// enterStream は新着のタブを開く: 全部のタブの話題を並べ直す。板がまだ無いタブ (キャッシュも無い) は読み始める
+// (キャッシュの前回の板があるタブは、その板を並べる。読み直しは r / R で)。
+func (m *Model) enterStream() tea.Cmd {
+	m.stream, m.body, m.streamRows = true, false, nil
+	m.list = listnav.List{}
+	m.pager.Reset()
+	var cmds []tea.Cmd
+	for i := range m.chans {
+		if c := &m.chans[i]; c.page == nil && !c.loading && c.err == nil {
+			cmds = append(cmds, m.reload(i))
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+// streamUnread は新着のタブの未読の話題の数 (各タブの未読の数の合計)。
+func (m *Model) streamUnread() int {
+	n := 0
+	for i := range m.chans {
+		n += m.unreadCount(i)
+	}
+	return n
+}
+
+// streamState は新着のタブの状態の行: 読み込み中のタブと、前回の板 (キャッシュ) のままのタブの数。
+func (m *Model) streamState() string {
+	loading, stale, oldest := 0, 0, time.Time{}
+	for _, c := range m.chans {
+		switch {
+		case c.loading:
+			loading++
+		case c.stale:
+			stale++
+		}
+		if c.loading && (oldest.IsZero() || c.started.Before(oldest)) {
+			oldest = c.started
+		}
+	}
+	s := fmt.Sprintf("新着 (%d タブの話題を新しい順に)", len(m.chans))
+	if stale > 0 {
+		s += fmt.Sprintf("・%d タブは前回の板 (R で読み直す)", stale)
+	}
+	if loading > 0 {
+		s = m.spin(oldest) + fmt.Sprintf(" %d タブを読んでいます・", loading) + s
+	}
+	return s
 }

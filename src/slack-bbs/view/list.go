@@ -15,6 +15,10 @@ import (
 type row struct {
 	topic int       // 話題の添字。見出しは -1
 	day   time.Time // 見出しの日 (その日の 0 時。未分類の見出しは零値)
+	// owner は話題を持つタブの番号 + 1。0 は今のタブ (チャンネルのタブの行)。新着のタブの行はタブをまたぐので持ち主を持つ
+	// (番号 + 1 にして、零値を「今のタブ」にする: チャンネルのタブの行は購読の並べ替えをまたいで覚えるので、番号を持たせない)
+	owner int
+	label string // 見出しの文 (新着のタブの「未読」「既読」)。空なら日の見出し
 }
 
 func (r row) header() bool { return r.topic < 0 }
@@ -62,6 +66,9 @@ var weekdays = [...]string{"日", "月", "火", "水", "木", "金", "土"}
 
 // dayLabel は見出しの文 (「11/10 (月) 今日」)。今日・昨日は描くときの now で決める (日をまたいで開いたままでも合う)。
 func dayLabel(r row, now time.Time) string {
+	if r.label != "" {
+		return r.label
+	}
 	if r.day.IsZero() {
 		return "未分類"
 	}
@@ -76,6 +83,12 @@ func dayLabel(r row, now time.Time) string {
 }
 
 func (m *Model) rows() []row {
+	if m.stream {
+		if m.streamRows == nil {
+			m.streamRows = m.buildStream()
+		}
+		return m.streamRows
+	}
 	c := &m.chans[m.cur]
 	if c.rows == nil && c.page != nil {
 		ts := c.page.Topics
@@ -109,10 +122,8 @@ func (m *Model) fitList(dir int) {
 // leftLines は話題の一覧のカード (落ち影込み)。行の頭は 1 桁目が選んだ行の印 (桃色の ▌)、2 桁目が未読の印 (桃色の ●)。
 // 選んだ行は地も塗るが、色の無い端末 (NO_COLOR) では地が消えるので、印の桁でも選んだ行を見分けさせる。
 func (m *Model) leftLines() []string {
-	ts := m.topics()
 	rows := m.rows()
 	m.fitList(1)
-	c := m.chans[m.cur]
 	w := m.leftWidth() - cardChrome(cardPadX(m.w))
 	var out []string
 	end := min(m.list.Offset+m.listRows(), len(rows))
@@ -122,7 +133,8 @@ func (m *Model) leftLines() []string {
 			out = append(out, accent(termwidth.Truncate(dayLabel(r, m.now()), w, "…")))
 			continue
 		}
-		t := ts[r.topic]
+		c := &m.chans[m.ownerOf(r)]
+		t := c.page.Topics[r.topic]
 		cur, dot := " ", " "
 		if i == m.list.Cursor {
 			cur = pink("▌")
@@ -134,6 +146,12 @@ func (m *Model) leftLines() []string {
 		}
 		count := fmt.Sprintf(" %d", render.Count(t))
 		text := firstMark(t) + " " + termsafe.PlainLine(t.Title)
+		if m.stream {
+			text = firstMark(t) + " " + c.ch.Label() + " " + termsafe.PlainLine(t.Title) // どのタブの話題か
+			if n := newCount(t, c.read); unread && n > 0 {
+				count = fmt.Sprintf(" +%d", n) // 前に読んだ後に増えた他の人の発言
+			}
+		}
 		room := max(w-3-termwidth.Of(count), 1)
 		text = termwidth.Truncate(text, room, "…")
 		pad := termwidth.PadSpaces(room - termwidth.Of(text))

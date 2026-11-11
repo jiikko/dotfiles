@@ -81,6 +81,8 @@ func keyMsg(k string) tea.KeyPressMsg {
 	switch k {
 	case "tab":
 		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 	case "enter":
 		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
@@ -100,7 +102,7 @@ func TestLoadsLazilyAndReloadScope(t *testing.T) {
 		t.Fatalf("起動時の読み込み: %v", l.calls)
 	}
 	run(m, press(m, "tab"))
-	run(m, press(m, "tab"))
+	run(m, press(m, "shift+tab"))
 	if l.calls["C1"] != 1 || l.calls["C2"] != 1 {
 		t.Fatalf("Tab での読み込み: %v", l.calls)
 	}
@@ -123,7 +125,7 @@ func TestStaleReloadResultIsDropped(t *testing.T) {
 	l.title = "new"
 	run(m, m.reload(0))
 	m.Update(oldMsg)
-	if got := m.topics()[0].Title; got != "new-C1-2" {
+	if got := m.chans[m.cur].page.Topics[0].Title; got != "new-C1-2" {
 		t.Errorf("古い結果で上書きされた: %q (want new-C1-2)", got)
 	}
 }
@@ -207,7 +209,7 @@ func TestFailedReloadKeepsPreviousBoard(t *testing.T) {
 	run(m, m.Init())
 	l.err["C1"] = errors.New("claude が落ちた")
 	run(m, press(m, "r"))
-	if len(m.topics()) != 1 {
+	if len(m.chans[m.cur].page.Topics) != 1 {
 		t.Fatalf("前の板が消えた")
 	}
 	screen := strings.Join(m.Lines(), "\n")
@@ -412,7 +414,7 @@ func TestPreloadedBoardIsShownThenReloaded(t *testing.T) {
 	if l.calls["C2"] != 1 {
 		t.Errorf("キャッシュしか無いチャンネルを開いても読み直さない (C2 %d 回)", l.calls["C2"])
 	}
-	run(m, press(m, "tab"))
+	run(m, press(m, "shift+tab"))
 	run(m, press(m, "tab"))
 	if l.calls["C2"] != 1 {
 		t.Errorf("読み直した後のチャンネルを、開くたびに読み直した (C2 %d 回)", l.calls["C2"])
@@ -478,8 +480,8 @@ func TestSubscriptionsPickerReplacesTabs(t *testing.T) {
 	opened := 0
 	m := subsModel(l, &saved, &opened)
 	run(m, m.Init())
-	pending := press(m, "tab") // C2 を読み始める (結果はまだ渡さない)
-	run(m, press(m, "tab"))    // C1 へ戻る
+	pending := press(m, "tab")    // C2 を読み始める (結果はまだ渡さない)
+	run(m, press(m, "shift+tab")) // C1 へ戻る
 	run(m, press(m, "s"))
 	if !strings.Contains(strings.Join(m.Lines(), "\n"), "購読するチャンネルを選ぶ") {
 		t.Fatalf("購読の画面が開いていない:\n%s", strings.Join(m.Lines(), "\n"))
@@ -511,7 +513,7 @@ func TestResubscribedChannelDropsOldResult(t *testing.T) {
 	m := subsModel(l, &saved, &opened)
 	run(m, m.Init())
 	old := press(m, "tab") // C2 の 1 回目 (渡さない)
-	run(m, press(m, "tab"))
+	run(m, press(m, "shift+tab"))
 	run(m, press(m, "s"))
 	for _, k := range []string{"j", "x", "enter"} { // ops を外す
 		run(m, press(m, k))

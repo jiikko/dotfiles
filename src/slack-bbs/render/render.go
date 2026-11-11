@@ -203,7 +203,14 @@ var sectionName = map[string]string{
 // Body は話題の中身の行 (ラベル・要約の欄・原文)。md が真なら Markdown の形 (見出しは太字、根拠の発言へのリンクを添える)、
 // 偽なら読む画面の形 (見出しは HeadingMark で始める)。欄の間には空行を入れる。
 // 行は折り返さない (画面の幅で折り返すのは読む側)。外から来た文字列は無害化してある。
-func (p Page) Body(t board.Topic, md bool) []string {
+func (p Page) Body(t board.Topic, md bool) []string { return p.BodySince(t, md, nil) }
+
+// NewMark は本文で、前に読んだ所より後の発言の前に入れる区切り。
+const NewMark = "    ── ここから新着 ──"
+
+// BodySince は Body に、前に読んだ所の区切りを入れたもの。since は単位の ID → 前に読んだときの単位の最後の発言の ts
+// (無い単位・空の印の単位は、全部が初めてなので区切らない)。区切りは印より後の期間内の発言の前に 1 つだけ入れる。
+func (p Page) BodySince(t board.Topic, md bool, since map[string]string) []string {
 	var out []string
 	ref := func(refs []string) string {
 		if !md {
@@ -255,7 +262,7 @@ func (p Page) Body(t board.Topic, md bool) []string {
 		if md || i > 0 { // Markdown は見出しの直後に字下げの行を続けると段落の続きと読まれるので、空行で区切る
 			out = append(out, "")
 		}
-		out = append(out, p.unit(u, md)...)
+		out = append(out, p.unit(u, md, since[u.ID])...)
 	}
 	if ms := p.MentionsOf(t); len(ms) > 0 {
 		out = append(out, "", heading(fmt.Sprintf("この話題への言及 (%d 件)", len(ms))))
@@ -300,7 +307,7 @@ func labelName(l board.Label) string {
 	return "必読 (推定)"
 }
 
-func (p Page) unit(u board.Unit, links bool) []string {
+func (p Page) unit(u board.Unit, links bool, since string) []string {
 	var out []string
 	link := ""
 	if links {
@@ -320,9 +327,13 @@ func (p Page) unit(u board.Unit, links bool) []string {
 	case where != "":
 		out = append(out, strings.TrimSpace(where)+link)
 	}
+	marked := since == ""
 	for i, m := range u.Msgs {
 		if i == 1 && u.Omitted > 0 {
 			out = append(out, fmt.Sprintf("    … 期間前の返信 %d 件を省略", u.Omitted))
+		}
+		if !marked && m.New && board.TsBefore(since, m.Ts) {
+			out, marked = append(out, NewMark), true
 		}
 		prefix := "    "
 		if !m.New {

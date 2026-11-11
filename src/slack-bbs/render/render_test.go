@@ -113,7 +113,7 @@ func TestGroupUnitURLAndChannel(t *testing.T) {
 	if got, want := p.URL("2.000000", u), "https://ws.slack.com/archives/C2/p2000000?thread_ts=1.000000&cid=C2"; got != want {
 		t.Errorf("URL = %q, want %q", got, want)
 	}
-	if lines := strings.Join(p.unit(u, false), "\n"); !strings.Contains(lines, "#times_b 💬 スレッド") {
+	if lines := strings.Join(p.unit(u, false, ""), "\n"); !strings.Contains(lines, "#times_b 💬 スレッド") {
 		t.Errorf("本文に単位のチャンネルが無い:\n%s", lines)
 	}
 }

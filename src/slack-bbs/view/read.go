@@ -1,6 +1,9 @@
 package view
 
 import (
+	"fmt"
+	"slices"
+
 	"slack-bbs/board"
 	"slack-bbs/render"
 )
@@ -25,7 +28,7 @@ func (m *Model) SetReads(r *Reads) {
 // loadRead はチャンネル i の印を読む (読めなければ空から始め、知らせる)。
 func (m *Model) loadRead(i int) {
 	c := &m.chans[i]
-	c.read, c.hidden = map[string]string{}, map[string]string{}
+	c.read, c.hidden, c.before = map[string]string{}, map[string]string{}, map[string]string{}
 	c.unread, c.rows = nil, nil // 印を置き換えたら未読の数と一覧の行も作り直す (読めない・口が無くて空から始める道も)
 	if m.reads == nil {
 		return
@@ -111,13 +114,15 @@ func (m *Model) setRead(read bool) {
 	if !ok {
 		return
 	}
-	c := &m.chans[m.cur]
+	c := &m.chans[m.selOwner()]
 	changed := false
 	for _, u := range t.Units {
 		if read {
 			// 印は進めるだけ (前回のキャッシュの古い板の上で選んでも、後の返信まで読んだ印を戻さない)
 			last := unitLast(u, c.mentions[u.ID])
 			if mark, had := c.read[u.ID]; !had || board.TsBefore(mark, last) {
+				c.before[u.ID] = mark // 本文の「ここから新着」は、この印より後の発言の前に出す (初めて読む単位は空で、区切らない)
+				c.beforeGen++
 				c.read[u.ID] = last
 				changed = true
 			}
@@ -144,7 +149,7 @@ func (m *Model) toggleRead() {
 	if !ok {
 		return
 	}
-	c := &m.chans[m.cur]
+	c := &m.chans[m.selOwner()]
 	if topicUnread(t, c.read, c.mentions) {
 		m.setRead(true)
 		m.toast.Show("この話題を既読にした", true)
@@ -184,7 +189,7 @@ func (m *Model) toggleHidden() {
 	if !ok {
 		return
 	}
-	c := &m.chans[m.cur]
+	c := &m.chans[m.selOwner()]
 	hide := !topicHidden(t, c.hidden)
 	for _, u := range t.Units {
 		if hide {
@@ -193,7 +198,7 @@ func (m *Model) toggleHidden() {
 			delete(c.hidden, u.ID)
 		}
 	}
-	c.rows, c.unread = nil, nil
+	c.rows, c.unread, m.streamRows = nil, nil, nil
 	switch {
 	case !hide:
 		m.toast.Show("この話題を隠すのをやめた", true)
@@ -215,14 +220,12 @@ func (m *Model) toggleHidden() {
 
 // toggleShowHidden は z キー: 隠した話題も一覧に出すか (出すときは淡い色で出す)。
 func (m *Model) toggleShowHidden() {
-	keep := ""
-	if t, ok := m.selected(); ok {
-		keep = t.Units[0].ID
-	}
+	keep := m.selKey()
 	m.showHidden = !m.showHidden
 	for i := range m.chans {
 		m.chans[i].rows = nil
 	}
+	m.streamRows = nil
 	if len(m.chans) > 0 && !m.reselect(keep) {
 		m.pager.Reset() // 選んでいた話題が隠れた: カーソルは別の話題に移る
 	}
@@ -239,4 +242,73 @@ func zHint(showing bool) string {
 		return "隠した話題を出さない"
 	}
 	return "隠した話題も出す"
+}
+
+// newCount は話題の、既読の印より後の他の人の期間内の発言の数 (新着のタブの「+N」。印の無い単位は全部を数える)。
+func newCount(t board.Topic, read map[string]string) int {
+	n := 0
+	for _, u := range t.Units {
+		mark, ok := read[u.ID]
+		for _, msg := range u.Msgs {
+			if msg.New && !msg.Mine && (!ok || board.TsBefore(mark, msg.Ts)) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// buildStream は新着のタブの行: 全部のタブの板の話題を、未読と既読の見出しに分け、それぞれ最後の発言の新しい順に並べる
+// (未読は読む価値のある発言 = 他の人の発言・言及が増えた話題。unitUnread)。隠した話題は z で出すときだけ並べる。
+// 同じチャンネルを単独とグループの両方で購読していると、同じ話題が 2 行出る (既読の印はタブごと。ユーザーの決定 2026-11-11:
+// グループどうしの重複を許す)。
+func (m *Model) buildStream() []row {
+	type entry struct {
+		r      row
+		last   string
+		unread bool
+	}
+	var unread, read []entry
+	for i := range m.chans {
+		c := &m.chans[i]
+		if c.page == nil {
+			continue
+		}
+		for ti, t := range c.page.Topics {
+			if !m.showHidden && topicHidden(t, c.hidden) {
+				continue
+			}
+			e := entry{r: row{topic: ti, owner: i + 1}, last: t.Last()}
+			if !topicHidden(t, c.hidden) && topicUnread(t, c.read, c.mentions) {
+				unread = append(unread, e)
+			} else {
+				read = append(read, e)
+			}
+		}
+	}
+	newer := func(a, b entry) int {
+		switch {
+		case board.TsBefore(b.last, a.last):
+			return -1
+		case board.TsBefore(a.last, b.last):
+			return 1
+		}
+		return 0
+	}
+	slices.SortStableFunc(unread, newer)
+	slices.SortStableFunc(read, newer)
+	rows := []row{}
+	for _, g := range []struct {
+		label string
+		es    []entry
+	}{{fmt.Sprintf("未読 %d", len(unread)), unread}, {"既読", read}} {
+		if len(g.es) == 0 {
+			continue
+		}
+		rows = append(rows, row{topic: -1, label: g.label})
+		for _, e := range g.es {
+			rows = append(rows, e.r)
+		}
+	}
+	return rows
 }
