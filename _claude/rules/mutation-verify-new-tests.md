@@ -32,7 +32,7 @@
 4. commit message に「どの変異で red を確認したか」を書く
 ```
 
-**手で組む前に、対象 repo の `bin/` に固有の変異の道具が無いか (`ls bin | grep -i mutat`。obaket の `bin/mutate` は今の木で当てて戻すので incremental build が効く) と `bin/mutate-verify` (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585) を見る**。自前の driver を書くと判定の実装が 1 つ増える (obaket retro 1109)。「復元の作法」(`rules-checklists/` 側) と手順 0〜3 の guard
+**手で組む前に、対象 repo の `bin/` に固有の変異の道具が無いか (`ls bin | grep -i mutat`。obaket の `bin/mutate` は今の木で当てて戻すので incremental build が使われる) と `bin/mutate-verify` (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585) を見る**。自前の driver を書くと判定の実装が 1 つ増える (obaket retro 1109)。「復元の作法」(`rules-checklists/` 側) と手順 0〜3 の guard
 (baseline green / 当たったか / 誤ファイル / 構文 = 第 3 の結果 / zero execution / red の帰属 /
 未コミット差分があれば拒否 / 各 run の時間の上限 = `--timeout`、超えたら rc=10) を機械で強制する。使い捨て worktree の中だけで変異させるので作業ツリーを触らず、
 未コミットの変更は持ち込むので「今書いたテスト」も検証できる。変異の当て方 (`--apply`) は呼び出し側の責任。
@@ -46,7 +46,7 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 - **手順 0**: baseline が red のまま変異を当てると、red の増減が変異由来か区別できない
 - **並行性を扱う新規テストは、3 回連続 green を確認してから commit する** (1 回の green は flaky を素通しし、その後の変異判定も汚染する)
 - **手順 1.5**: 変異がコンパイルできていないと runner は **stale build** を走らせて green を返し、
-  効いているテストを弱いと誤診する。ビルド段の成否は**テスト実行とは別に見る**
+  検知できているテストを弱いと誤診する。ビルド段の成否は**テスト実行とは別に見る**
   (`swift build --build-tests` / `go build ./...` / `bash -n`)。ビルド不能は
   **red でも green でもない第 3 の結果**として扱い、当て直す
 - **手順 1.6**: 変異は当てたつもりの形になっていないことがある (置換の `$` はシェルと perl の両方で
@@ -96,7 +96,7 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 差し込み口ごと動かした変異の赤は、退行ではなく差し込み口の移動を検出しただけ (retro 755)。
 
 **当てる前に「この変異で最初に落ちるのはどの assert か」を予測し、実行後に一致を確かめる。**
-別の既存 assert が先に落ちているなら、今回書いたテストの検知力は何も証明できていないので、先に落ちうる assert を潰した形の変異を設計する。
+別の既存 assert が先に落ちているなら、今回書いたテストの検知力は何も証明できていないので、先に落ちうる assert が落ちない形の変異を設計する。
 予測と一致しなければ、変異かテストのどちらかが的を外している。
 **その assert が見ている量は、壊れたときに動くのか**も先に問う (総数・行数・存在の否定は動かないことが多い)。
 

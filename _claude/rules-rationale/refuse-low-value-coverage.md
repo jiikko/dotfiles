@@ -40,7 +40,7 @@ production から一度も呼ばれていない安全機構 (destination 単位�
 
 根拠を確認していなかったのに **「dev マシン限定・本人が直後に観測できる」と書いた**。3 点とも誤りだった:
 
-- `Info.plist` に `LSMultipleInstancesProhibited` が無く、出荷版でも `open -n` で 2 重起動できる
+- `Info.plist` に `LSMultipleInstancesProhibited` が無く、出荷ビルドでも `open -n` で 2 重起動できる
 - save 側 (`WorkspaceSaveService.performLockedSave`) は自分の coordinator の generation しか照合せず、
   別 writer の更新を検出しない
 - lost update は**同時実行でなくても**起きる (古い snapshot を持ったまま後から save した側が、
@@ -53,5 +53,5 @@ production から一度も呼ばれていない安全機構 (destination 単位�
 これを受けて項目 4 を三値 (`実証済み` / `未確認` / `確実な検出手段はない`) へ置き換えた。
 
 🚨 三値化は**外す免罪符ではない**。今回の対象は production から一度も呼ばれておらず、
-削除時点で守っていた failure mode が 0 件だったから受容できた。実際に効いている guard は
+削除時点で守っていた failure mode が 0 件だったから受容できた。実際に働いている guard は
 `list-masked-failure-modes-before-removing-guard.md` どおり、検出手段を用意してから外す。

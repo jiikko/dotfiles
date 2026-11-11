@@ -6,7 +6,7 @@
 毎回出るだけで、保存の成否はどこにも出ていなかった。
 
 保存の経路は `BodyCacheRead.perform` の `try? await store(...)` と、`putBody` の 4 つの `guard … else { return }`
-(revision が一致しない / 予算で受け付けない / サイズが違う / barrier) で、どれも黙って捨てる。仕組みは best-effort として
+(revision が一致しない / 予算で受け付けない / サイズが違う / barrier) で、どれもエラーを出さずに捨てる。仕組みは best-effort として
 正しく作られていたが、毎回断っていることが運用から見えず、原因をコードを読んで仮説で絞るしかなかった
 (一覧と HEAD の revision の contentType・lastModified の精度の食い違いが最有力。未実測)。
 
@@ -15,7 +15,7 @@
 
 ## 新規の rule にした理由 (既存へ追記しなかった理由)
 
-近い既存の規範は `adversarial-review-own-safeguards.md` の「沈黙 = 成功」と「`2>/dev/null` / `|| true` で失敗を握り潰したまま
+近い既存の規範は `adversarial-review-own-safeguards.md` の「沈黙 = 成功」と「`2>/dev/null` / `|| true` で失敗を捨てたまま
 緑を返す」だが、発動点が「自分で新設した安全機構」に限られる。この rule の発動点は、production のどのコードでも
 「失敗を捨てる形を書いた瞬間」で、安全機構を作っていなくても踏む。
 

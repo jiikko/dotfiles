@@ -17,7 +17,7 @@
 
 ## 即 escalate するシグナル (1 つでも該当したら forge へ)
 
-- 同じ hypothesis で 2 回連続「効かない」
+- 同じ hypothesis で 2 回連続「直らない」
 - ユーザーが「治っていない」と明示 (build キャッシュ問題でない限り)
 - 自分の仮説と症状の説明が部分的に矛盾している
 - framework 内部挙動が絡む (AttributeGraph cycle / actor isolation / KVO race 等)

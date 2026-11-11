@@ -9,7 +9,7 @@ swift-standard-app-components (SAC) のトーストに、同じ `uniqueKey` の�
 - print で観測すると、container の body は新しい中身で評価されていたが、吹き出しの `ToastView` の body は走っていなかった
 - `ForEach` に等しさを持たない包みを渡し、`ToastView` が中身を値で持つ形にして直った。どちらか片方を外すと、frame のテストが落ちる
   (SAC commit `feat(Toast): 複数のトーストを縦に並べて同時に出せるようにし、uniqueKey で重複を置き換える`)
-- 観測を入れる前に推測の修正を 2 回打った (View を値で持つ / Observation の版の番号)。単独ではどちらも効かず、見当を外していた
+- 観測を入れる前に推測の修正を 2 回打った (View を値で持つ / Observation のバージョン番号)。単独ではどちらも症状を直さず、見当を外していた
 
 ## なぜ新しいルールか
 
