@@ -282,11 +282,14 @@ func TestOpenSelectedOpensLatestMessage(t *testing.T) {
 	}
 }
 
-// 狭い端末でも、見出しの行には今のチャンネルのタブと状態が出る (タブの並びの右端を切って、どれを見ているかを消さない)。
-func TestHeaderKeepsCurrentTabAndState(t *testing.T) {
+// curTab は今のタブ (水色の地の丸いタブ) の頭の SGR と name。
+func curTab(name string) string { return cTeal.bg() + "\x1b[1m" + cBg.fg() + " " + name }
+
+// 狭い端末でも、タブの行には今のチャンネルのタブが出る (タブの並びの右端を切って、どれを見ているかを消さない)。
+func TestTabsKeepCurrentTab(t *testing.T) {
 	var chans []subs.Channel
 	for i := range 6 {
-		// タブの幅 22 (「#」+ 21)。幅 80 から状態の 13 桁を引くと 3 本は入らず、引かなければ 3 本入って状態が切れる
+		// タブの幅は 30 (「#」+ 名前 18 + 「  未読 1」7 + 丸い両端と余白 4)。幅 80 に今のタブと両隣は入らない
 		chans = append(chans, subs.Channel{ID: fmt.Sprintf("C%d", i), Name: fmt.Sprintf("ch-%d-あいうえおかきく", i)})
 	}
 	l := &loader{calls: map[string]int{}}
@@ -297,67 +300,57 @@ func TestHeaderKeepsCurrentTabAndState(t *testing.T) {
 		for m.cur != cur {
 			run(m, press(m, "tab"))
 		}
-		h := m.header()
-		if want := "\x1b[7m#" + chans[cur].Name + " (未読 1)\x1b[27m"; !strings.Contains(h, want) {
+		h := m.tabsLine()
+		if !strings.Contains(h, curTab("#"+chans[cur].Name+"  未読 1")) {
 			t.Errorf("cur=%d: 今のタブが無い: %q", cur, h)
 		}
-		if !strings.HasSuffix(h, "   "+t0.Format("15:04")+" に読んだ") {
-			t.Errorf("cur=%d: 状態が無い: %q", cur, h)
-		}
-		if cur > 0 && !strings.HasPrefix(h, tabMore+tabGap) {
+		if cur > 0 && !strings.HasPrefix(sgrRe.ReplaceAllString(h, ""), tabMore+tabGap) {
 			t.Errorf("cur=%d: 畳んだ左のタブの印が無い: %q", cur, h)
+		}
+		if termwidth.Of(h) > 80 {
+			t.Errorf("cur=%d: タブの行が幅を超えた: %d", cur, termwidth.Of(h))
 		}
 	}
 	// 幅が足りれば全部のタブを出し、畳んだ印は出さない
 	m.Update(tea.WindowSizeMsg{Width: 300, Height: 20})
-	if h := m.header(); strings.Contains(h, tabMore) || strings.Count(h, "#ch-") != 6 {
+	if h := sgrRe.ReplaceAllString(m.tabsLine(), ""); strings.Contains(h, tabMore) || strings.Count(h, "#ch-") != 6 {
 		t.Errorf("広い端末で畳んだ: %q", h)
 	}
-	// 今のタブだけでも状態と並べて入らないときは、タブの名前を縮めて状態を丸ごと残す
+	// 今のタブだけでも入らないときは、タブの名前を縮めて幅に収める
 	m.chans[m.cur].ch.Name = strings.Repeat("とても長いチャンネル名", 6)
-	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
-	h := m.header()
-	if !strings.HasSuffix(h, "\x1b[27m   "+t0.Format("15:04")+" に読んだ") || !strings.HasPrefix(h, "\x1b[7m#とても") || termwidth.Of(h) > 60 {
-		t.Errorf("長い名前で状態が切れた (または反転が閉じていない): %q", h)
-	}
-	// 名前だけなら入るが、両側の畳んだ印を足すと入らない今のタブ (中ほど) でも、状態は丸ごと残る
-	for m.cur != 3 {
-		run(m, press(m, "tab"))
-	}
-	m.chans[m.cur].ch.Name = "ch-あいうえおかきくけ" // タブの幅 22。幅 40 から状態の 13 桁を引いた 27 に、印 6 桁を足すと入らない
 	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: 20})
-	if h := m.header(); !strings.HasSuffix(h, "   "+t0.Format("15:04")+" に読んだ") || !strings.Contains(h, "\x1b[7m#ch-あ") {
-		t.Errorf("印の分だけ押し出されて状態が切れた: %q", h)
-	}
-	// 状態の文が長くて今のタブの残りが minTab に満たなくても (残りが負・0〜11)、今のタブは頭の数文字を読める幅で残し、状態の方を詰める
-	c := &m.chans[m.cur]
-	for _, st := range []struct {
-		name          string
-		loading, page bool
-		want          string
-	}{
-		{"読み直しに失敗 (残り -1)", false, true, "🚨 読み直し"},
-		{"読み直し中 (残り 5)", true, true, "読み直し中"},
-		{"読めなかった (残り 7)", false, false, "🚨 読めなかった"},
-	} {
-		saved := c.page
-		c.err, c.loading = errors.New("boom"), st.loading
-		if !st.page {
-			c.page = nil
-		}
-		if h := m.header(); !strings.HasPrefix(h, "\x1b[7m#ch-あいう") || !strings.Contains(h, st.want) || termwidth.Of(h) > MinWidth {
-			t.Errorf("%s: 今のタブが読めない: %q", st.name, h)
-		}
-		c.page = saved
+	if h := m.tabsLine(); !strings.HasPrefix(h, reset(cTeal.fg()+"▐")+curTab("#とても")) || termwidth.Of(h) > MinWidth {
+		t.Errorf("長い名前で今のタブが幅を超えた (または頭が無い): %q", h)
 	}
 }
+
+// 狭い端末でも、上の行には今のチャンネルの状態が出る。右端の購読のキーは、状態の残りが minState に満たなければ外す。
+func TestTitleKeepsState(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	m := newModel(l)
+	m.SetSubscriptions(&Subscriptions{})
+	run(m, m.Init())
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	h := sgrRe.ReplaceAllString(m.titleLine(), "")
+	if !strings.Contains(h, t0.Format("15:04")+" に読んだ") || !strings.HasSuffix(h, " s  購読するチャンネル") || termwidth.Of(h) != 120 {
+		t.Errorf("広い端末で状態か購読のキーが無い: %q", h)
+	}
+	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: 20})
+	h = sgrRe.ReplaceAllString(m.titleLine(), "")
+	if !strings.Contains(h, t0.Format("15:04")+" に読んだ") || strings.Contains(h, "購読") || termwidth.Of(h) > MinWidth {
+		t.Errorf("狭い端末で状態が購読のキーに押し出された: %q", h)
+	}
+}
+
+// header はロゴと状態の行とタブの行 (色を外す)。
+func header(m *Model) string { return sgrRe.ReplaceAllString(m.titleLine()+"\n"+m.tabsLine(), "") }
 
 // 最初の読み込みが失敗したら、見出しの行にもそう出す (状態が空だと、読んでいるのか止まったのか分からない)。
 func TestHeaderShowsFirstLoadError(t *testing.T) {
 	l := &loader{calls: map[string]int{}, err: map[string]error{"C1": errors.New("boom")}}
 	m := newModel(l)
 	run(m, m.Init())
-	if h := m.header(); !strings.Contains(h, "読めなかった (r で読み直す)") {
+	if h := header(m); !strings.Contains(h, "読めなかった (r で読み直す)") {
 		t.Errorf("見出しに失敗が出ていない: %q", h)
 	}
 }
@@ -371,14 +364,14 @@ func TestPreloadedBoardIsShownThenReloaded(t *testing.T) {
 		m.Preload(i, page(ch, "前回-"+ch), at)
 	}
 	cmd := m.Init()
-	if h := m.header(); !strings.Contains(h, "11/09 08:30 に読んだ板を表示中") {
+	if h := header(m); !strings.Contains(h, "11/09 08:30 に読んだ板を表示中") {
 		t.Errorf("読み直し中にキャッシュと分からない: %q", h)
 	}
 	if !strings.Contains(strings.Join(m.Lines(), "\n"), "前回-C1") {
 		t.Errorf("読み直しを待たずに前回の板を出していない")
 	}
 	run(m, cmd)
-	if h := m.header(); !strings.Contains(h, " に読んだ") || strings.Contains(h, "まだ読み直していない") {
+	if h := header(m); !strings.Contains(h, " に読んだ") || strings.Contains(h, "まだ読み直していない") {
 		t.Errorf("読み直した後もキャッシュと出ている: %q", h)
 	}
 	run(m, press(m, "tab"))
@@ -402,7 +395,7 @@ func TestHeaderShowsReusedClassificationTime(t *testing.T) {
 	}, nil, func() time.Time { return t0 })
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
 	run(m, m.Init())
-	if h, want := m.header(), "(話題の分け方は "+t0.Add(-3*time.Hour).Format("01/02 15:04")+" のまま)"; !strings.Contains(h, want) {
+	if h, want := header(m), "(話題の分け方は "+t0.Add(-3*time.Hour).Format("01/02 15:04")+" のまま)"; !strings.Contains(h, want) {
 		t.Errorf("見出し %q に %q が無い", h, want)
 	}
 }
@@ -471,8 +464,8 @@ func TestSubscriptionsPickerReplacesTabs(t *testing.T) {
 	if ids(m) != "C1,C3" || m.chans[1].page != nil {
 		t.Errorf("外したチャンネルの結果を受け取った: %s", ids(m))
 	}
-	if !strings.Contains(m.header(), "#qa") {
-		t.Errorf("見出しに新しいタブが無い: %q", m.header())
+	if !strings.Contains(header(m), "#qa") {
+		t.Errorf("見出しに新しいタブが無い: %q", header(m))
 	}
 }
 
@@ -566,9 +559,11 @@ func TestSubscriptionsEdgeCases(t *testing.T) {
 	if !strings.Contains(bare.LastToast(), "チャンネルを指定しないで起動したとき") {
 		t.Errorf("購読の画面が無い起動で s: 知らせ %q", bare.LastToast())
 	}
-	bareHelp, help := strings.Join(bare.helpLines(), "\n"), strings.Join(m.helpLines(), "\n")
-	if strings.Contains(bareHelp, "s: 購読するチャンネルを選ぶ") || !strings.Contains(help, "s: 購読するチャンネルを選ぶ") {
-		t.Errorf("キーの案内の s が、購読の画面の有無と合っていない: %q / %q", bareHelp, help)
+	bare.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	bareTop, top := header(bare), header(m)
+	if strings.Contains(bareTop, "購読するチャンネル") || !strings.Contains(top, " s  購読するチャンネル") {
+		t.Errorf("上の行の s の案内が、購読の画面の有無と合っていない: %q / %q", bareTop, top)
 	}
 }
 
@@ -580,10 +575,10 @@ func TestNarrowWrapDoesNotFakeHeading(t *testing.T) {
 	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, func(context.Context, subs.Channel) (render.Page, error) {
 		return p, nil
 	}, nil, func() time.Time { return t0 })
-	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: 40}) // 本文の欄の幅 12: 続きの行「      abcdef」の後で折れる
+	m.Update(tea.WindowSizeMsg{Width: 45, Height: 40}) // 本文を折り返す幅 12: 続きの行「      abcdef」の後で折れる
 	run(m, m.Init())
 	s := strings.Join(m.Lines(), "\n")
-	if plain := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, ""); !strings.Contains(plain, "│▍見出し") {
+	if plain := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, ""); !strings.Contains(plain, "▐ ▍見出し") {
 		t.Fatalf("狙った折り返しになっていない:\n%s", plain)
 	}
 	if strings.Contains(s, sgrHeading+"▍見出し") {

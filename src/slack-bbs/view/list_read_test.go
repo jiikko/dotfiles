@@ -42,17 +42,17 @@ func datedModel(t *testing.T, topics func() []board.Topic) *Model {
 
 var sgrRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-// leftPlain は左の一覧の中身の行 (枠と色を外す)。
+// leftPlain は左の一覧の中身の行 (色・縁・余白・落ち影を外す。空行は除く)。
 func leftPlain(m *Model) []string {
 	var out []string
-	for _, l := range m.leftLines()[1:] {
-		l = sgrRe.ReplaceAllString(l, "")
-		l = strings.Trim(l, "│┃") // 枠 (操作中は太い線)
-		if strings.TrimSpace(l) != "" {
-			out = append(out, strings.TrimRight(l, " "))
+	pad := cardPadX(m.w)
+	for _, l := range m.leftLines()[1 : 1+m.cardRows()] { // 上辺と、下辺・下の落ち影の間
+		r := []rune(sgrRe.ReplaceAllString(l, ""))
+		if l := strings.TrimRight(string(r[1+pad:len(r)-2-pad]), " "); l != "" {
+			out = append(out, l)
 		}
 	}
-	return out[:len(out)-1] // 下の枠線 (┗━┛ か └─┘)
+	return out
 }
 
 // 話題は最後の発言の日ごとに見出しの下へ組み、新しい日が上。同じ日の中は板の並び (要対応が先) を保ち、未分類は最後に別の見出しで出す。
@@ -115,8 +115,8 @@ func TestReadMarks(t *testing.T) {
 	if n := m.unreadCount(0); n != 3 {
 		t.Fatalf("開いた直後の未読 = %d, want 3", n)
 	}
-	if !strings.Contains(m.header(), "#dev (未読 3)") {
-		t.Errorf("タブに未読の数が無い: %q", m.header())
+	if !strings.Contains(header(m), "#dev  未読 3") {
+		t.Errorf("タブに未読の数が無い: %q", header(m))
 	}
 	press(m, "j") // b を選ぶ
 	if n := m.unreadCount(0); n != 2 || topicUnread(topics[1], m.chans[0].read, nil) {
@@ -210,14 +210,15 @@ func TestToastIsDrawnBottomRight(t *testing.T) {
 	if at < 10 || at == len(lines)-1 {
 		t.Errorf("知らせが右下 (キーの案内の上) に無い: %d 行目", at)
 	}
-	if !strings.Contains(lines[len(lines)-1], "q: 終わる") {
+	if !strings.Contains(sgrRe.ReplaceAllString(lines[len(lines)-1], ""), "q: 終わる") {
 		t.Errorf("キーの案内が隠れた: %q", lines[len(lines)-1])
 	}
 	run(m, pending)
 }
 
-// 画面は青 (34)・水色 (36) の文字色と、背景色 (40〜47・100〜107) を使わない: 背景が青い端末で沈み、背景を塗ると端末の配色を上書きする。
-func TestScreenAvoidsBlueAndBackgrounds(t *testing.T) {
+// 画面は青 (34)・水色 (36) の基本色と、基本色の地 (40〜47・100〜107) を使わない: 背景が青い端末で沈む (ユーザー報告 2026-11-10)。
+// 地を塗るのは配色 (style.go) の 24bit の色だけ。24bit・256 色の指定 (38;2;r;g;b など) の中の数は色の番号として読まない。
+func TestScreenAvoidsBasicBlueAndBasicBackgrounds(t *testing.T) {
 	m := datedModel(t, func() []board.Topic {
 		tp := topicAt("PR 1234 の「確認」", day0)
 		tp.Points = []board.Point{{Section: board.SectionConclusion, Text: "tanaka が「直す」と言った", Refs: []string{tp.Units[0].ID}}}
@@ -230,16 +231,30 @@ func TestScreenAvoidsBlueAndBackgrounds(t *testing.T) {
 		m.Update(tickMsg{})
 	}
 	screen := strings.Join(m.Lines(), "\n")
-	if !strings.Contains(screen, "\x1b[") {
-		t.Fatal("色が 1 つも無い (検査が空振りしている)")
-	}
+	bgs := 0
 	for _, sgr := range sgrRe.FindAllString(screen, -1) {
-		for _, p := range strings.Split(strings.Trim(sgr, "\x1b[m"), ";") {
-			switch p {
+		ps := strings.Split(strings.Trim(sgr, "\x1b[m"), ";")
+		for i := 0; i < len(ps); i++ {
+			switch p := ps[i]; p {
+			case "38", "48":
+				if p == "48" {
+					bgs++
+				}
+				if i+1 < len(ps) && ps[i+1] == "2" {
+					i += 4
+				} else {
+					i++ // 256 色 (5;n)
+					if i < len(ps) && ps[i] == "5" {
+						i++
+					}
+				}
 			case "34", "36", "94", "96", "40", "41", "42", "43", "44", "45", "46", "47", "100", "101", "102", "103", "104", "105", "106", "107":
 				t.Errorf("使わない色 %q が出た", sgr)
 			}
 		}
+	}
+	if bgs == 0 {
+		t.Fatal("地の色が 1 つも無い (検査が空振りしている)")
 	}
 }
 
@@ -351,7 +366,13 @@ func TestHelpIsUnabbreviatedAndFits(t *testing.T) {
 	var saved [][]subs.Channel
 	opened := 0
 	m := subsModel(l, &saved, &opened)
-	common := []string{"o: Slack で開く", "u: 既読と未読の切り替え", "r: 今のチャンネルを読み直す", "R: 全チャンネルを読み直す", "s: 購読するチャンネルを選ぶ"}
+	common := []string{"o: Slack で開く", "u: 既読と未読の切り替え", "r: 今のチャンネルを読み直す", "R: 全チャンネルを読み直す"}
+	plain := func(ls []string) []string {
+		for i := range ls {
+			ls[i] = sgrRe.ReplaceAllString(ls[i], "")
+		}
+		return ls
+	}
 	for _, tc := range []struct {
 		body bool
 		want []string
@@ -363,7 +384,7 @@ func TestHelpIsUnabbreviatedAndFits(t *testing.T) {
 	} {
 		m.body = tc.body
 		m.w = 100
-		help := strings.Join(m.helpLines(), "\n")
+		help := strings.Join(plain(m.helpLines()), "\n")
 		for _, want := range tc.want {
 			if !strings.Contains(help, want) || strings.Contains(help, "…") {
 				t.Errorf("body=%v: 幅 100 の案内に %q が無い・切れた:\n%s", tc.body, want, help)
@@ -374,12 +395,12 @@ func TestHelpIsUnabbreviatedAndFits(t *testing.T) {
 		}
 		for _, w := range []int{40, 30} { // 30: r (27 桁) と q は並べて入らない幅。抜ける手段を先に採る
 			m.w = w
-			for _, l := range m.helpLines() {
+			for _, l := range plain(m.helpLines()) {
 				if termwidth.Of(l) > w {
 					t.Errorf("body=%v: 幅 %d で案内がはみ出した: %q", tc.body, w, l)
 				}
 			}
-			if l := m.helpLines()[tc.line]; !strings.Contains(l, tc.exit) {
+			if l := plain(m.helpLines())[tc.line]; !strings.Contains(l, tc.exit) {
 				t.Errorf("body=%v: 幅 %d で %q が落ちた: %q", tc.body, w, tc.exit, l)
 			}
 		}
@@ -514,31 +535,26 @@ func TestBodyCacheFollowsPageWidthAndTopic(t *testing.T) {
 	}
 }
 
-// 操作中の欄は太い枠 (┏) で、題を反転する。もう一方は細い枠 (┌) を薄く描く。l / h で入れ替わる。
+// 操作中の欄は、カードの枠の色を水色から流し、選んだ行を明るい地で塗る。もう一方は枠を沈んだ色で描き、選んだ行の地も沈める。l / h で入れ替わる。
 func TestActivePaneIsEmphasized(t *testing.T) {
 	m := datedModel(t, func() []board.Topic { return []board.Topic{topicAt("a", day0)} })
-	top := func() (left, right string) {
-		l := sgrRe.ReplaceAllString(m.Lines()[2], "")
-		i := strings.IndexAny(l, "┐┓") // 左の枠の右上の角 (先に出る方)
-		return l[:i], l[i:]
-	}
+	on, off := " "+cTeal.fg()+"▂", " "+cMuted.fg()+"▂" // 上辺の最初の桁 (枠の色の流れの始まり)
 	check := func(when string, leftActive bool) {
 		t.Helper()
-		l, r := top()
-		active, idle := l, r
+		l, r := m.leftLines(), m.rightLines()
+		active, idle := l[0], r[0]
 		if !leftActive {
-			active, idle = r, l
+			active, idle = r[0], l[0]
 		}
-		if !strings.Contains(active, "┏") || strings.Contains(idle, "┏") || !strings.Contains(idle, "┌") {
-			t.Errorf("%s: 操作中の欄が太い枠でない: 左 %q 右 %q", when, l, r)
+		if !strings.HasPrefix(active, on) || !strings.HasPrefix(idle, off) {
+			t.Errorf("%s: 操作中の欄の枠が水色から流れていない: 左 %q 右 %q", when, l[0], r[0])
 		}
-		raw := m.Lines()[2]
-		title := " 話題の一覧 "
-		if !leftActive {
-			title = " ⚪ 共有: a "
+		sel := cSelIdle.bg()
+		if leftActive {
+			sel = cSel.bg()
 		}
-		if !strings.Contains(raw, "\x1b[7m"+title+"\x1b[27m") {
-			t.Errorf("%s: 操作中の欄の題が反転していない: %q", when, raw)
+		if !strings.Contains(strings.Join(l, "\n"), sel+pink("▌")) {
+			t.Errorf("%s: 選んだ行の地が %q でない", when, sel)
 		}
 	}
 	check("開いた直後", true)

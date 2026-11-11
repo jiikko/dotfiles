@@ -3,7 +3,6 @@ package view
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
@@ -93,51 +92,54 @@ func (m *Model) fitList(dir int) {
 	}
 }
 
+// leftLines は話題の一覧のカード (落ち影込み)。行の頭は 1 桁目が選んだ行の印 (桃色の ▌)、2 桁目が未読の印 (桃色の ●)。
+// 選んだ行は地も塗るが、色の無い端末 (NO_COLOR) では地が消えるので、印の桁でも選んだ行を見分けさせる。
 func (m *Model) leftLines() []string {
 	ts := m.topics()
 	rows := m.rows()
 	m.fitList(1)
 	c := m.chans[m.cur]
-	w := m.leftWidth() - 2
+	w := m.leftWidth() - cardChrome(cardPadX(m.w))
 	var out []string
 	end := min(m.list.Offset+m.listRows(), len(rows))
 	for i := m.list.Offset; i < end; i++ {
 		r := rows[i]
 		if r.header() {
-			out = append(out, headerLine(dayLabel(r, m.now()), w))
+			out = append(out, accent(termwidth.Truncate(dayLabel(r, m.now()), w, "…")))
 			continue
 		}
 		t := ts[r.topic]
 		cur, dot := " ", " "
 		if i == m.list.Cursor {
-			cur = "▶"
+			cur = pink("▌")
 		}
 		unread := topicUnread(t, c.read, c.mentions)
 		if unread {
-			dot = "\x1b[1;35m●\x1b[22;39m"
+			dot = pink("●")
 		}
 		count := fmt.Sprintf(" %d", render.Count(t))
 		text := firstMark(t) + " " + termsafe.PlainLine(t.Title)
-		room := max(w-2-termwidth.Of(count), 1)
+		room := max(w-3-termwidth.Of(count), 1)
 		text = termwidth.Truncate(text, room, "…")
 		pad := termwidth.PadSpaces(room - termwidth.Of(text))
-		if unread {
-			text = "\x1b[1m" + text + "\x1b[22m"
+		if unread || i == m.list.Cursor {
+			text = boldText(text)
 		}
-		line := cur + dot + text + pad + count
-		if i == m.list.Cursor && !m.body {
-			line = "\x1b[7m" + line + "\x1b[27m"
+		line := cur + dot + " " + text + pad + dim(count)
+		if i == m.list.Cursor {
+			bg := cSelIdle
+			if !m.body {
+				bg = cSel
+			}
+			line = paintRow(line, w, bg, surfList)
 		}
 		out = append(out, line)
 	}
-	return box("話題の一覧", out, m.leftWidth(), m.listRows(), !m.body)
-}
-
-// headerLine は日付の見出しの行 (「─ 11/10 (月) 今日 ────」)。罫線は薄く、日付は太字に下線で出す。
-func headerLine(label string, w int) string {
-	label = termwidth.Truncate(label, max(w-3, 1), "…")
-	rest := max(w-3-termwidth.Of(label), 0)
-	return "\x1b[2m─\x1b[22m \x1b[1;4m" + label + "\x1b[22;24m \x1b[2m" + strings.Repeat("─", rest) + "\x1b[22m"
+	edge := edgeListOn
+	if m.body {
+		edge = edgeOff
+	}
+	return shadow(card(out, m.leftWidth(), m.cardRows(), cardPadX(m.w), surfList, edge))
 }
 
 // firstMark は一覧に出す印 1 つ (要対応 → 必読 → 状態の順で最初に当てはまるもの)。どの印も表示幅は 2。

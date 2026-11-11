@@ -14,13 +14,13 @@ import (
 	"slack-bbs/subs"
 )
 
-// bodyPlain は右の欄の中身の行 (色と枠の縦線を外す。上下の枠線は除く)。
+// bodyPlain は本文のカードの本文の行 (色・縁・余白・落ち影を外す。上下の縁と、頭の題と線は除く)。
 func bodyPlain(m *Model) []string {
 	var out []string
-	for _, l := range m.rightLines()[1 : 1+m.bodyRows()] {
-		l = sgrRe.ReplaceAllString(l, "")
-		r := []rune(l)
-		out = append(out, string(r[1:len(r)-1])) // 左右の枠の縦線 (┃ か │) を 1 文字ずつ外す。中身の右端の │ はバーの溝
+	pad := cardPadX(m.w)
+	for _, l := range m.rightLines()[1+bodyHeadRows : 1+bodyHeadRows+m.bodyRows()] {
+		r := []rune(sgrRe.ReplaceAllString(l, ""))
+		out = append(out, string(r[1+pad:len(r)-2-pad])) // 左の縁 ▐ と、右の縁 ▌ と落ち影。中身の右端の │ はバーの溝
 	}
 	return out
 }
@@ -205,9 +205,12 @@ func TestPickerAndTinyTerminalFollowTUIGuide(t *testing.T) {
 	m.now = func() time.Time { return now }
 	run(m, m.Init())
 	cmd := press(m, "s")
+	if got := m.LastToast(); got != "チャンネルの一覧を読んでいます…" {
+		t.Errorf("s を押した手応えの知らせが無い: %q", got) // ユーザー要望 2026-11-11 (状態の行の回る印だけでは押したか分からない)
+	}
 	now = now.Add(7 * time.Second)
-	if n := m.noteLine(); !strings.Contains(n, "7 秒 チャンネルの一覧を読んでいます") {
-		t.Errorf("一覧を読んでいる間の注記に経過秒が無い: %q", n)
+	if n := m.titleLine(); !strings.Contains(sgrRe.ReplaceAllString(n, ""), "7 秒 チャンネルの一覧を読んでいます") {
+		t.Errorf("一覧を読んでいる間の状態の行に経過秒が無い: %q", n)
 	}
 	run(m, cmd)
 	if m.picker == nil {

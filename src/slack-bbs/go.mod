@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	atomicfile v0.0.0
 	charm.land/bubbletea/v2 v2.0.8
+	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	subproc v0.0.0
@@ -12,7 +13,6 @@ require (
 )
 
 require (
-	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260803092147-8b693049ce2a // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect

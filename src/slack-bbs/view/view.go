@@ -8,22 +8,26 @@ package view
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"slack-bbs/board"
 	"slack-bbs/render"
 	"slack-bbs/subs"
+	"subproc"
 )
 
 // Loader は 1 チャンネルを読み、話題に組んだ板を返す。画面の外の goroutine で呼ばれる。
@@ -60,7 +64,7 @@ type Model struct {
 	body  bool // 右の欄を操作しているか
 	w, h  int
 	// toast は右下に数秒出す知らせ (読み直しの始まりと終わり・開けなかった・読み込み中で読み直せない等)。中立の知らせ (ShowInfo) は
-	// 既定の水色が背景が青い端末で沈むので (highlight.go の色の約束)、端末の文字色 (toastInfoColor) で出す
+	// 既定の水色が背景が青い端末で沈むので (style.go の色の約束)、端末の文字色 (toastInfoColor) で出す
 	toast toast.Stack
 	// ticks は描き直しの tick の束ね。toast が動く間は速く、読み直し・一覧の読み込みを待つ間は回る印の周期で張る
 	// (周期の違う 2 つの動きを 1 本の bool で張ると、遅い tick が張ってある間に始まった toast がその tick まで止まる)
@@ -486,6 +490,8 @@ func (m *Model) openPicker() tea.Cmd {
 		return nil
 	}
 	m.picking, m.pickStarted = true, m.now()
+	// 押した手応えは知らせで返す (数秒かかる一覧の読み込みを、上の状態の行の回る印だけにしない)
+	m.toast.ShowInfo("チャンネルの一覧を読んでいます…")
 	open, ctx := m.subs.Open, m.ctx
 	return func() tea.Msg {
 		p, err := open(ctx)
@@ -577,12 +583,22 @@ func (m *Model) openSelected() {
 	m.setRead(true) // 開けなかったら既読にしない (Slack で読めていない)
 }
 
-// 画面の割り振り: 1 行目はチャンネルと状態、2 行目は注記、最後の helpRows 行はキーの案内、残りが 2 つの枠 (上下の枠線で 2 行)。
-func (m *Model) paneRows() int  { return max(m.h-2-helpRows, 3) }
-func (m *Model) listRows() int  { return max(m.paneRows()-2, 1) }
-func (m *Model) bodyRows() int  { return max(m.paneRows()-2, 1) }
+// 画面の割り振り: 上の topRows 行 (ロゴと状態・線・タブ・注記)、最後の helpRows 行はキーの案内、残りが 2 枚のカード
+// (上下の縁で 2 行と、下の落ち影で 1 行)。本文のカードは中身の頭の 2 行に話題の題と線を出す。
+func (m *Model) paneRows() int  { return max(m.h-topRows-helpRows, 4) }
+func (m *Model) cardRows() int  { return max(m.paneRows()-3, 1) }
+func (m *Model) listRows() int  { return m.cardRows() }
+func (m *Model) bodyRows() int  { return max(m.cardRows()-bodyHeadRows, 1) }
 func (m *Model) leftWidth() int { return min(max(m.w*3/10, 24), 44) }
-func (m *Model) bodyInner() int { return m.w - m.leftWidth() - 2 } // 右の枠の内側の幅
+
+// rightWidth は本文のカードの幅 (2 枚のカードの右の落ち影 1 桁ずつと、間の 1 桁を引く)。
+func (m *Model) rightWidth() int { return m.w - m.leftWidth() - 3 }
+func (m *Model) bodyInner() int  { return m.rightWidth() - cardChrome(cardPadX(m.w)) } // 本文のカードの中身の幅
+
+const (
+	topRows      = 4
+	bodyHeadRows = 2 // 本文のカードの頭の、話題の題と線
+)
 
 // bodyWidth は本文を折り返す幅: 枠の内側からスクロールバーの桁を引いた幅 (引かずに組むと、全幅の行が Scrollbar で切られて末尾が … に化ける)
 func (m *Model) bodyWidth() int { return max(m.bodyInner()-layout.ScrollbarWidth, 10) }
@@ -656,7 +672,7 @@ func wrap(s string, w int) []string {
 // MinWidth / MinHeight より小さい端末では枠を描かず、案内の 1 行だけを出す (枠の最小の幅・高さを割ると行がはみ出す)。
 const (
 	MinWidth  = 40
-	MinHeight = 8
+	MinHeight = 12
 )
 
 // tiny は枠を描けない小さい端末か。
@@ -690,44 +706,60 @@ func (m *Model) screen() []string {
 	if m.tiny() {
 		return []string{termwidth.Truncate(fmt.Sprintf("端末が小さすぎる。q で終わる (%dx%d 以上にする)", MinWidth, MinHeight), max(m.w, 1), "")}
 	}
-	lines := []string{m.header(), m.noteLine()}
+	lines := []string{m.titleLine(), gradRule(m.w, cAccent, cPink, cPurple, cTeal, cBg), m.tabsLine(), m.noteLine()}
 	left := m.leftLines()
 	right := m.rightLines()
 	for i := range m.paneRows() {
-		lines = append(lines, left[i]+right[i])
+		l, r := "", ""
+		if i < len(left) {
+			l, r = left[i], right[i]
+		}
+		lines = append(lines, l+" "+r)
 	}
 	return append(lines, m.helpLines()...)
 }
 
-// header はチャンネルのタブと、今のチャンネルの状態。幅に収まらないときは今のタブと状態を残し、今のタブから遠いタブを「…」に畳む
-// (行の右端で切ると、後ろの方のチャンネルを開いたときに、どれを見ているかも読み込みの状態も消える)。
-func (m *Model) header() string {
+// titleLine はロゴと今のチャンネルの状態。右端に購読の画面を開くキーを出す (幅が足りなければ状態を詰め、それでも足りなければキーを外す)。
+func (m *Model) titleLine() string {
+	st := m.state()
+	if m.picking {
+		st = m.spin(m.pickStarted) + " チャンネルの一覧を読んでいます"
+	}
+	head := logo() + "  "
+	room := m.w - termwidth.Of(head)
+	cap := ""
+	if m.subs != nil {
+		if k := keycap("s", "購読するチャンネル"); room-termwidth.Of(k)-2 >= minState {
+			cap = k
+		}
+	}
+	room -= termwidth.Of(cap)
+	if cap != "" {
+		room -= 2
+	}
+	st = termwidth.Truncate(termsafe.PlainLine(st), max(room, 0), "…")
+	return head + reset(dim(st)) + termwidth.PadSpaces(max(m.w-termwidth.Of(head+st+cap), 0)) + cap
+}
+
+// minState は右端のキーより先に残す状態の幅。
+const minState = 20
+
+// tabsLine はチャンネルのタブ。幅に収まらないときは今のタブを残し、今のタブから遠いタブを「…」に畳む
+// (行の右端で切ると、後ろの方のチャンネルを開いたときに、どれを見ているかが消える)。
+func (m *Model) tabsLine() string {
 	names := make([]string, len(m.chans))
 	for i, c := range m.chans {
 		names[i] = "#" + termsafe.PlainLine(c.ch.Name)
 		if c.loading && i != m.cur {
-			// R で読み直している他のチャンネルも、どれが終わっていないか見える。今のチャンネルは状態の欄に出す
-			// (タブにも付けると、狭い端末で今のタブの名前が印の分だけ削られる)
+			// R で読み直している他のチャンネルも、どれが終わっていないか見える。今のチャンネルは状態の行に出す
 			names[i] = spinner.At(m.now(), spinnerStep) + " " + names[i]
 		}
 		if n := m.unreadCount(i); n > 0 {
-			names[i] += fmt.Sprintf(" (未読 %d)", n)
+			names[i] += fmt.Sprintf("  未読 %d", n)
 		}
 	}
-	tail := ""
-	if s := m.state(); s != "" {
-		tail = "   " + s
-	}
-	// 状態が長くて今のタブが読めなくなるときは、タブに minTab 桁を残して状態の方を詰める (どれを見ているかを先に守る)
-	room := m.w - termwidth.Of(tail)
-	if room < minTab {
-		room = min(minTab, m.w)
-	}
-	return termwidth.Truncate(tabWindow(names, m.cur, room)+tail, m.w, "…")
+	return tabWindow(names, m.cur, m.w)
 }
-
-// minTab は見出しの行で今のタブに必ず残す幅 (「#」とチャンネル名の頭の数文字が読める幅)。
-const minTab = 12
 
 func (m *Model) state() string {
 	c := m.chans[m.cur]
@@ -758,18 +790,26 @@ func (m *Model) state() string {
 }
 
 const (
-	tabGap  = "  "
+	tabGap  = " "
 	tabMore = "…"
 )
 
-// tabWindow は names を tabGap でつないだ行で、cur を反転して出す。幅 room に収まらなければ cur を含む連続した範囲だけを出し、
+// tab は 1 つのタブ (今のタブは水色の地、他は沈んだ地)。
+func tab(name string, cur bool) string {
+	if cur {
+		return pillTab(name, cTeal, cBg, true)
+	}
+	return pillTab(name, cTabIdle, cDim, false)
+}
+
+// tabWindow は names をタブにして tabGap でつないだ行。幅 room に収まらなければ cur を含む連続した範囲だけを出し、
 // 外した側に tabMore を置く。cur だけでも収まらないときは、印を付けずに cur の名前を room に縮める
 // (印の分だけ cur が押し出され、呼び出し側が行の右端で切ると状態が消える)。
 func tabWindow(names []string, cur, room int) string {
 	width := func(lo, hi int) int {
 		w := termwidth.Of(tabGap) * (hi - lo)
 		for _, n := range names[lo : hi+1] {
-			w += termwidth.Of(n)
+			w += termwidth.Of(n) + pillWidth
 		}
 		if lo > 0 {
 			w += termwidth.Of(tabMore + tabGap)
@@ -781,7 +821,7 @@ func tabWindow(names []string, cur, room int) string {
 	}
 	lo, hi := cur, cur
 	if width(lo, hi) > room {
-		return "\x1b[7m" + termwidth.Truncate(names[cur], max(room, 1), "…") + "\x1b[27m"
+		return tab(termwidth.Truncate(names[cur], max(room-pillWidth, 1), "…"), true)
 	}
 	for grew := true; grew; {
 		grew = false
@@ -794,17 +834,13 @@ func tabWindow(names []string, cur, room int) string {
 	}
 	var parts []string
 	if lo > 0 {
-		parts = append(parts, tabMore)
+		parts = append(parts, reset(muted(tabMore)))
 	}
 	for i := lo; i <= hi; i++ {
-		if i == cur {
-			parts = append(parts, "\x1b[7m"+names[i]+"\x1b[27m")
-		} else {
-			parts = append(parts, names[i])
-		}
+		parts = append(parts, tab(names[i], i == cur))
 	}
 	if hi < len(names)-1 {
-		parts = append(parts, tabMore)
+		parts = append(parts, reset(muted(tabMore)))
 	}
 	return strings.Join(parts, tabGap)
 }
@@ -813,8 +849,6 @@ func (m *Model) noteLine() string {
 	c := m.chans[m.cur]
 	var s string
 	switch {
-	case m.picking:
-		s = m.spin(m.pickStarted) + " チャンネルの一覧を読んでいます"
 	case c.err != nil && c.page != nil:
 		s = "🚨 " + c.err.Error()
 	case c.page != nil:
@@ -828,46 +862,8 @@ func (m *Model) noteLine() string {
 			}
 		}
 	}
-	return termwidth.Truncate(termsafe.PlainLine(s), m.w, "…")
+	return reset(muted(termwidth.Truncate(termsafe.PlainLine(s), m.w, "…")))
 }
-
-// box は幅 w (枠線を含む)・高さ rows+2 の枠に、題 title と中身 body を入れた行。
-func box(title string, body []string, w, rows int, active bool) []string {
-	inner := max(w-2, 1)
-	st := boxIdle
-	if active {
-		st = boxActive
-	}
-	line := func(s string) string { return st.sgr + s + "\x1b[22m" }
-	title = termwidth.Truncate(title, max(inner-3, 0), "…")
-	top := line(st.tl + strings.Repeat(st.h, inner) + st.tr)
-	if title != "" {
-		t := " " + title + " "
-		if active {
-			t = "\x1b[7m" + t + "\x1b[27m"
-		}
-		top = line(st.tl+st.h) + t + line(strings.Repeat(st.h, max(inner-1-termwidth.Of(title)-2, 0))+st.tr)
-	}
-	out := []string{top}
-	for i := range rows {
-		s := ""
-		if i < len(body) {
-			s = body[i]
-		}
-		s = termwidth.Truncate(s, inner, "…")
-		out = append(out, line(st.v)+s+termwidth.PadSpaces(inner-termwidth.Of(s))+line(st.v))
-	}
-	return append(out, line(st.bl+strings.Repeat(st.h, inner)+st.br))
-}
-
-// boxStyle は枠の線と色。操作中の欄は太い線を太字で描き、題を反転する。操作していない欄は細い線を薄く描く。
-// 色 (前景・背景) は使わない: 背景が青い端末で沈む (highlight.go の色の約束)。太さと濃さだけで、どちらの欄にキーが効くかを見分けさせる
-type boxStyle struct{ sgr, tl, tr, bl, br, h, v string }
-
-var (
-	boxActive = boxStyle{sgr: "\x1b[1m", tl: "┏", tr: "┓", bl: "┗", br: "┛", h: "━", v: "┃"}
-	boxIdle   = boxStyle{sgr: "\x1b[2m", tl: "┌", tr: "┐", bl: "└", br: "┘", h: "─", v: "│"}
-)
 
 func (m *Model) rightLines() []string {
 	title := ""
@@ -890,35 +886,37 @@ func (m *Model) rightLines() []string {
 	}
 	// 本文が欄に収まらないときだけ右端に出る (収まるなら Scrollbar は行をそのまま返す)
 	shown = layout.Scrollbar(shown, m.bodyInner(), len(lines), off, true)
-	return box(title, shown, m.w-m.leftWidth(), m.bodyRows(), m.body)
+	head := []string{boldText(termwidth.Truncate(title, m.bodyInner(), "…")), gradRule(m.bodyInner(), cTeal, cPurple, cPink, surfDetail)}
+	edge := edgeOff
+	if m.body {
+		edge = edgeBodyOn
+	}
+	return shadow(card(append(head, shown...), m.rightWidth(), m.cardRows(), cardPadX(m.w), surfDetail, edge))
 }
 
-// helpLines はキーの案内の 2 行 (1 行目は話題と本文の操作、2 行目はチャンネルの操作と抜け方)。書き方は TUI ガイドの「キー: 説明」。
-// 語は略さずに書き (「s 購読」では何の画面か伝わらなかった)、幅に入らない項目は hintfit が優先度の低い方から落とす。
-// 抜ける手段 (一覧では q で終わる、本文の欄では h/q で一覧へ戻る) は最後まで残す
+// helpLines はキーの案内の 2 行 (1 行目は話題と本文の操作、2 行目はチャンネルの操作と抜け方)。書き方は TUI ガイドの「キー: 説明」で、
+// キーを桃色、説明を薄く描き、空白 2 つで区切る (「 • 」で区切ると、本文の欄の 1 行目が幅 100 に入らず u が落ちる)。語は略さずに書き (「s 購読」では何の画面か伝わらなかった)、幅に入らない項目は
+// hintfit が優先度の低い方から落とす。抜ける手段 (一覧では q で終わる、本文の欄では h/q で一覧へ戻る) は最後まで残す。
+// s (購読の画面) は上の行の右端のキーで案内する
 func (m *Model) helpLines() []string {
+	h := func(prio int, key, desc string) hintfit.Item {
+		return hintfit.Item{Prio: prio, Text: hintText(key, desc)}
+	}
 	var pane []hintfit.Item
 	if m.body {
-		pane = []hintfit.Item{{Prio: 2, Text: "j/k: 本文を送る"}, {Prio: 3, Text: "J/K: 隣の話題へ"}, {Prio: 1, Text: "h/q: 話題の一覧へ戻る"}}
+		pane = []hintfit.Item{h(2, "j/k", "本文を送る"), h(3, "J/K", "隣の話題へ"), h(1, "h/q", "話題の一覧へ戻る")}
 	} else {
-		pane = []hintfit.Item{{Prio: 2, Text: "j/k: 話題を選ぶ"}, {Prio: 2, Text: "l/Enter: 本文を読む"}}
+		pane = []hintfit.Item{h(2, "j/k", "話題を選ぶ"), h(2, "l/Enter", "本文を読む")}
 	}
-	// Tab は 2 行目に入らない (2 行目は幅 100 でちょうど埋まる)。本文の欄では 1 行目にも入らず幅 100 で落ちるが、案内に無くても効く
-	pane = append(pane, hintfit.Item{Prio: 3, Text: "o: Slack で開く"}, hintfit.Item{Prio: 3, Text: "u: 既読と未読の切り替え"},
-		hintfit.Item{Prio: 4, Text: "Tab: 次のチャンネル"})
-	chans := []hintfit.Item{
-		{Prio: 3, Text: "r: 今のチャンネルを読み直す"},
-		{Prio: 4, Text: "R: 全チャンネルを読み直す"},
-	}
-	if m.subs != nil {
-		chans = append(chans, hintfit.Item{Prio: 3, Text: "s: 購読するチャンネルを選ぶ"})
-	}
+	// 本文の欄では Tab が 1 行目に入らず幅 100 で落ちるが、案内に無くても効く
+	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"))
+	chans := []hintfit.Item{h(4, "Tab", "次のチャンネル"), h(3, "r", "今のチャンネルを読み直す"), h(4, "R", "全チャンネルを読み直す")}
 	if !m.body {
-		chans = append(chans, hintfit.Item{Prio: 1, Text: "q: 終わる"})
+		chans = append(chans, h(1, "q", "終わる"))
 	}
 	out := make([]string, 0, helpRows)
 	for _, items := range [][]hintfit.Item{pane, chans} {
-		out = append(out, termwidth.Truncate(" "+hintfit.Fit(max(m.w-1, 1), "  ", items), m.w, "…"))
+		out = append(out, reset(termwidth.Truncate(" "+hintfit.Fit(max(m.w-1, 1), "  ", items), m.w, "…")))
 	}
 	return out
 }
@@ -936,8 +934,16 @@ func (m *Model) View() tea.View {
 	return v
 }
 
-// Run は画面を開き、閉じるまで待つ。
+// Run は画面を開き、閉じるまで待つ。tmux の中で外側の端末が 24bit の色に対応していれば、bubbletea の判定 (tmux の中では 256 色に落とす)
+// を引き上げる (カードの面と枠の色の流れが 256 色では段になる)。
 func Run(m *Model) error {
-	_, err := tea.NewProgram(m).Run()
+	var opts []tea.ProgramOption
+	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), func(ctx context.Context, name string, args ...string) (string, error) {
+		out, err := subproc.CommandContext(ctx, name, args...).Output()
+		return string(out), err
+	}) {
+		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
+	}
+	_, err := tea.NewProgram(m, opts...).Run()
 	return err
 }
