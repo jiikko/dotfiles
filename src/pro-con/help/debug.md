@@ -48,8 +48,8 @@
 
 ## ライブアップグレード
 
-- 画面: ソースを直すと裏でビルドされ、ヘッダーに「新版あり ctrl+r」。ctrl+r で PID のまま新版へ入れ替わる (状態は引き継ぐ)。
-  ビルドの失敗は `src/pro-con/.autobuild.log`。新版が異常終了したら `resume-*.json` が残り、`PRO_CON_RESUME=<パス> bin/pro-con` で戻る
-- dispatcher: 合図なしに、区切り (テストの係の実行中などでない) で自分を新版へ入れ替える。PG は止まらない。
-  新版が今の記録を読めなければ旧版のまま続ける。結果は `pro-con log` の `upgrade` とゲージ
+- 画面: ソースを直すと裏でビルドされ、ヘッダーに「新版あり ctrl+r」。ctrl+r で PID のまま新バージョンへ入れ替わる (状態は引き継ぐ)。
+  ビルドの失敗は `src/pro-con/.autobuild.log`。新バージョンが異常終了したら `resume-*.json` が残り、`PRO_CON_RESUME=<パス> bin/pro-con` で戻る
+- dispatcher: 合図なしに、区切り (テストの係の実行中などでない) で自分を新バージョンへ入れ替える。PG は止まらない。
+  新バージョンが今の記録を読めなければ旧バージョンのまま続ける。結果は `pro-con log` の `upgrade` とゲージ
 - 仕組みの詳細は `src/pro-con/README.md` の「ライブアップグレード」

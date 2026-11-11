@@ -29,7 +29,7 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
    - **テストは差分に関係する分だけ回す** (538。repo 全体を回すと 1 枚約 6 分かかり、1 枚ずつ順なので列が詰まる)
      - repo に `make test-changed` があれば (dotfiles)、差分のパスを渡してそれだけを回す: `make test-changed PATHS="$(git diff --name-only origin/master...HEAD | tr '\n' ' ')"`。
        `src/<proj>/` のパスは `make -C src/<proj> lint test` に写るので、pro-con の `src/pro-con` の段を別に回さない
-     - `✗ 写像に無いパス` で止まったら、黙って飛ばさずに repo の `make test` を回す (test-changed はどの写像にも当たらないパスを fail にする)
+     - `✗ 写像に無いパス` で止まったら、知らせずに飛ばさず repo の `make test` を回す (test-changed はどの写像にも当たらないパスを fail にする)
      - `make test-changed` の無い repo では、repo の `make test` と `make lint` (pro-con は `src/pro-con` の `make test` / `make lint` も)
    - `--after` の付いたカード (`pro-con card show <カード>` の「順番」) は、先に入ったカードの変更と合わせた結果を、同じ判断に当たる所のテストで確かめる (468)。
      先のカードは origin/master に入っているので上の差分には出ない。先のカードの merge commit のパスも `PATHS` に足す

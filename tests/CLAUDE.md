@@ -14,7 +14,7 @@
   見ていない経路が **repo root に fixture を書く** (実測 2026-09-03。残骸 3 件 / issue 204)。
   数字も無効になる (rc=127 で即落ちしたものを「速い」と読む)。ランナー経由なら shebang が尊重される
   - make 経由ならもう 1 つ守られる: Makefile 先頭の `unexport` が継承した GIT_DIR / GIT_WORK_TREE などを外す (issue 744)。
-    直接実行ではこれが効かず、テストの `git -C <一時 dir>` が継承した repo の config やブランチを書き換える
+    直接実行ではこれが働かず、テストの `git -C <一時 dir>` が継承した repo の config やブランチを書き換える
 
 ## 所要時間 (実測 2026-09-03 / 開発機・macOS)
 
@@ -147,12 +147,12 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 
 ## platform (macOS のみ)
 
-対象は macOS だけ (issue 133)。**CI も全 workflow が macOS 27 の runner (`xcode-27` ラベル)**なので、手元と CI の
+対象は macOS だけ (issue 133)。**CI も全 workflow が macOS 27 の runner (`xcode-27` ラベル)** なので、手元と CI の
 userland は同じ。GNU 方言を要求する検査・ラッパーは置かない — 正しい macOS の書き方を弾く
 (例: 素の `stat -f %m` は macOS では正しいが、GNU フォールバックを要求する検査はこれを落とす)。
 
 - BSD の書き方で構わない。「GNU でも動くように」だけを理由に分岐を足さない
-- 🚨 **残っているのは「版」の差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
+- 🚨 **残っているのはバージョンの差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow が brew の bash を PATH 先頭に出して揃えている (下の節)
 - 🚨 **PATH の差**: 開発機の PATH には `~/dotfiles/bin` があり、CI には無い。テストから bin の道具を呼ぶときはパスで呼ぶ
   (`"$ROOT_DIR/bin/<名前>"`。`runtimeout` は `bin/lib/runtimeout.sh` の `runtimeout_resolve` が入れる `"$RUNTIMEOUT"`)。
@@ -161,7 +161,7 @@ userland は同じ。GNU 方言を要求する検査・ラッパーは置かな�
 
 ## 新品チェックアウトとの差 (`make test-fresh`)
 
-platform の差が消えた今も残るのが**「手元には在るが git に載っていないもの」への依存**。
+platform の差が消えた今も残るのが **「手元には在るが git に載っていないもの」への依存**。
 `make test-fresh` が使い捨て worktree (= 追跡されているものだけがある状態) で
 `test-discovered` + `test-bats` を回すので、**push 前に自分で叩く** (`make test` からは
 呼ばない。所要時間を倍にしないための opt-in)。
@@ -186,9 +186,9 @@ platform の差が消えた今も残るのが**「手元には在るが git に�
 
 - `run_tests_parallel` に入れられるのは tempdir 独立で共有資源に触らないテストだけ。`test-discovered` は tests/ 全体をこれで回し、共有資源 (tmux サーバ / nvim) に触る `SERIAL_TEST_DIRS` (tests/tmux / tests/nvim / tests/zshrc/tmux-session) だけを直列の `run_tests` に回す。新ディレクトリは並列側に入るので、共有資源に触るテストを書いたら `SERIAL_TEST_DIRS` へ足す
 - CI は heavy / rest の 2 job。分割の整合 (パッケージ依存・prune) は `make test-ci-group-deps` が検査する
-- **並列度は Makefile の `NPROC`** (既定 = `getconf _NPROCESSORS_ONLN`)。`run_tests_parallel` の `xargs -P` に渡る。**コマンドラインでのみ上書きできる**: `make test NPROC=4` は効くが `NPROC=4 make test` は効かない (makefile の `:=` は環境変数より強い、という make の変数優先順位そのもの)
-  - 🚨 **`make -j` はテストの並列度に効かない**。あれは make の target 並列で、テストの並列度は `xargs -P` 側が持つ。2 つは独立
-  - 🚨 **性能 knob としては期待外れ**。テストの大半は CPU ではなく待ち (プロセス spawn / tmux サーバ起動 / 条件ポーリング) で、`real` に対する `user+sys` は 9〜43% (実測 2026-09-05。ffmpeg を回す av1ify だけが 82〜86%)。下げても大して遅くならず、上げても速くならない。効くのは直列腕を減らすこと (issue 262)
+- **並列度は Makefile の `NPROC`** (既定 = `getconf _NPROCESSORS_ONLN`)。`run_tests_parallel` の `xargs -P` に渡る。**コマンドラインでのみ上書きできる**: `make test NPROC=4` は反映されるが `NPROC=4 make test` は反映されない (makefile の `:=` は環境変数より強い、という make の変数優先順位そのもの)
+  - 🚨 **`make -j` はテストの並列度に影響しない**。あれは make の target 並列で、テストの並列度は `xargs -P` 側が持つ。2 つは独立
+  - 🚨 **性能 knob としては期待外れ**。テストの大半は CPU ではなく待ち (プロセス spawn / tmux サーバ起動 / 条件ポーリング) で、`real` に対する `user+sys` は 9〜43% (実測 2026-09-05。ffmpeg を回す av1ify だけが 82〜86%)。下げても大して遅くならず、上げても速くならない。速くなるのは直列腕を減らしたとき (issue 262)
 
 ## bench
 

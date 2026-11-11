@@ -13,7 +13,7 @@ foreman / supervisord の 1 本ぶん。**呼んだプロセスが生きてい�
 | 子を起こす・抜けたら `RestartWait` 空けて起こし直す | 子の終わり方の意味 (`Classify`: `Crash` 数えて起こし直す / `Retry` 数えずに起こし直す / `Done` 見張りを終える) |
 | `CrashWindow` に `CrashLimit` を超えて落ちたら諦める | 起こし直す前に続けてよいか (`Continue`。初回の起動の前は呼ばない) |
 | 止める合図 (ctx の取り消し) で止める: 生命線を閉じる → `StopSignal` → `StopWait` 後に SIGKILL | 出来事の言葉 (`OnEvent`) |
-| 生命線 (`Lifeline`): 子の stdin を親だけが書く側を持つパイプにする (親が kill -9 で死んでも子の stdin が EOF になる) | 子が stdin の EOF で抜けること (生命線は子が読んで初めて効く) |
+| 生命線 (`Lifeline`): 子の stdin を親だけが書く側を持つパイプにする (親が kill -9 で死んでも子の stdin が EOF になる) | 子が stdin の EOF で抜けること (生命線は子が読んで初めて働く) |
 
 ```go
 res := supervisor.Run(ctx, supervisor.Spec{

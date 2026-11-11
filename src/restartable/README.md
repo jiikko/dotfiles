@@ -5,7 +5,7 @@
 
 ## インストール
 
-GitHub のタグまたはコミットを版に指定します。
+GitHub のタグまたはコミットをバージョンに指定します。
 
 ```sh
 go install github.com/jiikko/dotfiles/src/restartable@<版>

@@ -29,7 +29,7 @@ Claude Code (`/usage`) と codex (app-server の rateLimits) の利用枠 (5h / 
     「誰かが新しい値を受け取った時刻」で、15 分新しい値が来なければ下の予備へ落ちる (pro-con の PG は statusline を走らせないので、
     PG だけが動いている間は予備のサーバの値で見る)
   - 値がサーバ (`claude -p /usage`) と食い違うときは、`jq .writers ~/.cache/glog/claude-rate-limits.json` で窓ごとに
-    その値を書いたセッション (`by`: transcript のパス。設定ディレクトリとセッション ID が分かる)・版・時刻を見る。読み手は使わない
+    その値を書いたセッション (`by`: transcript のパス。設定ディレクトリとセッション ID が分かる)・バージョン・時刻を見る。読み手は使わない
 - `claude -p /usage` は上のファイルが無いか古いときだけの予備で、全プロセス共有のゲート (`usage.FetchShared`、`usage/shared.go`)
   越しにしか起こさない。1 回ごとにサーバの `/api/oauth/usage` を叩き、これは強く rate limit される (glogx が 60 秒ごとに取ったら
   17 回目で 429。CLI は 429 をプロセスをまたいで覚えないので、起こせば毎回叩く。対話の `/usage` が 429 でも見えるのは応答ヘッダの値で

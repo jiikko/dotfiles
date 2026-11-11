@@ -5,7 +5,7 @@
 ## 入口
 
 - `CommandContext(ctx, name, args...) *exec.Cmd` — 外部コマンドはこれで起こす (素の `exec.CommandContext` は使わない)。WaitDelay を張る。標準出力を文字列で受けるだけなら `Output(ctx, name, args...)` (termcaps.Runner の形)。
-  ctx を持たない起動 (前景の attach・supervisor が止める子・待つだけの ps) は `Command(name, args...)` (同じく WaitDelay を張る。ctx 無しでも効く)
+  ctx を持たない起動 (前景の attach・supervisor が止める子・待つだけの ps) は `Command(name, args...)` (同じく WaitDelay を張る。ctx 無しでも WaitDelay は働く)
 - `boundarycheck.Run(t, Spec)` (`subproc/boundarycheck`) — 張り忘れの検査の本体。各 module の root のテストが Spec (走査の根・Allow の表・下限、または `NoOsExec`) を渡して呼ぶ。
   脅威モデルと「検出しない形」はパッケージの doc。検査器自身は testdata の fixture で検査する
 - `clipboard.Copy(text)` (`subproc/clipboard`) — 文字列を OS のクリップボードへ (pbcopy / xclip が本命、tmux 内は tmux バッファへもおまけ)。glogx・treefiler・pro-con・mac-lan-manager が使う。失敗モードはパッケージの doc

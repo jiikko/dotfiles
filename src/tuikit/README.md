@@ -18,7 +18,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 |---|---|---|
 | `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る)。`EscLen(s)` は先頭のエスケープ列のバイト長 (使う側が列を読み飛ばすときも終わりの見方を自前で書かない) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。tuikit と、tuikit を使う全 module が lint で禁止) |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
-| `termcaps` | `SyncedOutput(環境変数を読む口, 起こす口)`: 同期出力 (DECSET 2026) が外側の端末まで効くか (tmux の中は `#{client_termfeatures}` に sync があるか、外は Terminal.app 以外か)。`TmuxClientFeatures` は機能の名前の列 (termcolor も使う)。`TmuxPrefix(TMUX の値, 起こす口)` は tmux サーバの今の prefix を bubbletea の表記 (`ctrl+t`) で返す (C-<英字> 以外・tmux の外は "") | false なら、画面全体が動くアニメを減らし、tmux の中では bubbletea に同期出力を使わせない (使うと tmux が外側へ書く量が増える)。treefiler (bin/treefiler と glogx の F)。`TmuxPrefix` は popup の中に素通りしてくる prefix を捌く glogx (案内) と bin/treefiler (prefix f で閉じる) |
+| `termcaps` | `SyncedOutput(環境変数を読む口, 起こす口)`: 同期出力 (DECSET 2026) が外側の端末まで届くか (tmux の中は `#{client_termfeatures}` に sync があるか、外は Terminal.app 以外か)。`TmuxClientFeatures` は機能の名前の列 (termcolor も使う)。`TmuxPrefix(TMUX の値, 起こす口)` は tmux サーバの今の prefix を bubbletea の表記 (`ctrl+t`) で返す (C-<英字> 以外・tmux の外は "") | false なら、画面全体が動くアニメを減らし、tmux の中では bubbletea に同期出力を使わせない (使うと tmux が外側へ書く量が増える)。treefiler (bin/treefiler と glogx の F)。`TmuxPrefix` は popup の中に素通りしてくる prefix を捌く glogx (案内) と bin/treefiler (prefix f で閉じる) |
 | `termcolor` | `TrueColorThroughTmux(TMUX の値, 起こす口)`: tmux の中で外側の端末が 24bit の色に対応しているか (`#{client_termfeatures}` に RGB があるか。`HasRGB`)。bubbletea v2 の色の判定は tmux の中では tmux の端末の定義しか見ず、24bit の色を 256 色に落とすので、その補い | true なら `tea.WithColorProfile(colorprofile.TrueColor)` を渡す。24bit の色を描く glogx (treefiler・mac-lan-manager の板) と bin/mac-lan-manager |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …)・256 色の番号の RGB (`XtermRGB`。色を混ぜる・暗くする計算用)・`ReapplyAfterReset` (行を地色で塗るとき、行内のリセットの後に地を張り直す) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
@@ -80,7 +80,7 @@ if p := anim.Elapsed(openedAt, now, 175*time.Millisecond); p < 1 {
 
 - `ScrollGlide`: 表示 offset を論理 offset へ数フレームで寄せる (本文の半ページスクロール)。連打中は積み上げずに即時へ倒す
   (ふつうは `listnav.Pager` / `listnav.List` 越しに使う。直接使うのは offset を自分で持つ画面)
-- `CursorGlide`: **描画カーソルだけ**を滑らせる (一覧の半ページ移動)。窓は論理カーソルを含む最小の窓のまま動かさないので、Enter などの決定キーは常に着地点へ効く
+- `CursorGlide`: **描画カーソルだけ**を滑らせる (一覧の半ページ移動)。窓は論理カーソルを含む最小の窓のまま動かさないので、Enter などの決定キーは常に着地点に対して働く
 
 ```go
 glide.Start(prev, offset, 6) // 6 フレーム (× tick 16ms ≒ 100ms)
@@ -115,12 +115,12 @@ list.Advance()
 ```
 
 - 半ページ移動では**論理カーソル (`list.Cursor`) は即座に着地**し、描画カーソルだけが滑る。窓は論理カーソルを
-  含む最小の窓のまま動かさないので、Enter などの決定キーは常に着地点へ効く
+  含む最小の窓のまま動かさないので、Enter などの決定キーは常に着地点に対して働く
 - 本文 (カーソルの無いスクロール) は `listnav.Pager`。半ページだけが滑り、1 行送りと端へのジャンプは即時
 - 🚨 `Pager` は描画で行数が確定するたびに `Clamp(total, rows)` を呼ぶ (`DrawOffset` の前)。呼ばないと、
   折り返しが減った・窓が広がった後の上スクロールが「超えた分」だけ空振りする (理由は `Pager.Clamp` の doc)
 - 🚨 動作キーと語彙がぶつかる画面 (Space = 選択、`b` = push など) は、**その画面の動作を先に捌く**。
-  `MotionOf` は画面ごとの例外を持たない (持たせると画面ごとに効くキーがまたずれ始める)
+  `MotionOf` は画面ごとの例外を持たない (持たせると画面ごとに使えるキーがまたずれ始める)
 - 表示行数 `rows` が 0 以下でも 1 行として扱う (窓や offset が行数を超えない)。rows=1 の半ページは
   窓の高さ以上に動くので滑らせない (起点が窓の外だと、滑走の間カーソルの強調が描かれない)
 - 🚨 「知らないキーは中止に落とす」ような安全側の確認画面には `MotionOf` を当てない (中止のつもりの打鍵が
@@ -175,7 +175,7 @@ if confirm.IsYes(key) { run() }
 - **tick は使う側が回す**。`Transition.Animating(now)` / `List.Animating()` / `Pager.Animating()`
   (直接使うなら `ScrollGlide.Active()` / `CursorGlide.Active()`) のどれかが真のあいだは再描画を続ける (tuikit は tick を持たない。フレームワーク非依存にするため)
 - **時刻は引数で渡す** (部品の中で `time.Now` を呼ばない。lint が止める)。使う側のテストで時刻を固定できる
-- **演出中に来たキーは、先に着地させてから効かせる** (`Finish()` / `Stop()`)。演出の終わりまで入力を待たせない
+- **演出中に来たキーは、先に着地させてから反映する** (`Finish()` / `Stop()`)。演出の終わりまで入力を待たせない
 - **閉じる演出のあいだは中身を捨てない**。捨てるのは `Settle` / `Finish` が `closed=true` を返してから
 - 詳細は**開ききった幅で整形**して渡す。途中の幅で整形し直すと毎フレーム折り返しが変わって文字が踊る
 - 幅は `termwidth` だけで測る。別の幅ライブラリ (runewidth 等) を混ぜると、枠の計算が端末・locale でずれる
@@ -201,13 +201,13 @@ if confirm.IsYes(key) { run() }
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.local.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.local.yml` の depguard / forbidigo |
 | 折り返しは `termwidth.Wrap` / `WordWrap` (`ansi.Hardwrap` / `Wrap` / `Wordwrap` を直に呼ばない。issue 590) | tuikit と全消費者の `.golangci.local.yml` の forbidigo |
-| tuikit と消費者 (go.mod に tuikit を持つ module) の x/ansi・bubbletea の版が一致し、全部が折り返しの禁止を持つ | `tests/scripts/test_tuikit_consumers_aligned.sh` (`make test` が自動で拾う。issue 603) |
+| tuikit と消費者 (go.mod に tuikit を持つ module) の x/ansi・bubbletea のバージョンが一致し、全部が折り返しの禁止を持つ | `tests/scripts/test_tuikit_consumers_aligned.sh` (`make test` が自動で拾う。issue 603) |
 | VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象。走査の根は glogx の go.mod の replace と突き合わせて固定) |
 | glogx の一覧 4 画面が移動の語彙を `listnav.MotionOf` から取り、半ページが `listnav.Half(各画面が基準に渡す行数)` | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致と、半ページの移動量を見る) |
 
 CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると、使う側のうち glogx・pro-con・treefiler・schedkeys・
-ratelimit・mac-lan-manager の CI も走る (各 workflow の paths に `src/tuikit/**` がある)。restartable は tuikit を go.mod の版で固定している
-(replace を持たず go install できる形) ので走らない。restartable に取り込むときは版を上げて restartable 側の CI で確かめる。
+ratelimit・mac-lan-manager の CI も走る (各 workflow の paths に `src/tuikit/**` がある)。restartable は tuikit を go.mod のバージョンで固定している
+(replace を持たず go install できる形) ので走らない。restartable に取り込むときはバージョンを上げて restartable 側の CI で確かめる。
 
 ## フレームの重さを測る
 
@@ -219,7 +219,7 @@ ratelimit・mac-lan-manager の CI も走る (各 workflow の paths に `src/tu
   描き直しの重さを測るならコマを動かす
 - 件数で伸びないことを守る: 件数を 2 通りにして View の確保バイトの比を見る (時間は合否にしない)。例: pro-con `TestDrawerActivityViewAllocDoesNotGrowWithItems` /
   glogx `TestListFramesAllocBytesDoNotScaleWithItems` / `TestStatusFrameAllocBytesDoNotScaleWithFileCount`
-- 🚨 ultraviolet の版は取り込んだ側の go.mod で決まる。tuikit と消費者の版は `tests/scripts/test_tuikit_consumers_aligned.sh` が揃える (x/ansi・bubbletea と同じ)
+- 🚨 ultraviolet のバージョンは取り込んだ側の go.mod で決まる。tuikit と消費者のバージョンは `tests/scripts/test_tuikit_consumers_aligned.sh` が揃える (x/ansi・bubbletea と同じ)
 
 ## デモ
 

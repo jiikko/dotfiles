@@ -25,7 +25,7 @@ serial-run -h                                                       # usage (rc=
   repo は cwd だけで決める (継承した `GIT_DIR` などは使わない)。
   🚨 どれかの列の serial-run の中から打った serial-run は、列が違っても (別の repo へ cd した make test・`-l` で名指しした列) 2 本目の列を取らずに
   素通しになる (1 つのプロセスの木が持つ列は高々 1 本)。列を持ったまま別の列を待つと、逆向きの入れ子と組んで互いに待ち合うため。
-  中の処理は外側の列の 1 本として走る。そのため `-l` で名指しした列の直列は、入れ子の外から打った分にだけ効く
+  中の処理は外側の列の 1 本として走る。そのため `-l` で名指しした列の直列は、入れ子の外から打った分にだけ適用される
   `serial-run status` は cwd で決まる列を出す (先頭の `lock:` の行)。hook の判断の記録 (`hook.log`) は置き場の直下に 1 つ
   - 🚨 同じ列で 1 本になるのは、置き場の解決に使う環境 (`SERIAL_RUN_STATE_DIR` / 絶対パスの `XDG_STATE_HOME` / `HOME`) が同じ session どうしだけ。
     HOME を差し替えたテスト環境などから呼ばれたものは別の待ち列に並ぶ。相対の `XDG_STATE_HOME` は使わない (cwd ごとに別の待ち列になる)
@@ -37,7 +37,7 @@ serial-run -h                                                       # usage (rc=
 (`cd a && make test && git push` → `cd a && serial-run -- make test && git push`)。対象と字句の規則は `hook.go` の `isHeavy` / `wrapCommand`。
 
 - 🚨 Claude Code の許可ルールは**書き換えた後のコマンド**で判定される (2.1.308 で実測)。コマンド全体を `zsh -c` で包むと他の部分への deny が
-  効かなくなるので、重い単純コマンドの前にだけ差し込む。許可ルールを書くなら `Bash(serial-run -- make test:*)` の形
+  適用されなくなるので、重い単純コマンドの前にだけ差し込む。許可ルールを書くなら `Bash(serial-run -- make test:*)` の形
 - 引用符・コマンド置換の中、heredoc・`case`・算術・`$'…'` を含むコマンドは書き換えない (文字列の中身を変えない。読み切れない形は元のまま通す)
 - 1 つのパイプラインで包むのは最初の重い段 1 つだけ。🚨 **パイプを含むコマンドでは、差し込みは 1 か所まで** (2 か所になるなら全体を見送る)。
   1 つのパイプラインに serial-run が 2 本入ると互いの札を待って止まるので、字句で段の境目を読み違えてもこの形にならないための歯止め。
@@ -51,7 +51,7 @@ serial-run -h                                                       # usage (rc=
 - 前に誰かいるときは、差し込むと同時に LLM へ「順番待ちに入る・前に N 本・先頭の持ち主・`serial-run status`」を `additionalContext` で知らせる
   (待っている間は Bash の出力が返らないので、固まったと読ませない)。誰もいなければ何も添えない
 - 長い検証 (`isHeavy` の対象に `bin/skill-eval`・`tests/` の下の `.sh` を足したもの) を Bash 1 回の中の素の `&` で背景に回すコマンドは、書き換えずに deny し、
-  `run_in_background` へ案内する (完了の通知が来ず、TaskStop も効かない)。長い検証のコマンド自身に付けた `nohup` / `setsid`、直後の `disown`、zsh の `&|` / `&!` (detach) と、後ろに `wait` がある形は止めない。単位は zsh の規則で切る (`make test && echo ok &` は make test を前面で走らせるので止めない)。
+  `run_in_background` へ案内する (完了の通知が来ず、TaskStop でも止められない)。長い検証のコマンド自身に付けた `nohup` / `setsid`、直後の `disown`、zsh の `&|` / `&!` (detach) と、後ろに `wait` がある形は止めない。単位は zsh の規則で切る (`make test && echo ok &` は make test を前面で走らせるので止めない)。
   規則と検出しない形は `background.go` の `backgroundDenial`。書き換えと deny を同じ hook が出すので、別の hook との順番に依らない
 - 止め方: Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1` (背景に回す形の deny も止まる)
 

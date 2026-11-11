@@ -58,7 +58,7 @@ tmpclean sweep [-days 3] [-json]
 
 | 層 | 中身 |
 |---|---|
-| プロジェクト単位 | 生きている claude (`pgrep -a -x claude` ∪ UCOMM が版番号 ∪ command に `claude-code` / `/claude/versions/` / `/claude`) の cwd から本体と同じ規則で project 名を導き、その project のセッションは移さない。200 字を超える名前は先頭 200 字の前方一致 |
+| プロジェクト単位 | 生きている claude (`pgrep -a -x claude` ∪ UCOMM がバージョン番号 ∪ command に `claude-code` / `/claude/versions/` / `/claude`) の cwd から本体と同じ規則で project 名を導き、その project のセッションは移さない。200 字を超える名前は先頭 200 字の前方一致 |
 | ID | 子孫のシェルの環境変数の `CLAUDE_CODE_SESSION_ID`・argv の `--resume` / `-r` / `--session-id`・自分の ID |
 | 判定不能で止める | cwd を読めない・ASCII 以外や `\` (lsof のエスケープ) を含む・導いた project が無い・起動時の `PWD` と違う・自分の claude の導出が自分の scratchpad と合わない → `session` を止める (2) |
 | 使用中 | lsof の全体の写し (100 件未満なら失敗とみなす) と、移す直前の 1 件の取り直し (stdout・stderr・rc の 3 つで判定。判定不能は残す) |

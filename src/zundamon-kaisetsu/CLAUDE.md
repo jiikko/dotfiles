@@ -19,7 +19,7 @@
   `_claude/skills/zundamon-kaisetsu/templates/player.html` の 2 か所にある。テストが突き合わせるのは字句まで:
   **字面を残したまま意味だけ変える書き換え** (まとめ撮りの分解で欄を並べ替える・`paint` の引数の順を変える) は検出しない
 - ラベルの改行の計測 (`#measure`。issue 812) は、どのラベルを測るかの条件と、各ラベルの字・種類を Go (`build.ExpectedLabels`) と player の
-  2 か所に持つ。player が返さないラベル・字や種類が違うラベルは build が止めるので、片方だけ変えると止まる (黙って測らなくなることはない)。
+  2 か所に持つ。player が返さないラベル・字や種類が違うラベルは build が止めるので、片方だけ変えると止まる (気づかないうちに測らなくなることはない)。
   逆向き (player だけが余分に測る) は止まらない。判定 (1 行か・語の境目か・はみ出し) は Go の `LabelProblems` だけが持つ。
   **player の測り方 (行の分け方・はみ出しの量) そのものはテストから実行されない** (テストは本物の Chrome に触れない)。計測の JS を変えたら、
   問題のある台本 (2 行になるタイトル・語の途中で切れる重要語) で本物の Chrome の build を通し、止まることを確かめる
@@ -39,6 +39,6 @@
 
 - テストは全部 main に置く (`internal/*` へ移さない)。cwd からの相対パス (`testdata/`・skill のディレクトリ) と、テストのバイナリ自身を
   偽の Chrome / ffmpeg として起こし直す仕組み (`TestFakeMP4Tool`) が main の cwd とバイナリを前提にしている。移すなら、パスを
-  `runtime.Caller` 基準にし、偽物を使うパッケージごとに `TestFakeMP4Tool` を持たせる (持たないと偽物が「テストなし」で rc=0 を返して黙って壊れる)
+  `runtime.Caller` 基準にし、偽物を使うパッケージごとに `TestFakeMP4Tool` を持たせる (持たないと偽物が「テストなし」で rc=0 を返してエラーを出さずに壊れる)
 - 本物のエンジン・コンテナ・ネットワークに触れない (偽物は `helpers_test.go` の `writeShim` / `engine_auto_test.go` の `newFakeEngineEnv`)
 - 実機の mermaid / Chrome を中断して確かめるときは、非対話の bash の `&` で起こしたプロセスは SIGINT を無視した状態で始まるので、SIGTERM を使う
