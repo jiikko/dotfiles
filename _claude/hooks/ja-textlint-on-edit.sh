@@ -22,6 +22,9 @@
 #   ja-textlint が指摘の有無以外で終わったとき (fail-open。規則の誤りは tests/bin/test_ja_textlint.sh が見る)・160KB か 3000 行を超えるファイル・
 #   Edit で new_string が空 (削除だけ) のとき・new_string がファイルに見つからないとき (書いた後に別の hook が書き換えた等)・
 #   old_string にあった行を同じ文字のまま別の場所へ動かしただけの行・textlint か範囲の jq が時間の上限で止められたとき
+# 分かっていて受ける形: harness が hook の上限で process group に SIGKILL を送ると、runtimeout が別のグループに置いた textlint の node が
+#   自分で終わるまで残る (textlint を 10 秒で止めるので、hook 全体が上限を超えること自体を再現できていない。超えるなら上限の配分を見直す)。
+#   範囲の jq は「new_string の出現の数 × 行の数」で伸び、同じ行を数百行並べた replace_all のような入力では 3 秒で止められて黙る
 # 分かっていて受ける形: replace_all でない Edit で new_string がファイルの別の場所にもあると、書いていない方の行も見る
 #   (どの出現を書いたかは、書いた後のファイルからは決まらない。old_string と同じ行は除くので、文脈の行は出ない)
 
@@ -64,6 +67,7 @@ runtimeout="$hook_repo/bin/runtimeout"
 # - old_string にある行は書いた行に数えない。同じ行を old_string より多く書いたら (写し)、増えた分は書いた行に数える。
 #   行ごとの数は 1 回の走査で数える (new_string の行ごとに前を数え直すと、行の数の 2 乗で遅くなる)
 # - 鍵にした object にするのは重複を除くため (出現の数 × 行の数の配列にすると、知らせを組む段が指摘の数 × その数で遅くなる)
+# shellcheck disable=SC2016  # 単一引用符の中は jq のプログラム ($c は jq の変数)。runtimeout を前に置くと shellcheck が jq と見分けない
 ranges=$(printf '%s' "$input" | "$runtimeout" 3 jq -c --rawfile c "$file" '
   def nl: gsub("\r\n"; "\n") | gsub("[\r\u2028\u2029]"; "\n");
   ($c | nl) as $c
