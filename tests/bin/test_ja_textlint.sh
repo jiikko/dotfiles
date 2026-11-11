@@ -60,6 +60,9 @@ x ** 2 を計算する。
 第百版を読む。
 この変更は全
 版に当てる。
+安定版と暫定版を出す。
+準備ができ次第版を上げる。この変更は全版に当てる。
+第Ⅱ版と改訂版と限定版と体験版。
 EOF
 
 rc=0
@@ -92,9 +95,13 @@ want="3 4 ja-ai-vocabulary 1
 30 1 ja-ai-vocabulary 1
 31 2 ja-ai-vocabulary 1
 33 1 ja-ai-vocabulary 1
-36 1 ja-ai-vocabulary 1"
+36 1 ja-ai-vocabulary 1
+37 3 ja-ai-vocabulary 1
+37 7 ja-ai-vocabulary 1
+38 8 ja-ai-vocabulary 1
+38 20 ja-ai-vocabulary 1"
 if [ "$(sort <<<"$got")" = "$(sort <<<"$want")" ]; then
-  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (19 件)"
+  ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (23 件)"
 else
   fail "指摘が期待と違う。got:
 $got"
