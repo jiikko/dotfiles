@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slack-bbs/source"
 )
 
@@ -232,5 +233,22 @@ func TestPickerDropsChannelsThatLeft(t *testing.T) {
 	}
 	if !maps.Equal(p.fetch.failed, map[string]bool{"C3": true}) {
 		t.Errorf("取れなかった = %v, want C3 だけ (取っている最中に消えた C1 は数えない)", p.fetch.failed)
+	}
+}
+
+// 右端に呼び出しの様子を出しても、案内の行は端末の幅を超えない (優先度 1 の項目が残りの幅に入らないときは右端を出さない)。
+func TestPickerStatusFitsWidth(t *testing.T) {
+	for _, w := range []int{40, 44, 45, 46, 47, 48, 50, 80} { // 44〜48: 残りの幅が 10 以上で、優先度 1 の「q: 保存せずに閉じる」(19 桁) より狭い
+		p := NewPicker(lpAll(), nil)
+		p.Resize(w, 16)
+		p.SetStatus(func() string { return "Slack 429 で停止中 あと 25 秒" })
+		for i, l := range p.Lines() {
+			if n := termwidth.Of(l); n > w {
+				t.Errorf("幅 %d: %d 行目が %d 桁: %q", w, i, n, l)
+			}
+		}
+		if last := p.Lines()[15]; w >= 80 && !strings.HasSuffix(last, "Slack 429 で停止中 あと 25 秒") {
+			t.Errorf("幅 %d: 右端に出ていない: %q", w, last)
+		}
 	}
 }

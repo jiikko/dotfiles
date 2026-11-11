@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/termsafe"
@@ -160,6 +161,9 @@ func HintLine(lead string, items []hintfit.Item, right string, w int, style func
 		return termwidth.Truncate(lead+hintfit.Fit(max(w-termwidth.Of(lead), 1), "  ", items), w, "…")
 	}
 	left := lead + hintfit.Fit(room, "  ", items)
+	if termwidth.Of(left)-termwidth.Of(lead) > room { // 優先度 1 の項目が入らないと、Fit は幅を超えて返す。そのときは右端を出さない
+		return termwidth.Truncate(lead+hintfit.Fit(max(w-termwidth.Of(lead), 1), "  ", items), w, "…")
+	}
 	return left + termwidth.PadSpaces(w-termwidth.Of(left)-rw) + style(right)
 }
 
@@ -549,7 +553,18 @@ type program struct {
 	init []tea.Cmd
 }
 
-func (m program) Init() tea.Cmd { return tea.Batch(m.init...) }
+func (m program) Init() tea.Cmd { return tea.Batch(append(m.init, m.p.statusTick())...) }
+
+// statusTickMsg は右下の Slack の呼び出しの様子を描き直す合図 (何もしないでいる間も、直近 1 分の数が減っていくのを見せる)。
+type statusTickMsg struct{}
+
+// statusTick は右下に出すものがあれば、1 秒後の描き直しを張る。
+func (p *Picker) statusTick() tea.Cmd {
+	if p.status == nil {
+		return nil
+	}
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return statusTickMsg{} })
+}
 
 // ChannelsMsg は裏で取り直したチャンネルの一覧 (Run に渡す Cmd が返す)。P は取り直した一覧で作った画面で、開いている画面を Refresh で差し替える。
 type ChannelsMsg struct {
@@ -569,6 +584,8 @@ func (m program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.p.ResumeFetch()
 	case LastPostMsg:
 		return m, m.p.HandleLastPost(msg)
+	case statusTickMsg:
+		return m, m.p.statusTick()
 	case tea.WindowSizeMsg:
 		m.p.Resize(msg.Width, msg.Height)
 	case tea.PasteMsg:

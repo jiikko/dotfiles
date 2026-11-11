@@ -50,11 +50,12 @@ type gate struct {
 
 // callStats は列の様子の記録 (このプロセスの呼び出しだけ。別に動かしている slack-bbs の分は入らない)。
 type callStats struct {
-	mu      sync.Mutex
-	starts  []time.Time // 直近の呼び出しの始まり (statsWindow より古いものは捨てる)
-	waiting int         // 列で番を待っている呼び出しの数
-	running bool        // slack-cli を走らせている最中
-	paused  time.Time   // レート制限で止めている期限
+	mu       sync.Mutex
+	starts   []time.Time // 直近の呼び出しの始まり (statsWindow より古いものは捨てる)
+	waiting  int         // 列で番を待っている呼び出しの数
+	sleeping bool        // 番を持ったまま、間を空けて (止めた期限まで) 待っている
+	running  bool        // slack-cli を走らせている最中
+	paused   time.Time   // レート制限で止めている期限
 }
 
 // statsWindow は呼び出しの頻度を数える窓。
@@ -64,7 +65,7 @@ const statsWindow = time.Minute
 type Stats struct {
 	LastMinute int           // 直近 1 分に始めた呼び出しの数
 	MeanGap    time.Duration // 直近 1 分の呼び出しの始まりの間の平均 (2 回未満なら 0)
-	Waiting    int           // 列で番を待っている呼び出しの数 (走っている 1 本は数えない)
+	Waiting    int           // まだ走っていない呼び出しの数 (列で番を待つものと、番を持って間を空けているもの)
 	Running    bool          // slack-cli を走らせている最中
 	PausedFor  time.Duration // レート制限で止めている残り (0 なら止めていない)
 }
@@ -78,6 +79,9 @@ func (t *Throttle) Stats() Stats {
 	defer st.mu.Unlock()
 	st.trim(now)
 	out := Stats{LastMinute: len(st.starts), Waiting: st.waiting, Running: st.running}
+	if st.sleeping {
+		out.Waiting++ // 番を持って間を空けている 1 本も、まだ走っていないので待ちに数える
+	}
 	if n := len(st.starts); n >= 2 {
 		out.MeanGap = st.starts[n-1].Sub(st.starts[0]) / time.Duration(n-1)
 	}
@@ -279,7 +283,16 @@ func (t *Throttle) runInTurn(ctx context.Context, cmd string, args []string) (ou
 		}
 		if d := wake.Sub(now); d > 0 {
 			unlock()
-			if err := g.sleep(ctx, d); err != nil {
+			paused := st.PausedUntil // 別のプロセスが 429 で止めた期限も、ファイルから読んだこの値で画面に出す
+			g.stats.add(func(cs *callStats) {
+				cs.sleeping = true
+				if paused.After(cs.paused) {
+					cs.paused = paused
+				}
+			})
+			err := g.sleep(ctx, d)
+			g.stats.add(func(cs *callStats) { cs.sleeping = false })
+			if err != nil {
 				return nil, nil, warns, err
 			}
 			continue

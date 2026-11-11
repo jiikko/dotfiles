@@ -486,3 +486,31 @@ func (b blockRunner) Run(context.Context, ...string) ([]byte, []byte, error) {
 	<-b.release
 	return []byte("[]"), nil, nil
 }
+
+// 別のプロセスが 429 で列を止めた期限 (列の状態のファイル) まで待っている間も、停止中と、番を持って待つ 1 本を出す。
+func TestThrottleStatsShowsPauseFromOtherProcess(t *testing.T) {
+	c := &fakeClock{t: t0}
+	path := filepath.Join(t.TempDir(), "slack-cli.lock")
+	other := throttleFor(&recRunner{now: c.now, errs: []error{limitErr("90 秒")}}, path, c)
+	if _, _, err := other.Run(context.Background(), "history"); err == nil {
+		t.Fatal("429 を返していない")
+	}
+	me := throttleFor(&recRunner{now: c.now}, path, c)
+	asleep, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	me.g.sleep = func(ctx context.Context, d time.Duration) error {
+		once.Do(func() { // 最初の待ちだけを止める (眠っている間に Stats を読む)
+			close(asleep)
+			<-release
+		})
+		return c.sleep(ctx, d)
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); _, _, _ = me.Run(context.Background(), "history") }()
+	<-asleep
+	if s := me.Stats(); s.PausedFor <= 0 || s.Waiting != 1 || !s.Active() {
+		t.Errorf("別のプロセスの停止を待つ間: %+v", s)
+	}
+	close(release)
+	<-done
+}
