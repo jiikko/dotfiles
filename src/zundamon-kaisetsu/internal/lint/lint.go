@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -61,6 +62,10 @@ var (
 // チャプターの数の目安 (SKILL.md の「チャプターは 4〜6 個。尺が長い (8 分を超える程度) なら増やしてよい」)。
 // 行数で尺を見積もる (1 行あたり約 5.5〜6 秒。87 行で約 8〜8.7 分。係数の実測は SKILL.md の手順 0)
 const (
+	// lintShowLinger は、図解が出たままになっている行数の目安 (issue 1055)。統合確認が「話題が移っても残っている」と拾った区間は
+	// 4〜6 行だった (2026-11-10 の動画の 4 区間)。わざと長く出す図解にどれだけ当たるかは測れていない (残っていた台本が無い)。
+	// 動画ごとに当たり外れを improving.md に書き、外れが多ければ行数を上げるか目安ごと外す
+	lintShowLinger   = 4
 	lintChaptersMin  = 4
 	lintChaptersMax  = 6
 	lintLongScript   = 87
@@ -208,6 +213,7 @@ func LintScript(s *script.Script, dict map[string]string) []lintIssue {
 			hint(c, "chapter-question", "チャプターの最初の行がずんだもんの質問でない (質問で始めると区切りが伝わる)")
 		}
 	}
+	out = append(out, showSpanHints(s)...)
 	out = append(out, sourceLeaks(s)...)
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Line < out[b].Line })
 	return out
@@ -426,4 +432,103 @@ func CmdLint(env *app.Env, scriptArg, sourceArg string) error {
 	}
 	fmt.Fprintln(env.Stdout, "(警告なし)")
 	return nil
+}
+
+// showSpan は 1 つの図解が出ている区間。lines[start] が図解を出した行、end は消える手前の行 (チャプターの境の手前で切る)。
+// from は残りを数え始める行: 段の無い図解は start、段のある図解 (比較・箇条書きの build、コードの steps) は最後に段を進めた行。
+type showSpan struct {
+	start, from, end int
+	show             map[string]any
+}
+
+// showSpans は台本の図解の区間を出した順に返す。null・次の図解・チャプターの境・台本の終わりで区間を閉じる
+// (チャプターをまたいで残る図解は show-across-chapter が警告するので、ここでは境の手前で切る)。
+func showSpans(s *script.Script) []showSpan {
+	var out []showSpan
+	var cur *showSpan
+	end := func(i int) {
+		if cur != nil {
+			cur.end = i - 1
+			out = append(out, *cur)
+			cur = nil
+		}
+	}
+	for i, line := range s.Lines {
+		if i > 0 && pyjson.Truthy(line["chapter"]) {
+			end(i)
+		}
+		show, ok := line["show"]
+		if !ok {
+			continue
+		}
+		switch v := show.(type) {
+		case nil:
+			end(i)
+		case string:
+			if v == "next" && cur != nil {
+				cur.from = i
+			}
+		case map[string]any:
+			if cur != nil && reflect.DeepEqual(cur.show, v) {
+				continue // 同じ中身の図解を書き直しても、build (show.LineShows) は 1 つにまとめ、画面では出たまま続く
+			}
+			end(i)
+			cur = &showSpan{start: i, from: i, show: v}
+		}
+	}
+	end(len(s.Lines))
+	return out
+}
+
+// showDigitRe は図解と字幕の中の数 (3 桁区切りの「,」は showDigitSep で先に外す)。整数の部分が 2 桁以上の数だけを取る:
+// 1 桁の数は「1か所」「2つ」のような語の一部が多く、区間の字幕のどこかに別の 1 桁の数があるかどうかで、照合が偶然で決まる
+// (review-bench の 2・9・14 行目の「1か所」)。受けたこと: 2026-11-10 の動画の「前の年の約2倍」のような 1 桁の数は見ない。
+var (
+	showDigitRe  = regexp.MustCompile(`[0-9]{2,}(?:\.[0-9]+)?|[0-9]\.[0-9]+`)
+	showDigitSep = regexp.MustCompile(`([0-9]),([0-9]{3})`)
+)
+
+func digitRuns(t string) []string {
+	for showDigitSep.MatchString(t) {
+		t = showDigitSep.ReplaceAllString(t, "$1$2")
+	}
+	return showDigitRe.FindAllString(t, -1)
+}
+
+// showSpanHints は図解の区間から出す目安 (issue 1055。どちらも rc に効かない):
+//   - show-linger: 図解が lintShowLinger 行以上出たまま。話題が移っても残っている図解を見つけるためで、意図して長く出しているならそのままでよい
+//   - show-number-unspoken: 図解の中の数が、出ている区間のどの字幕にも無い (画面の数字を誰も言わない)。数を丸ごとで比べ (「109」は「10920」を
+//     言ったことにしない)、コードの図解は見ない (字幕でコードを読み上げない決まり)。mermaid も見ない (ノード ID・style の数字は画面に出ない。
+//     ラベルの数字も見落とすが、記法とラベルを分けるには mermaid を読む必要がある)。言い換え (「約1万」と「10920」・「80%」と「8割」) は当たる側に倒れる。
+//     全角の数字 (２０２６) は見ない (字幕も図解も半角で書く決まりで、kanji-number とは別に止めてはいない)
+//
+// 照合は字幕 (text) で行う: 字幕は算用数字で書く決まりで、読み (read・readings) は仮名に開いていることがある。
+func showSpanHints(s *script.Script) []lintIssue {
+	var out []lintIssue
+	for _, sp := range showSpans(s) {
+		if n := sp.end - sp.from + 1; n >= lintShowLinger {
+			out = append(out, lintIssue{Line: sp.from, Rule: "show-linger", Hint: true,
+				Msg: fmt.Sprintf("図解が %d 行出たまま (%d〜%d 行目)。話題が移ったら \"show\": null で消す (わざと長く出しているならそのままでよい)", n, sp.from, sp.end)})
+		}
+		if t := sp.show["type"]; t == "code" || t == "mermaid" {
+			continue
+		}
+		spoken := map[string]bool{}
+		for _, l := range s.Lines[sp.start : sp.end+1] {
+			for _, d := range digitRuns(pyjson.Str(l["text"])) {
+				spoken[d] = true
+			}
+		}
+		var missing []string
+		for _, f := range ShowVisibleStrings(sp.show, "show", false) {
+			for _, d := range digitRuns(f.text) {
+				if !spoken[d] && !slices.Contains(missing, d) {
+					missing = append(missing, d)
+					out = append(out, lintIssue{Line: sp.start, Rule: "show-number-unspoken", Hint: true,
+						Msg: fmt.Sprintf("図解の %s の「%s」が、図解の出ている行の字幕で言われていない (画面の数はセリフでも言う)", f.key, d)})
+				}
+			}
+		}
+	}
+	return out
 }

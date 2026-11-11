@@ -116,6 +116,46 @@ func TestLintRules(t *testing.T) {
 		"next で段を進める連続は数えない": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "code", "lines": []any{"x", "y", "z"}, "steps": []any{[]any{1}, []any{2}, []any{3}}}),
 			m("metan", "b", "show", "next"), m("metan", "c", "show", "next"), m("zundamon", "d")}, nil},
+		// 図解の残り (目安。issue 1055): 段の無い図解は出した行から、段のある図解は最後に段を進めた行から、消える手前の行までを数え、4 行で出す
+		"段の無い図解が 4 行残る": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"), m("metan", "c"), m("zundamon", "d")}, []string{"0:show-linger"}},
+		"3 行で消せば出さない": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"), m("metan", "c"), m("zundamon", "d", "show", nil)}, nil},
+		"次の図解に替えるまでの 4 行も数える": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"), m("metan", "c"), m("zundamon", "d"),
+			m("metan", "e", "show", map[string]any{"type": "keyword", "text": "別"}), m("zundamon", "f", "show", nil)}, []string{"0:show-linger"}},
+		"段のある図解は最後に段を進めた行から数える": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "list", "items": []any{"x", "y"}, "build": true}), m("metan", "b", "show", "next"),
+			m("zundamon", "c？"), m("metan", "d")}, nil},
+		"段を進めた後に 4 行残る": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "list", "items": []any{"x", "y"}, "build": true}), m("metan", "b", "show", "next"),
+			m("zundamon", "c？"), m("metan", "d"), m("zundamon", "e")}, []string{"1:show-linger"}},
+		"build の無い比較は段の無い図解": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "compare", "left": map[string]any{"title": "x", "items": []any{"p"}}, "right": map[string]any{"title": "y", "items": []any{"q"}}}),
+			m("zundamon", "b？"), m("metan", "c"), m("zundamon", "d")}, []string{"0:show-linger"}},
+		"チャプターの境で数えるのをやめる (残りは show-across-chapter が出す)": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"), m("metan", "c"),
+			m("zundamon", "d？", "chapter", "次"), m("metan", "e")}, []string{"3:show-across-chapter"}},
+		// 図解の数字 (目安。issue 1055): 図解の中の数字が、出ている区間の字幕に無い。区切りの「,」は除いて比べ、コードの図解は見ない
+		"図解の数字が字幕に無い": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "約10920件", "sub": "前の年の約1.5倍"}), m("zundamon", "多いのだ", "show", nil)},
+			[]string{"0:show-number-unspoken", "0:show-number-unspoken"}},
+		"1 桁の数は見ない (語の一部が多く、照合が偶然で決まる)": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "1か所の漏洩", "sub": "約2倍"}), m("zundamon", "b", "show", nil)}, nil},
+		"mermaid の記法の数字は見ない": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "mermaid", "code": []any{"flowchart LR", "  A10[入力] --> A20[出力]"}, "alt": "流れ"}), m("zundamon", "b", "show", nil)}, nil},
+		"同じ図解を書き直しても、出たままの 1 つとして数える": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}), m("zundamon", "b？"), m("metan", "c"),
+			m("zundamon", "d", "show", map[string]any{"type": "keyword", "text": "語"}), m("metan", "e"), m("zundamon", "f", "show", nil)}, []string{"0:show-linger"}},
+		"区間のどこかの字幕で言えば出さない": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "10,920件", "sub": "約1.5倍"}), m("zundamon", "10920件なのだ？"),
+			m("metan", "前の年の1.5倍よ"), m("zundamon", "c", "show", nil)}, nil},
+		"図解を消す行で言っても、言ったことにしない (その行では図解はもう出ていない)": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "12倍"}), m("zundamon", "12倍なのだ", "show", nil)}, []string{"0:show-number-unspoken"}},
+		"桁の一部だけが字幕にあっても言ったことにしない": {[]map[string]any{
+			m("metan", "109件", "show", map[string]any{"type": "keyword", "text": "10920件"}), m("zundamon", "b", "show", nil)}, []string{"0:show-number-unspoken"}},
+		"コードの図解の数字は見ない": {[]map[string]any{
+			m("metan", "a", "show", map[string]any{"type": "code", "lines": []any{"x := 42"}}), m("zundamon", "b", "show", nil)}, nil},
 	} {
 		if got := run(tc.lines...); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %v (want %v)", name, got, tc.want)
