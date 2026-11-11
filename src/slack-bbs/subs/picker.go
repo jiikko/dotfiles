@@ -173,9 +173,11 @@ func (p *Picker) visible() []int {
 	}
 	var out []int
 	for i, it := range p.items {
-		if it.grp != nil && p.editing != nil || it.memberOnly && (p.editing == nil || !p.inEditing(it.ch.ID)) {
-			// グループの出し入れの間はチャンネルだけを並べる。外すためだけの行 (アーカイブ済み・消えたメンバー) は、編集している
-			// グループのメンバーのときだけ出す (他のグループや購読に、読めないチャンネルを入れさせない)
+		editing := p.editing != nil
+		if it.grp != nil && editing || it.memberOnly && !editing || editing && it.ch.IsArchived && !p.inEditing(it.ch.ID) {
+			// グループの出し入れの間はチャンネルだけを並べる。読めない行 (アーカイブ済み・一覧から消えた) は、編集しているグループの
+			// メンバーのときだけ出す (外すため)。購読していて外すために出す行 (memberOnly でない) も、memberOnly で見ずに IsArchived で
+			// 見る: 見ないと、グループに読めないチャンネルを入れられる。グループのメンバーとしてだけ残る行は購読の付け外しに出さない
 			continue
 		}
 		name := strings.ToLower(it.ch.Name)

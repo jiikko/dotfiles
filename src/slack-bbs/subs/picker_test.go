@@ -321,3 +321,23 @@ func TestPickerMemberOnlyRowsStayInTheirGroup(t *testing.T) {
 		t.Errorf("a の消えたメンバーが b の編集に出た (b に読めないチャンネルを入れられる):\n%s", lines)
 	}
 }
+
+// 購読しているがアーカイブ済み・一覧から消えたチャンネルは、購読の画面では外せるように出すが、グループの編集には出さない
+// (出すとグループに読めないチャンネルを入れられ、読み直しのたびに「読めなかったチャンネル」の注記が出続ける)。
+func TestPickerSubscribedButUnreadableRowsStayOutOfGroups(t *testing.T) {
+	all := []source.Channel{{ID: "C1", Name: "dev", IsMember: true}, {ID: "C2", Name: "old", IsArchived: true}}
+	p := NewPicker(all, []Channel{{ID: "C2", Name: "old"}, {ID: "C9", Name: "gone"}})
+	p.Resize(100, 14)
+	lines := strings.Join(p.Lines(), "\n")
+	if !strings.Contains(lines, "#old") || !strings.Contains(lines, "#gone") {
+		t.Fatalf("購読しているアーカイブ済み・消えたチャンネルを外せるように出していない:\n%s", lines)
+	}
+	p.Key("g")
+	for _, r := range "times" {
+		p.Press(string(r), string(r))
+	}
+	p.Key("enter")
+	if lines := strings.Join(p.Lines(), "\n"); !strings.Contains(lines, "#dev") || strings.Contains(lines, "#old") || strings.Contains(lines, "#gone") {
+		t.Errorf("グループの編集に読めないチャンネルを出した (または読めるチャンネルを出していない):\n%s", lines)
+	}
+}
