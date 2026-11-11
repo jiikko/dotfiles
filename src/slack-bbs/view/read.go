@@ -280,9 +280,8 @@ func newCount(t board.Topic, read map[string]string, mentions map[string][]rende
 // グループどうしの重複を許す)。
 func (m *Model) buildStream() []row {
 	type entry struct {
-		r      row
-		last   string
-		unread bool
+		r    row
+		last string
 	}
 	var unread, read []entry
 	for i := range m.chans {

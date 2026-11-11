@@ -897,7 +897,7 @@ const minState = 20
 // tabsLine はチャンネルのタブ。幅に収まらないときは今のタブを残し、今のタブから遠いタブを「…」に畳む
 // (行の右端で切ると、後ろの方のチャンネルを開いたときに、どれを見ているかが消える)。
 func (m *Model) tabsLine() string {
-	names := make([]string, len(m.chans))
+	names := make([]string, len(m.chans), len(m.chans)+1) // 最後に新着のタブを足す
 	for i, c := range m.chans {
 		names[i] = c.ch.Label()
 		if c.loading {
@@ -917,7 +917,9 @@ func (m *Model) tabsLine() string {
 	if n := m.streamUnread(); n > 0 {
 		stream += fmt.Sprintf("  未読 %d", n)
 	}
-	return tabWindow(append(names, stream), cur, m.w)
+	names = names[:len(m.chans)+1]
+	names[len(m.chans)] = stream
+	return tabWindow(names, cur, m.w)
 }
 
 func (m *Model) state() string {
