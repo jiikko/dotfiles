@@ -16,8 +16,8 @@ codex-events is-object <file>                                                   
 完了 = `turn.completed` が最後のターンにあり、応答の本文があり、`turn.failed` / `error` のイベントも読めない行も無い。
 本文は `-o` のファイルが空なら、最後の `agent_message` のイベントで補う (`response_source`)。
 
-Python 版 (`bin/lib/codex-events.py`) を置き換えたもので、行の区切り (`str.splitlines`)・空白 (`str.strip`)・改行の統一
-(`Path.read_text`)・ログに出すパスの表記 (`str(Path)`) を Python 版とそろえている (ログの行と `parse_errors` の行番号を変えないため)。
+Python の実装 (`bin/lib/codex-events.py`) を置き換えたもので、行の区切り (`str.splitlines`)・空白 (`str.strip`)・改行の統一
+(`Path.read_text`)・ログに出すパスの表記 (`str(Path)`) を Python の実装とそろえている (ログの行と `parse_errors` の行番号を変えないため)。
 意図的に変えた点は issue 670 の「Python 版と変えたこと」。
 
 ## テスト

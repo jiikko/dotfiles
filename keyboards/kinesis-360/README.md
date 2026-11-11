@@ -8,7 +8,7 @@
 |---|---|
 | `layouts/layoutN.txt` | プロファイル N のキーの割り当てとマクロ |
 | `lighting/ledN.txt` | プロファイル N のインジケータ LED の役と色 |
-| `settings/settings.txt` | 全体の設定 (今のプロファイル・ファームウェアの版など)。**公式は「編集しない」** |
+| `settings/settings.txt` | 全体の設定 (今のプロファイル・ファームウェアのバージョンなど)。**公式は「編集しない」** |
 | `settings/app_settings.txt` | SmartSet アプリの案内の表示の on/off |
 
 ## ドライブモード (v-Drive) の開き方・閉じ方
@@ -20,7 +20,7 @@
   Finder のサイドバー (デバイス) かデスクトップに `Adv360` が出る
 - **閉じる: Finder で取り出し (eject) してから、もう一度 SmartSet + Hotkey 3**。LED が 2 回点滅する。
   取り出さずに閉じると壊れることがある。macOS は閉じた後にエラーを出すことがあるが無視してよい
-- 開いている間は、v-Drive 以外の SmartSet の操作が効かない (ドライブを壊さないため)
+- 開いている間は、v-Drive 以外の SmartSet の操作を受け付けない (ドライブを壊さないため)
 
 ## この repo の設定をキーボードへ入れる
 

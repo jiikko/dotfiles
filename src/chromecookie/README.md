@@ -37,9 +37,9 @@ if err := res.Diagnose("esa 宛ての Cookie "); err != nil { /* *ReadError: 記
 | エラー | 扱い |
 |---|---|
 | `*EnvError` (`IsEnvError`) — Keychain の鍵を取れない / 作業領域の異常 / macOS 以外 | 即停止 (どのプロファイルでも同じ) |
-| `IsMissing` — Cookie DB が無い / `Diagnose` が nil (Cookie 0 件) | 黙って skip |
+| `IsMissing` — Cookie DB が無い / `Diagnose` が nil (Cookie 0 件) | エラーを出さずに skip |
 | `*ReadError` — アクセス拒否・壊れた DB・全件復号失敗・`-wal` / `-shm` を読めない | 記録して skip し、全滅したら `IssueNote` で理由を添える |
-| それ以外 | 止める側に倒す (分類は許可リスト) |
+| それ以外 | 止める方を選ぶ (分類は許可リスト) |
 
 `ReadCookiesForHost` は送信先のホストに送られうる行だけを読む。絞りは `HostMatches` と同じ判定の host_key の完全一致で、
 `Diagnose` の全件復号失敗も絞った行だけで数える。全件を読む口は置かない (他サイトのセッション Cookie まで復号することになる)。

@@ -16,7 +16,7 @@ serialrun の監査で見つかった、グループ B の 11 項目。
 
 ## 項目
 
-### B1 hook の全体ガード `strings.Contains(cmd, "serial-run" / "PATH=" / "<<" / "((")` が部分文字列で効き、無関係な重い部分まで直列化から外れる (黙って素通し)
+### B1 hook の全体ガード `strings.Contains(cmd, "serial-run" / "PATH=" / "<<" / "((")` が部分文字列で当たり、無関係な重い部分まで直列化から外れる (エラーを出さずに素通し)
 - 重要度: P2 (responsibility) / 確認済み (実バイナリの hook に流した): `GOPATH=/x go test ./...`、`PKG_CONFIG_PATH=/a make test`、`make test && git commit -m "serial-run を直す"`、`git diff issues/869-...serial-machine.md | head; make test`、`make test 2>&1 | grep PATH=` が全部書き換わらない。対照 `make test > out.log 2>&1` は書き換わる
 - 根拠: hook.go `wrapCommand` の冒頭ガード (語や引用の外かを見ない)。判定の正本は `isHeavy` + `scanner` と謳うのに、拒否の一部が scanner を通らない。serial-run を触る作業ほど当たる。害は fail-open (壊れはしないが重い 2 本が同時に走る)
 - 直し方の案: 拒否を scanner の中へ寄せる (代入語を読むときに `PATH` と完全一致か、コマンド位置の語が `serial-run` かを見る)。`<<` / `((` は scanner が読み切れないとき既に ok=false なので、残すなら理由を書く。テストに `GOPATH=` と引用内の serial-run の 2 件を足す。変異は B1 の枝を戻す形で red を確かめる
@@ -41,18 +41,18 @@ serialrun の監査で見つかった、グループ B の 11 項目。
 - 出典: general P3-3
 
 ### B5 fast path (`serial-run-wrap.sh` の `case`) が hook.go の語彙の二重持ちで、jq に依存し、粗くて偽陽性も出す
-- 重要度: P2 (performance。ただし報告は「体感できる差ではない」と書く) / 確認済み (実測。軽いコマンドで net 約 16 ms、jq 部分 約 7 ms、偽陽性は 38 ms で本物の 38 ms と同じ。語彙の一致は読んで確認、jq が無いと黙って全部止まる経路はコードで確認)
-- 根拠: `_claude/hooks/serial-run-wrap.sh` の `*make*|*go*test*|*xcodebuild*|*swift*|*mutate-verify*` (isHeavy に語を足しても fast path を足さないと silent に包まれない。テストは既存 5 語の例だけ) / `_claude/hooks/lib/hook_io.sh` の `hook_read_bash_command` (jq が無いと return 1 → `|| exit 0` で直列化が黙って全部止まる。macOS 15 は /usr/bin/jq を持つかもしれず未確認) / `*go*test*` は離れた語にも当たる
+- 重要度: P2 (performance。ただし報告は「体感できる差ではない」と書く) / 確認済み (実測。軽いコマンドで net 約 16 ms、jq 部分 約 7 ms、偽陽性は 38 ms で本物の 38 ms と同じ。語彙の一致は読んで確認、jq が無いと何も知らせずに全部止まる経路はコードで確認)
+- 根拠: `_claude/hooks/serial-run-wrap.sh` の `*make*|*go*test*|*xcodebuild*|*swift*|*mutate-verify*` (isHeavy に語を足しても fast path を足さないと silent に包まれない。テストは既存 5 語の例だけ) / `_claude/hooks/lib/hook_io.sh` の `hook_read_bash_command` (jq が無いと return 1 → `|| exit 0` で直列化が何も知らせずに全部止まる。macOS 15 は /usr/bin/jq を持つかもしれず未確認) / `*go*test*` は離れた語にも当たる
 - 直し方の案 (食い違う 2 案): (a) fast path を外す (速さの根拠は hook の起動 1 回分で、bin/serial-run は 0.02〜0.04 秒。responsibility の案で、複雑性が一番下がる)。(b) 残すなら jq を外し `HOOK_INPUT=$(cat)` の全文に同じ `case` を当て、含むときだけ Go に渡す (performance・dependency の案。偽陰性は出ない。依存が 1 つ減る)。手がかり語を境界つきに狭める案は、偽陰性 = 直列化の抜けになるので報告も「現状のままでよい可能性が高い」と言う。どれを採るか決める
 - 出典: responsibility P3-1 / performance P2-1・P2-2 / dependency P3-2
 
-### B6 hook が「包めなかった」「包まなかった」「重くないので包まなかった」を外から区別できず、効いたかを後から確かめる手段が無い
+### B6 hook が「包めなかった」「包まなかった」「重くないので包まなかった」を外から区別できず、包んだかを後から確かめる手段が無い
 - 重要度: P2 / 一部確認済み (hook の PATH 照合行を削る変異は red)。ビルド失敗が全 session で無音になる経路 (go が PATH に無い・ソース編集の途中) は未実機・コードから
 - 根拠: `serial-run-wrap.sh` (`... || exit 0` が 6 箇所、最後の `"$bin" hook` の rc も捨てて `exit 0`。hook の stderr は Claude Code に出ない) / hook.go `runHook` (どの失敗も無出力で rc=0) / main.go `execDirect` (入れ子は札も history も出さない) / `runQueued` (待ち 1 秒未満は行を出さない)。シェルテストの `expect ""` 5 件は別の理由で空でも緑。869:332 の計測 (history.log を読む) が「記録が少ない = 並んでいない」と「包まれていない」を区別できない
 - 直し方の案: `serial-run hook` が「差し込んだ / 見送った (理由)」を state 下の hook.log (history.log とは別) に追記し、`serial-run status` が最後の見送り・ビルド失敗を出す。シェル hook はビルド失敗 (`bin/serial-run` の rc≠0) のときだけ `additionalContext` か hook.log に残す。execDirect は history.log に `direct` 行を残す (D3 と同じ commit にしてよい)
 - 出典: false-green P2-2
 
-### B7 hook が PATH を照合するのは hook プロセスの PATH で、差し込んだコマンドを走らせるのは Bash tool のシェル。食い違うと rc=127 (fail-open が効かない側)
+### B7 hook が PATH を照合するのは hook プロセスの PATH で、差し込んだコマンドを走らせるのは Bash tool のシェル。食い違うと rc=127 (fail-open が働かない側)
 - 重要度: 未確認 / 推測 (3 本とも実測していない。`_zshrc` が `PATH="$HOME/dotfiles/bin:$PATH"` を持つので通常の起動では揃うはず)
 - 根拠: `serial-run-wrap.sh` の `command -v serial-run` と、差し込む `serial-run -- `
 - 直し方の案: 差し込む語を `bin/serial-run` の絶対パスにする案 (hook.go の `wrapPrefix`)。ただし許可ルールの照合 (I1) が変わるので、実測してから決める
@@ -117,7 +117,7 @@ serialrun の監査で見つかった、グループ B の 11 項目。
   手で書いた serial-run の段を見ない / PATH を全部の引数で見る / `$'` を読む / noglob を戻す / `-args` の後ろも help と読む / 束の値を読み飛ばさない
 - 敵対的レビュー 1 周目 (Opus): P2 4 / P3 3 = 7 件。全部対応した (退行 3 件を含む):
   P2 手で書いた `serial-run --` の段がある別の段に差し込み互いの札を待つ (退行・再現済み) / P2 B1 の例 (`grep PATH=` 等) が今も見送られる (再現済み) / P2 `$'…\'…'` で引用の中を書き換える (前から・再現済み) /
-  P2 `noglob make test` が rc=127 (前から・再現済み) / P3 重いコマンドの頭の deny / ask が効かなくなる (今の設定では 0 件) → README に書く / P3 `go test -args -h` を help と読む (退行) /
+  P2 `noglob make test` が rc=127 (前から・再現済み) / P3 重いコマンドの頭の deny / ask が適用されなくなる (今の設定では 0 件) → README に書く / P3 `go test -args -h` を help と読む (退行) /
   P3 `make -Cscripts test` を dry-run と読む (退行)。`make -t` も待たせない側へ。壊せなかった観点: 差し込む位置のずれ・意味の書き換え (`FOO=1` / `time` / `!` / `{ }` / `( )` / `&` / リダイレクト / `$( )` / `[[ ]]` / `#` / 継続行)・fast path の偽陰性
 - 敵対的レビュー 2 周目 (Opus): P1 1 / P3 2。P1 パイプの片側が `(…)` / `{…}` / 制御構文 / `|` の後の改行だと両方の段に付き、待ちの上限まで止まる (再現済み) →
   手書きの serial-run があれば全体を見送る・パイプと複合コマンドを見送る (3 周目で絞った) / P3 `builtin export PATH=` 等・`unset PATH`・`eval`・`path=` → PATH の書き換えとして見送る /

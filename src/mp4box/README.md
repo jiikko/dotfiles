@@ -9,7 +9,7 @@ mp4-effective-size <file>   # 数を 1 行出して rc=0。読めない・壊れ
 ```
 
 数え方 (大きさ 0 は終わりまで・1 は 64 bit の大きさ・型が印字できる ASCII でない / 大きさが 8 未満 / ファイルの外へ出るところで止める) は、
-置き換えた Python 版 (`python3 -c`) と同じ。旧版との突き合わせは issue 670。
+置き換えた Python の実装 (`python3 -c`) と同じ。旧実装との突き合わせは issue 670。
 
 ```sh
 make test

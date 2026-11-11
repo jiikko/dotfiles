@@ -33,7 +33,7 @@ cd dotfiles
 ```
 
 `setup.sh` は設定ファイルの link のほか、Terminal.app のプロファイル (`mac/ClaudeWarm.terminal`) も既定にする。
-nvim は `_nviminit.lua` が `~/.config/nvim/init.lua` に張られ、初回の起動で lazy.nvim が `_lazy-lock.json` の版でプラグインを入れる。
+nvim は `_nviminit.lua` が `~/.config/nvim/init.lua` に張られ、初回の起動で lazy.nvim が `_lazy-lock.json` のバージョンでプラグインを入れる。
 
 ### 4. パッケージ
 

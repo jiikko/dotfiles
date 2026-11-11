@@ -26,7 +26,7 @@
 
 ## ビルド・テスト
 
-- `make -C src/doctor lint` / `test`。`test` は `test-derived-fields` に依存する: `disk/derived_fields_bypass_test.go` は module 外 (glogx のソースと workflow) を読むため通常の testcache が効かず、このターゲットが `-count=1` で強制実行して PASS 行を確認する
+- `make -C src/doctor lint` / `test`。`test` は `test-derived-fields` に依存する: `disk/derived_fields_bypass_test.go` は module 外 (glogx のソースと workflow) を読むため通常の testcache が使われず、このターゲットが `-count=1` で強制実行して PASS 行を確認する
 - CI は 3 レーン: `doctor.yml` (横断。テスト本数の下限 gate + fail-closed smoke)・`src_doctor.yml` (この module 単体)・`src_glogx.yml` (glogx 全体)。doctor 機能を触ったら `doctor.yml` を見る
 
 ## 詳しくは

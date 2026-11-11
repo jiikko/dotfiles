@@ -17,7 +17,7 @@
 - `internal/extcmd/` — 画面と main が共有する外部コマンドの口 (エディタ・ブラウザ・クリップボード) と結果の Msg (`extcmd.RunEditorCmd` などテストの差し替え点)
 - `internal/gitexec/` — git の実行の共通入口 (`gitexec.RunGitTimeout` / `RunGitReadTimeout` / `RunGitCmd`・失敗の型 `GitExitError`・status viewer の write 操作の差し替え点)。bubbletea を持たない末端の package (gitdata が使う)
 - `internal/fswatch/` — fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札と世代 (`fswatch.Chain`。git log と issues viewer の見張りが共有。札と世代はメソッドだけが書く) と watcher の seam (`fswatch.DirWatcher` / `fswatch.NewDirWatcher`)
-- `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出
+- `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新バージョン検出
 - `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル (それらを起こす配線そのものなので main に残す。issue 817 の G-2)
 - `internal/commitview/` (`diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go`) — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型。issue 817 の G-2)。main のテストの口は overlay ごとの `Fixture()` (`fixture.go`)
 - `internal/statusview/` (`status_view.go`, `worktree_status.go`) — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`。main のテストが状態を置くのは `Fixture()` の口だけ (git status の取得の差し替えは `statusview.FixtureStubWorktree`)
@@ -28,7 +28,7 @@
 - `internal/filerview/` (`filer_view.go`, `filer_resume.go`) — 全画面 treefiler (`F`)。main のテストの口は `fixture.go` (issue 817)。`filer_resume.go` は F を出したまま終えたときの場所の記憶 (C-g で開き直すと戻る)。画面の部品は `src/treefiler` の `filer` パッケージ (replace で取り込む)。仕様は `docs/treefiler-spec.md`
 - `internal/lanview/` (`lan_view.go`, `lan_resume.go`) — 全画面 mac-lan-manager (`L`)。main のテストの口は `fixture.go` (issue 817)。画面の部品は `src/mac-lan-manager` の `lanmgr` パッケージ、本物へのつなぎは `live` (replace で取り込む)。要件は issue 747
 - `internal/app/` — 画面のパッケージと main が共有する状態・道具。`clock.go` は時刻のシーム (`app.TimeNow`。テストが差し替える)、`screen_memory.go` は全画面 (issues / doctor / ratelimit / F / L) を閉じたときの記憶の保存・読み込み (30 分で失効。照合は各画面の `*_resume.go`)、`cleanup_latch.go` は終了前の完了待ち latch、`cache_io.go` はキャッシュの置き場 (`app.CacheBaseDir`) と atomic 書き込み (`app.WriteAtomic`)、`notice.go` は viewer の操作結果の種類 (`app.NoticeKind`) と小さな道具 (`app.FirstLine` / `app.ClampIdx` など)、`timing.go` は取得の timeout と再取得の間隔の定数 (`app.FetchTimeout` / `app.UsageRefreshInterval` など)、`text.go` は `app.CurrentDir`。bubbletea・fsnotify を import しない (gitdata が依存するため。`.golangci.local.yml` の depguard `data-layer-no-ui`)
-- `internal/testenv/` — テストを持つ各パッケージ (main と internal) の TestMain が呼ぶ共通の前処理と、外部作用の差し替えの helper。TestMain の前処理はパッケージ単位でしか掛からず、テストを別のパッケージへ移すと黙って外れるので、写さずここを呼ぶ (本番からの import は depguard が止める)
+- `internal/testenv/` — テストを持つ各パッケージ (main と internal) の TestMain が呼ぶ共通の前処理と、外部作用の差し替えの helper。TestMain の前処理はパッケージ単位でしか掛からず、テストを別のパッケージへ移すと気づかないうちに外れるので、写さずここを呼ぶ (本番からの import は depguard が止める)
 - `cmd/issue-claim/` — `bin/issue-claim` の main (claim の目印とバナーを付ける。本体は `issues.MoveToSubdir` = viewer の `n` と同じ)
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `zoom.go`, `hint_surfaces.go` — 開閉演出・最下行ヒントの共有ロジック
@@ -68,6 +68,6 @@ render.go (main と `internal/term` の両方) の純粋描画層・幅計算の
 
 ## ビルド・テスト
 
-- 起動は `bin/glogx` (autobuild `--async`: 旧版で即起動し、新版は次回から。今すぐ欲しければ `GO_AUTOBUILD_SYNC=1 glogx`)。`.autobuild.*` は autobuild の作業ファイル (gitignore 済み)
+- 起動は `bin/glogx` (autobuild `--async`: 旧バージョンで即起動し、新バージョンは次回から。今すぐ欲しければ `GO_AUTOBUILD_SYNC=1 glogx`)。`.autobuild.*` は autobuild の作業ファイル (gitignore 済み)
 - `make -C src/glogx test` は `-race` 付き。描画の確保回数は `frame_alloc_test.go`、bench の配管と予算は `tests/glogx/` (`bench_budgets.ci`)
 - 幅・描画のテストは LANG 非依存が前提 (issue 027 で runewidth を排除)。ロケールで結果が変わったら幅の出典が二重化している疑い (issue 112 の系)
