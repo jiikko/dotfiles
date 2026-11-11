@@ -7,6 +7,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.8
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
+	github.com/jiikko/dotfiles/src/testwait v0.0.0-20261101103228-d17e1488b625
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	subproc v0.0.0
 	userdirs v0.0.0
@@ -38,3 +39,5 @@ replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 replace subproc => ../subproc
 
 replace userdirs => ../userdirs
+
+replace github.com/jiikko/dotfiles/src/testwait => ../testwait

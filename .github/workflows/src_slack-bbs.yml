@@ -16,6 +16,7 @@ on:
       - 'src/subproc/**'    # replace で取り込む共有 module (外部プロセスの安全弁)
       - 'src/atomicfile/**' # replace で取り込む共有 module (購読の一覧の書き込み)
       - 'src/userdirs/**'   # replace で取り込む共有 module (設定の置き場)
+      - 'src/testwait/**'   # replace で取り込む共有 module (テストの条件の待ち)
       - .github/workflows/src_slack-bbs.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
@@ -32,6 +33,7 @@ on:
       - 'src/subproc/**'    # replace で取り込む共有 module (外部プロセスの安全弁)
       - 'src/atomicfile/**' # replace で取り込む共有 module (購読の一覧の書き込み)
       - 'src/userdirs/**'   # replace で取り込む共有 module (設定の置き場)
+      - 'src/testwait/**'   # replace で取り込む共有 module (テストの条件の待ち)
       - .github/workflows/src_slack-bbs.yml
       - .github/workflows/_go-project.yml
       - .github/go-version

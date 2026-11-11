@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -43,6 +44,76 @@ type gate struct {
 	floor    time.Duration // メソッドを問わず、前の呼び出しの終わりから必ず空ける間
 	mem      paceState     // lockPath が無い・使えないときの覚え
 	warned   bool          // ファイルを使えないことを知らせたか (呼び出しのたびに注記へ足さない)
+
+	stats callStats // 呼び出しの様子 (Stats。画面の goroutine からも読むので mu で守る)
+}
+
+// callStats は列の様子の記録 (このプロセスの呼び出しだけ。別に動かしている slack-bbs の分は入らない)。
+type callStats struct {
+	mu      sync.Mutex
+	starts  []time.Time // 直近の呼び出しの始まり (statsWindow より古いものは捨てる)
+	waiting int         // 列で番を待っている呼び出しの数
+	running bool        // slack-cli を走らせている最中
+	paused  time.Time   // レート制限で止めている期限
+}
+
+// statsWindow は呼び出しの頻度を数える窓。
+const statsWindow = time.Minute
+
+// Stats は Slack の呼び出しの列の様子 (読む画面の右下に出す)。
+type Stats struct {
+	LastMinute int           // 直近 1 分に始めた呼び出しの数
+	MeanGap    time.Duration // 直近 1 分の呼び出しの始まりの間の平均 (2 回未満なら 0)
+	Waiting    int           // 列で番を待っている呼び出しの数 (走っている 1 本は数えない)
+	Running    bool          // slack-cli を走らせている最中
+	PausedFor  time.Duration // レート制限で止めている残り (0 なら止めていない)
+}
+
+// Stats は列の様子を返す (このプロセスの呼び出しだけ)。
+func (t *Throttle) Stats() Stats {
+	g := t.g
+	now := g.now()
+	st := &g.stats
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.trim(now)
+	out := Stats{LastMinute: len(st.starts), Waiting: st.waiting, Running: st.running}
+	if n := len(st.starts); n >= 2 {
+		out.MeanGap = st.starts[n-1].Sub(st.starts[0]) / time.Duration(n-1)
+	}
+	if d := st.paused.Sub(now); d > 0 {
+		out.PausedFor = d
+	}
+	return out
+}
+
+func (st *callStats) trim(now time.Time) {
+	i := 0
+	for i < len(st.starts) && now.Sub(st.starts[i]) > statsWindow {
+		i++
+	}
+	st.starts = st.starts[i:]
+}
+
+// String は画面に出す 1 行 (例「Slack 12回/分 間隔 2.3秒 待ち 3」。止めている間は「Slack 429 で停止中 あと 25 秒」)。
+// 数えているのはこのプロセスの呼び出しだけ。
+func (s Stats) String() string {
+	if s.PausedFor > 0 {
+		return fmt.Sprintf("Slack 429 で停止中 あと %d 秒", int((s.PausedFor+time.Second-1)/time.Second))
+	}
+	out := fmt.Sprintf("Slack %d回/分", s.LastMinute)
+	if s.MeanGap > 0 {
+		out += fmt.Sprintf(" 間隔 %.1f秒", s.MeanGap.Seconds())
+	}
+	if s.Waiting > 0 {
+		out += fmt.Sprintf(" 待ち %d", s.Waiting)
+	}
+	return out
+}
+
+// Active は描き直し続ける価値があるか (直近 1 分に呼び出しがある・待っている・止めている)。
+func (s Stats) Active() bool {
+	return s.LastMinute > 0 || s.Waiting > 0 || s.Running || s.PausedFor > 0
 }
 
 // paceState は列の状態 (lockPath のファイルの中身)。
@@ -139,9 +210,12 @@ func rateLimited(err error) (wait time.Duration, retry, ok bool) {
 // 待ったこと・列をプロセスの間で共有できなかったこと (1 回だけ) は、stderr の頭に「警告:」の行で足す (Client が板の注記に載せる)。
 func (t *Throttle) Run(ctx context.Context, args ...string) ([]byte, []byte, error) {
 	g := t.g
+	g.stats.add(func(st *callStats) { st.waiting++ })
 	select {
 	case g.tok <- struct{}{}:
+		g.stats.add(func(st *callStats) { st.waiting-- })
 	case <-ctx.Done():
+		g.stats.add(func(st *callStats) { st.waiting-- })
 		return nil, nil, ctx.Err()
 	}
 	defer func() { <-g.tok }()
@@ -210,7 +284,10 @@ func (t *Throttle) runInTurn(ctx context.Context, cmd string, args []string) (ou
 			}
 			continue
 		}
+		begin := g.now()
+		g.stats.add(func(cs *callStats) { cs.starts, cs.running = append(cs.starts, begin), true })
 		out, errb, err = t.r.Run(ctx, args...)
+		g.stats.add(func(cs *callStats) { cs.running = false })
 		st.LastEnd = g.now()
 		if st.LastEndBy == nil {
 			st.LastEndBy = map[string]time.Time{}
@@ -218,6 +295,7 @@ func (t *Throttle) runInTurn(ctx context.Context, cmd string, args []string) (ou
 		st.LastEndBy[cmd] = st.LastEnd
 		if wait, _, limited := rateLimited(err); limited {
 			st.PausedUntil = st.LastEnd.Add(wait)
+			g.stats.add(func(cs *callStats) { cs.paused = st.PausedUntil })
 		}
 		save(st)
 		unlock()
@@ -299,4 +377,11 @@ func openLock(path string) (*os.File, error) {
 		return nil, err
 	}
 	return os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+}
+
+// add は列の様子の記録を書き換える (画面の goroutine の Stats と並んで走るので mu で守る)。
+func (st *callStats) add(f func(*callStats)) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	f(st)
 }

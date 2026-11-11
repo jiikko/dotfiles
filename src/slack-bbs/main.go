@@ -380,6 +380,9 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 		return err
 	}
 	cmds = append(cmds, p.StartFetch(ctx, lastPosts(cli, st, d.now, g.start)))
+	if f := apiStats(d.slack); f != nil {
+		p.SetStatus(func() string { s, _ := f(); return s })
+	}
 	if err := d.pick(p, cmds...); err != nil {
 		return err
 	}
@@ -416,6 +419,18 @@ func lastPosts(cli source.Client, st cache.Store, now func() time.Time, start fu
 		},
 		Save: st.SaveLastPosts,
 		Now:  now,
+	}
+}
+
+// apiStats は右下に出す Slack の呼び出しの様子 (r が呼び出しの列 source.Throttle でなければ nil。テストの偽物など)。
+func apiStats(r source.Runner) func() (string, bool) {
+	t, ok := r.(*source.Throttle)
+	if !ok {
+		return nil
+	}
+	return func() (string, bool) {
+		s := t.Stats()
+		return s.String(), s.Active()
 	}
 }
 
@@ -740,6 +755,9 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 		return p, nil
 	}
 	m := view.New(ctx, targets, load, d.openURL, d.now)
+	if f := apiStats(d.slack); f != nil {
+		m.SetAPIStats(f)
+	}
 	if st.Dir != "" {
 		m.SetReads(&view.Reads{
 			Load:       st.LoadRead,

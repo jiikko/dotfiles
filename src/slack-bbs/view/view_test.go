@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"slack-bbs/board"
 	"slack-bbs/render"
 	"slack-bbs/source"
@@ -870,5 +871,38 @@ func TestPickerFetchesLastPostsUntilClosed(t *testing.T) {
 	}
 	if len(ctxs) > 1 {
 		t.Errorf("閉じた後も列を進めた: %d 件", len(ctxs))
+	}
+}
+
+// 右下 (案内の 2 行目の右端) に Slack の呼び出しの様子を出す。購読の画面でも同じ所に出す。呼び出しがある間は、何もしないでいても
+// 1 秒ごとに描き直す (直近 1 分の数が減っていくのを見せる)。
+func TestAPIStatsBottomRight(t *testing.T) {
+	m := newModel(&loader{calls: map[string]int{}})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	active := true
+	m.SetAPIStats(func() (string, bool) { return "Slack 12回/分 間隔 2.3秒", active })
+	lines := m.Lines()
+	last := sgrRe.ReplaceAllString(lines[len(lines)-1], "")
+	if !strings.HasSuffix(strings.TrimRight(last, " "), "Slack 12回/分 間隔 2.3秒") || termwidth.Of(last) > 120 {
+		t.Errorf("右下に呼び出しの様子が無い: %q", last)
+	}
+	var waits []time.Duration
+	m.after = func(d time.Duration, _ func(time.Time) tea.Msg) tea.Cmd { waits = append(waits, d); return nil }
+	m.frameCmds()
+	if !slices.Contains(waits, time.Second) {
+		t.Errorf("呼び出しのある間に 1 秒ごとの描き直しを張っていない: %v", waits)
+	}
+	active, waits = false, nil
+	m.ticks = tickchain.Chain{}
+	m.frameCmds()
+	if len(waits) != 0 {
+		t.Errorf("呼び出しが無いのに描き直しを張った: %v", waits)
+	}
+	m.SetSubscriptions(&Subscriptions{Cached: func() (*subs.Picker, time.Time, bool) { return subs.NewPicker(nil, nil), t0, true },
+		Open: func(context.Context) (*subs.Picker, error) { return subs.NewPicker(nil, nil), nil }, Save: func([]subs.Channel) error { return nil }})
+	press(m, "s")
+	lines = m.Lines()
+	if last := sgrRe.ReplaceAllString(lines[len(lines)-1], ""); !strings.Contains(last, "Slack 12回/分") {
+		t.Errorf("購読の画面の右下に呼び出しの様子が無い: %q", last)
 	}
 }

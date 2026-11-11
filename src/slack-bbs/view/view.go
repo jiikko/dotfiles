@@ -96,10 +96,11 @@ type Model struct {
 	body1    bodyCache // 本文の欄の折り返しの覚え (bodyLines)
 	// seq は読み直しの通し番号。チャンネルごとに数えると、購読から外して付け直したチャンネルで、外す前の読み直しの結果を
 	// 付け直した後の読み直しの結果と取り違える
-	seq     int
-	subs    *Subscriptions
-	picker  *subs.Picker // 購読の画面を開いている間だけ非 nil
-	picking bool         // 購読の画面の一覧を読んでいる
+	seq      int
+	subs     *Subscriptions
+	picker   *subs.Picker          // 購読の画面を開いている間だけ非 nil
+	picking  bool                  // 購読の画面の一覧を読んでいる
+	apiStats func() (string, bool) // 右下に出す Slack の呼び出しの様子 (SetAPIStats)
 	// pickCancel は購読の画面で走らせている最終投稿の取り直しを止める (画面を閉じたとき。nil なら走らせていない)
 	pickCancel context.CancelFunc
 	// pickCached は、読んでいる間に前に取った一覧で購読の画面を開いたこと (読み終えたら開いている画面の一覧を差し替える。
@@ -129,6 +130,10 @@ func New(ctx context.Context, chans []subs.Channel, load Loader, open func(strin
 	}
 	return m
 }
+
+// SetAPIStats は右下に出す Slack の呼び出しの様子を決める。f は出す文字列と、描き直し続けるか (直近に呼び出しがある) を返す。
+// 購読の画面にも同じ文字列を出す。nil なら出さない。
+func (m *Model) SetAPIStats(f func() (string, bool)) { m.apiStats = f }
 
 // SetSubscriptions は s で購読の画面を開けるようにする。
 func (m *Model) SetSubscriptions(s *Subscriptions) { m.subs = s }
@@ -326,6 +331,8 @@ func (m *Model) frameCmds() []tea.Cmd {
 		d = frameInterval
 	case m.busy():
 		d = spinnerStep
+	case m.apiActive():
+		d = time.Second // 右下の呼び出しの頻度を、何もしないでいる間も 1 秒ごとに描き直す (直近 1 分の数が減っていく)
 	default:
 		return cmds
 	}
@@ -333,6 +340,15 @@ func (m *Model) frameCmds() []tea.Cmd {
 		cmds = append(cmds, m.after(d, func(time.Time) tea.Msg { return tickMsg{seq: seq} }))
 	}
 	return cmds
+}
+
+// apiActive は右下の呼び出しの様子が動いているか (直近 1 分に呼び出しがある・待っている・止めている)。
+func (m *Model) apiActive() bool {
+	if m.apiStats == nil {
+		return false
+	}
+	_, active := m.apiStats()
+	return active
 }
 
 // busy は回る印を出しているか (どれかのチャンネルを読み直している・購読の画面の一覧を読んでいる)。
@@ -902,6 +918,9 @@ func (m *Model) Lines() []string {
 func (m *Model) screen() []string {
 	if m.picker != nil {
 		m.picker.Resize(m.w, m.h)
+		if m.apiStats != nil {
+			m.picker.SetStatus(func() string { s, _ := m.apiStats(); return s })
+		}
 		return m.picker.Lines()
 	}
 	if len(m.chans) == 0 {
@@ -1149,8 +1168,16 @@ func (m *Model) helpLines() []string {
 	if !m.body {
 		chans = append(chans, h(1, "q", "終わる"))
 	}
+	stats := ""
+	if m.apiStats != nil {
+		stats, _ = m.apiStats()
+	}
 	out := make([]string, 0, helpRows)
-	for _, items := range [][]hintfit.Item{pane, chans} {
+	for i, items := range [][]hintfit.Item{pane, chans} {
+		if i == 1 && stats != "" {
+			out = append(out, reset(subs.HintLine(" ", items, stats, m.w, dim)))
+			continue
+		}
 		out = append(out, reset(termwidth.Truncate(" "+hintfit.Fit(max(m.w-1, 1), "  ", items), m.w, "…")))
 	}
 	return out

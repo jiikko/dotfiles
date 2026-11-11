@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/testwait"
 )
 
 // fakeClock は待たずに進む時計。sleep は時計を進めるだけ。
@@ -415,4 +417,72 @@ func TestQuietKeepsThrottleQueue(t *testing.T) {
 	if er, ok := q.r.(ExecRunner); !ok || er.Tee != nil {
 		t.Errorf("中の slack-cli が静かにならない: %#v", q.r)
 	}
+}
+
+// Stats は直近 1 分に始めた呼び出しの数と、始まりの間の平均、列で待っている数、429 で止めている残りを返す (画面の右下に出す)。
+// Quiet で作った写しも同じ列なので同じ記録を数える。1 分より前の呼び出しは数えない。
+func TestThrottleStats(t *testing.T) {
+	c := &fakeClock{t: t0}
+	r := &recRunner{now: c.now}
+	th := throttleFor(r, "", c)
+	q := Quiet(th).(*Throttle)
+	for _, tt := range []*Throttle{th, q, th} {
+		if _, _, err := tt.Run(context.Background(), "history"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := th.Stats()
+	if s.LastMinute != 3 || s.MeanGap != gapTier3 || s.Waiting != 0 || s.Running || s.PausedFor != 0 {
+		t.Errorf("Stats = %+v, want 3 回・間 %v", s, gapTier3)
+	}
+	if got := s.String(); got != "Slack 3回/分 間隔 1.2秒" || !s.Active() {
+		t.Errorf("String = %q / Active = %v", got, s.Active())
+	}
+	c.t = c.t.Add(2 * time.Minute)
+	if s := th.Stats(); s.LastMinute != 0 || s.Active() {
+		t.Errorf("1 分より前の呼び出しを数えた: %+v", s)
+	}
+	r.errs = []error{nil, nil, nil, limitErr("90 秒")} // maxRetryWait より長いので、やり直さずに止める
+	if _, _, err := th.Run(context.Background(), "history"); err == nil {
+		t.Fatal("429 を返していない")
+	}
+	if s := th.Stats(); s.PausedFor <= 0 || !strings.HasPrefix(s.String(), "Slack 429 で停止中 あと ") {
+		t.Errorf("429 で止めている間: %+v %q", s, s.String())
+	}
+}
+
+// 列で番を待っている呼び出しを数える (走っている 1 本は数えない)。
+func TestThrottleStatsCountsWaiting(t *testing.T) {
+	c := &fakeClock{t: t0}
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	blocking := blockRunner{started: started, release: release}
+	th := throttleFor(blocking, "", c)
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _, _ = th.Run(context.Background(), "history") }()
+	}
+	<-started
+	testwait.Until(t, "2 本が列で番を待つ", func() bool { return th.Stats().Waiting == 2 })
+	if s := th.Stats(); !s.Running || !strings.Contains(s.String(), "待ち 2") {
+		t.Errorf("走っている最中・待ち 2: %+v %q", s, s.String())
+	}
+	close(release)
+	wg.Wait()
+}
+
+// blockRunner は呼ばれたら started に知らせ、release が閉じるまで返さない (走っている最中を作る)。
+type blockRunner struct {
+	started chan<- struct{}
+	release <-chan struct{}
+}
+
+func (b blockRunner) Run(context.Context, ...string) ([]byte, []byte, error) {
+	select { // 最初の 1 本だけ知らせる (知らせを受けるのは 1 回。後の呼び出しで送り先が詰まって止まらないように)
+	case b.started <- struct{}{}:
+	default:
+	}
+	<-b.release
+	return []byte("[]"), nil, nil
 }

@@ -48,6 +48,7 @@ type Picker struct {
 	tab      int                 // 0: 参加している、1: 参加していない (h / l で切り替える)
 	last     map[string]LastPost // チャンネル ID → 最終投稿 (前に取った値。取り直した分から書き換える)
 	fetch    *fetch              // 最終投稿を裏で取り直している間の状態 (nil なら取り直していない)
+	status   func() string       // 案内の 2 行目の右端に出す文字列 (SetStatus。nil なら出さない)
 	w, h     int
 	done     bool
 	save     bool
@@ -145,6 +146,21 @@ func (p *Picker) Refresh(fresh *Picker) {
 		}
 	}
 	p.queueFetch() // 取り直した一覧で増えた参加しているチャンネルも、最終投稿を取る
+}
+
+// SetStatus は案内の 2 行目の右端に出す文字列を返す関数を決める (Slack の呼び出しの様子。nil なら出さない)。
+func (p *Picker) SetStatus(f func() string) { p.status = f }
+
+// HintLine は案内の項目を左に詰め、right を右端に置いた 1 行 (幅 w。right は style で塗る)。案内は right の分を除いた幅に
+// 収まる項目だけを出す (hintfit が優先度の低い項目から落とす)。right も入らない狭い端末では案内だけを出す。
+func HintLine(lead string, items []hintfit.Item, right string, w int, style func(string) string) string {
+	rw := termwidth.Of(right)
+	room := w - termwidth.Of(lead) - rw - 2
+	if right == "" || room < 10 {
+		return termwidth.Truncate(lead+hintfit.Fit(max(w-termwidth.Of(lead), 1), "  ", items), w, "…")
+	}
+	left := lead + hintfit.Fit(room, "  ", items)
+	return left + termwidth.PadSpaces(w-termwidth.Of(left)-rw) + style(right)
 }
 
 // Note は見出しに添える注記 (Refresh で差し替えるときに、取り直した画面の注記を引き継ぐ)。
@@ -488,9 +504,11 @@ func (p *Picker) Lines() []string {
 	default:
 		line1 = append(line1[:2:2], hintfit.Item{Prio: 3, Text: "g: グループを作る"}, line1[2])
 	}
-	for _, items := range [][]hintfit.Item{line1, line2} {
-		lines = append(lines, termwidth.Truncate(hintfit.Fit(p.w, "  ", items), p.w, "…"))
+	status := ""
+	if p.status != nil {
+		status = p.status()
 	}
+	lines = append(lines, HintLine("", line1, "", p.w, nil), HintLine("", line2, status, p.w, func(s string) string { return s }))
 	if p.deleting >= 0 {
 		g := p.items[p.deleting].grp
 		box := confirm.Dialog(" グループを消す ", []string{"📂" + termsafe.PlainLine(g.Name), "を消しますか？", "(チャンネルの購読は変わらない)"}, confirm.HintYesNo, p.w, true)
