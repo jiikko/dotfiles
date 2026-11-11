@@ -115,6 +115,32 @@ many="$TMP_ROOT/many.md"
 { for _ in $(seq 1000); do printf 'ここにあるのはの、の、の。\n'; done; printf '最後の行で潰す。\n'; } > "$many"
 expect_lines "出現の多い 1 字の new_string でも上限の内に終わり、書いた行を知らせる" "$(run "$(edit_input "$many" "の")")" "1001"
 
+# 知らせに文字列が含まれることを見る (件数の多いケース用)
+expect_contains() { # $1=説明 $2=stdout $3=知らせに含むべき文字列
+  case "$2" in HOOK-FAILED*) echo "✗ hook が rc≠0 か stderr を出した: $1: $2"; fail=$((fail+1)); return ;; esac
+  if printf '%s' "$2" | jq -e --arg l "$3" '.hookSpecificOutput.additionalContext | contains($l)' >/dev/null 2>&1; then
+    echo "✓ ${1}"; ok=$((ok+1))
+  else
+    echo "✗ ${1}: 知らせに「${3}」が無い: $(printf '%s' "$2" | head -c 200)"; fail=$((fail+1))
+  fi
+}
+
+# 3000 行を超えるファイルは見ない (textlint の時間は行の数で伸びる。1 万行・150KB で 47 秒)
+manyl="$TMP_ROOT/manyl.md"
+{ printf '黙って捨てる。\n'; for _ in $(seq 4000); do printf -- '- 項目です\n'; done; } > "$manyl"
+expect_lines "3000 行を超えるファイルは見ない" "$(run "$(write_input "$manyl")")" ""
+
+# 行の多い new_string でも上限の内に終わる (行ごとに前を数え直すと、行の数の 2 乗で伸びる)
+biged="$TMP_ROOT/biged.md"
+{ for n in $(seq 2000); do printf '行 %s で潰す。\n' "$n"; done; } > "$biged"
+expect_contains "2000 行の new_string でも上限の内に終わり、知らせる" "$(run "$(edit_input "$biged" "$(cat "$biged")")")" "ほか 1980 件"
+
+# 同じ行の多い new_string で範囲が大きくなっても、知らせが消えない (範囲を引数で渡すと argument list too long で jq が起動できない)
+same="$TMP_ROOT/same.md"
+{ for _ in $(seq 1000); do printf '黙って捨てる。\n'; done; } > "$same"
+block=$(for _ in $(seq 500); do printf '黙って捨てる。\n'; done)
+expect_contains "同じ行の多い new_string でも知らせる" "$(run "$(edit_input "$same" "$block")")" "ほか 980 件"
+
 # 読めないファイルでは何も出さず、stderr にも出さない
 ro="$TMP_ROOT/ro.md"
 printf '黙って捨てる。\n' > "$ro"
