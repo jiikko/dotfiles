@@ -105,3 +105,15 @@ func TestBodyTrimsPointText(t *testing.T) {
 		t.Errorf("結論の行 %q (頭の空白を落としていない)", got)
 	}
 }
+
+// グループの板では、発言のリンクを単位のチャンネルで組み、スレッドの親は ID からチャンネルを除いた ts。本文には単位のチャンネルの名前を出す。
+func TestGroupUnitURLAndChannel(t *testing.T) {
+	p := Page{Channel: "grp0123abcd", Base: "https://ws.slack.com/", Members: map[string]string{"C2": "times_b"}}
+	u := board.Unit{ID: "1.000000", Thread: true, Msgs: []board.Msg{{Ts: "1.000000", Name: "a", Text: "親", New: true}, {Ts: "2.000000", Name: "b", Text: "返信", New: true}}}.InChannel("C2")
+	if got, want := p.URL("2.000000", u), "https://ws.slack.com/archives/C2/p2000000?thread_ts=1.000000&cid=C2"; got != want {
+		t.Errorf("URL = %q, want %q", got, want)
+	}
+	if lines := strings.Join(p.unit(u, false), "\n"); !strings.Contains(lines, "#times_b 💬 スレッド") {
+		t.Errorf("本文に単位のチャンネルが無い:\n%s", lines)
+	}
+}

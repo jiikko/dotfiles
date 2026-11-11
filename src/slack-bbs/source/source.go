@@ -25,6 +25,15 @@ func IsChannelID(id string) bool { return channelID.MatchString(id) }
 
 var channelID = regexp.MustCompile(`^[A-Z0-9]+$`)
 
+// IsGroupID は id がグループ (複数のチャンネルをまとめた購読。subs.NewGroupID が振る) の ID の形か。Slack の ID と重ならないよう
+// 英小文字で始める。
+func IsGroupID(id string) bool { return groupID.MatchString(id) }
+
+var groupID = regexp.MustCompile(`^grp[0-9a-f]{8}$`)
+
+// IsBoardID は id が板 (チャンネルかグループ) の ID の形か。板の ID はキャッシュと 2 段の実行のファイル名に使う。
+func IsBoardID(id string) bool { return IsChannelID(id) || IsGroupID(id) }
+
 // Runner は slack-cli を引数 args で 1 回起動し、stdout と stderr を返す。
 //
 // stderr は捨てない: slack-cli は取得が途中で切れても (ページの上限・続きの cursor が無い) 取れた分を出して rc=0 で終わり、

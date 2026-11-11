@@ -161,7 +161,7 @@ func (m *Model) reload(i int) tea.Cmd {
 	if c.page == nil {
 		verb = "読んでいます…"
 	}
-	m.toast.ShowInfo("#" + c.ch.Name + " を" + verb)
+	m.toast.ShowInfo(c.ch.Label() + " を" + verb)
 	m.seq++
 	c.gen = m.seq
 	c.loading, c.started = true, m.now()
@@ -298,7 +298,7 @@ func (m *Model) loaded(msg loadedMsg) {
 		if c.page == nil {
 			verb = "読めなかった"
 		}
-		m.toast.Show("#"+c.ch.Name+" を"+verb+": "+msg.err.Error(), false)
+		m.toast.Show(c.ch.Label()+" を"+verb+": "+msg.err.Error(), false)
 		return
 	}
 	var keep string
@@ -386,7 +386,7 @@ func (m *Model) key(k string) tea.Cmd {
 	case "r":
 		if m.chans[m.cur].loading {
 			// 走っている読み直しを待つ (連打で claude を何本も起こさない)
-			m.toast.Show("#"+m.chans[m.cur].ch.Name+" は読み込み中なので、読み直せない (終わってからもう一度押す)", false)
+			m.toast.Show(m.chans[m.cur].ch.Label()+" は読み込み中なので、読み直せない (終わってからもう一度押す)", false)
 			return nil
 		}
 		return m.reload(m.cur)
@@ -731,10 +731,10 @@ func (m *Model) Lines() []string {
 	lines := m.screen()
 	if i := m.unsubIndex(); i >= 0 && m.tiny() {
 		// 小さい端末の画面は 1 行なので板が収まらない。問いと答え方を 1 行で出す
-		return []string{termwidth.Truncate("#"+termsafe.PlainLine(m.chans[i].ch.Name)+" の購読を外す？ y/Enter: 外す  その他: やめる", max(m.w, 1), "…")}
+		return []string{termwidth.Truncate(m.chans[i].ch.Label()+" の購読を外す？ y/Enter: 外す  その他: やめる", max(m.w, 1), "…")}
 	}
 	if i := m.unsubIndex(); i >= 0 {
-		box := confirm.Dialog(" 購読を外す ", []string{"#" + termsafe.PlainLine(m.chans[i].ch.Name), "の購読を外しますか？", "(s の購読の画面でまた付けられる)"}, confirm.HintYesNo, m.w, true)
+		box := confirm.Dialog(" 購読を外す ", []string{m.chans[i].ch.Label(), "の購読を外しますか？", "(s の購読の画面でまた付けられる)"}, confirm.HintYesNo, m.w, true)
 		lines = layout.OverlayCentered(lines, box, m.w, len(lines), true)
 	}
 	if box := m.toast.BoxLines(true, max(len(lines)-1-helpRows, 1), m.w); len(box) > 0 && len(lines) > len(box)+helpRows {
@@ -807,7 +807,7 @@ const minState = 20
 func (m *Model) tabsLine() string {
 	names := make([]string, len(m.chans))
 	for i, c := range m.chans {
-		names[i] = "#" + termsafe.PlainLine(c.ch.Name)
+		names[i] = c.ch.Label()
 		if c.loading {
 			// 今のチャンネルにも出す (状態の行だけでは、タブを見たときに読み込み中か分からない。ユーザー要望 2026-11-11)。
 			// R で読み直している他のチャンネルも、どれが終わっていないか見える
@@ -1023,7 +1023,7 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 		m.toast.Show("購読を外すのをやめた", true)
 		return nil
 	}
-	name := m.chans[i].ch.Name
+	name := m.chans[i].ch.Label()
 	sel := make([]subs.Channel, 0, len(m.chans)-1)
 	for j, c := range m.chans {
 		if j != i {
@@ -1035,7 +1035,7 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 		return nil
 	}
 	cmd := m.setChannels(sel)
-	m.toast.Show("#"+name+" の購読を外した (s でまた付けられる)", true)
+	m.toast.Show(name+" の購読を外した (s でまた付けられる)", true)
 	return cmd
 }
 

@@ -43,6 +43,8 @@ type Request struct {
 	Units       []board.Unit `json:"units"`
 	// Mentions は板の発言への言及 (分類する側には渡さない。show が板に付ける)
 	Mentions []render.Mention `json:"mentions,omitempty"`
+	// Members はグループの板のチャンネル ID → 名前 (render.Page.Members)
+	Members map[string]string `json:"members,omitempty"`
 }
 
 // Manifest は prepare が書いたチャンネルの一覧。show はここに載ったファイルだけを読み、消す。
@@ -115,7 +117,7 @@ func Open(dir string) (Manifest, string, error) {
 // Add はチャンネルの依頼と分類する側へ渡す文面を書き、一覧に足して書き直す (途中で止まっても、書いた依頼は一覧に載っていて
 // show や後始末から見える)。前の応答が残っていれば消す。
 func Add(dir string, m *Manifest, r Request, prompt []byte) error {
-	if !source.IsChannelID(r.Channel) {
+	if !source.IsBoardID(r.Channel) {
 		return fmt.Errorf("チャンネル ID %q はファイル名に使えない形", r.Channel)
 	}
 	r.Version = Version
@@ -169,7 +171,7 @@ func ReadManifest(dir, key string) (Manifest, error) {
 		return m, fmt.Errorf("依頼の版 %d を読めない (この slack-bbs は %d)。prepare からやり直す", m.Version, Version)
 	}
 	for _, ch := range m.Channels {
-		if !source.IsChannelID(ch) {
+		if !source.IsBoardID(ch) {
 			return m, fmt.Errorf("%s のチャンネル ID %q がファイル名に使えない形", manifestName, ch)
 		}
 	}

@@ -30,6 +30,8 @@ type Page struct {
 	ClassifiedAt time.Time `json:"classified_at"`
 	// Mentions はこの板の発言への言及 (別のチャンネル・別の話題で、発言のリンクを貼った発言)。分類 (LLM) には渡さない
 	Mentions []Mention `json:"mentions,omitempty"`
+	// Members はグループの板のチャンネル ID → 名前 (単位の Ch を名前で出す)。単独のチャンネルの板では空
+	Members map[string]string `json:"members,omitempty"`
 }
 
 // Mention は板の発言へのリンクを貼った発言 1 件。Unit は言及された発言の単位 (話題への振り分けと既読の印に使う)。
@@ -85,7 +87,11 @@ func Markdown(w io.Writer, p Page) error {
 			}
 		}
 	}
-	fmt.Fprintf(&sb, "# #%s — %s 〜 %s (発言 %d / 話題 %d)\n\n", clean(p.ChannelName), stamp(p.Since), stamp(p.Until), msgs, countTopics(p.Topics))
+	mark := "#"
+	if len(p.Members) > 0 {
+		mark = "📂" // グループの板
+	}
+	fmt.Fprintf(&sb, "# %s%s — %s 〜 %s (発言 %d / 話題 %d)\n\n", mark, clean(p.ChannelName), stamp(p.Since), stamp(p.Until), msgs, countTopics(p.Topics))
 	fmt.Fprintf(&sb, "%s より前に始まったスレッドは見ていない。\n", p.Lookback.Format("01/02"))
 	for _, n := range p.Notes {
 		fmt.Fprintf(&sb, "🚨 %s\n", clean(n))
@@ -298,14 +304,21 @@ func (p Page) unit(u board.Unit, links bool) []string {
 	var out []string
 	link := ""
 	if links {
-		if l := p.link(u.ID, u); l != "" {
+		if l := p.link(u.ParentTs(), u); l != "" {
 			link = " " + l
 		}
 	}
-	if u.Continuing {
-		out = append(out, fmt.Sprintf("🔁 続いているスレッド (始まり %s)%s", stamp(tsTime(u.ID)), link))
-	} else if u.Thread {
-		out = append(out, "💬 スレッド"+link)
+	where := ""
+	if u.Ch != "" {
+		where = "#" + clean(p.memberName(u.Ch)) + " " // グループの板: どのチャンネルの発言か
+	}
+	switch {
+	case u.Continuing:
+		out = append(out, fmt.Sprintf("%s🔁 続いているスレッド (始まり %s)%s", where, stamp(tsTime(u.ParentTs())), link))
+	case u.Thread:
+		out = append(out, where+"💬 スレッド"+link)
+	case where != "":
+		out = append(out, strings.TrimSpace(where)+link)
 	}
 	for i, m := range u.Msgs {
 		if i == 1 && u.Omitted > 0 {
@@ -366,16 +379,28 @@ func (p Page) link(ts string, u board.Unit) string {
 	return ""
 }
 
-// URL は ts の発言の permalink (Base が分からなければ空)。
+// URL は ts の発言の permalink (Base が分からなければ空)。グループの板では単位のチャンネル (u.Ch) で組む。
 func (p Page) URL(ts string, u board.Unit) string {
 	if p.Base == "" {
 		return ""
 	}
-	url := fmt.Sprintf("%sarchives/%s/p%s", p.Base, p.Channel, strings.ReplaceAll(ts, ".", ""))
-	if u.Thread && ts != u.ID {
-		url += fmt.Sprintf("?thread_ts=%s&cid=%s", u.ID, p.Channel)
+	ch := p.Channel
+	if u.Ch != "" {
+		ch = u.Ch
+	}
+	url := fmt.Sprintf("%sarchives/%s/p%s", p.Base, ch, strings.ReplaceAll(ts, ".", ""))
+	if parent := u.ParentTs(); u.Thread && ts != parent {
+		url += fmt.Sprintf("?thread_ts=%s&cid=%s", parent, ch)
 	}
 	return clean(url)
+}
+
+// memberName はグループの板のチャンネル ch の名前 (分からなければ ID)。
+func (p Page) memberName(ch string) string {
+	if n := p.Members[ch]; n != "" {
+		return n
+	}
+	return ch
 }
 
 func clean(s string) string { return termsafe.PlainLine(s) }

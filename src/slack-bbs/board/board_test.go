@@ -366,3 +366,20 @@ func TestAssembleThemeAndUrgent(t *testing.T) {
 		t.Errorf("Prune でテーマか緊急が落ちた: %+v", p.Topics[0])
 	}
 }
+
+// グループの単位は ID を "<チャンネル>/<ts>" にしてチャンネルを持つ。別のチャンネルの同じ ts は別の発言として並べられ、
+// 同じチャンネルの同じ ts が 2 回出たら断る。
+func TestInChannelUnits(t *testing.T) {
+	u := Unit{ID: "1.000000", Thread: true, Msgs: []Msg{{Ts: "1.000000"}, {Ts: "2.000000"}}}
+	a, b := u.InChannel("C1"), u.InChannel("C2")
+	if a.ID != "C1/1.000000" || a.Ch != "C1" || a.ParentTs() != "1.000000" || u.ParentTs() != "1.000000" {
+		t.Fatalf("InChannel / ParentTs: %+v %q", a, a.ParentTs())
+	}
+	if err := ValidateUnits([]Unit{a, b}); err != nil {
+		t.Errorf("別のチャンネルの同じ ts を断った: %v", err)
+	}
+	c := Unit{ID: "C1/3.000000", Ch: "C1", Msgs: []Msg{{Ts: "2.000000"}}}
+	if err := ValidateUnits([]Unit{a, c}); err == nil {
+		t.Error("同じチャンネルの同じ ts の発言を 2 つの単位に入れた")
+	}
+}

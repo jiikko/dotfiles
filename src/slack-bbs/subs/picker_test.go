@@ -231,3 +231,50 @@ func TestPickerRefreshKeepsState(t *testing.T) {
 		t.Errorf("カーソルのチャンネルを失った (一致 %d 件)", len(vis))
 	}
 }
+
+// g で名前を付けてグループを作り、そのまま印でチャンネルを入れる (検索して Tab でも入れられる)。Enter で編集を終えても画面は閉じない。
+// グループを作っても、チャンネルの購読の印は変わらない。e で編集し直せ、d は確かめてから消す。
+func TestPickerGroups(t *testing.T) {
+	all := []source.Channel{{ID: "C1", Name: "times_a", IsMember: true}, {ID: "C2", Name: "times_b", IsMember: true}, {ID: "C3", Name: "dev", IsMember: true}}
+	p := NewPicker(all, []Channel{{ID: "C3", Name: "dev"}})
+	p.Resize(100, 14)
+	for _, k := range []string{"g", "t", "i", "m", "e", "s", "enter"} {
+		p.Key(k)
+	}
+	if p.editing == nil || !strings.Contains(p.Lines()[0], "グループ「times」に入れるチャンネルを選ぶ") {
+		t.Fatalf("名前を決めた後にグループの編集に入らない:\n%s", strings.Join(p.Lines(), "\n"))
+	}
+	for _, k := range []string{"/", "t", "i", "m", "e", "s", "tab", "down", "tab", "enter", "enter"} {
+		p.Key(k)
+	}
+	if p.Done() || p.editing != nil {
+		t.Fatalf("Enter で画面を閉じた・編集を終えていない: done=%v", p.Done())
+	}
+	sel := p.Selected()
+	if len(sel) != 2 || sel[0].ID != "C3" || !sel[1].IsGroup() || len(sel[1].Members) != 2 {
+		t.Fatalf("選んだもの: %+v", sel)
+	}
+	p.Key("/")
+	p.Key("esc") // 検索を消す (一覧の頭はグループの行)
+	p.list.Cursor = 0
+	p.Key("e")
+	p.Key("x") // 先頭のチャンネル (dev) をグループに入れる
+	p.Key("enter")
+	if g := p.Selected()[1]; len(g.Members) != 3 {
+		t.Fatalf("e で編集し直せない: %+v", g.Members)
+	}
+	p.list.Cursor = 0
+	p.Key("d")
+	if !strings.Contains(strings.Join(p.Lines(), "\n"), "グループを消す") {
+		t.Fatal("d で確認の板が出ない")
+	}
+	p.Key("n")
+	if len(p.Selected()) != 2 {
+		t.Fatal("n で取り消したのにグループを消した")
+	}
+	p.Key("d")
+	p.Key("y")
+	if sel := p.Selected(); len(sel) != 1 || sel[0].ID != "C3" {
+		t.Fatalf("y でグループを消していない・チャンネルの購読が変わった: %+v", sel)
+	}
+}

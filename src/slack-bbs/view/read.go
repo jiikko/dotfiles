@@ -32,14 +32,14 @@ func (m *Model) loadRead(i int) {
 	}
 	if m.reads.LoadHidden != nil {
 		if hidden, err := m.reads.LoadHidden(c.ch.ID); err != nil {
-			m.toast.Show("#"+c.ch.Name+" の隠した話題を読めなかった (全部出す): "+err.Error(), false)
+			m.toast.Show(c.ch.Label()+" の隠した話題を読めなかった (全部出す): "+err.Error(), false)
 		} else if hidden != nil {
 			c.hidden = hidden
 		}
 	}
 	read, err := m.reads.Load(c.ch.ID)
 	if err != nil {
-		m.toast.Show("#"+c.ch.Name+" の既読を読めなかった (未読から始める): "+err.Error(), false)
+		m.toast.Show(c.ch.Label()+" の既読を読めなかった (未読から始める): "+err.Error(), false)
 		return
 	}
 	if read != nil {

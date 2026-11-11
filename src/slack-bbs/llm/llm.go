@@ -105,9 +105,9 @@ type result struct {
 	} `json:"usage"`
 }
 
-// Classify は単位を分類させる。
-func Classify(ctx context.Context, r Runner, model, channel string, units []board.Unit) (board.Response, Usage, error) {
-	prompt, err := Prompt(channel, units)
+// Classify は単位を分類させる。members はグループの板のチャンネル ID → 名前 (単位の Ch に添える。単独のチャンネルなら nil)。
+func Classify(ctx context.Context, r Runner, model, channel string, members map[string]string, units []board.Unit) (board.Response, Usage, error) {
+	prompt, err := Prompt(channel, members, units)
 	if err != nil {
 		return board.Response{}, Usage{}, err
 	}
@@ -143,6 +143,7 @@ func parse(out []byte) (board.Response, Usage, error) {
 
 type inUnit struct {
 	ID         string  `json:"id"`
+	Channel    string  `json:"channel,omitempty"` // グループの板で、単位のチャンネルの名前
 	Thread     bool    `json:"thread,omitempty"`
 	Continuing bool    `json:"continuing,omitempty"`
 	Messages   []inMsg `json:"messages"`
@@ -177,12 +178,13 @@ const instructions = `あなたは Slack のチャンネルの会話を、後か
   - must_read: 対応は要らないが、知らないと困る (決定・方針の変更・障害・締め切り)
   - reason に理由を 1 文、refs に根拠の発言の ts
 - old: true の発言は、期間より前の文脈です。continuing: true の単位は、期間より前に始まり期間内に返信が付いたスレッドです
+- channel がある単位は、複数のチャンネルをまとめた板の発言で、channel はその単位のチャンネルです。チャンネルが違っても同じ件なら 1 つの話題にまとめる
 `
 
 // PromptFile は 2 段の実行で、分類する側 (GUI のセッションのサブエージェント等) へ渡す文面。claude -p と違って
 // --json-schema で形を縛れないので、応答の形と書き先を文面で渡す (形は show の側で検査する)。
-func PromptFile(channel string, units []board.Unit, responsePath string) ([]byte, error) {
-	p, err := Prompt(channel, units)
+func PromptFile(channel string, members map[string]string, units []board.Unit, responsePath string) ([]byte, error) {
+	p, err := Prompt(channel, members, units)
 	if err != nil {
 		return nil, err
 	}
@@ -191,10 +193,16 @@ func PromptFile(channel string, units []board.Unit, responsePath string) ([]byte
 }
 
 // Prompt は claude に渡す入力 (指示と単位の JSON)。
-func Prompt(channel string, units []board.Unit) ([]byte, error) {
+func Prompt(channel string, members map[string]string, units []board.Unit) ([]byte, error) {
 	in := make([]inUnit, 0, len(units))
 	for _, u := range units {
 		iu := inUnit{ID: u.ID, Thread: u.Thread, Continuing: u.Continuing}
+		if u.Ch != "" {
+			iu.Channel = members[u.Ch]
+			if iu.Channel == "" {
+				iu.Channel = u.Ch
+			}
+		}
 		for _, m := range u.Msgs {
 			iu.Messages = append(iu.Messages, inMsg{Ts: m.Ts, User: m.Name, Text: m.Text, Old: !m.New, Me: m.Mine})
 		}

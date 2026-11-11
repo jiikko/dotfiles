@@ -36,6 +36,9 @@ type fakeSlack struct {
 	search  map[int]string // search のページ番号 → 返す JSON (無いページは空の結果)
 	failSe  bool           // search を失敗させる
 	me      string         // whoami が返す user ID (空なら ME)
+	// histByCh はチャンネル ID → history が返す JSON (無いチャンネルは history)。failHist のチャンネルの history は失敗させる
+	histByCh map[string]string
+	failHist map[string]bool
 }
 
 func (f *fakeSlack) Run(_ context.Context, args ...string) ([]byte, []byte, error) {
@@ -62,6 +65,14 @@ func (f *fakeSlack) run(args []string) ([]byte, error) {
 	case "channels":
 		return []byte(`[{"id":"C1","name":"dev","is_member":true}]`), nil
 	case "history":
+		for _, a := range args {
+			if f.failHist[a] {
+				return nil, errors.New("slack history: exit status 1: channel_not_found")
+			}
+			if h, ok := f.histByCh[a]; ok {
+				return []byte(h), nil
+			}
+		}
 		return []byte(f.history), nil
 	case "thread":
 		if f.failTh {

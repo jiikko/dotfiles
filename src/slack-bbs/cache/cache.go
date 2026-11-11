@@ -52,7 +52,7 @@ type Summary struct {
 type Store struct{ Dir string }
 
 func (s Store) path(ch, kind string) (string, error) {
-	if !source.IsChannelID(ch) {
+	if !source.IsBoardID(ch) {
 		return "", fmt.Errorf("チャンネル ID %q はファイル名に使えない形", ch)
 	}
 	return filepath.Join(s.Dir, ch+"."+kind+".json"), nil
@@ -321,7 +321,7 @@ func (g *expiring) touched(now time.Time, mtime func(string) (time.Time, bool)) 
 // expireGroup はキャッシュのファイル名を、まとめて期限を数える組の鍵と残す期間にする。キャッシュの形でなければ ok が偽。
 func expireGroup(name string) (key string, keep time.Duration, ok bool) {
 	if atomicfile.IsTemp(name) {
-		if id, _, found := strings.Cut(name, "."); found && source.IsChannelID(id) {
+		if id, _, found := strings.Cut(name, "."); found && source.IsBoardID(id) {
 			return "tmp:" + name, CacheKeep, true
 		}
 		return "", 0, false
@@ -331,7 +331,7 @@ func expireGroup(name string) (key string, keep time.Duration, ok bool) {
 		return "", 0, false
 	}
 	id, kind, found := strings.Cut(base, ".")
-	if !found || !source.IsChannelID(id) {
+	if !found || !source.IsBoardID(id) {
 		return "", 0, false
 	}
 	switch kind {

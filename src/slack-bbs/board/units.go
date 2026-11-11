@@ -29,7 +29,9 @@ type Msg struct {
 
 // Unit は分類の単位。スレッドは既に 1 つの話題なので割らない。
 type Unit struct {
-	ID         string `json:"id"` // スレッドは親の ts、スレッド外の発言はその ts
+	ID string `json:"id"` // スレッドは親の ts、スレッド外の発言はその ts。グループの単位は "<チャンネル ID>/<ts>" (InChannel)
+	// Ch はグループ (複数のチャンネルをまとめた購読) の単位のチャンネル ID。単独のチャンネルの単位では空 (板のチャンネル)
+	Ch         string `json:"ch,omitempty"`
 	Thread     bool   `json:"thread"`
 	Continuing bool   `json:"continuing"` // 期間より前に始まり、期間内に返信が付いたスレッド
 	Omitted    int    `json:"omitted"`    // 文脈として出さなかった期間前の返信の数
@@ -39,6 +41,23 @@ type Unit struct {
 	// Unreadable はスレッドを読めなかった (消えた・取得の失敗) こと。親と「チャンネルにも投稿」の返信だけを出す
 	Unreadable bool  `json:"unreadable,omitempty"`
 	Msgs       []Msg `json:"messages"`
+}
+
+// InChannel はチャンネル ch の単位を、グループの板に入れる形にする: ID を "<ch>/<ts>" にしてチャンネルを持たせる
+// (ts はチャンネルの中でしか一意でない。単独のチャンネルの単位の ID は ts のまま変えない: 既読の印とキャッシュの鍵が変わる)。
+func (u Unit) InChannel(ch string) Unit {
+	u.ID, u.Ch = ch+"/"+u.ID, ch
+	return u
+}
+
+// ParentTs は単位の始まりの ts (スレッドは親の ts)。ID からチャンネルの部分を除いたもの。
+func (u Unit) ParentTs() string {
+	if u.Ch != "" {
+		if ts, ok := strings.CutPrefix(u.ID, u.Ch+"/"); ok {
+			return ts
+		}
+	}
+	return u.ID
 }
 
 // Last は単位の最後の発言の ts。
@@ -113,7 +132,8 @@ func Build(in Input) ([]Unit, error) {
 	return units, nil
 }
 
-// ValidateUnits は単位の列の形を確かめる: 単位の ID が空でなく重複せず、どの単位にも発言があり、同じ ts の発言が 2 回出ない。
+// ValidateUnits は単位の列の形を確かめる: 単位の ID が空でなく重複せず、どの単位にも発言があり、同じチャンネルの同じ ts の発言が 2 回出ない
+// (グループの板では、別のチャンネルの同じ ts は別の発言)。
 // Build の結果のほか、2 段の実行で外から読み戻した単位にも当てる (読み戻したファイルは書き換えられうる)。
 func ValidateUnits(units []Unit) error {
 	ids := map[string]bool{}
@@ -127,10 +147,11 @@ func ValidateUnits(units []Unit) error {
 			return fmt.Errorf("単位 %s に発言が無い", u.ID)
 		}
 		for _, m := range u.Msgs {
-			if prev, ok := seen[m.Ts]; ok {
+			key := u.Ch + "/" + m.Ts
+			if prev, ok := seen[key]; ok {
 				return fmt.Errorf("発言 %s が単位 %s と %s の両方に入った", m.Ts, prev, u.ID)
 			}
-			seen[m.Ts] = u.ID
+			seen[key] = u.ID
 		}
 	}
 	return nil

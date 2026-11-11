@@ -1,7 +1,7 @@
 // slack-bbs は購読した Slack のチャンネルの会話を、話題ごとに組み直して掲示板風に読むコマンド。
 //
 //	slack-bbs [-since 2d] [-lookback 30d] [-model sonnet] [-max 500] [-dry-run] [-json] [<チャンネルID>...]
-//	slack-bbs sub     購読するチャンネルを一覧から選ぶ
+//	slack-bbs sub     購読するチャンネルとグループ (複数のチャンネルを 1 つの板にまとめたもの) を一覧から選ぶ
 //	slack-bbs subs    購読しているチャンネルを出す
 //	slack-bbs prepare [オプション] [-out <dir>] [<チャンネルID>...]   分類の依頼を書く (2 段の 1 段目)
 //	slack-bbs show -key <鍵> [-json] [-keep] <dir>                  依頼と応答から板を出す (2 段の 2 段目)
@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,7 +47,7 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
 
 使い方:
   slack-bbs [オプション] [<チャンネルID>...]   購読しているチャンネル (引数があればそのチャンネル) を読む
-  slack-bbs sub                               購読するチャンネルを一覧から選ぶ
+  slack-bbs sub                               購読するチャンネルとグループを一覧から選ぶ (g でグループを作る)
   slack-bbs subs                              購読しているチャンネルを出す
   slack-bbs prepare [オプション] [-out <dir>] [<チャンネルID>...]
                                               分類せず、分類の依頼をディレクトリに書く (2 段の 1 段目。出力は JSON)
@@ -503,7 +504,7 @@ func classify(ctx context.Context, o options, d deps, st cache.Store, c collecte
 			return p, dropped, nil, nil
 		}
 	}
-	resp, use, err := llm.Classify(ctx, d.claude, o.model, p.ChannelName, c.units)
+	resp, use, err := llm.Classify(ctx, d.claude, o.model, p.ChannelName, p.Members, c.units)
 	if err != nil {
 		return p, board.Dropped{}, nil, err
 	}
@@ -747,12 +748,12 @@ func prepare(ctx context.Context, o options, dir string, d deps, stdout, stderr 
 			return err
 		}
 		id := c.page.Channel
-		prompt, err := llm.PromptFile(c.page.ChannelName, c.units, job.ResponsePath(dir, id))
+		prompt, err := llm.PromptFile(c.page.ChannelName, c.page.Members, c.units, job.ResponsePath(dir, id))
 		if err != nil {
 			return err
 		}
 		req := job.Request{Channel: id, ChannelName: c.page.ChannelName, Since: c.page.Since, Until: c.page.Until,
-			Lookback: c.page.Lookback, Base: c.page.Base, Notes: c.page.Notes, Units: c.units, Mentions: c.page.Mentions}
+			Lookback: c.page.Lookback, Base: c.page.Base, Notes: c.page.Notes, Units: c.units, Mentions: c.page.Mentions, Members: c.page.Members}
 		if err := job.Add(dir, &m, req, prompt); err != nil {
 			return err
 		}
@@ -793,7 +794,7 @@ func show(dir, key string, asJSON, keep bool, stdout, stderr io.Writer) error {
 			continue
 		}
 		p := render.Page{Channel: r.Channel, ChannelName: r.ChannelName, Since: r.Since, Until: r.Until, Lookback: r.Lookback,
-			Base: r.Base, Notes: r.Notes, Mentions: r.Mentions}
+			Base: r.Base, Notes: r.Notes, Mentions: r.Mentions, Members: r.Members}
 		if len(r.Units) > 0 {
 			p.Topics = assemble(stderr, r.ChannelName, r.Units, resp)
 		}
@@ -841,20 +842,23 @@ func channelsToRead(o options, d deps) ([]subs.Channel, error) {
 		}
 		return cur, nil
 	}
-	known := map[string]string{}
+	known := map[string]subs.Channel{}
 	for _, c := range cur {
-		known[c.ID] = c.Name
+		known[c.ID] = c
 	}
 	var out []subs.Channel
 	for _, id := range o.channels {
 		if strings.HasPrefix(id, "#") {
 			return nil, fmt.Errorf("%s: チャンネルは名前でなく ID (C…) で渡す (名前で渡すと slack-cli がチャンネル一覧を保存する)", id)
 		}
-		name := known[id]
-		if name == "" {
-			name = id
+		if c, ok := known[id]; ok {
+			out = append(out, c) // 購読しているグループの ID も渡せる (メンバーごと読む)
+			continue
 		}
-		out = append(out, subs.Channel{ID: id, Name: name})
+		if source.IsGroupID(id) {
+			return nil, fmt.Errorf("%s: 購読の一覧に無いグループ", id)
+		}
+		out = append(out, subs.Channel{ID: id, Name: id})
 	}
 	return out, nil
 }
@@ -862,7 +866,60 @@ func channelsToRead(o options, d deps) ([]subs.Channel, error) {
 // maxThreadErrNotes は、読めなかったスレッドを 1 本ずつ注記に出す上限。
 const maxThreadErrNotes = 3
 
+// collect は板 ch (チャンネルかグループ) の発言を集めて単位にまとめ直す。グループはメンバーのチャンネルごとに集めて 1 つの板に合わせる
+// (分類はまとめて 1 回。ユーザーの決定 2026-11-11: チャンネルをまたいだ話題にしてよい)。
 func collect(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel) (collected, error) {
+	if !ch.IsGroup() {
+		return collectChannel(ctx, o, cli, me, us, ch)
+	}
+	c := collected{me: me.UserID, page: render.Page{
+		Channel: ch.ID, ChannelName: ch.Name, Since: o.since, Until: o.until, Lookback: o.lookback, Base: me.URL,
+		Members: map[string]string{},
+	}}
+	if len(ch.Members) == 0 {
+		c.page.Notes = append(c.page.Notes, "このグループにはチャンネルが無い (s の購読の画面で入れる)")
+		return c, nil
+	}
+	var notes, failed []string
+	for _, mem := range ch.Members {
+		c.page.Members[mem.ID] = mem.Name
+		mc, err := collectChannel(ctx, o, cli, me, us, mem)
+		if err != nil {
+			if ctx.Err() != nil {
+				return collected{}, err
+			}
+			// 1 つのチャンネルの失敗ではグループごと止めない (他のチャンネルの板は出し、注記で知らせる)
+			failed = append(failed, "#"+mem.Name+" ("+termsafe.ClipRunes(termsafe.PlainLine(err.Error()), 120)+")")
+			continue
+		}
+		for _, u := range mc.units {
+			c.units = append(c.units, u.InChannel(mem.ID))
+		}
+		for _, mn := range mc.page.Mentions {
+			mn.Unit = mem.ID + "/" + mn.Unit // 言及の振り分けと既読は単位の ID で引く
+			c.page.Mentions = append(c.page.Mentions, mn)
+		}
+		for _, n := range mc.page.Notes {
+			notes = append(notes, "#"+mem.Name+": "+n)
+		}
+		c.sent, c.chars, c.threads = c.sent+mc.sent, c.chars+mc.chars, c.threads+mc.threads
+	}
+	if len(failed) == len(ch.Members) {
+		return collected{}, fmt.Errorf("グループのどのチャンネルも読めなかった: %s", strings.Join(failed, " "))
+	}
+	if len(failed) > 0 {
+		notes = append([]string{"読めなかったチャンネル: " + strings.Join(failed, " ")}, notes...)
+	}
+	c.page.Notes = append(c.page.Notes, notes...)
+	sort.SliceStable(c.units, func(i, j int) bool { return board.TsBefore(c.units[i].Msgs[0].Ts, c.units[j].Msgs[0].Ts) })
+	if err := board.ValidateUnits(c.units); err != nil {
+		return collected{}, err
+	}
+	return c, nil
+}
+
+// collectChannel はチャンネル ch 1 つの発言を集めて単位にまとめ直す。
+func collectChannel(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel) (collected, error) {
 	sinceTs := board.TsOf(o.since.Unix())
 	hist, err := cli.History(ctx, ch.ID, board.TsOf(o.lookback.Unix()))
 	if err != nil {
