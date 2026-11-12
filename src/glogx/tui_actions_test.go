@@ -659,6 +659,9 @@ func (f *fakeScratchTmux) run(args ...string) (string, error) {
 	case "show-options":
 		return f.option + "\n", nil
 	case "set-option":
+		if call != "set-option -gu "+scratchClientOption {
+			return "", errors.New("unexpected: " + call)
+		}
 		f.option = ""
 		return "", nil
 	case "display-message":
@@ -693,25 +696,33 @@ func TestResolveScratchClient(t *testing.T) {
 			t.Errorf("環境変数 = %q", env[scratchClientEnv])
 		}
 	})
-	t.Run("再起動では環境変数を使いオプションを読み直さない", func(t *testing.T) {
-		f := &fakeScratchTmux{option: "/dev/ttys100", sessions: map[string]string{"/dev/ttys100": "scratch"}}
-		env := map[string]string{scratchClientEnv: "4242:"}
-		got, err := run(f, env)
-		if err != nil || got != "" || len(f.calls) != 0 {
-			t.Fatalf("got %q err %v calls %v (別の端末が書いたオプションを拾った)", got, err, f.calls)
-		}
-	})
-	t.Run("子に引き継がれた親の値は使わない", func(t *testing.T) {
-		f := &fakeScratchTmux{}
-		env := map[string]string{scratchClientEnv: "1111:/dev/ttys089"}
-		got, err := run(f, env)
-		if err != nil || got != "" {
-			t.Fatalf("親の値で scratch の中と判定した: got %q err %v", got, err)
-		}
-		if env[scratchClientEnv] != "4242:" {
-			t.Errorf("環境変数 = %q", env[scratchClientEnv])
-		}
-	})
+	for _, c := range []struct{ name, env, want string }{
+		{"scratch の中", "4242:/dev/ttys089", "/dev/ttys089"},
+		{"scratch の外", "4242:", ""},
+	} {
+		t.Run("再起動では環境変数を使いオプションを読み直さない ("+c.name+")", func(t *testing.T) {
+			f := &fakeScratchTmux{option: "/dev/ttys100", sessions: map[string]string{"/dev/ttys100": "scratch"}}
+			env := map[string]string{scratchClientEnv: c.env}
+			got, err := run(f, env)
+			if err != nil || got != c.want || len(f.calls) != 0 {
+				t.Fatalf("got %q err %v calls %v, want %q で tmux を打たない", got, err, f.calls, c.want)
+			}
+		})
+	}
+	// 親の pid が自分の pid (4242) を頭に含む組 (42424) も、区切りの ':' で別物にする
+	for _, parent := range []string{"1111", "42424"} {
+		t.Run("子に引き継がれた親 ("+parent+") の値は使わない", func(t *testing.T) {
+			f := &fakeScratchTmux{}
+			env := map[string]string{scratchClientEnv: parent + ":/dev/ttys089"}
+			got, err := run(f, env)
+			if err != nil || got != "" {
+				t.Fatalf("親の値 %q で scratch の中と判定した: got %q err %v", env[scratchClientEnv], got, err)
+			}
+			if env[scratchClientEnv] != "4242:" {
+				t.Errorf("環境変数 = %q", env[scratchClientEnv])
+			}
+		})
+	}
 	for _, fail := range []string{"show-options", "set-option"} {
 		t.Run(fail+" の失敗でも空の結果を残す", func(t *testing.T) {
 			f := &fakeScratchTmux{option: "/dev/ttys089", sessions: map[string]string{"/dev/ttys089": "scratch"}, failOn: fail}
