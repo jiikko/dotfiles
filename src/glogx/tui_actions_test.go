@@ -551,6 +551,21 @@ func TestBrowseTmuxPrefixClosesScratch(t *testing.T) {
 			}
 		})
 	}
+	// 本番は閉じる演出が有効で、終了の経路は done ではなく演出の途中 (closing) に入る (テストの helper は演出を切っている)
+	t.Run("閉じる演出が有効でも抜けた後に閉じる", func(t *testing.T) {
+		calls := stubDetach(t, nil)
+		m := scratchModel(t)
+		m.zoom.off = false
+		m.handleKey("ctrl+t")
+		m.handleKey("t")
+		if m.done || !m.zoom.closing() {
+			t.Fatalf("前提が崩れた: 閉じる演出に入っていない (done=%v)", m.done)
+		}
+		detachScratchOnExit(m)
+		if len(*calls) != 1 || (*calls)[0] != client {
+			t.Fatalf("演出の途中で抜けたときの detach = %v, want [%s]", *calls, client)
+		}
+	})
 	// 終了を止めている間 (doctor の削除) は閉じない。detach は popup ごと glogx を落とし、削除の中断の経路を素通りする
 	t.Run("doctor の削除中は閉じない", func(t *testing.T) {
 		calls := stubDetach(t, nil)
@@ -623,6 +638,111 @@ func TestPickScratchClient(t *testing.T) {
 				t.Errorf("pickScratchClient = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// fakeScratchTmux は resolveScratchClient に渡す tmux の偽物。打たれた引数を記録し、オプションと各クライアントのセッションを返す。
+type fakeScratchTmux struct {
+	option   string
+	sessions map[string]string
+	failOn   string // この引数で始まる呼び出しを失敗させる
+	calls    []string
+}
+
+func (f *fakeScratchTmux) run(args ...string) (string, error) {
+	call := strings.Join(args, " ")
+	f.calls = append(f.calls, call)
+	if f.failOn != "" && strings.HasPrefix(call, f.failOn) {
+		return "", errors.New("tmux failed")
+	}
+	switch args[0] {
+	case "show-options":
+		return f.option + "\n", nil
+	case "set-option":
+		f.option = ""
+		return "", nil
+	case "display-message":
+		s, ok := f.sessions[args[3]]
+		if !ok {
+			return "", errors.New("can't find client")
+		}
+		return s + "\n", nil
+	}
+	return "", errors.New("unexpected: " + call)
+}
+
+// 起動時はオプションを読んで消し、結果を自分の pid の印つきで環境変数に残す。環境変数は自分の pid のときだけ使う
+// (exec の再起動は pid が変わらない / 子の glogx は変わる)。失敗したときも空の結果を残す。
+func TestResolveScratchClient(t *testing.T) {
+	const pid = 4242
+	run := func(f *fakeScratchTmux, env map[string]string) (string, error) {
+		return resolveScratchClient(pid, func(k string) (string, bool) { v, ok := env[k]; return v, ok },
+			func(k, v string) error { env[k] = v; return nil }, f.run)
+	}
+	t.Run("起動時に読んで消し、環境変数に残す", func(t *testing.T) {
+		f := &fakeScratchTmux{option: "/dev/ttys089", sessions: map[string]string{"/dev/ttys089": "scratch"}}
+		env := map[string]string{}
+		got, err := run(f, env)
+		if err != nil || got != "/dev/ttys089" {
+			t.Fatalf("got %q err %v", got, err)
+		}
+		if f.option != "" {
+			t.Error("読んだオプションを消していない (後の起動が古い名前を読む)")
+		}
+		if env[scratchClientEnv] != "4242:/dev/ttys089" {
+			t.Errorf("環境変数 = %q", env[scratchClientEnv])
+		}
+	})
+	t.Run("再起動では環境変数を使いオプションを読み直さない", func(t *testing.T) {
+		f := &fakeScratchTmux{option: "/dev/ttys100", sessions: map[string]string{"/dev/ttys100": "scratch"}}
+		env := map[string]string{scratchClientEnv: "4242:"}
+		got, err := run(f, env)
+		if err != nil || got != "" || len(f.calls) != 0 {
+			t.Fatalf("got %q err %v calls %v (別の端末が書いたオプションを拾った)", got, err, f.calls)
+		}
+	})
+	t.Run("子に引き継がれた親の値は使わない", func(t *testing.T) {
+		f := &fakeScratchTmux{}
+		env := map[string]string{scratchClientEnv: "1111:/dev/ttys089"}
+		got, err := run(f, env)
+		if err != nil || got != "" {
+			t.Fatalf("親の値で scratch の中と判定した: got %q err %v", got, err)
+		}
+		if env[scratchClientEnv] != "4242:" {
+			t.Errorf("環境変数 = %q", env[scratchClientEnv])
+		}
+	})
+	for _, fail := range []string{"show-options", "set-option"} {
+		t.Run(fail+" の失敗でも空の結果を残す", func(t *testing.T) {
+			f := &fakeScratchTmux{option: "/dev/ttys089", sessions: map[string]string{"/dev/ttys089": "scratch"}, failOn: fail}
+			env := map[string]string{}
+			got, err := run(f, env)
+			if err == nil || got != "" {
+				t.Fatalf("got %q err %v", got, err)
+			}
+			if v, ok := env[scratchClientEnv]; !ok || v != "4242:" {
+				t.Errorf("失敗のときに環境変数を残していない (再起動がオプションを読み直す): %q %v", v, ok)
+			}
+		})
+	}
+}
+
+// detach は glogx の後始末 (子の看取り・IME の復元) を全部済ませてから打つ。detach すると popup ごと閉じて SIGHUP を受けるので、
+// main の defer で最初に積む (最後に走る)。
+func TestDetachScratchDeferredFirst(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	detach := strings.Index(s, "defer detachScratchOnExit(browse)")
+	if detach < 0 {
+		t.Fatal("main.go に defer detachScratchOnExit(browse) が無い")
+	}
+	for _, later := range []string{"defer waitPullCleanup()", "defer doctorview.WaitDoctorCleanup()", "defer browse.cancelAll()", "defer restore()"} {
+		if i := strings.Index(s, later); i < 0 || i < detach {
+			t.Errorf("%q が detach より先に積まれている (detach の後に走る) か無い", later)
+		}
 	}
 }
 

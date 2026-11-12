@@ -393,8 +393,11 @@ const scratchSessionName = "scratch"
 // 字面のまま届く (隔離サーバで実測 2026-11-12)。
 const scratchClientOption = "@glogx_client"
 
-// scratchClientEnv は loadScratchClient が読んだ結果を、再起動 (restartSelf の exec) へ引き継ぐ環境変数。空の値は「scratch の外」。
+// scratchClientEnv は loadScratchClient が読んだ結果を、再起動 (restartSelf の exec) へ引き継ぐ環境変数。値は "<pid>:<client>"
+// (client が空なら scratch の外)。
 // 🚨 再起動でオプションを読み直さない: 再起動は bind を通らないので、オプションには別の端末が後から書いた値が入っている。
+// 🚨 pid を付けて自分の値だけを信じる: 環境変数は子に引き継がれ、e で開いた nvim の中から起こした glogx が同じ scratch を閉じると、
+// 待っている親の glogx が後始末をせずに SIGHUP で落ちる。exec の再起動は pid が変わらない。
 const scratchClientEnv = "GLOGX_SCRATCH_CLIENT"
 
 // loadScratchClient は glogx を開いたクライアントが scratch セッションに居ればその名前を返す ("" = scratch の外 / tmux 外)。
@@ -403,36 +406,51 @@ const scratchClientEnv = "GLOGX_SCRATCH_CLIENT"
 // 🚨 target 無しの `display -p '#{session_name}'` で聞かない: popup の中の TMUX が持つセッション番号は、popup を開いた
 // セッションと一致しない (3.7c を隔離サーバで実測 2026-11-12: main の popup でも scratch を返した)。それで判定すると、
 // 別の端末で開いている scratch を閉じる。クライアントは bind から名指しで受け、そのクライアントのセッションを聞く。
-//
-// オプションは読んだら消す。残すと、popup の外で起動した glogx や後の起動が、もう居ないクライアントの名前
-// (pty の名前なので別の端末の scratch に再利用されうる) を読む。2 つの端末でほぼ同時に bind を押すと、先の glogx が
-// 後の端末の名前を読む窓は残る (起動から読むまでの数十 ms。後の glogx は空を読み、閉じる機能が無いだけになる)。
 var loadScratchClient = func() (string, error) {
 	if os.Getenv("TMUX") == "" {
 		return "", nil
 	}
-	if v, ok := os.LookupEnv(scratchClientEnv); ok {
-		return v, nil
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
 	defer cancel()
-	opt, err := subproc.Output(ctx, "tmux", "show-options", "-gqv", scratchClientOption)
+	return resolveScratchClient(os.Getpid(), os.LookupEnv, os.Setenv, func(args ...string) (string, error) {
+		return subproc.Output(ctx, "tmux", args...)
+	})
+}
+
+// resolveScratchClient は自分の pid の印が付いた環境変数があればそれを使い、無ければ tmux のオプションを読んで結果を環境変数に残す。
+// 失敗したときも空の結果を残す: 残さないと、その後の再起動がオプションを読み直し、別の端末の bind が書いた名前を拾う。
+func resolveScratchClient(pid int, lookup func(string) (string, bool), setenv func(string, string) error, tmux func(...string) (string, error)) (string, error) {
+	self := strconv.Itoa(pid) + ":"
+	if v, ok := lookup(scratchClientEnv); ok && strings.HasPrefix(v, self) {
+		return strings.TrimPrefix(v, self), nil
+	}
+	client, err := readScratchClientOption(tmux)
+	if serr := setenv(scratchClientEnv, self+client); serr != nil && err == nil {
+		err = serr
+	}
+	return client, err
+}
+
+// readScratchClientOption は bind が書いたクライアントの名前を読んで消し、そのクライアントが scratch に居ればその名前を返す。
+//
+// オプションは読んだら消す。残すと、popup の外で起動した glogx や後の起動が、もう居ないクライアントの名前
+// (pty の名前なので別の端末の scratch に再利用されうる) を読む。2 つの端末でほぼ同時に bind を押すと、先の glogx が
+// 後の端末の名前を読む窓は残る (起動から読むまでの数十 ms。後の glogx は空を読み、閉じる機能が無いだけになる)。
+func readScratchClientOption(tmux func(...string) (string, error)) (string, error) {
+	opt, err := tmux("show-options", "-gqv", scratchClientOption)
 	if err != nil {
 		return "", fmt.Errorf("tmux の %s を読めません: %w", scratchClientOption, err)
 	}
-	client := ""
-	if name := strings.TrimSpace(opt); name != "" {
-		if _, err := subproc.Output(ctx, "tmux", "set-option", "-gu", scratchClientOption); err != nil {
-			return "", fmt.Errorf("tmux の %s を消せません: %w", scratchClientOption, err)
-		}
-		client = pickScratchClient(name, func(c string) (string, error) {
-			return subproc.Output(ctx, "tmux", "display-message", "-p", "-c", c, "#{client_session}")
-		})
+	name := strings.TrimSpace(opt)
+	if name == "" {
+		return "", nil
 	}
-	if err := os.Setenv(scratchClientEnv, client); err != nil {
-		return "", err
+	if _, err := tmux("set-option", "-gu", scratchClientOption); err != nil {
+		return "", fmt.Errorf("tmux の %s を消せません: %w", scratchClientOption, err)
 	}
-	return client, nil
+	return pickScratchClient(name, func(c string) (string, error) {
+		return tmux("display-message", "-p", "-c", c, "#{client_session}")
+	}), nil
 }
 
 // pickScratchClient は client のセッションが scratch ならその名前を返す ("" = scratch の外)。
