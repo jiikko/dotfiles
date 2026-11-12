@@ -1,7 +1,5 @@
 # 1074 (feat): yomiyasu の markdown_visibility を Go で作り直す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-12〜）
-
 起票日: 2026-11-12
 
 ## 概要

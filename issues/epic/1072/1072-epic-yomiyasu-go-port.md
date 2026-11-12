@@ -15,12 +15,12 @@ dotfiles では skill・src の module・bin のコマンドを同じ名前に�
 
 ## 状態
 
-子 issue 11 本 (1073〜1083) のうち 3 本完了 (1073 の土台・1080 の ja-writing の規範の文・1082 のベンチマークの下ごしらえ。2026-11-13)。依存の順 (1073 → 1074 → 1075 → 1076 → 1077 → 1078 → 1079) に進める。
+子 issue 11 本 (1073〜1083) のうち 5 本完了 (1073 の土台・1074 の markdown_visibility・1080 の ja-writing の規範の文・1081 の diff の照合・1082 のベンチマークの下ごしらえ。2026-11-13)。依存の順 (1073 → 1074 → 1075 → 1076 → 1077 → 1078 → 1079) に進める。
 
 | issue | 内容 |
 |---|---|
 | [1073](done/1073-feat-yomiyasu-go-foundation.md) | 土台: module・Python の `re` を写す層・本家の出力を正解として記録する仕組み・CLI と CI の配線 |
-| [1074](1074-feat-yomiyasu-go-markdown-visibility.md) | markdown_visibility (Markdown の見える字・保護する範囲・語の一覧) |
+| [1074](done/1074-feat-yomiyasu-go-markdown-visibility.md) | markdown_visibility (Markdown の見える字・保護する範囲・語の一覧) |
 | [1075](1075-feat-yomiyasu-go-lint.md) | lint (40 規則) |
 | [1076](1076-feat-yomiyasu-go-diff.md) | diff (推敲の前後を比べて意味のずれを出す) |
 | [1077](1077-feat-yomiyasu-go-check.md) | check (検査の記録と最終稿の照合) |
