@@ -1,0 +1,219 @@
+v2.2.0: プロジェクトの語の一覧（.yomiyasu-words/ の allow.txt と flag.txt）を、lint、diff、check、フックで確かめる。
+
+文はすべて合成の文。一覧のフォルダは一時フォルダの中にだけ作る（リポジトリの中には置かない。試験の多くはリポジトリの
+中で動き、一覧があると context の固定が崩れる）。
+
+
+この方針は思考のOSとして働きます。
+
+このままでは、夜間の処理が静かに壊れる。
+
+毎月、版を上げて配布します。
+
+担当者は手順書を読み、作業の記録を残しました。
+
+git の外の一時フォルダ（上に .git がない）で動かす。
+
+共有の読み手（markdown_visibility）の読み方。
+
+allow.txt で既存の3つの規則と新しい規則の候補を外す。
+
+フックは lint を動かさない。--words と --no-words を受け、案内する run のコマンドに付ける。終了コードはいつも0。
+
+ファイルがあれば（中身が空やコメントだけでも）一覧を使ったものとする。
+
+POSIX の権限で実際に読み取りを拒否する
+
+組み込みの語のどれを allow に書いても、その語の候補（message にその語がある候補）が外れる。
+
+新しい規則（担当 A1 が _words を入れる）は、_words の語で外す。7つの規則の外の規則は外さない。
+
+種類で外した候補は allow の件数に数えない（種類で外す処理が先）。
+
+# スプリントの決め方
+
+次のスプリントでは、締め日の名前とスプリントの日付を決めます。
+
+| 項目 | 期日 |
+|---|---|
+| スプリント | 月末 |
+
+- 締め日を一つにまとめる
+
+
+```
+スプリント = 1
+```
+
+`スプリント` を設定します。
+
+> スプリントを決めました。
+
+彼は「スプリント」と言いました。
+
+詳しくは https://example.com/スプリント を見ます。
+
+<div>スプリント</div>
+
+変数 milestone_id と obj.milestone と path/milestone を使います。
+
+
+思考のOSとして
+
+スプリント
+締め日
+
+
+語の一覧（flag.txt）の語（スプリント、締め日）の候補です。文脈を見て、誰が何をどうするかを書き直すか確かめてください。
+
+次のスプリントでは、締め日の名前とスプリントの日付を決めます。
+
+締め日とスプリントと締め日。
+
+
+スプリント
+milestone
+
+
+次の milestone を決めます。Milestone ではありません。
+
+
+---
+title: スプリント
+---
+
+本文です。
+
+
+スプリント
+
+
+次のスプリントを決めます。
+
+
+yomiyasu_lint.py: error: --words と --no-words は一緒に使えません
+
+
+引数の誤りです。
+
+--wordsフォルダ
+
+project_term（info）
+
+語の一覧を読めない
+
+[--words フォルダ]
+
+担当者が手順書を読み、作業の記録を残しました。
+
+
+yomiyasu_diff.py: error: --words と --no-words は一緒に使えません
+
+
+[--words フォルダ | --no-words]
+
+このままでは、夜間の処理が静かに壊れます。手順書を読みます。
+
+
+10001行目
+
+--words フォルダ
+
+--source draft.md --final final.md --no-words を実行し
+
+--source draft.md --final final.md を実行し
+
+を登録しました
+
+スプリント締め日　全角の空白　
+
+入口
+入口
+
+
+# 見直す語
+
+
+フォルダがありません
+
+フォルダではありません
+
+静かに壊れる
+
+静かに壊れる
+
+
+文書の種類: 技術記事（article）
+
+語の一覧: 
+
+Error opening folder missing: --words のフォルダがありません
+
+
+文書の種類: 指定なし、読者: 専門知識のない人（general）。
+
+Error opening folder nowhere: --words のフォルダがありません
+
+
+依存先
+
+  入口  
+	# 字下げのコメント
+
+
+Error opening file {}: 行が多すぎます（10001行目。10,000行までです）
+
+この利用者には chmod(0) の拒否を適用できません
+
+合成の候補です。
+
+語の一覧: {}（allow 1語、flag 1語）。allow で外した候補 1件。
+
+語の一覧: {}（allow 1語、flag 1語）。
+
+--endings は --words と --no-words に対応していません
+
+語の一覧: {}（allow 0語、flag 1語）。
+
+
+<<<yomiyasu:final>>>
+手順書を読みます。
+
+
+yomiyasu_check.py run --source draft.md --final final.md --words {} を実行し
+
+担当者が原稿を読みました。
+
+
+run をもう一度実行し、そのあと verify を実行してください。yomiyasu_check.py run には --words {} を付けてください。
+
+Error opening file {}: ファイルを開けません（
+
+Error opening folder {}: --words の{}
+
+この文では{}を使います。
+
+
+Error opening file {}: UTF-8 として読めません（2行目）
+
+
+Error opening file {}: 行が多すぎます（10001行目。10,000行までです）
+
+
+Error opening file {}: UTF-8 として読めません（1行目）
+
+
+yomiyasu_check.py run には --words {} を付けてください。
+
+入口
+締め日
+
+
+入口
+締め日
+
+
+Error opening file {}: UTF-8 として読めません（{}行目）
+
+yomiyasu_check.py {}: error: --words と --no-words は一緒に使えません
+

@@ -1,0 +1,77 @@
+G8 H1,H2,H6–H10,H12–H20: real subprocess hooks, no host or network calls.
+
+ZQX本文の目印ZQX
+
+--help に引数、環境変数、終了コードがあり、--print-config の値の誤りだけが終了コード2。
+        フックとして呼ぶ形（--host）と知らない引数は、ホストを止めないよう今までどおり何も出さずに0。
+
+検査記録がありません
+
+原稿 draft 0.md を登録しました
+
+原稿 draft.md を登録しました
+
+使い方: yomiyasu_hook.py --host claude-code|codex [--state-dir DIR]
+
+終了コード:
+
+知らない引数も無視します
+
+直して $yomiyasu:yomiyasu draft.md
+
+登録しました
+
+draft.md を直して、結果は final.md に上書きして
+
+「draft.md」を直して final.md に書いて
+
+$yomiyasu draft.md を直して。言い回しは notes.md を参考に
+
+git commit -m 文
+
+gh pr create --body "別の投稿です"
+
+gh pr create --body-file - <<EOF
+別件
+EOF
+
+原稿をその場で直しました。
+
+
+復元した原稿。
+
+@draft.md を直して
+
+/yomiyasu:yomiyasu draft.md を直して
+
+言い回しのメモ。
+
+担当者は原稿を確認しました。
+
+
+担当者が原稿を確認しました。
+
+
+別の用件です。
+
+--print-config には claude-code か codex を渡してください。
+
+
+期限を過ぎてから変わった本文。
+
+yomiyasu で draft.md を直して
+
+検査のあとで変えた最終稿。
+
+ 原文です。
+
+ 最終稿です。
+
+最終稿を変更しました。
+
+
+ 検査後の変更です。
+
+日本語の会話です。
+
+あと {} 回

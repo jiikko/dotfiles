@@ -1,0 +1,17 @@
+{
+"header": {"upstream_commit":"db78b9bc5e868549b517a037df7a4d1c93edac23","python_version":"3.15.0","unicodedata_version":"17.0.0"},
+"functions": [
+  {"call":{"module":"markdown_visibility","function":"normalize_doc_type","args":[" SLIDES "]},"result":{"result":"slides"}},
+  {"call":{"module":"markdown_visibility","function":"normalize_doc_type","args":["unknown"]},"result":{"exception":{"type":"ValueError","message":"--doc-type に使えない値です: unknown。使えるのは pr（PR説明）、article（技術記事）、incident（障害報告）、proposal（提案書）、minutes（議事録）、manual（マニュアル）、slides（スライド）、essay（エッセイ・小説）、formal（公用文、規程、契約書、仕様書）、promo（紹介記事・宣伝文）、mail（メール・チャット）、paper（論文・研究レポート）、script（台詞・脚本）です。"}}},
+  {"call":{"module":"markdown_visibility","function":"unicode_whitespace","args":["　"]},"result":{"result":true}},
+  {"call":{"module":"markdown_visibility","function":"context_label","args":["pr","expert"]},"result":{"result":"\u6587\u66f8\u306e\u7a2e\u985e: PR\u8aac\u660e\uff08pr\uff09\u3001\u8aad\u8005: \u540c\u3058\u5206\u91ce\u306e\u5c02\u9580\u5bb6\uff08expert\uff09\u3002"}}
+],
+"clis": [
+  {"spec":{"script":"yomiyasu_lint.py","args":["--version"]},"result":{"stdout":"yomiyasu_lint.py 3.1.0 (JSON format 2)\n","stderr":"","rc":0}},
+  {"spec":{"script":"yomiyasu_diff.py","args":["--version"]},"result":{"stdout":"yomiyasu_diff.py 3.1.0 (JSON format 2)\n","stderr":"","rc":0}},
+  {"spec":{"script":"yomiyasu_check.py","args":["--version"]},"result":{"stdout":"yomiyasu_check.py 3.1.0 (record format 1, result format 1, materials format 1)\n","stderr":"","rc":0}},
+  {"spec":{"script":"yomiyasu_hook.py","args":["--version"]},"result":{"stdout":"yomiyasu_hook.py 3.1.0\n","stderr":"","rc":0}},
+  {"spec":{"script":"yomiyasu_lint.py","args":["--json","-"],"stdin":"これは**太字**です。\n"},"result":{"stdout":"{\n  \"format\": \"yomiyasu-lint\",\n  \"format_version\": 2,\n  \"tool_version\": \"3.1.0\",\n  \"candidate_count\": 0,\n  \"counts\": {\n    \"error\": 0,\n    \"warn\": 0,\n    \"info\": 0\n  },\n  \"no_rule_findings\": true,\n  \"rule_penalty_score\": 100,\n  \"not_judged\": [\n    \"meaning_preservation\",\n    \"reader_comprehension\"\n  ],\n  \"context\": {\n    \"doc_type\": null,\n    \"reader\": null,\n    \"skipped_by_doc_type\": {}\n  },\n  \"metrics\": {\n    \"char_count\": 12,\n    \"total_lines\": 1,\n    \"list_lines\": 0,\n    \"list_ratio\": 0.0,\n    \"bold_count\": 1,\n    \"bold_per_1000\": 83.33\n  },\n  \"findings\": []\n}\n","stderr":"","rc":0}},
+  {"spec":{"script":"yomiyasu_lint.py","args":["--doc-type","nonexistent"],"stdin":"あ\n"},"result":{"stdout":"","stderr":"--doc-type に使えない値です: nonexistent。使えるのは pr（PR説明）、article（技術記事）、incident（障害報告）、proposal（提案書）、minutes（議事録）、manual（マニュアル）、slides（スライド）、essay（エッセイ・小説）、formal（公用文、規程、契約書、仕様書）、promo（紹介記事・宣伝文）、mail（メール・チャット）、paper（論文・研究レポート）、script（台詞・脚本）です。\n","rc":2}}
+]
+}

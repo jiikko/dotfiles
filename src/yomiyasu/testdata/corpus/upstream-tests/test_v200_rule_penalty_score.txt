@@ -1,0 +1,76 @@
+H40 の式、地の文字数、出力互換性を独立の有理数計算と実際の文書で確かめる。
+
+重要なのは、毎日確認することです。
+
+本記事では、設計を紹介します。
+
+これは**「重要」**です。
+
+実装の整数式とは別に、分数で密度を求めて四捨五入する。
+
+公開 metrics を変えずに、参照用の字数を可視行から数える。
+
+項目——補足です。
+
+
+
+# これは**「重要」**です。
+
+
+記録 [資料](https://example.com/abc) `code` <span>本文</span> ![絵](a.png)
+
+<details>
+<summary>資料</summary>
+
+- 記録
+
+</details>
+
+回覧板は、木曜の朝に回します。
+
+rule_penalty_score（--json の目安）:
+  候補が0件なら100。候補があれば 100 × 40 ÷ (40 + x) を四捨五入し、1〜99に収めます。
+  x は、行ごとの候補の重み（error 3、warn 2、info 1）を地の文1,000字あたりに直した数です。
+  地の文はコード、表、引用、見出し、前置きの設定（frontmatter）、HTML、URL と空白を除いた字数で、
+  1,000字に満たなければ1,000字として割ります。
+  excess_bold と excess_list は1件で2、bold_label_list は1を x に足し、
+  negative_parallelism_density は数えません。ダッシュの規則に当たった行は、候補に出さない4行目からも数えます。
+  2.2.0 から 2.5.0 で足した次の規則の候補も数えず、その候補だけのときは100です: calque、metaphor_label、
+  say_hedge、thin_evaluation、katakana_term、dialogue_period、narrative_density、copy_comma_noun、
+  bare_verb_chain、project_term、renyo_noun、slide_comma、ai_phrase。
+  --doc-type で候補が変わると、点数も変わります。CI では --fail-on か counts を使ってください。
+
+![画像](https://example.com/image.png)
+
+AではなくBです。
+
+CではなくDです。
+
+EではなくFです。
+
+記録——確認、手順——更新、資料——整理、担当——連絡のとおりです。
+
+
+
+新作です😀
+
+記録を確認した。
+
+結果をJSON（形式2）で出します。日本語は \uXXXX の形で出します。rule_penalty_score は、候補の多さを地の文の長さで割った目安です（下の式）。合否には使わないでください。
+
+| 項目 | 値 |
+|---|---|
+
+
+終了コード:
+
+| 資料 | 記録 |
+
+
+項目{}——補足です。
+
+
+
+前置き{}——補足——です。
+
+

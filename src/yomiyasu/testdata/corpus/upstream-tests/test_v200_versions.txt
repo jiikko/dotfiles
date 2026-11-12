@@ -1,0 +1,122 @@
+v2.0.0: 版の文字列をすべてそろえる試験（設計 4章の7項目）。
+
+スクリプトは import せず、ast と正規表現で読む。CLI は子プロセスで動かす。
+v1.1.2 には metadata.version、__version__、CHANGELOG.md、--version がないので、それらの試験は失敗する。
+manifest どうしの一致の試験は v1.1.2 でも通るので、docstring に「（v1.1.2 でも通る後戻り防止）」と書いて分けた。
+frontmatter のキーの試験（5）は、2.5.0 で allowed-tools を確かめる形に変えたので、v1.1.2 では通らない。
+
+
+4章の1の基準: ルートの .claude-plugin/plugin.json の version。
+
+SKILL.md の先頭の --- から次の --- までの行（YAML のライブラリを使わない）。
+
+2.5.0: frontmatter の allowed-tools の問題の並び（なければ空）。1行に書いた Bash(...) のルールが ALLOWED_TOOL_RULES と
+    同じ並びで、どれも yomiyasu の lint か check を指すかを見る。
+
+`metadata:` の次の字下げした行の `version:` を取る（4章の check と同じ読み方）。
+
+モジュールの最上位で定数（str、int）を代入した名前と値の組を、出てくる順に返す。
+
+最上位で、右辺に __version__ を使って代入した名前（`VERSION = __version__`、`"%s" % __version__` など）。
+
+4章の1〜6。
+
+4章の7: 各 CLI の --version と JSON の tool_version が __version__ と同じ。形式の版の定数と JSON の format_version が同じ。
+
+1. ルートの plugin.json と marketplace.json の version が同じ。（v1.1.2 でも通る後戻り防止）
+
+2. SKILL.md の frontmatter の metadata.version が manifest の版と同じ。
+
+3. ルートと skills の scripts の4本の __version__ が manifest の版と同じ。
+
+5本のスクリプトは1行目か2行目で UTF-8 を宣言する（PEP 263）。
+
+        宣言がないと、Python 3.9 は長い行を BUFSIZ（Windows では512バイト）ずつ読んで区切りごとに UTF-8 を確かめるので、
+        区切りで日本語の字が割れると SyntaxError で動かない（PR #54 で足した Windows の Python 3.9 の CI で見つけた）。
+
+__version__ は docstring と必要な __future__ の import の直後に1行で置き、版の文字列を別名の定数に持たせない。
+
+4. CHANGELOG.md の最初の `## ` 見出しが `## 2.0.0 - YYYY-MM-DD` の形で、manifest の版と同じ（版のあとに「-」と印の付いた形も受ける）。
+
+5. SKILL.md の frontmatter の最上位のキーが許された6つの中だけ。compatibility は入れない。allowed-tools は 2.5.0 から
+        入れ、yomiyasu の lint と check を python3、python、py -3 で呼ぶ6つのルールだけを書く（スクリプトを限らないルールは
+        書かない）。allowed-tools を消したとき、広いルールを足したときに、この確かめが失敗することも見る。
+
+6. skills/yomiyasu にプラグインの設定を置かない。版を書く設定は、直下の .claude-plugin の2つだけ。
+        2.0.2 から 3.0.1 までは、名前だけの .codex-plugin/plugin.json をここに置いていた（Codex の .agents/skills で
+        yomiyasu:yomiyasu の名前にするため）。3.1.0 で外した（issue #61。理由は tests/test_skill_package.py）。
+
+形式の版の定数1つを、ルートの4本のうち、あるファイルから探す。
+
+        ここでは値だけを見る。どのファイルに置くか（10.1 L2）は test_format_constants_live_in_one_file で見る。
+        まだないスクリプト（作業の途中の check など）に、lint と diff の版の試験が引きずられないようにする。
+        
+
+形式の版の定数5つを、ルートの4本がそろった上で集める。
+
+出力の形の版の定数5つが、スクリプトに整数で1つずつの値で定義され、値が4章のとおり。
+
+10.1 L2: 形式の版の定数は決まった1つのファイルにだけ最上位で定義する（ほかのファイルは import して使う）。
+
+lint の --version は `yomiyasu_lint.py <__version__> (JSON format <LINT_FORMAT_VERSION>)` の1行で0。
+
+diff と check の --version は 10.1 L1 の1行（完全一致）で0。
+
+lint と diff の --json の tool_version が __version__、format_version が形式の版の定数と同じ。
+
+check の run --json と記録の tool_version、format_version が、__version__ と形式の版の定数と同じ。
+
+Bash(...) のほかの字がある
+
+ルールの並びが6つのルールと違う
+
+SKILL.md に frontmatter がない
+
+CHANGELOG.md がない
+
+CHANGELOG.md に ## の見出しがない
+
+保存期間は3日です。
+
+
+保存期間は30日です。
+
+
+保存期間は30日に変更した。
+
+
+スクリプトを限らないルール: 
+
+run --json の lint がない
+
+run --json の diff がない
+
+run --json の materials がない
+
+run --json に record_path（記録のパス）がない
+
+allowed-tools の行が{}行
+
+{} がない
+
+{} に __version__ がない
+
+{} がどのスクリプトにもない
+
+{} の値がファイルごとに違う: {}
+
+{} が整数でない
+
+1行目か2行目に coding: utf-8 の宣言がない
+
+__version__ の代入がない
+
+__version__ の値が文字列の定数でない
+
+__version__ の値が文字列でない
+
+__version__ の別名の定数がある
+
+scripts/{} がない
+
+YOMIYASU_STATE_DIR の中に記録が1つない: {}

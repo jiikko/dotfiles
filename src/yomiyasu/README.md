@@ -1,0 +1,92 @@
+# yomiyasu (Go)
+
+日本語の文章の読みやすさを点検する本家 [yomiyasu](https://github.com/nanaism/yomiyasu) v3.1.0 (commit `db78b9bc`、MIT) の Go 実装。
+入口は `bin/yomiyasu` (1 本の CLI に subcommand `lint` / `diff` / `check` / `hook`)。設計と受け入れ条件は epic 1072 と issue 1073〜1078。
+
+いまあるのは土台 (issue 1073 の骨組みと oracle) だけで、subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す。
+lint は 1075、diff は 1076、check と hook は 1077 で実装する。
+
+## 構成
+
+| 場所 | 中身 |
+|---|---|
+| `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
+| `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
+| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (いまは未実装の stub) |
+| `lists/` | 語の一覧 (`references/lists/*.txt` の 8 本) を `go:embed` で持つ。本家と同じバイト列で、`.gitattributes` が改行の変換を止める。SHA-256 は `oracle/upstream.sha256` と照合するテストがある |
+| `oracle/` | 本家を正解として動かし、出力を記録して突き合わせる仕組み (下) |
+| `testdata/corpus/` | 入力の集まり (下) |
+| `testdata/words/` | 語の一覧のフォルダの見本 (`allow.txt` / `flag.txt` / `flag-patterns.txt`)。本家の `--words` の経路を通すために使う |
+| `testdata/golden/` | 本家の出力の記録 (`make golden` が作る) |
+| `LICENSE` `UNICODE-LICENSE.txt` | 本家のもの (MIT と Unicode License V3)。本家の SHA-256 と同じ。`_claude/skills/ja-writing/textlint/LICENSE-yomiyasu` は別の配布物に付くので残している |
+
+## 本家の出力を正解にする仕組み (`oracle/`)
+
+Go のテストは記録と突き合わせるだけで、**CI でも Python を動かさない**。Python が無いときにテストを飛ばして緑にする経路は無い。
+
+1. **取得**: 本家のファイル 15 個 (道具 5・語の一覧 8・LICENSE 2) を固定の commit から `https://raw.githubusercontent.com/nanaism/yomiyasu/<commit>/...` で取る (git clone はしない)。
+   SHA-256 の一覧 `oracle/upstream.sha256` と照合し、合わなければ何も書かずに止まる。置き場は `${XDG_CACHE_HOME:-~/.cache}/yomiyasu-oracle/<commit>/` で、本家のファイルには手を入れない。
+   固定する commit を変えるときだけ `make pin-upstream` で一覧を取り直し、差分を読んでから commit する。
+2. **環境の固定**: `Runner` は環境変数を空から作り、`PATH` (python3 の dir と `/usr/bin:/bin`)・使い捨ての `HOME`・`TZ=UTC`・`PYTHONHASHSEED=0` だけを渡す
+   (継承した `GIT_DIR` などは空から作るので入らない)。cwd と HOME は実行ごとの使い捨ての別の dir。python3 は起動時に 1 度だけ絶対パスで解決する。
+   🚨 起動の形は `python3 -P -s -B -X utf8` で、`-I` ではない。`-I` は `PYTHONHASHSEED` を含む `PYTHON*` を全部無視するので、ハッシュがランダムになり、
+   set の反復順に依存する出力が実行ごとに変わりうる (手元の 3.15.0 で `hash('a')` が実行ごとに違うことを確かめた)。`-P` は cwd と script の dir を `sys.path` に足さず、
+   `-s` は user site を読まない。`-I` が止めたかったものは env を空から作ることと `-P -s` で止めている。
+3. **記録の 3 つの単位**
+   - **パターン** (`py/record_patterns.py`、`patterns.json`): 本家の道具を入力に通す間、`re._compile` を包んで使われた全 (パターン, フラグ) を集める (`re.compile`・`re.search` などが全部通る)。
+     集めたパターンを入力の全単位 (ファイルごとの全文 `<path>#doc` と、`"\n"` で割った各行 `<path>#<行番号>`) に `finditer` で当て、パターンごとに
+     全単位の一致 (位置は str の添字 = rune 単位、グループの位置つき) を並べた SHA-256 (`digest`) と、当たった単位・一致の数、最初の数単位の中身 (`sample`) を残す。
+     digest は全部の一致を縮めたもので、`internal/pyre` ができたら同じパターンを compile して `oracle.Digest` で同じ並べ方をして比べる。差が出たら `sample` で位置を見る。
+   - **関数** (`py/call_function.py`、`Runner.CallFunctions`): 本家の module を import して関数に JSON の引数を渡し、戻り値か例外を JSON で返す。1 つの Python プロセスの中で順に呼ぶ。
+   - **CLI** (`Runner.RunCLI`): 本家の `yomiyasu_*.py` を使い捨ての cwd (入力のファイルを置く) で動かし、stdout・stderr・rc を返す。
+   関数と CLI の記録は `smoke.json` に最小の見本 (`--version`・使えない値の例外など) を置いてある。1074 以降は `oracle.Call` / `oracle.CLISpec` の一覧を足して `RecordSmoke` と同じ形で記録する。
+4. **作り直し**: `make golden` (手で打つ。`make test` には含めない)。各記録に本家の commit・Python と `unicodedata` のバージョンを入れ、
+   今の環境と違えば止まる (`UPDATE=1` を付けたときだけ上書き)。記録は 2 回作って同じバイト列になったときだけ書く (所要は約 2 分)。作り直した記録の差分は commit の前に読む。
+   - 入力の集まりを足しただけで、環境が同じなら `UPDATE=1` は要らない。
+
+### 揃わないことを認める範囲 (この表に無い差は全部、不一致として落とす)
+
+| 範囲 | 扱い |
+|---|---|
+| argparse の usage とエラーの文面 | rc だけを揃え、文面は比べない |
+| 本家のコマンド名 (`yomiyasu_lint.py` など) を含む案内の文 | `yomiyasu lint` などに置き換えてから比べる |
+| check の記録の時刻・ホスト・パス・`python` の欄 | 置き換えの印にしてから比べる (欄の扱いの中身は 1077 で決める) |
+| `--version` の文字列 | 本家と同じ `3.1.0` を出す (Go の実装であることは別の欄で出すかを 1078 で決める) |
+
+## 入力の集まり (`testdata/corpus/`)
+
+合計 331 ファイル・1.5 MB・33,240 行 (全文の単位を足して 33,571 単位)。`.gitattributes` で改行の変換を止めている (CRLF の入力を含む)。
+
+| 置き場 | 件数 | 出典 |
+|---|---|---|
+| `upstream/` | 187 | 本家の `tests/corpus/` の 6 組 (`blacklist_ai` `edge_cases` `human` `raw_ai` `requests` `yomiyasu_rewritten`)。`benchmark_results.json` は除く |
+| `upstream-tests/` | 114 | 本家の `tests/test_*.py` と `conftest.py` の中の、非 ASCII を含む 6 字以上の文字列定数を `ast` で抜き出し、ファイルごとに 12,000 字までを空行で区切って並べたもの (pytest は動かさず、ファイルから抜いた) |
+| `references/` | 9 | 本家の `skills/yomiyasu/references/` の直下の Markdown 9 本 (例文を多く含む) |
+| `dotfiles/` | 7 | この repo の `docs/` の 6 本と `issues/706-...md` |
+| `edge/` | 14 | 手で作った端の入力: CRLF・NFD・半角カナと全角英数 (NFKC)・`\x1c`〜`\x1f` と `\x0b` `\x0c` `\x85` `U+2028` `U+2029`・絵文字 (ZWJ・国旗・肌色・キーキャップ)・BMP の外の字・Unicode 16/17 で増えた字・各種の空白・空のファイル・改行なしで終わる行・改行だけ・3,000 字の長い行・引用符と記号 |
+
+本家のパターンを集める run (674 回、rc は全部 0): lint を全ファイルに素で (`.md` と `.txt`)・文書の種類 13 種 × 読者つきで・語の一覧 (`testdata/words/`) つきで、
+diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (素・`--stance` と語の一覧つき・`--endings`)、check の `run --no-record`、hook の `--print-config` と `--version`。
+
+## 記録の件数 (2026-11-13、Python 3.15.0・unicodedata 17.0.0・本家 db78b9bc)
+
+- パターン (本家が使った (パターン, フラグ) の組): **839**。うち入力に 1 回でも当たったのが 765、1 回も当たらなかったのが 74
+- 当たった (パターン, 単位) の組: 1,624,214。一致の総数: 21,495,234 (digest に畳んでいて、記録には残らない)
+- 記録の大きさ: `patterns.json` 約 633 KB・`smoke.json` 約 3 KB。**合計 約 0.6 MB** (目安 5 MB 以下)
+- 実行の件数は `go test ./oracle/` の `TestPatternGolden*` が見る。入力の集まりが 0 件・記録が無い・入力のファイル (SHA-256・行数) が記録と合わない・
+  どのパターンも当たっていない・道具の run が 1 つも rc=0 で終わっていない、のどれでも落ちる
+
+## 開発
+
+```sh
+make -C src/yomiyasu lint test    # CI と同じ (Python は動かさない)
+make -C src/yomiyasu golden       # 記録を作り直す (Python と ネットワークが要る。UPDATE=1 で環境の違いを許す)
+make -C src/yomiyasu pin-upstream # 固定する commit を変えるときだけ
+```
+
+テストの差し替え: 外部の `python3` を起こす経路は `oracle.Runner` だけで、`subproc.CommandContext` を使う (`exec_boundary_test.go` が見る)。
+
+## 今後 (別の issue)
+
+`internal/pyre` (Python の `re` を regexp2 で写す)・`internal/pyunicode`・`internal/pyjson`・`internal/pystr` は 1074 以降で作る。
+このディレクトリの記録と `oracle.Digest` が、それらの突き合わせの基準になる。

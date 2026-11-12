@@ -1,0 +1,25 @@
+G8 H3–H5, H11, H12: optional check registration, confined to temporary homes.
+
+担当者は原稿を確認しました。
+
+
+担当者が原稿を確認しました。
+
+
+引数の誤りです。
+
+担当者が確認しました。
+
+
+確認を終えました。
+
+
+変更しました。
+
+ファイルを開けません
+
+このヘルプを表示して終わります。
+
+オプション:
+
+使い方: yomiyasu_check.py 

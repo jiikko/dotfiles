@@ -1,0 +1,28 @@
+CI が試験を組に分けて流すための決まり（tests/conftest.py と .github/workflows/ci.yml）を確かめる。
+
+conftest.py は pytest を読み込むので、PartsTest では読み込まずにソースを読む（pytest を入れずに unittest で流す環境でも
+動かすため）。
+- 組の分け方（part_of）: どの試験も、ちょうど1つの組に入る。
+- 名前で timing に入れる試験（_TIMED_BY_NAME）: 書いてある名前の試験が、そのファイルのそのクラスにある。
+- CI の設定: 分ける組の数と `--part` の指定が合っていて、組を流す段と時間を測る試験の段が、組の一覧と同じ数だけある。
+  段を流す条件（if:）を書き損じると、試験を1件も流さないままジョブが成功するので、条件の文も見る。
+HookTest は、pytest があるときだけ、conftest.py のフックそのものを pytest に集めさせて確かめる（流さない）。
+
+
+conftest.py のモジュールの名前 name に入れてある値（文字列やタプルだけでできたもの）。
+
+conftest.py の関数 name を、その関数だけ取り出して動かせる形にする（ほかの名前を使わない関数に限る）。
+
+ci.yml の step ごとの行（「- name:」か「- uses:」の行から、次の step か次のジョブの前まで。コメントの行は除く）。
+
+pytest が選ぶ試験の名前（集めるだけで、流さない。.pyc とキャッシュは書かない）。
+
+conftest.py のフックそのものを、pytest に集めさせて確かめる（流さない）。
+
+pytest がない
+
+ci.yml に part の一覧がない
+
+conftest.py に {} がない
+
+組の大きさの差は1件まで

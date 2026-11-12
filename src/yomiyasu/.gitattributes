@@ -1,0 +1,8 @@
+# 語の一覧は本家と同じバイト列で持つ (SHA-256 を照合する)。改行の変換と空白の整形をさせない。
+lists/data/*.txt -text
+# 入力の集まりも同じ (CRLF・NFD・制御文字の入力を含む)。
+testdata/corpus/** -text
+testdata/words/** -text
+testdata/golden/** -text
+LICENSE -text
+UNICODE-LICENSE.txt -text

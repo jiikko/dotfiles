@@ -172,6 +172,15 @@
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
 - `src/userdirs` (`userdirs`) — Package userdirs は道具ごとの設定の置き場を 1 か所で決める。
+- `src/yomiyasu` (`yomiyasu`) — Command yomiyasu は、日本語の文章の読みやすさを点検する本家 yomiyasu (Python) の Go 実装。 (main)
+- `src/yomiyasu/check` (`yomiyasu/check`) — Package check は yomiyasu check (lint と diff をまとめて実行して記録を残す) の Main を持つ。
+- `src/yomiyasu/cmdenv` (`yomiyasu/cmdenv`) — Package cmdenv は yomiyasu の各 subcommand の Main が受け取る実行環境 (引数・標準入出力・cwd・環境変数) を持つ。
+- `src/yomiyasu/diff` (`yomiyasu/diff`) — Package diff は yomiyasu diff (元の文と書き直した文の差分の検査) の Main を持つ。
+- `src/yomiyasu/hook` (`yomiyasu/hook`) — Package hook は yomiyasu hook (エージェントの hook から check へつなぐ入口) の Main を持つ。
+- `src/yomiyasu/lint` (`yomiyasu/lint`) — Package lint は yomiyasu lint (表現と書式の検査) の Main を持つ。
+- `src/yomiyasu/lists` (`yomiyasu/lists`) — Package lists は本家 yomiyasu の語の一覧 (references/lists/*.txt の 8 本) を埋め込んで持つ。
+- `src/yomiyasu/oracle` (`yomiyasu/oracle`) — Package oracle は本家 yomiyasu (Python) を正解 (oracle) として動かし、出力を記録して Go の実装と突き合わせる仕組み。
+- `src/yomiyasu/oracle/cmd/golden` (`yomiyasu/oracle/cmd/golden`) — Command golden は本家 yomiyasu (Python) を環境を固定して動かし、testdata/golden/ の記録を作り直す (make golden)。 (main)
 - `src/zundamon-kaisetsu` (`zundamon-kaisetsu`) — zundamon-kaisetsu は VOICEVOX で台本を合成し、四国めたんとずんだもんの掛け合い動画 (HTML プレイヤー / mp4) を作る。 (main)
 - `src/zundamon-kaisetsu/internal/app` (`zundamon-kaisetsu/internal/app`) — Package app は CLI の実行の文脈: 環境 (Env。 (internal)
 - `src/zundamon-kaisetsu/internal/build` (`zundamon-kaisetsu/internal/build`) — Package build は組み立て (Assemble: wav の連結・口の開き・まばたき・プレイヤーのデータ) と、HTML / mp4 への書き出し。 (internal)

@@ -1,0 +1,84 @@
+v2.1.3: 試験の一式が Windows でも POSIX と同じことを確かめるための決まりと道具（tests/portable.py）の試験。
+
+- 子プロセスに渡す標準入力と、試験が書くファイルは、改行を変えずにバイト列で渡す。text モードの標準入力と
+  Path.write_text、open(..., "w") は、Windows では「\n」を「\r\n」に、「\r\n」を「\r\r\n」にする。
+  text モードで出力を読むときと read_text は、ロケールによらないよう encoding を書く（Windows の既定は UTF-8 でない）。
+  この決まりは tests/ のソースを構文木で調べて見張る（macOS と Linux の CI でも、決まりを破れば落ちる）。
+- POSIX の権限ビットの確かめは、Windows では行わない（check とフックは POSIX のときだけ chmod する）。
+- 開いているファイルへの os.replace は、Windows では PermissionError になる。O_EXCL で作ったあとの片付けの試験は、
+  置き直す前にファイルを閉じる。Windows の動きは os.replace を差し替えて再現する。
+- 子プロセスを使わない性能の試験の上限は、Windows の遅い機械では基準の処理の遅さの比で延ばす（portable.paced_limit）。
+  POSIX では延ばさない。
+
+文はすべて合成の文。
+
+
+tests/ の Python のソース（このファイルを含む）。(名前, ソース, 構文木) の並び。
+
+tests/ のソースが、Windows で改行やロケールの違いを持ち込む書き方をしていない。
+
+portable.run_text は、subprocess.run の text モードと同じ結果を、標準入力の改行を変えずに返す。
+
+O_EXCL で作ったあとに書けなかったときの片付けを、Windows の os.replace（開いているファイルへの置き直しを
+    PermissionError にする）で確かめる。test_v200_state_gitignore の TestPlaceNewFile と同じ形。
+
+Windows の「~/state」は「C:\...\me/state」になる。区切りが違っても同じ場所なので、両方を normpath して比べる。
+
+Path.write_text は Windows で改行を変える（Python 3.9 には newline の引数もない）。write_bytes を使う。
+
+書くための open は、バイナリか newline="" にする。
+
+text モードの子に文字列の input を渡さない（portable.run_text を使う）。
+
+text モードで子の出力を読むときは encoding を書く（Windows の既定のロケールは UTF-8 でない）。
+
+st_mode の権限ビットを比べる確かめは、os.name を見る if の中か、Windows を外す skipIf のある試験に置く。
+
+見張りが働くこと: 決まりを破る合成のソースを、それぞれの決まりが見つける。
+
+一行目
+二行目
+三行目四行目
+
+Windows で改行を変える text モードの標準入力を使わない（subprocess.run を差し替えて渡した値を見る）。
+
+POSIX では、上限を超えても pace を測らず、上限は limit のまま。
+
+pace と PACE_SECONDS は test_v200_diff_full から読む（片方だけを変えないように）。
+
+閉じる前に置き直すと、Windows では置き直しが起きず、作ったファイルが消える（2.1.2 の試験の落ち方）。
+
+C:\Users\試験
+
+一行目
+二行目
+三行目
+四行目
+
+0.120秒
+
+Path('a.md').write_text('一行目\n', encoding='utf-8')
+
+
+open('a.md', 'w', encoding='utf-8').write('文\n')
+
+
+subprocess.run(['x'], input='文\n', encoding='utf-8', capture_output=True)
+
+
+この機械の遅さ 4.00
+
+リンクを作れない
+
+見出し
+
+本文です。
+
+
+この機械の遅さ 1.00
+
+別のプロセスが使用中のため、アクセスできません
+
+試験で起こした書き込みの失敗
+
+pace を測った

@@ -1,0 +1,239 @@
+package oracle
+
+import (
+	"bytes"
+	"context"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"unicode/utf8"
+
+	"subproc"
+)
+
+//go:embed py/*.py
+var drivers embed.FS
+
+// Runner は本家の道具を環境を固定して動かす。Python は NewRunner が絶対パスで解決した 1 つだけを使う。
+type Runner struct {
+	// Python は python3 の絶対パス。env を空から作るので PATH に頼らず、起動のたびに同じ実体を呼ぶ。
+	Python string
+	Tree   Tree
+}
+
+// NewRunner は今の環境の python3 を絶対パスで解決して Runner を作る。
+func NewRunner(tree Tree) (Runner, error) {
+	p, err := exec.LookPath("python3")
+	if err != nil {
+		return Runner{}, fmt.Errorf("python3 が見つかりません: %w", err)
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return Runner{}, fmt.Errorf("python3 の絶対パスを決められません: %w", err)
+	}
+	return Runner{Python: abs, Tree: tree}, nil
+}
+
+// PyInfo は記録に入れる Python と unicodedata のバージョン。
+type PyInfo struct {
+	PythonVersion      string `json:"python_version"`
+	UnicodedataVersion string `json:"unicodedata_version"`
+}
+
+// sandbox は 1 回の実行の使い捨ての HOME と cwd と driver の置き場。cwd と HOME は別の dir にする。
+type sandbox struct{ root, cwd, home, drivers string }
+
+func newSandbox() (sandbox, error) {
+	root, err := os.MkdirTemp("", "yomiyasu-oracle-")
+	if err != nil {
+		return sandbox{}, fmt.Errorf("使い捨ての dir を作れません: %w", err)
+	}
+	sb := sandbox{root: root, cwd: filepath.Join(root, "cwd"), home: filepath.Join(root, "home"), drivers: filepath.Join(root, "drivers")}
+	for _, d := range []string{sb.cwd, sb.home, sb.drivers} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			_ = os.RemoveAll(root)
+			return sandbox{}, fmt.Errorf("%s を作れません: %w", d, err)
+		}
+	}
+	return sb, nil
+}
+
+func (s sandbox) remove() { _ = os.RemoveAll(s.root) }
+
+// env は空から作る環境変数。PYTHONHASHSEED=0 は python3 を -I で動かすと無視される (環境変数を全部読まなくなる) ので、
+// -I でなく -P -s -B で動かし (args を参照)、継承した PYTHON* が無いことは env を空から作ることで保つ。
+func (r Runner) env(home string) []string {
+	return []string{
+		"PATH=" + filepath.Dir(r.Python) + ":/usr/bin:/bin",
+		"HOME=" + home,
+		"TZ=UTC",
+		"PYTHONHASHSEED=0",
+	}
+}
+
+// RawResult は 1 回の python3 の実行の結果。rc が 0 でないのは異常ではなく記録の対象で、起動できなかったときだけ error を返す。
+type RawResult struct {
+	Stdout string
+	Stderr string
+	RC     int
+}
+
+func (r Runner) exec(ctx context.Context, sb sandbox, stdin []byte, args ...string) (RawResult, error) {
+	// -P: cwd や script の dir を sys.path に足さない / -s: user site を読まない / -B: .pyc を書かない / -X utf8: locale に依らず UTF-8。
+	full := append([]string{"-P", "-s", "-B", "-X", "utf8"}, args...)
+	cmd := subproc.CommandContext(ctx, r.Python, full...)
+	cmd.Dir = sb.cwd
+	cmd.Env = r.env(sb.home)
+	cmd.Stdin = bytes.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exitErr) && exitErr.ExitCode() >= 0:
+	default:
+		return RawResult{}, fmt.Errorf("python3 を動かせませんでした (%s): %w", strings.Join(args, " "), err)
+	}
+	if !utf8.Valid(stdout.Bytes()) || !utf8.Valid(stderr.Bytes()) {
+		return RawResult{}, fmt.Errorf("python3 の出力が UTF-8 ではありません (%s)", strings.Join(args, " "))
+	}
+	return RawResult{Stdout: stdout.String(), Stderr: stderr.String(), RC: cmd.ProcessState.ExitCode()}, nil
+}
+
+// runDriver は埋め込みの driver を使い捨ての dir に置き、JSON の指示を標準入力に渡して、標準出力の JSON を out に読む。
+func (r Runner) runDriver(ctx context.Context, sb sandbox, name string, in, out any) error {
+	src, err := drivers.ReadFile("py/" + name)
+	if err != nil {
+		return fmt.Errorf("driver %s を読めません: %w", name, err)
+	}
+	path := filepath.Join(sb.drivers, name)
+	if err := os.WriteFile(path, src, 0o644); err != nil {
+		return fmt.Errorf("driver %s を置けません: %w", name, err)
+	}
+	stdin, err := json.Marshal(in)
+	if err != nil {
+		return fmt.Errorf("driver %s への指示を JSON にできません: %w", name, err)
+	}
+	res, err := r.exec(ctx, sb, stdin, path)
+	if err != nil {
+		return err
+	}
+	if res.RC != 0 {
+		return fmt.Errorf("driver %s が rc=%d で終わりました: %s", name, res.RC, res.Stderr)
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), out); err != nil {
+		return fmt.Errorf("driver %s の出力を読めません: %w", name, err)
+	}
+	return nil
+}
+
+// Info は今の python3 のバージョンと unicodedata のバージョンを返す。
+func (r Runner) Info(ctx context.Context) (PyInfo, error) {
+	sb, err := newSandbox()
+	if err != nil {
+		return PyInfo{}, err
+	}
+	defer sb.remove()
+	var info PyInfo
+	if err := r.runDriver(ctx, sb, "info.py", struct{}{}, &info); err != nil {
+		return PyInfo{}, err
+	}
+	return info, nil
+}
+
+// CLISpec は本家の CLI の 1 回の実行。Script は ScriptsDir の中のファイル名、Files は cwd に置く入力 (cwd からの相対パス)。
+// 本家の道具は作業フォルダの外のファイルを読まないので、入力は cwd の中に置く。
+type CLISpec struct {
+	Script string            `json:"script"`
+	Args   []string          `json:"args"`
+	Stdin  string            `json:"stdin,omitempty"`
+	Files  map[string]string `json:"files,omitempty"`
+}
+
+// CLIResult は CLI の stdout・stderr・rc。
+type CLIResult struct {
+	Stdout string `json:"stdout"`
+	Stderr string `json:"stderr"`
+	RC     int    `json:"rc"`
+}
+
+// RunCLI は本家の CLI を cwd の使い捨ての dir で動かして、stdout・stderr・rc を返す。
+func (r Runner) RunCLI(ctx context.Context, spec CLISpec) (CLIResult, error) {
+	sb, err := newSandbox()
+	if err != nil {
+		return CLIResult{}, err
+	}
+	defer sb.remove()
+	if err := placeFiles(sb.cwd, spec.Files); err != nil {
+		return CLIResult{}, err
+	}
+	res, err := r.exec(ctx, sb, []byte(spec.Stdin), append([]string{r.Tree.Path(ScriptsDir + "/" + spec.Script)}, spec.Args...)...)
+	if err != nil {
+		return CLIResult{}, err
+	}
+	return CLIResult(res), nil
+}
+
+// placeFiles は files を dir の中に置く。dir の外へ出るパスは拒否する。
+func placeFiles(dir string, files map[string]string) error {
+	for rel, body := range files {
+		if !filepath.IsLocal(rel) {
+			return fmt.Errorf("cwd の外へ出るパスは置けません: %q", rel)
+		}
+		dst := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return fmt.Errorf("%s の dir を作れません: %w", dst, err)
+		}
+		if err := os.WriteFile(dst, []byte(body), 0o644); err != nil {
+			return fmt.Errorf("%s を置けません: %w", dst, err)
+		}
+	}
+	return nil
+}
+
+// Call は本家の module の関数 1 つの呼び出し。引数は JSON で表せるものだけ。
+type Call struct {
+	Module   string         `json:"module"`
+	Function string         `json:"function"`
+	Args     []any          `json:"args,omitempty"`
+	Kwargs   map[string]any `json:"kwargs,omitempty"`
+}
+
+// PyException は本家の関数が投げた例外。Type が "Unserializable" のときは戻り値が JSON にできなかった。
+type PyException struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+// CallResult は Call の結果。Exception が nil のとき Result が戻り値の JSON。
+type CallResult struct {
+	Result    json.RawMessage `json:"result,omitempty"`
+	Exception *PyException    `json:"exception,omitempty"`
+}
+
+// CallFunctions は calls を 1 つの Python プロセスの中で順に呼ぶ (呼び出しごとに起動しない)。結果は calls と同じ順。
+func (r Runner) CallFunctions(ctx context.Context, calls []Call) ([]CallResult, error) {
+	sb, err := newSandbox()
+	if err != nil {
+		return nil, err
+	}
+	defer sb.remove()
+	var out []CallResult
+	in := struct {
+		ScriptsDir string `json:"scripts_dir"`
+		Calls      []Call `json:"calls"`
+	}{r.Tree.Path(ScriptsDir), calls}
+	if err := r.runDriver(ctx, sb, "call_function.py", in, &out); err != nil {
+		return nil, err
+	}
+	if len(out) != len(calls) {
+		return nil, fmt.Errorf("関数の呼び出し %d 件に対して結果が %d 件でした", len(calls), len(out))
+	}
+	return out, nil
+}

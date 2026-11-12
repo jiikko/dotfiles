@@ -1,0 +1,95 @@
+Issue #4: コードの値を削って文末コロンを作らないことを確認する。
+
+# CIの作業手順
+
+### 生成物の更新忘れをCIで止める
+
+APIの定義だけを更新して、クライアントの再生成を忘れても、CIが通ってしまいます。
+
+- 場所：`.github/workflows/test.yml`
+- やること：再生成したあとに差分が出ないかを検査する
+- 規模：S
+
+追加するstepの例です。
+
+```yaml
+- name: Check generated client is up to date
+  run: |
+    pnpm run generate
+    git diff --exit-code -- src/generated
+```
+
+本文です。
+時間を溶かした。値：`x`
+
+---
+title: サンプル:
+---
+# 見出し：
+> 引用：
+| 値： |
+<aside>見出し：</aside>
+```yaml
+key:
+```
+~~~yaml
+another:
+~~~
+
+- 場所：`.github/workflows/test.yml`
+
+- 場所: `.github/workflows/test.yml`
+
+- 場所： `.github/workflows/test.yml`
+
+- 場所：設定ファイル
+
+- 値：` `
+
+- 値：``
+
+- 値：``key:value``
+
+- 値：``a`b``
+
+- 値：```key:value```
+
+値は`value:`
+
+値は``value:``
+
+値は``a`b:``
+
+`参考`https://example.com/endpoint:
+
+時間を溶かした。値：`x`
+
+:::details 詳細
+本文です。
+:::
+
+:::message
+本文です。
+:::
+
+::::details 外側
+:::message
+本文です。
+:::
+::::
+
+値は`value`：
+
+値は`value:`:
+
+値は``a`b``：
+
+値は`key:
+
+確認事項：  
+
+本文です。
+確認事項：
+
+本文です。
+
