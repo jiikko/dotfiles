@@ -1,0 +1,1 @@
+../1069-perf-slack-bbs-sync-output-redraws-whole-pane-under-tmux.md
