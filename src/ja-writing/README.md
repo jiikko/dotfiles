@@ -18,6 +18,7 @@ lint は 1075、diff は 1076、check と hook は 1077 で実装する。
 | `testdata/corpus/` | 入力の集まり (下) |
 | `testdata/words/` | 語の一覧のフォルダの見本 (`allow.txt` / `flag.txt` / `flag-patterns.txt`)。本家の `--words` の経路を通すために使う |
 | `testdata/golden/` | 本家の出力の記録 (`make golden` が作る) |
+| `bench/` | ベンチマークの入力を組み立てる `gen.py` と、本家の所要を測る `pybench.sh` (使い方は `bench/README.md`。issue 1082) |
 | `LICENSE` `UNICODE-LICENSE.txt` | 本家のもの (MIT と Unicode License V3)。本家の SHA-256 と同じ。`_claude/skills/ja-writing/textlint/LICENSE-yomiyasu` は別の配布物に付くので残している |
 
 ## 本家の出力を正解にする仕組み (`oracle/`)
