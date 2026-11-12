@@ -75,6 +75,17 @@ Feedback: FB25090184 / FB25224901 / FB25346707。
 - swap は 2.3 GB 使用のまま (一度 swap に出たページは、使われるまで戻らない。害は無い)
 - wired 10 GB は再起動の前後で変わらない (fseventsd とは別。多めなので、気になったら別に調べる)
 
+## 再発: 別の Mac・macOS 27.0.1 (2026-11-12 14:31)
+
+上の記録とは別の Mac で同じ形を確認した。macOS を上げても直っていない。
+
+- 環境: M3 MacBook Pro (Mac15,10)、macOS 27.0.1 (26A434)、fseventsd 1433 (上の `Info` の `CFBundleVersion`)、物理メモリ 96 GB
+- fseventsd (pid 546) の起動は 2026-10-11 01:51 (マシンの起動と同じ)。32 日の稼働
+- `top -l 1 -o mem -stats pid,command,mem,cmprs`: fseventsd が MEM 16G / 圧縮 3404M で 1 位
+- `sysctl vm.swapusage`: 5120M 中 4309M 使用
+- `sudo footprint 546`: footprint 16 GB。**ほぼ全部が `Malloc Small` の Dirty** (4,487 regions)、Reclaimable 1136 KB、`phys_footprint_peak` = 現在値。上の 31 GB の Mac と同じ形
+- 32 日で 16 GB = 1 日あたり約 0.5 GB (55 日で 31 GB の上の Mac とほぼ同じ速さ。通しの増え方は測っていない)
+
 ## 再発したときの手順
 
 1. 確認 (root 不要): `top -l 1 -o mem -n 5 -stats pid,command,mem,cmprs` で fseventsd が GB 単位か
@@ -140,6 +151,7 @@ awk 'FNR==NR{t[++n]=$1;v[n]=$2;next} $2=="start"{s[$1]=$3;o[++m]=$1} $2=="end"{e
 - [x] 溜まる操作の測定 (深い木の作成・削除、同じファイルの書き換え)
 - [x] 類似報告の調査
 - [x] `sudo killall fseventsd` で解放 (2026-11-12 10:02)
+- [x] 別の Mac・macOS 27.0.1 (fseventsd 1433) でも再発を確認 (2026-11-12)
 - [ ] 再起動した直後の fseventsd でも同じ操作で溜まるかの測定 (未実施。再発の前に測れば、見張り役が要るかを決められる)
 - [ ] 打てる手のどれを採るかの判断
 
