@@ -86,6 +86,7 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
 - 「黙って」「静かに壊れる」(silently の直訳) は、エラーや通知が出ないのか (「エラーを出さずに」)、人が気づけないのか (「気づかないうちに」) を書き分ける
 - 「既定値」「既定で」「既定の」は使わない。「指定しないときは 30 日」「何も渡さないと〜する」のように、何が起きるかを書く
 - ソフトウェアの「版」は「バージョン」と書く。出版物・製品の種類を表す「第 2 版」「日本語版」は残す
+- テストの手法の用語「変異」(mutation) は使わない。「実装をわざと壊して、テストが落ちるかを確かめた」のように、何をしたかを書く
 - 語の候補は `ja-textlint` が warning で出す (下の「ja-textlint の中身」)。言い換えると意味が変わるときは元の語を残す。
   定義した用語 (dotfiles の「正本」「ゲート」) は直さない
 <!-- textlint-enable ja-ai-vocabulary -->
@@ -123,7 +124,7 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
 <!-- textlint-disable ja-ai-vocabulary -->
 - 規則は textlint の [preset-ja-technical-writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing) (MIT) と、
   自作の 2 本 (`textlint/rules/`)。バージョンと設定の正本は `textlint/` (`package.json`・`package-lock.json`・`textlintrc.json`)
-  - `ja-ai-vocabulary` (warning。rc は 0 のまま): 規範 7 の語 (版・〜側に倒す・黙って・静かに壊れる・潰す・溶かす・効く・前提が崩れる・既定)。
+  - `ja-ai-vocabulary` (warning。rc は 0 のまま): 規範 7 の語 (版・〜側に倒す・黙って・静かに壊れる・潰す・溶かす・効く・前提が崩れる・既定・変異)。
     語の選び方は [yomiyasu](https://github.com/nanaism/yomiyasu) (MIT。`textlint/LICENSE-yomiyasu`) の語彙の一覧から、dotfiles で当たりの多いものを選んだ。
     書き換えはしない (`--fix` でも変わらない)
   - `ja-bold-not-rendered` (error): 表示されない `**` (規範 6)
