@@ -1,20 +1,25 @@
-# 1069 (perf): slack-bbs が tmux の中で同期出力を使い、本文のスクロールのたびに画面全体を外側の端末へ送り直している
+# 1069 (perf): slack-bbs の本文のスクロールで、tmux が外側の端末へ 1 行あたり約 86KB を送る (同期出力がその 4 割)
 
 起票日: 2026-11-12
 
 ## 概要
 
 slack-bbs で本文を読んでいるとスクロールがもっさりする (ユーザーの報告 2026-11-12)。performance の監査で測ったところ、
-画面のモデルの処理は重くなかった。重いのは、tmux から外側の端末 (Terminal.app) へ送る量だった。
+画面のモデルの処理は重くなかった。多いのは、tmux から外側の端末 (Terminal.app) へ送る量だった (本文が 1 行動くたびに約 86KB。`less` は約 7.6KB)。
 
-- slack-bbs は bubbletea に同期出力 (DECSET 2026) を使わせている。tmux 3.7c は、同期出力の区間が終わるたびにペインを丸ごと描き直す。
-  このため、本文が 1 行動くたびに、ほぼ画面全体を外側の端末へ送る
-- 同じ現象は 2026-10-25 に glogx・treefiler で確かめ、`treefiler/termsync` (`DropSyncReport`) で止めている。
-  経緯は `docs/glogx-bubbletea-v2.md` の「ちらつき低減」の項。slack-bbs はこれを使っていない
+- 要因の 1 つは同期出力 (DECSET 2026)。slack-bbs は bubbletea に同期出力を使わせており、tmux 3.7c は区間が終わるたびにペインを描き直す。
+  同期出力の答えを捨てると約 49KB に減る (43% 減)。残りの約 49KB の内訳は確かめていない (下の「残る量」)
+- 外側へ送る量が増える仕組みは、2026-10-25 に glogx・treefiler で確かめ、`treefiler/termsync` (`DropSyncReport`) で止めている。
+  そのときの症状は乱れで、もっさりではない。経緯は `docs/glogx-bubbletea-v2.md` の「ちらつき低減」の項。slack-bbs はこれを使っていない
+- 同期出力を止めるだけで体感が直るかは分からない (Terminal.app の描画の時間は測っていない)
 
-## 実測 (2026-11-12、M3 Max、tmux 3.7c、外側の端末は Terminal.app 488 で 437x104 と 382x92)
+## 実測 (2026-11-12、M3 Max、tmux 3.7c)
 
-実データは `~/.cache/slack-bbs` の一番長い話題 (本文 18,655 バイト、31 話題のチャンネル)。画面の大きさは実際の client の大きさ (437x104) に合わせた。
+- 実データは `~/.cache/slack-bbs` の一番長い話題 (本文 18,655 バイト、31 話題のチャンネル)
+- 画面の大きさは 437x104。tmux につないでいる実際の Terminal.app 488 の client と同じ大きさ
+- 外側へ送る量を測った client は、Terminal.app 相当の pty の client (TERM=xterm-256color・COLORTERM=truecolor)。
+  tmux は `-f /dev/null` の隔離サーバ (`-L`) で、`terminal-features` は何も足していない (client の機能に RGB と sync は無い)。
+  2026-10-25 の glogx の測定と同じ条件
 
 | 測ったもの | 値 | 測り方 |
 |---|---|---|
@@ -26,7 +31,7 @@ slack-bbs で本文を読んでいるとスクロールがもっさりする (�
 | 何も起こらないキー (`w`)・本文の末尾での j | 0 バイト | 対照。送る量はスクロールが起きたときだけ出る |
 | キーから tmux のペインの中身が変わるまで | slack-bbs 22ms、`less` 11ms (中央値) | `send-keys` の後に `capture-pane` が変わるまでを数える (`capture-pane` 1 回で約 5ms を含む)。差は bubbletea の 1 秒 60 回の描画の周期で大半が説明できる |
 
-同期出力だけが原因かを、アプリを外して確かめた。437x104 のペインで、1 行ずつスクロールする bash のスクリプト (スクロール領域の高さ 2 通り × 背景色の有無) を動かし、
+同期出力がスクロールの送り方を変えるかを、アプリを外して確かめた。437x104 のペインで、1 行ずつスクロールする bash のスクリプト (スクロール領域の高さ 2 通り × 背景色の有無) を動かし、
 tmux が外側へ送る量を比べた:
 
 - 同期出力なし: どの組でも 1 行あたり約 330〜350 バイト (tmux は外側へもスクロールで渡す)
@@ -36,9 +41,14 @@ tmux が外側へ送る量を比べた:
 glogx と treefiler では、2026-10-25 にユーザーの依頼で同じ緩和を入れた (`docs/glogx-bubbletea-v2.md`)。
 そこでは兄弟の移動 1 回で外側へ送る量が 74〜86KB から 15〜16KB に減った。slack-bbs で同じ filter を当てたときの減り方 (86KB → 49KB) より大きい。
 
+ほかに説明できていない値がある:
+
+- slack-bbs の同期出力ありの 86KB は、bash でペインを丸ごと描き直した 31KB の約 2.8 倍。キー 1 回で同期の区間が何回閉じたかと、色の SGR がどれだけ足したかは測っていない
+- bash の対照では、同期出力を止めるとスクロールは約 340 バイトになった。slack-bbs では止めても 49KB 残るので、この対照の結論は slack-bbs の残りを説明しない
+
 ## 原因
 
-- bubbletea v2 は、`TERM_PROGRAM` が `Apple` を含まなければ、同期出力が使えるかを端末に問い合わせる。
+- bubbletea v2 は、同期出力が使えるかを端末に問い合わせる。問い合わせないのは `TERM_PROGRAM` が `Apple` を含むときと SSH の中 (`SSH_TTY`) のとき。
   判定は `tea.go` の `shouldQuerySynchronizedOutput`。
   tmux の中は `TERM_PROGRAM=tmux` なので問い合わせ、tmux は「使える」と答える
 - 外側の Terminal.app は同期出力を持たない (tmux の `client_termfeatures` に `sync` が無い)
@@ -56,11 +66,15 @@ glogx と treefiler では、2026-10-25 にユーザーの依頼で同じ緩和�
 - mac-lan-manager `main.go`・pro-con `main.go`・restartable `internal/ui/presenter.go`・schedkeys `main.go`
 - tuikit `examples/listdetail`・tuikit `examples/toast`
 
-どれも tmux + Terminal.app で同じことが起きるはずだが、測ったのは slack-bbs だけ。
+測ったのは slack-bbs だけ。restartable は alt screen を使わない inline の画面 (`internal/ui/view.go` で `AltScreen = false`)。
+画面全体の描き直しにはならない見込み。
 
 ## 対応方針
 
-1. `treefiler/termsync` を tuikit へ移す。slack-bbs を treefiler の module に依存させないため。glogx と treefiler は移した先を使う
+1. `treefiler/termsync` を tuikit へ移す。slack-bbs を treefiler の module に依存させないため。glogx と treefiler は移した先を使う。
+   一緒に直す参照:
+   - `src/tuikit/README.md` の termcaps の行・`termsync.go` の package コメント・`termcaps.go` の package コメント
+   - `src/glogx/tui.go` の「理由は treefiler/termsync」
 2. slack-bbs の 2 か所の `tea.NewProgram` に、`termcaps.SyncedOutput` が false のとき `termsync.ProgramOptions` を渡す
 3. 残りの 6 か所 (examples を除けば 4 か所) にも渡すかは、それぞれ画面全体が動くかを見て決める。画面がほとんど動かないものは効果が小さい
 4. 直した後、上の表の「tmux が外側の端末へ送る量」を同じ測り方で測り直して、ここに書く
