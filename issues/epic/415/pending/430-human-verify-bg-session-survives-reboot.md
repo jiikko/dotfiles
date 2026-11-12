@@ -1,9 +1,12 @@
 # 430 (human): claude の bg session がマシンの再起動を越えて戻るかを確かめる
 
+> **pending (2026-11-12) の理由と再開の trigger**: 期限を過ぎても確認の機会が無く、ユーザーの指示で保留にした。確認は済んでいない。
+> - 再開の trigger: 次にマシンを再起動するとき (手順は再起動のついでに打つ形のまま。結果を使う先の 415 の要件 14 は、pro-con を使っていない間は進まない)
+
 起票日: 2026-09-24
 期限: 2026-10-08
 
-親: [415](415-design-claude-pm-worker-orchestration.md) の要件 14 / [425](done/425-research-claude-bg-remaining-measurements.md) から切り出し
+親: [415](../415-design-claude-pm-worker-orchestration.md) の要件 14 / [425](../done/425-research-claude-bg-remaining-measurements.md) から切り出し
 
 ## なぜ人が要るか
 

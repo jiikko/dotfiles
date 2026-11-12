@@ -15,7 +15,7 @@ PG を `claude --bg -w` で動かす設計 (415 論点 2) のうち、測って�
 - [x] `claude rm` の安全側 → **消さない** (結果 2)
 - [x] 実行中の bg session へ直接送れるか → **SendMessage で送れる。届くのは turn の区切り** (結果 3)
 - [x] 質問で止めた session → **`waitingFor: "input needed"`。SendMessage では答えられない** (結果 4)
-- [x] 再起動を越えるか → 人の操作 (マシンの再起動) が要るので [430](../430-human-verify-bg-session-survives-reboot.md) に切り出した。
+- [x] 再起動を越えるか → 人の操作 (マシンの再起動) が要るので [430](../pending/430-human-verify-bg-session-survives-reboot.md) に切り出した。
   プロセスが死んだ場合は daemon が自動で再開することまでは確認した (結果 1)
 - [x] 利用枠を機械で読む口 → **`claude -p "/usage"` がテキストで返す** (結果 5)
 - [x] `TMUX` / `TMUX_PANE` を落とさない場合 → **測らない**。落とす前提で設計している (415 論点 5) ので結果が設計を変えない

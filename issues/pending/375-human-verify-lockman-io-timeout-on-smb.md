@@ -1,9 +1,12 @@
 # human: lockman の --io-timeout が実 SMB のサーバ不達のときに期限内に戻すか確かめる
 
+> **pending (2026-11-12) の理由と再開の trigger**: 期限を過ぎても確認の機会が無く、ユーザーの指示で保留にした。確認は済んでいない。
+> - 再開の trigger: 実 SMB 共有をマウントでき、そのサーバを止められる (またはネットワークを切れる) とき
+
 起票日: 2026-09-15
 カテゴリ: human（人間しかできない作業。実 SMB 共有とサーバの停止操作が要る）
 期限: 2026-10-15
-出典: [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の残タスク
+出典: [issue 357](../done/357-bug-lockman-with-bypasses-io-timeout.md) の残タスク
 
 ## なぜ人がやるのか
 
@@ -39,5 +42,5 @@ smbfs がそのどれで止まるか（あるいは ETIMEDOUT で即エラーに
 
 ## 関連
 
-- [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) — 包みを入れた実装と FIFO ハーネス
-- [issue 091](done/091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:418 / :496）
+- [issue 357](../done/357-bug-lockman-with-bypasses-io-timeout.md) — 包みを入れた実装と FIFO ハーネス
+- [issue 091](../done/091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:418 / :496）
