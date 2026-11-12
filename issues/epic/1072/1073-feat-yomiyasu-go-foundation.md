@@ -118,7 +118,7 @@
 
 ## 受け入れ条件
 
-- [ ] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通り、CI の `src/ja-writing` が緑 (手元は通った。CI は push の後に確かめる)
+- [x] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通り、CI の `src/ja-writing` が緑 (2026-11-13、e5a812461 の run 43296379731。ログに `870 パターン (うち当たったもの 795) を 33644 単位に当てて Python と一致` の行がある)
 - [x] `internal/pyre` が、パターンの記録の全パターン・全入力の行で Python の `re` と同じ一致を返す
 - [x] `\w` `\s` `\d` `\b` と `re.I` の 1 字の照合が、全コードポイントで Python と同じになる (生成した表で試す)
 - [x] `internal/pyunicode` の一般カテゴリと NFKC / NFC が、全コードポイントで Python 3.15.0 (Unicode 17.0.0) と同じになる
