@@ -146,7 +146,7 @@ func worktreeWordsFolder(gitFile string) (string, bool) {
 	if err != nil || !pyunicode.ValidUTF8(string(data)) {
 		return "", false
 	}
-	marker := stripPy(string(data))
+	marker := stripPy(universalNewlines(string(data)))
 	if !strings.HasPrefix(marker, "gitdir:") {
 		return "", false
 	}
@@ -163,7 +163,7 @@ func worktreeWordsFolder(gitFile string) (string, bool) {
 	if err != nil || !pyunicode.ValidUTF8(string(cd)) {
 		return "", false
 	}
-	common := stripPy(string(cd))
+	common := stripPy(universalNewlines(string(cd)))
 	if common == "" {
 		return "", false
 	}

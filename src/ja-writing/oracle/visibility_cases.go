@@ -267,7 +267,7 @@ func whitespaceCases() []VisCase {
 	for _, cp := range []rune{0xFE00, 0xFEFF, 0x1680, 0x180E, 0x200B, 0x2028, 0x2029, 0x202F, 0x205F, 0xE0001, 0x1F600, 0x10FFFF, 0x1D7CE, 0xD7FF, 0xE000} {
 		calls = append(calls, vcall("unicode_whitespace", string(cp)))
 	}
-	for _, s := range []string{"", "  ", " \t\n", "a ", " a", "\U00003000\U000000a0", "\U00003000\U000000a0 ", "ab", "\r\n", "\x0b", "\x1c", "\x85"} {
+	for _, s := range []string{"", "  ", " \t\n", "a ", " a", "\U00003000\U000000a0", "\U00003000\U000000a0 ", "ab", "\r\n", "\x0b", "\x1c", "\u0085"} {
 		calls = append(calls, vcall("unicode_whitespace", s))
 	}
 	calls = append(calls, vcall("unicode_whitespace", Cps{0xD800, 0x20}), vcall("unicode_whitespace", Cps{0x20, 0xDFFF}))
@@ -345,7 +345,8 @@ func indexErrorCases() []VisCase {
 	}
 	// 種類の集合は覚えの鍵になる。名前に NUL を含む 1 つの種類 ("escape\x00inline_code") は、2 つの種類の集合と別物。どちらを先に問うても同じ答えになる。
 	both, joined := []any{"escape", "inline_code"}, []any{"escape\x00inline_code"}
-	for i, order := range [][][]any{{both, joined}, {joined, both}} {
+	concat, comma := []any{"escapeinline_code"}, []any{"escape,inline_code"}
+	for i, order := range [][][]any{{both, joined}, {joined, both}, {both, concat}, {both, comma}} {
 		name := "nul" + itoa3(i)
 		calls = append(calls, vsave(vcall("analyze_markdown", "`x`"), name))
 		for _, kinds := range order {

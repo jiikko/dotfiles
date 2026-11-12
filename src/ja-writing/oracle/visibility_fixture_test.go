@@ -42,7 +42,7 @@ func TestFixtureWritesSameBytesInGoAndPython(t *testing.T) {
 		t.Fatal(err)
 	}
 	const root = "/r/o/o/t"
-	writes, invalid := 0, 0
+	writes, invalid := 0, map[string]bool{}
 	for _, vc := range cases {
 		for i, call := range vc.Calls {
 			if call.Op == nil || call.Op.Kind != "write" {
@@ -54,15 +54,17 @@ func TestFixtureWritesSameBytesInGoAndPython(t *testing.T) {
 				t.Errorf("case %s の %d 番目の write: Go と Python が別のバイト列を書く (%q)", vc.Name, i, goBytes)
 			}
 			if !utf8.Valid(goBytes) {
-				invalid++
+				invalid[vc.Name] = true
 			}
 		}
 	}
 	if writes == 0 {
 		t.Fatal("write の操作が 1 件も無い (空振り)")
 	}
-	if invalid < 4 {
-		t.Errorf("不正な UTF-8 を書く fixture が %d 件しかない (bad-utf8 の case が消えた疑い)", invalid)
+	for _, name := range []string{"fixture/hand-core-bad-utf8", "fixture/hand-core-bad-utf8-in-value", "fixture/hand-commondir-bad-utf8", "fixture/hand-gitfile-bad-utf8"} {
+		if !invalid[name] {
+			t.Errorf("case %s が不正な UTF-8 を書いていない (case が消えたか、中身が直された疑い)", name)
+		}
 	}
 }
 

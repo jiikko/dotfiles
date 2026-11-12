@@ -87,6 +87,7 @@ type handVariant struct {
 	commondir      *string
 	gitFile        string // 空なら "gitdir: <worktree の gitdir>"
 	noCheckout     bool
+	gdName         string // 空なら "gd"。名前に改行や CR を含むフォルダで、.git と commondir の読み方 (テキストのモード) を試す
 }
 
 func strPtr(s string) *string { return &s }
@@ -147,12 +148,22 @@ func handCases() []VisCase {
 		{name: "gitfile-relative", config: "[core]\n\tworktree = " + checkout + "\n", gitFile: "gitdir: ../gd/worktrees/w1"},
 		{name: "gitfile-bad-utf8", config: "[core]\n\tworktree = " + checkout + "\n", gitFile: "gitdir: \xff"},
 		{name: "gitfile-nonexistent", config: "[core]\n\tworktree = " + checkout + "\n", gitFile: "gitdir: " + RootToken + "/nowhere"},
+		// .git と commondir は read_text で読むので、中の CRLF と CR は LF になる (config は splitlines で割るので答えに出ない)。
+		{name: "gitfile-cr-in-path", gdName: "gd\nx", config: "[core]\n\tworktree = " + checkout + "\n", gitFile: "gitdir: " + RootToken + "/%s/gd\rx/worktrees/w1"},
+		{name: "gitfile-crlf-in-path", gdName: "gd\nx", config: "[core]\n\tworktree = " + checkout + "\n", gitFile: "gitdir: " + RootToken + "/%s/gd\r\nx/worktrees/w1"},
+		{name: "gitfile-cr-real", gdName: "gd\rx", config: "[core]\n\tworktree = " + checkout + "\n", gitFile: "gitdir: " + RootToken + "/%s/gd\rx/worktrees/w1"},
+		{name: "commondir-cr-in-path", gdName: "gd\nx", config: "[core]\n\tworktree = " + checkout + "\n", commondir: strPtr("../../../gd\rx")},
+		{name: "commondir-crlf-in-path", gdName: "gd\nx", config: "[core]\n\tworktree = " + checkout + "\n", commondir: strPtr("../../../gd\r\nx")},
 		{name: "nocheckout", config: "[core]\n\tbare = true\n", noCheckout: true},
 	}
 	var cases []VisCase
 	for _, v := range variants {
 		f := newFixtureCase("hand-" + v.name)
-		gd := f.dir("gd")
+		gdName := "gd"
+		if v.gdName != "" {
+			gdName = v.gdName
+		}
+		gd := f.dir(gdName)
 		if v.commonIsDotGit {
 			gd = f.dir("co/.git")
 		}

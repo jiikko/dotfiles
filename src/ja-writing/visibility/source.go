@@ -54,9 +54,13 @@ func DecodeSource(text string) (string, SourceInfo) {
 	if len(kinds) == 1 {
 		eol = kinds[0]
 	}
+	return universalNewlines(text), SourceInfo{BOM: bom, EOL: eol}
+}
+
+// universalNewlines は Python がテキストのモードで読むとき (read_text・open の newline=None) と同じく、CRLF と CR を LF にする。
+func universalNewlines(text string) string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	return text, SourceInfo{BOM: bom, EOL: eol}
+	return strings.ReplaceAll(text, "\r", "\n")
 }
 
 // utf8Problem は CPython の UTF-8 の復号器が止まる所。Start から End (含まない) までのバイトが 1 つの誤りで、Reason が理由。

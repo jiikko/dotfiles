@@ -87,7 +87,7 @@ codex はこの環境でコマンドを実行できず、差分をプロンプ�
 | P1-1: `check_pattern("a\ud800b")` の `Required` が、Go では U+FFFD になる (`string(literal)` が単独のサロゲートを U+FFFD にする。本家は `[["a\ud800b"]]`) | 再現した (記録に足した 7 パターンを、直す前の Go に通すと `surrogates` の 45〜50 番目が落ちた)。`visibility/pattern.go` の 2 か所を `str([]rune{literal})` (WTF-8 を保つ変換) にした。記録の `surrogates` に、サロゲートと通常の字が続く 7 パターン (繰り返しの前後・組の中・`\` の後・字の集まりの中) を足した | 本家と一致 |
 | P1-2: 種類の集合の覚えの鍵を NUL でつなぐと、`["escape", "inline_code"]` と `["escape\u0000inline_code"]` が衝突する (結果の覚え 2 か所) | 再現した (直す前の Go は、先に問うた方の答えを後の問い合わせにも返した)。`kindSet` の鍵を、名前ごとに長さを前に付けた符号化 (`6:escape11:inline_code`) にした。種類別のマスクと行の覚えは同じ `kindSet` を通る。記録の `analysis-queries` に、2 つの集合を両方の順で問う 10 呼び出しを足した | 本家と一致 |
 | P2-3: 不正な UTF-8 の fixture が、JSON を通ると U+FFFD になり、Go と Python が別のバイト列を書く (`core-bad-utf8`・`core-bad-utf8-in-value`・`commondir-bad-utf8`・`gitfile-bad-utf8`) | 再現した (JSON を通した Python 側のバイト列が `ef bf bd` になることを、`pythonWrites` で確かめた)。`fixtureCase.op` が不正な UTF-8 の中身を `BytesB64` に直す。`bytes_b64` の中の `<<ROOT>>` も、Go (`Fixture.WriteData`) と Python (`run_op`) の両方で作業フォルダの実パスにする。`TestFixtureWritesSameBytesInGoAndPython` が、全 case の write で「Go が書くバイト列」と「JSON を通って Python が書くバイト列」の一致と、不正な UTF-8 を書く fixture が 4 件以上あることを見る | 記録の digest は変わらなかった (既存の case は、別のバイト列でも同じ結果に着地していた。codex の言うとおり) |
-| P2-4: fixture の操作が Python で失敗しても記録の生成が止まらない (存在しないパスの `remove` は Python で `FileNotFoundError`、Go の `os.RemoveAll` は成功) | 再現した (`assembleVisibility` に失敗した操作を渡すと、直す前は黙って記録した)。driver が失敗した操作の `exception` を返し、`assembleVisibility` (`RecordVisibility` の後半を関数に分けた) が case 名・操作の位置・種類・パス・例外を出して止まる。`TestAssembleVisibilityStopsOnFailedOperation` と、`visibility/oracle_test.go` のコメントを実装に合わせた | 関数の例外は今までどおり記録に入る |
+| P2-4: fixture の操作が Python で失敗しても記録の生成が止まらない (存在しないパスの `remove` は Python で `FileNotFoundError`、Go の `os.RemoveAll` は成功) | 再現した (`assembleVisibility` に失敗した操作を渡すと、直す前はエラーを出さずに記録した)。driver が失敗した操作の `exception` を返し、`assembleVisibility` (`RecordVisibility` の後半を関数に分けた) が case 名・操作の位置・種類・パス・例外を出して止まる。`TestAssembleVisibilityStopsOnFailedOperation` と、`visibility/oracle_test.go` のコメントを実装に合わせた | 関数の例外は今までどおり記録に入る |
 | P3-5: Python の `begin` が import の前にあり、起動 (壁時計 - 中の所要) から import の時間が抜ける (Go は package の初期化を起動に含む) | 再現した (README に書いた「起動に import を含む」と値が合わなかった: 起動 0.021 秒に import の 0.013 秒が入っていない)。`time_patterns.py` の `begin` を import の後に移し、4 組を 5 回ずつ交互に測り直して README の表を直した | Python の起動は 0.021 → 0.036〜0.038 秒。search と Go は同じ (誤差の範囲)。Go の最悪 (`word`) は 0.66 秒、Python 0.48 秒の 1.4 倍で、上限 512 の判断は変わらない。他の session が走っていて load average 12〜15 の測定 |
 
 - 未確認のリスクの扱い:
@@ -100,3 +100,18 @@ codex はこの環境でコマンドを実行できず、差分をプロンプ�
 - 記録を作り直した差分: `visibility.json` で変わったのは `analysis-queries` (72 → 82 呼び出し)・`surrogates` (45 → 52)・`fixture/words-load` (257 → 266) と、足した `fixture/hand-core-ls-*` 6 case と関数の件数の表だけ。ほかの 901 case の digest は同じ (bad-utf8 の 4 case を含む)。
 - 新しいテストをわざと壊して確かめた (`bin/mutate-verify-list` の 8 本、全部想定どおり落ちた): `pattern-required-fffd`・`kindset-nul-join`・`config-split-lf-only`・`allow-split-splitlines` (どれも `TestVisibilityMatchesPythonRecording`)・`fixture-b64-no-root-token` (同)・`fixture-invalid-utf8-in-content` (`TestFixtureWritesSameBytesInGoAndPython`)・`op-failure-recorded` (`TestAssembleVisibilityStopsOnFailedOperation`)。最初に当てた `fixture-b64-no-root-token` は構文エラー (未使用の import) だったので当て直した。起動の区切り (P3-5) は測定で、テストが無いので壊し方は当てていない。
 - 確かめたコマンド: `make -C src/ja-writing lint test`・`make test-dupscan-gate`・root の `make test-lint`。
+
+### codex の指摘を直した差分の敵対的レビュー (fable、2026-11-13)
+
+codex の 5 件の直しはどれも壊せなかった (サロゲートの必須文字列 49 パターンなど)。この commit が閉じた「行の割り方」の隣の経路で P1 が 1 件、ほかに P3 が 3 件。直しは main agent が行った。
+(このレビューの係は fable で走った。ユーザーはこの時点で fable を控えるよう指示していたが、修正の係の終わりと同時に起動し、止めるのが間に合わなかった)
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P1 `.git` ファイルと `commondir` の中の CR / CRLF: 本家は `read_text` (テキストのモード) で読むので LF に変わるが、Go はバイト列のまま。gitdir のフォルダ名に改行がある worktree で、本家は一覧を見つけ Go は見つけない (逆の形もある) | 直す。`DecodeSource` に書いてあった CRLF と CR を LF にする変換を `universalNewlines` (`visibility/source.go`) に出し、`worktreeWordsFolder` の 2 か所の読みでも使う | 直した。記録に `fixture/hand-gitfile-cr-in-path`・`-crlf-in-path`・`-cr-real`・`hand-commondir-cr-in-path`・`-crlf-in-path` の 5 case を足した (gitdir のフォルダ名に改行や CR を含む fixture。`handVariant.gdName`)。2 か所の読みのそれぞれから変換を外すと `TestVisibilityMatchesPythonRecording` が落ちる (`mutate-verify`) |
+| P3 `unicode-whitespace` の case の引数 `"\x85"` は不正な UTF-8 で、本家には U+FFFD が渡っていた | 直す。`"\u0085"` にした。ほかに不正な UTF-8 を文字列の引数で渡す case は無い (`grep` で確かめた。`[]byte` の引数は意図して不正なバイトを渡すもの) | 直した。どちらも偽なので記録の digest は変わらない |
+| P3 種類の集合の鍵の検査が、NUL でつなぐ形しか落とさない | 直す。区切りなしでつなぐ形 (`escapeinline_code`) とコンマでつなぐ形 (`escape,inline_code`) の問い合わせの順を記録に足した | 直した (`analysis-queries` の呼び出しが増えた) |
+| P3 不正な UTF-8 を書く fixture の検査が「4 件以上」で、守りたい 4 case が消えても他の 8 件で通る | 直す。4 case (`fixture/hand-core-bad-utf8`・`-in-value`・`hand-commondir-bad-utf8`・`hand-gitfile-bad-utf8`) の名前で、それぞれが不正な UTF-8 を書くことを見る | 直した |
+
+記録を作り直した差分 (`TMPDIR= go run ./oracle/cmd/golden -only visibility`): 足した 5 case と `analysis-queries` だけが変わり、ほかの 909 case は同じ。
+
