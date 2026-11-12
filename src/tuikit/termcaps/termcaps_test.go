@@ -3,6 +3,7 @@ package termcaps
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +77,30 @@ func TestTmuxPrefix(t *testing.T) {
 		if c.tmux == "" && calls != 0 {
 			t.Errorf("%s: tmux の外で tmux に聞いた", c.name)
 		}
+	}
+}
+
+// Memo は同じコマンドを 2 回目から起こさない (失敗の答えも使い回す)。違う引数は別に聞く。
+func TestMemoAsksEachCommandOnce(t *testing.T) {
+	calls := map[string]int{}
+	run := Memo(func(_ context.Context, name string, args ...string) (string, error) {
+		k := name + " " + strings.Join(args, " ")
+		calls[k]++
+		if args[0] == "fail" {
+			return "", errors.New("no server")
+		}
+		return "out:" + k, nil
+	})
+	for range 3 {
+		if out, err := run(context.Background(), "tmux", "display", "-p"); err != nil || out != "out:tmux display -p" {
+			t.Errorf("答えが違う: %q %v", out, err)
+		}
+		if _, err := run(context.Background(), "tmux", "fail"); err == nil {
+			t.Error("失敗の答えが使い回されていない")
+		}
+	}
+	run(context.Background(), "tmux", "display", "-q") //nolint:errcheck // 別の引数は別に聞くことだけを見る
+	if calls["tmux display -p"] != 1 || calls["tmux fail"] != 1 || calls["tmux display -q"] != 1 {
+		t.Errorf("同じコマンドを聞き直した: %v", calls)
 	}
 }

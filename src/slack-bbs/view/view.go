@@ -21,7 +21,9 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
+	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
 	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
+	"github.com/jiikko/dotfiles/src/tuikit/termsync"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
@@ -1234,15 +1236,26 @@ func (m *Model) View() tea.View {
 	return v
 }
 
-// Run は画面を開き、閉じるまで待つ。tmux の中で外側の端末が 24bit の色に対応していれば、bubbletea の判定 (tmux の中では 256 色に落とす)
-// を引き上げる (カードの面と枠の色の流れが 256 色では段になる)。
+// Run は画面を開き、閉じるまで待つ。
 func Run(m *Model) error {
+	_, err := tea.NewProgram(m, ProgramOptions(os.Getenv, subproc.Output)...).Run()
+	return err
+}
+
+// ProgramOptions は slack-bbs の画面 (読む画面と購読の画面) の Program に渡す設定。
+//   - tmux の中で外側の端末が 24bit の色に対応していれば、bubbletea の判定 (tmux の中では 256 色に落とす) を引き上げる
+//     (カードの面と枠の色の流れが 256 色では段になる)
+//   - 外側の端末が同期出力を持たなければ、bubbletea に同期出力を使わせない。使うと tmux は同期出力の区間が終わるたびにペインを
+//     描き直し、本文の 1 行のスクロールで外側の Terminal.app へ約 199KB を書く (止めると約 54KB)
+//
+// どちらも tmux に外側の端末の機能を聞くので、答えを使い回す (termcaps.Memo)。
+func ProgramOptions(getenv func(string) string, run termcaps.Runner) []tea.ProgramOption {
+	run = termcaps.Memo(run)
 	var opts []tea.ProgramOption
-	if termcolor.TrueColorThroughTmux(os.Getenv("TMUX"), subproc.Output) {
+	if termcolor.TrueColorThroughTmux(getenv("TMUX"), run) {
 		opts = append(opts, tea.WithColorProfile(colorprofile.TrueColor))
 	}
-	_, err := tea.NewProgram(m, opts...).Run()
-	return err
+	return append(opts, termsync.ProgramOptions(!termcaps.SyncedOutput(getenv, run))...)
 }
 
 // unsubIndex は d で購読を外すか確かめているチャンネルのタブの番号 (確かめていない・もうタブに無いなら -1)。

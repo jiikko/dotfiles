@@ -111,9 +111,11 @@ func main() {
 		claude:   llm.ExecRunner{Bin: envOr("SLACK_BBS_CLAUDE", "claude")},
 		now:      time.Now,
 		subsPath: subs.Path,
-		pick:     subs.Run,
-		tty:      func() bool { return isTerminal(os.Stdout) },
-		browse:   view.Run,
+		pick: func(p *subs.Picker, cmds ...tea.Cmd) error {
+			return subs.Run(p, view.ProgramOptions(os.Getenv, subproc.Output), cmds...)
+		},
+		tty:    func() bool { return isTerminal(os.Stdout) },
+		browse: view.Run,
 		openURL: func(url string) error {
 			return subproc.Command("open", url).Run()
 		},

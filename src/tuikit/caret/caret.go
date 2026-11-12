@@ -4,7 +4,7 @@
 // (毎回変わる) に出て、日本語の変換中に入力欄から外れる。位置は「欄の左端 + キャレットの前の表示幅」
 // (幅は lineedit.Line.Window が termwidth で数える) で、それを画面の座標にする所をここ 1 つにする。
 //
-// tuikit の中でここだけが bubbletea を import する: 置く先が tea.Cursor そのもので、形 (棒) もここで揃えるため。
+// bubbletea を import する (tuikit でほかは termsync だけ): 置く先が tea.Cursor そのもので、形 (棒) もここで揃えるため。
 package caret
 
 import tea "charm.land/bubbletea/v2"

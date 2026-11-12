@@ -619,9 +619,10 @@ func (m program) View() tea.View {
 	return v
 }
 
-// Run は画面を開き、閉じるまで待つ。cmds は開いたときに裏で流す仕事 (一覧の取り直しは ChannelsMsg、最終投稿は StartFetch の Cmd)。
-func Run(p *Picker, cmds ...tea.Cmd) error {
-	_, err := tea.NewProgram(program{p: p, init: cmds}).Run()
+// Run は画面を開き、閉じるまで待つ。opts は Program の設定 (読む画面と同じもの。view.ProgramOptions)。
+// cmds は開いたときに裏で流す仕事 (一覧の取り直しは ChannelsMsg、最終投稿は StartFetch の Cmd)。
+func Run(p *Picker, opts []tea.ProgramOption, cmds ...tea.Cmd) error {
+	_, err := tea.NewProgram(program{p: p, init: cmds}, opts...).Run()
 	return err
 }
 

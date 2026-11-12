@@ -23,6 +23,7 @@ yml=.golangci.local.yml # depguard のリストはモジュール固有の差分
 # 外す理由つきの表。package のパス (tuikit からの相対) そのもので引く (先頭の名前で引くと、外した package の下に足した package も黙って外れた)。
 # 末尾の /* は直下の子を全部外す (examples のデモだけに使う)
 excl_framework='caret:bubbletea の View.Cursor を組むのが仕事
+termsync:bubbletea の Program の設定 (tea.ProgramOption) を返すのが仕事
 framebench:部品ではなく計測の道具 (ultraviolet で bubbletea のレンダラを再現する)
 examples/*:デモ (bubbletea を使ってよい)'
 # cmd/termwidth は no-framework-in-parts の **/termwidth/** に当たる (bubbletea を使わないので当たってよい)。parts-pure は !cmd で外す

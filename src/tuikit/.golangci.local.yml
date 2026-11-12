@@ -14,7 +14,8 @@ linters:
       rules:
         # 部品は描画フレームワークに依存しない (「[]string → []string」と壁時計の状態機械だけ)。
         # bubbletea に依存させると、v1 のままのアプリや別フレームワークから使えなくなる。
-        # デモ (examples/) と、bubbletea の View.Cursor を組むのが仕事の caret だけが bubbletea を使ってよい (README / CLAUDE.md の約束)。
+        # デモ (examples/) と、bubbletea の View.Cursor を組むのが仕事の caret・Program の設定を返すのが仕事の termsync だけが
+        # bubbletea を使ってよい (README / CLAUDE.md の約束)。
         no-framework-in-parts:
           files:
             - "**/anim/**"

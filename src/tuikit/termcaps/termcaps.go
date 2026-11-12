@@ -10,11 +10,35 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Runner はコマンドを起こして標準出力を返す (使う側の外部プロセスの口。WaitDelay などの規律は使う側が持つ)。
 type Runner func(ctx context.Context, name string, args ...string) (string, error)
+
+// Memo は、同じコマンド (名前と引数) の答えを使い回す Runner を返す。termcolor.TrueColorThroughTmux と SyncedOutput は同じ
+// `tmux display -p '#{client_termfeatures}'` を打つので、起動で両方を呼ぶ画面は包んだものを渡す (tmux が固まっていると、1 回ごとに
+// 上限の 1 秒を待つ)。失敗の答えも使い回す (起動の間に聞き直しても、固まった tmux は同じく待たせる)。
+func Memo(run Runner) Runner {
+	type answer struct {
+		out string
+		err error
+	}
+	var mu sync.Mutex
+	asked := map[string]answer{}
+	return func(ctx context.Context, name string, args ...string) (string, error) {
+		key := strings.Join(append([]string{name}, args...), "\x00")
+		mu.Lock()
+		defer mu.Unlock()
+		if a, ok := asked[key]; ok {
+			return a.out, a.err
+		}
+		out, err := run(ctx, name, args...)
+		asked[key] = answer{out, err}
+		return out, err
+	}
+}
 
 // TmuxClientFeatures は tmux の中で、外側の端末の機能の名前 (`#{client_termfeatures}`) を返す。
 // tmux の外 (tmuxEnv が空) と、聞けなかったときは ok=false。クライアントが 1 つも attach していないと

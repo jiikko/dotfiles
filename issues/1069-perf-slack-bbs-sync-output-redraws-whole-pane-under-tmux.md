@@ -1,4 +1,4 @@
-# 1069 (perf): slack-bbs の本文のスクロールで、tmux が外側の端末へ 1 行あたり約 86KB を送る (同期出力がその 4 割)
+# 1069 (perf): slack-bbs の本文のスクロールで、tmux が外側の端末へ 1 行あたり約 199KB を送る (同期出力を止めると約 54KB)
 
 > 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-12〜）
 
@@ -91,11 +91,24 @@ bubbletea は左右を合わせた全幅の行をスクロール領域でずら�
 ## 関連ファイル
 
 - `src/slack-bbs/view/view.go` (`Run`)・`src/slack-bbs/subs/picker.go` (`tea.NewProgram`)
-- `src/treefiler/termsync/termsync.go` (`DropSyncReport`・`ProgramOptions`)
+- `src/tuikit/termsync/termsync.go` (`DropSyncReport`・`ProgramOptions`。1 で `src/treefiler/termsync` から移した)
+- `src/slack-bbs/view/view.go` (`ProgramOptions`)・`src/tuikit/termcaps/termcaps.go` (`Memo`)
 - `src/tuikit/termcaps/termcaps.go` (`SyncedOutput`)
 - `docs/glogx-bubbletea-v2.md` (「ちらつき低減 (mode 2026 / synchronized output)」の項)
 
 ## 進捗
 
 - [x] 監査 (performance、直接実行) で原因を測った (2026-11-12)
-- [ ] 1〜4 (未着手)
+- [x] 1・2 (commit「perf(slack-bbs): tmux の中で外側の端末が同期出力を持たなければ、bubbletea に同期出力を使わせない」)
+  - `termsync` を tuikit へ移し、bubbletea を import してよい部品を `caret` と `termsync` にした (depguard の網羅の検査の外す表にも足した)
+  - slack-bbs は `view.ProgramOptions` で、24bit の色の引き上げと同期出力の停止をまとめ、読む画面と購読の画面 (`slack-bbs sub`) の両方に渡す。
+    購読の画面は今まで何も渡していなかったので、24bit の色の引き上げも新しく掛かる
+  - 24bit の色と同期出力の判定は同じ `tmux display` を打つ。glogx が持っていた答えの使い回しを `termcaps.Memo` に移し、slack-bbs も使う。
+    使い回さないと、固まった tmux で起動が最大 2 秒待つ (red team の指摘)
+- [x] 4 測り直し (2026-11-12): 本物の `view.Run` を隔離した tmux で起動し、先に client をつないでから j を押した。
+  client の機能は実際の Terminal.app と同じ (RGB あり・sync なし。`bpaste,ccolour,clipboard,cstyle,focus,RGB,title`)。
+  外側へ送る量は、直す前が j 1 回で約 199KB、直した後が約 54KB (2 回測って 54,763 / 53,503 バイト。約 73% 減)。
+  上の表の 86KB → 49KB は RGB の無い client での値。実際の client では、減り方がこれより大きい
+- [ ] 3 ほかの TUI (mac-lan-manager・pro-con・schedkeys・restartable) に渡すか (未着手)
+- [ ] 体感の確認 (Terminal.app で本文を送って、もっさりが残るか。人にしか確かめられない)
+- 残る約 54KB の内訳 (「残る量」の節) は確かめていない

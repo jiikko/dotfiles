@@ -19,13 +19,13 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
+	"github.com/jiikko/dotfiles/src/tuikit/termsync"
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	"subproc"
 	"treefiler/filer"
 	"treefiler/perflog"
-	"treefiler/termsync"
 )
 
 // frameInterval は動いている間の描き直しの周期 (~60fps)。止まっている間は描かない。

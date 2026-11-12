@@ -1,6 +1,6 @@
 # tuikit
 
-glogx の issues viewer から切り出した端末 UI 部品集 (一覧 → 詳細の遷移・演出・幅計算)。**描画フレームワークに依存しない** (bubbletea v1/v2 どちらでも使える。`caret` だけ例外)。使い方・遷移パターン・不変条件の正本は README.md。
+glogx の issues viewer から切り出した端末 UI 部品集 (一覧 → 詳細の遷移・演出・幅計算)。**描画フレームワークに依存しない** (bubbletea v1/v2 どちらでも使える。`caret` と `termsync` だけ例外)。使い方・遷移パターン・不変条件の正本は README.md。
 
 ## パッケージの地図
 
@@ -17,7 +17,8 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 - `layout` — 画面合成 (`ComposeDrawer` / `Panel` / `Overlay` / `Scrollbar` 等)
 - `confirm` — y/N 確認ダイアログ
 - `lineedit` — 1 行入力欄 (readline 風編集キー)
-- `caret` — 入力欄キャレットの端末カーソル (**tuikit で唯一 bubbletea を import する**)
+- `caret` — 入力欄キャレットの端末カーソル (bubbletea を import する。もう 1 つは `termsync`)
+- `termsync` — 外側の端末が同期出力を持たないとき、bubbletea に同期出力を使わせない Program の設定 (bubbletea を import する)
 - `editor` — 実ファイルを $VISUAL/$EDITOR/nvim で開くコマンド
 - `foreground` — 端末の前面の確かめ・取り戻しと、端末を子へ渡す `Exec` (`tea.ExecProcess` の代わり)
 - `toast` — 右下に数秒出る通知スタック
