@@ -1,5 +1,7 @@
 # 1078 (feat): yomiyasu の hook を Go で作り直し、ja-textlint・ja-textlint-on-edit・ja-writing に組み込む
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-12〜）
+
 起票日: 2026-11-12
 
 ## 概要

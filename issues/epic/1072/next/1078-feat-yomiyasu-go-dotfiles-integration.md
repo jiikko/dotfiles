@@ -1,0 +1,1 @@
+../1078-feat-yomiyasu-go-dotfiles-integration.md
