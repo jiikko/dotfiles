@@ -81,10 +81,10 @@ func TestSubscriptionOps(t *testing.T) {
 		t.Errorf("渡した一覧を書き換えた: %+v", cur)
 	}
 	path := filepath.Join(t.TempDir(), "subscriptions.json")
-	if err := Save(path, got); err != nil {
+	if err := saveCurrent(path, got); err != nil {
 		t.Fatal(err)
 	}
-	if back, err := Load(path); err != nil || len(back) != 2 || back[1].Name != "team" {
+	if back, err := loadOnly(path); err != nil || len(back) != 2 || back[1].Name != "team" {
 		t.Errorf("保存した一覧を読めない: %+v, %v", back, err)
 	}
 }
@@ -93,7 +93,7 @@ func TestSubscriptionOps(t *testing.T) {
 func TestSaveRejectsWhatLoadRejects(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "subscriptions.json")
 	for _, chs := range [][]Channel{{{ID: "bad/x", Name: "x"}}, {{ID: "grp00000001", Name: "g", Members: []Channel{{ID: "C1"}, {ID: "C1"}}}}} {
-		if err := Save(path, chs); err == nil {
+		if err := saveCurrent(path, chs); err == nil {
 			t.Errorf("読めない形を保存した: %+v", chs)
 		}
 	}

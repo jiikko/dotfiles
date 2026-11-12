@@ -188,7 +188,7 @@ func (p *Picker) Resize(w, h int) { p.w, p.h = w, h }
 func (p *Picker) Done() bool  { return p.done }
 func (p *Picker) Saved() bool { return p.save }
 
-// Selected は購読に選ばれたチャンネル (一覧の並び順) と、その後ろにグループ (subs.Save と同じ並び)。
+// Selected は購読に選ばれたチャンネル (一覧の並び順) と、その後ろにグループ (LoadVersion と同じ並び)。
 func (p *Picker) Selected() []Channel {
 	var out, groups []Channel
 	for _, it := range p.items {

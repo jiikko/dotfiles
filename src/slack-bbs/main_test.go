@@ -732,7 +732,7 @@ func TestBrowseRemembersLastTab(t *testing.T) {
 	d.cacheDir = func() (string, error) { return dir, nil }
 	d.tty = func() bool { return true }
 	path, _ := d.subsPath()
-	if err := subs.Save(path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
+	if err := writeSubs(t, path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
 		t.Fatal(err)
 	}
 	var first string
@@ -764,7 +764,7 @@ func TestBrowseRemembersLastTopic(t *testing.T) {
 	d.cacheDir = func() (string, error) { return dir, nil }
 	d.tty = func() bool { return true }
 	path, _ := d.subsPath()
-	if err := subs.Save(path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
+	if err := writeSubs(t, path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
 		t.Fatal(err)
 	}
 	pg := render.Page{Channel: "C2", ChannelName: "ops", Topics: []board.Topic{
@@ -802,7 +802,7 @@ func TestBrowseRewritesBrokenLastTab(t *testing.T) {
 	d.cacheDir = func() (string, error) { return dir, nil }
 	d.tty = func() bool { return true }
 	path, _ := d.subsPath()
-	if err := subs.Save(path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
+	if err := writeSubs(t, path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "view.json"), []byte("{"), 0o600); err != nil {

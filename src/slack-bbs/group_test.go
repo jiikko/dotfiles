@@ -29,7 +29,7 @@ func TestReadGroup(t *testing.T) {
 	d := newDeps(t, sl, cl)
 	path, _ := d.subsPath()
 	g := subs.Channel{ID: "grp0123abcd", Name: "times", Members: []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}, {ID: "C3", Name: "gone"}}}
-	if err := subs.Save(path, []subs.Channel{g}); err != nil {
+	if err := writeSubs(t, path, []subs.Channel{g}); err != nil {
 		t.Fatal(err)
 	}
 	var out, errb bytes.Buffer
@@ -58,7 +58,7 @@ func TestEmptyGroupIsLabeledAsGroup(t *testing.T) {
 	for _, args := range [][]string{{"-md"}, {"-dry-run"}} {
 		d := newDeps(t, &fakeSlack{}, &fakeClaude{})
 		path, _ := d.subsPath()
-		if err := subs.Save(path, []subs.Channel{{ID: "grp0123abcd", Name: "times"}}); err != nil {
+		if err := writeSubs(t, path, []subs.Channel{{ID: "grp0123abcd", Name: "times"}}); err != nil {
 			t.Fatal(err)
 		}
 		var out, errb bytes.Buffer

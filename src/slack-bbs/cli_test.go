@@ -60,7 +60,7 @@ func TestCLISubscriptionsAndGroups(t *testing.T) {
 		}
 	}
 	path, _ := d.subsPath()
-	cur, err := subs.Load(path)
+	cur, err := readSubs(t, path)
 	if err != nil || len(cur) != 2 || cur[0].ID != "C1" || cur[1].Name != "分報" || len(cur[1].Members) != 2 || cur[1].Members[1].ID != "C3" {
 		t.Fatalf("保存した購読 = %+v, %v", cur, err)
 	}
@@ -79,9 +79,9 @@ func TestCLISubscriptionsAndGroups(t *testing.T) {
 		rc   int
 	}{{[]string{"sub", "add", "#de"}, 1}, {[]string{"group", "add", "nope", "dev"}, 1}, {[]string{"sub", "rm", "times-koji"}, 1},
 		{[]string{"group", "delete"}, 2}, {[]string{"sub", "add"}, 2}, {[]string{"group", "bogus"}, 2}} {
-		before, _ := subs.Load(path)
+		before, _ := readSubs(t, path)
 		_, errs, rc := runCLI(t, d, c.args...)
-		after, _ := subs.Load(path)
+		after, _ := readSubs(t, path)
 		if rc != c.rc || errs == "" || len(before) != len(after) {
 			t.Errorf("%v: rc=%d (want %d) err=%q (購読 %d → %d)", c.args, rc, c.rc, errs, len(before), len(after))
 		}
@@ -142,7 +142,7 @@ func TestCLIAndPickerDoNotClobber(t *testing.T) {
 	}
 	_, errs, rc := runCLI(t, d, "sub")
 	pickErr = errors.New(errs)
-	cur, _ := subs.Load(path)
+	cur, _ := readSubs(t, path)
 	if rc != 1 || !strings.Contains(pickErr.Error(), "書き換えられた") || len(cur) != 1 || cur[0].Name != "times-koji" {
 		t.Errorf("画面の保存が CLI の変更を上書きした: rc=%d %q 購読=%+v", rc, errs, cur)
 	}
@@ -164,10 +164,10 @@ func TestCLIRefreshesStaleListAndAmbiguousGroups(t *testing.T) {
 		t.Fatalf("古い一覧を取り直していない: rc=%d %q %q", rc, out, errs)
 	}
 	path, _ := d.subsPath()
-	cur, _ := subs.Load(path)
+	cur, _ := readSubs(t, path)
 	g1 := subs.Channel{ID: "grp00000001", Name: "times", Members: []subs.Channel{{ID: "C1", Name: "dev"}}}
 	g2 := subs.Channel{ID: "grp00000002", Name: "times"}
-	if err := subs.Save(path, append(cur, g1, g2)); err != nil {
+	if err := writeSubs(t, path, append(cur, g1, g2)); err != nil {
 		t.Fatal(err)
 	}
 	if _, errs, rc := runCLI(t, d, "group", "delete", "times"); rc != 1 || !strings.Contains(errs, "2 つ以上") {
@@ -199,7 +199,7 @@ func TestCLIAndUnsubscribeDoNotClobber(t *testing.T) {
 	if _, errs, rc := runCLI(t, d); rc != 0 {
 		t.Fatalf("rc=%d %s", rc, errs)
 	}
-	cur, _ := subs.Load(path)
+	cur, _ := readSubs(t, path)
 	if len(cur) != 2 || !strings.Contains(toast, "外していない") {
 		t.Errorf("d が CLI の変更を上書きした: 購読=%+v 知らせ=%q", cur, toast)
 	}
@@ -227,4 +227,21 @@ func TestCLIFetchesChannelListAtMostOnce(t *testing.T) {
 	if _, _, rc := runCLI(t, d, "sub", "rm", "typo1", "typo2"); rc != 1 || len(sl.calls) != 0 {
 		t.Errorf("外す操作で Slack を呼んだ: rc=%d calls=%v", rc, sl.calls)
 	}
+}
+
+// writeSubs は今の購読に重ねて書く (テストの準備。production と同じ照合の道を通す)。
+func writeSubs(t *testing.T, path string, chs []subs.Channel) error {
+	t.Helper()
+	_, base, err := subs.LoadVersion(path)
+	if err != nil {
+		return err
+	}
+	_, err = subs.SaveIf(path, chs, base)
+	return err
+}
+
+func readSubs(t *testing.T, path string) ([]subs.Channel, error) {
+	t.Helper()
+	chs, _, err := subs.LoadVersion(path)
+	return chs, err
 }

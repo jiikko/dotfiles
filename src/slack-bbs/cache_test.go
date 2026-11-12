@@ -236,7 +236,7 @@ func TestBrowseSubscriptionsOnlyWithoutArgs(t *testing.T) {
 			return nil
 		}
 		if c.args == nil {
-			if err := subs.Save(mustSubsPath(t, d), []subs.Channel{{ID: "C1", Name: "dev"}}); err != nil {
+			if err := writeSubs(t, mustSubsPath(t, d), []subs.Channel{{ID: "C1", Name: "dev"}}); err != nil {
 				t.Fatal(err)
 			}
 		}

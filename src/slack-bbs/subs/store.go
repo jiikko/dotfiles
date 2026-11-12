@@ -63,13 +63,7 @@ func Path() (string, error) {
 // そのまま書くと、その変更を知らせずに消す。
 var ErrChanged = errors.New("購読の一覧が、開いてから別の操作 (slack-bbs sub / group・別の画面) で書き換えられた。開き直して選び直す")
 
-// Load は購読の一覧を読む。ファイルが無ければ空 (まだ選んでいない)。
-func Load(path string) ([]Channel, error) {
-	chs, _, err := LoadVersion(path)
-	return chs, err
-}
-
-// LoadVersion は購読の一覧と、ファイルの中身の印 (SaveIf で、読んでから書き換えられていないかを照合する。ファイルが無ければ空) を読む。
+// LoadVersion は購読の一覧 (チャンネル、その後ろにグループ。ファイルが無ければ空 = まだ選んでいない) と、ファイルの中身の印 (SaveIf で、読んでから書き換えられていないかを照合する。ファイルが無ければ空) を読む。
 func LoadVersion(path string) ([]Channel, string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -115,13 +109,6 @@ func validate(path string, f file) error {
 		}
 	}
 	return nil
-}
-
-// Save は購読の一覧 (チャンネルとグループ。Load と同じ並び) を書く (読むときと同じ形の検査を通してから。途中の状態を残さない。本人だけが読める権限)。
-// 読んでから書き換えられていないかは照合しない (照合するなら SaveIf)。
-func Save(path string, chs []Channel) error {
-	_, err := save(path, chs)
-	return err
 }
 
 // SaveIf は、ファイルの中身が base (LoadVersion が返した印) のままなら書き、新しい印を返す。書き換えられていたら ErrChanged を返して書かない。
