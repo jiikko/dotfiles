@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
@@ -65,15 +66,16 @@ type chanState struct {
 
 // Model は画面の状態。
 type Model struct {
-	ctx   context.Context
-	load  Loader
-	open  func(url string) error
-	now   func() time.Time
-	chans []chanState
-	cur   int
-	list  listnav.List
-	pager listnav.Pager
-	body  bool // 右の欄を操作しているか
+	ctx     context.Context
+	load    Loader
+	open    func(url string) error
+	now     func() time.Time
+	chans   []chanState
+	cur     int
+	list    listnav.List
+	pager   listnav.Pager
+	body    bool       // 右の欄を操作しているか
+	opening anim.Slide // 本文の欄を開く演出と一覧へ戻る逆の演出 (一覧との境目が左右へ動く。openingRows)
 	// showHidden は x で隠した話題も一覧に出すか (z で切り替える。出すときは淡い色)
 	showHidden bool
 	// stream は新着のタブ (全部のタブの話題を新着順に並べる。タブの最後) を開いているか。開いている間も cur は最後に見たチャンネル
@@ -283,6 +285,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
+		m.pager.Stop() // 折り返しが変わると、滑っている途中の行の番号が別の行を指す
 	case loadedMsg:
 		if cmd := m.loaded(msg); cmd != nil {
 			return m, tea.Batch(append(m.frameCmds(), cmd)...)
@@ -341,7 +344,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case toast.Msg:
 		m.toast.StartLeaving(msg)
 	case tickMsg:
-		m.ticks.Fired(msg.seq) // 追い越された古い tick でも描き直しはする。張り直すかは frameCmds (Want) が決める
+		// 追い越された古い tick でも描き直しはする。張り直すかは frameCmds (Want) が決める。半ページ送りはフレームの数で進むので、
+		// 古い tick では進めない (速い tick を張り直した後に遅い tick が届くと、1 コマ余計に進む)
+		if m.ticks.Fired(msg.seq) {
+			m.pager.Advance()
+		}
+		if m.opening.CloseLanded(m.now()) {
+			m.opening.EndClose()
+		}
 	}
 	return m, tea.Batch(m.frameCmds()...)
 }
@@ -353,8 +363,12 @@ func (m *Model) LastToast() string { return m.toast.Text() }
 type tickMsg struct{ seq uint64 }
 
 const (
-	frameInterval = 16 * time.Millisecond // toast が滑り込む・滑り出る間の描き直しの周期
-	spinnerStep   = 80 * time.Millisecond // 回る印の 1 コマ (読み直し・一覧の読み込みを待つ間の描き直しの周期)
+	// bodyOpenDuration は本文の欄を開く演出と、一覧へ戻る逆の演出の長さ。bodyGlideFrames は本文の半ページ送りを滑らせるフレーム数
+	// (× frameInterval ≒ 150ms)。どちらも試作を触って選んだ長さで、glogx (開く 175ms・スクロール約 100ms) より遅い
+	bodyOpenDuration = 300 * time.Millisecond
+	bodyGlideFrames  = 9
+	frameInterval    = 16 * time.Millisecond // toast が滑り込む・滑り出る間の描き直しの周期
+	spinnerStep      = 80 * time.Millisecond // 回る印の 1 コマ (読み直し・一覧の読み込みを待つ間の描き直しの周期)
 )
 
 // frameCmds は toast を 1 コマ進め、退場の時計と、動くものがある間の tick を張る。
@@ -365,7 +379,7 @@ func (m *Model) frameCmds() []tea.Cmd {
 	}
 	var d time.Duration
 	switch {
-	case m.toast.Animating():
+	case m.toast.Animating() || m.opening.Unsettled(m.now()) || m.pager.Animating():
 		d = frameInterval
 	case m.busy():
 		d = spinnerStep
@@ -508,7 +522,7 @@ func (m *Model) key(k string) tea.Cmd {
 	switch k {
 	case "q":
 		if m.body && !m.tiny() { // 小さい端末では欄が見えないので、見えない欄を閉じるだけの 1 打にしない
-			m.body = false
+			m.closeBody()
 		} else {
 			m.quitting = true
 		}
@@ -596,7 +610,7 @@ func (m *Model) key(k string) tea.Cmd {
 	if m.body {
 		switch k {
 		case "h", "left", "esc", "enter":
-			m.body = false
+			m.closeBody()
 			return nil
 		case "J":
 			m.step(1)
@@ -607,7 +621,7 @@ func (m *Model) key(k string) tea.Cmd {
 		}
 		if mo := listnav.MotionOf(k); mo != listnav.None {
 			lines, _ := m.bodyLines()
-			m.pager.Move(mo, len(lines), m.bodyRows(), 0)
+			m.pager.Move(mo, len(lines), m.bodyRows(), bodyGlideFrames) // 半ページ送りだけ滑らせる (1 行送りは動く余地が無い)
 		}
 		return nil
 	}
@@ -615,6 +629,8 @@ func (m *Model) key(k string) tea.Cmd {
 	case "l", "right", "enter":
 		if _, ok := m.selected(); ok {
 			m.body = true
+			m.opening.EndClose() // 閉じる途中に開き直すと Open は何もしないので、先に閉じ切らせる
+			m.opening.Open(m.now(), bodyOpenDuration)
 			m.setRead(true)
 		}
 		return nil
@@ -842,7 +858,7 @@ func (m *Model) leftWidth() int { return min(max(m.w*3/10, 24), 44) }
 
 // rightWidth は本文のカードの幅 (2 枚のカードの右の落ち影 1 桁ずつと、間の 1 桁を引く)。
 func (m *Model) rightWidth() int {
-	if m.body {
+	if m.body || m.closingBody() {
 		return m.w - 1 // 本文を読む間は左の一覧を出さず、本文の欄を全幅にする (screen)
 	}
 	return m.w - m.leftWidth() - 3
@@ -984,6 +1000,9 @@ func (m *Model) screen() []string {
 	}
 	lines := []string{m.titleLine(), gradRule(m.w, cAccent, cPink, cPurple, cTeal, cBg), m.tabsLine(), m.noteLine()}
 	right := m.rightLines()
+	if (m.body && m.opening.Unsettled(m.now())) || m.closingBody() {
+		return append(append(lines, m.openingRows(right)...), m.helpLines()...)
+	}
 	if m.body {
 		// 本文を読む間は左の一覧を出さない。一覧と本文を同じ行に並べると、本文が 1 行動くたびに左の一覧の分まで描き直しになり、
 		// tmux から外側の端末へ送る量が 1 行で約 53KB になる (全幅なら約 5KB で less と同じ水準。Terminal.app でスクロールが
@@ -1425,4 +1444,43 @@ func (m *Model) streamState() string {
 func (m *Model) hasSel() bool {
 	_, ok := m.selRow()
 	return ok
+}
+
+// closeBody は本文の欄を閉じて一覧へ戻り、全幅の欄が右へ退く演出を始める。
+func (m *Model) closeBody() {
+	m.body = false
+	m.opening.Close(m.now(), bodyOpenDuration)
+}
+
+// closingBody は一覧へ戻る演出の途中か。着地した後は tick が EndClose するまでの間も、もう一覧と並べた形で描く。
+func (m *Model) closingBody() bool {
+	return m.opening.Closing() && !m.opening.CloseLanded(m.now())
+}
+
+// openingRows は本文の欄を開く演出と一覧へ戻る逆の演出の途中の欄の行。一覧との境目だけが左右へ動き、境目の左に一覧、右に全幅で
+// 描いた本文を最終の位置のまま出す。本文は最初から全幅で折り返す (動いている間に文の折り返しを変えない)。
+// 本文を中身ごと横へずらさない: 毎フレーム全部のセルが変わり、24bit 色の背景で塗ったカードを毎回送り直すことになる。437×104 の端末で
+// 1 フレーム 26〜77KB になり、tmux が外側の端末へ送るフレームが閉じる演出で 300ms に 4 枚ほどまで間引かれた (境目だけなら 5〜37KB で
+// 17ms ごとに届く)。
+func (m *Model) openingRows(right []string) []string {
+	p := anim.EaseOutCubic(m.opening.Progress(m.now()))
+	if m.opening.Closing() { // 閉じるときも動き出しが速く、着地の手前で減速する (開く動きを時間で逆に回すと着地が急になる)
+		p = 1 - anim.EaseOutCubic(1-m.opening.Progress(m.now()))
+	}
+	x0 := m.leftWidth() + 1                           // 一覧と並べていたときの右の欄の左端
+	x := min(max(int(float64(x0)*(1-p)+0.5), 0), m.w) // 今の右の欄の左端 (x0 から 0 へ)
+	left := m.leftLines()
+	out := make([]string, 0, m.paneRows())
+	for i := range m.paneRows() {
+		l, r := "", ""
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		l = termwidth.Truncate(l, x, "")
+		out = append(out, reset(l)+termwidth.PadSpaces(x-termwidth.Of(l))+termwidth.DropColumns(r, x))
+	}
+	return out
 }

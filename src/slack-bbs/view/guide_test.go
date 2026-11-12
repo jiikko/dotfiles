@@ -42,7 +42,9 @@ func TestBodyHasScrollbarOnlyWhenOverflowing(t *testing.T) {
 		long.Units[0].Msgs[0].Text = strings.Repeat("長い本文を折り返して欄からはみ出させる。", 80) // 本文の欄は全幅なので、はみ出すだけの長さにする
 		return []board.Topic{long, topicAt("short", day0.Add(-time.Hour))}
 	})
+	adv := clockAt(m, day0)
 	press(m, "l")
+	adv(time.Second) // 開く演出を着地させる (途中の姿は一覧と本文が並ぶ)
 	rows := bodyPlain(m)
 	if lastCell(rows[0]) != "█" {
 		t.Fatalf("長い本文の先頭で、右端の 1 行目につまみが無い:\n%s", strings.Join(rows, "\n"))
@@ -75,7 +77,8 @@ func TestBodyHasScrollbarOnlyWhenOverflowing(t *testing.T) {
 		t.Errorf("末尾まで送ったのに、つまみが下端に無い:\n%s", strings.Join(rows, "\n"))
 	}
 	press(m, "h")
-	press(m, "j") // 短い話題
+	adv(time.Second) // 一覧へ戻る演出を着地させる (途中は全幅で折り返したまま)
+	press(m, "j")    // 短い話題
 	for _, l := range bodyPlain(m) {
 		if c := lastCell(l); c == "█" || c == "│" {
 			t.Errorf("収まる本文にバーが出た: %q", l)
@@ -262,6 +265,7 @@ func TestMentionsMakeTopicUnread(t *testing.T) {
 	m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, load, nil, func() time.Time { return day0 }))
 	m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
 	run(m, m.Init())
+	adv := clockAt(m, day0)
 	press(m, "l") // a を既読にする
 	press(m, "h")
 	if n := m.unreadCount(0); n != 1 {
@@ -282,6 +286,7 @@ func TestMentionsMakeTopicUnread(t *testing.T) {
 		t.Fatalf("既読の後に付いた他の人の言及で未読に戻らない: 未読 %d", n)
 	}
 	press(m, "l")
+	adv(time.Second) // 開く演出を着地させる
 	m.toast.Clear()
 	body := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), "")
 	for _, want := range []string{"▍この話題への言及 (2 件)", "sato: [#random] これどう思う?", "↳ あなたの発言"} {
@@ -304,7 +309,9 @@ func TestBodyUsesFullWidthWhileReading(t *testing.T) {
 	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "別件") {
 		t.Fatalf("一覧に別件が無い (前提):\n%s", screen)
 	}
+	adv := clockAt(m, day0)
 	press(m, "l")
+	adv(time.Second) // 開く演出を着地させる (途中は一覧が覗く)
 	screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), "")
 	if strings.Contains(screen, "別件") {
 		t.Errorf("本文を読む間に左の一覧が出ている:\n%s", screen)
@@ -315,6 +322,7 @@ func TestBodyUsesFullWidthWhileReading(t *testing.T) {
 		}
 	}
 	press(m, "h")
+	adv(time.Second)
 	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "別件") {
 		t.Errorf("h で戻っても一覧が出ない:\n%s", screen)
 	}
