@@ -66,16 +66,16 @@ type chanState struct {
 
 // Model は画面の状態。
 type Model struct {
-	ctx     context.Context
-	load    Loader
-	open    func(url string) error
-	now     func() time.Time
-	chans   []chanState
-	cur     int
-	list    listnav.List
-	pager   listnav.Pager
-	body    bool       // 右の欄を操作しているか
-	opening anim.Slide // 本文の欄を開く演出と一覧へ戻る逆の演出 (一覧との境目が左右へ動く。openingRows)
+	ctx    context.Context
+	load   Loader
+	open   func(url string) error
+	now    func() time.Time
+	chans  []chanState
+	cur    int
+	list   listnav.List
+	pager  listnav.Pager
+	body   bool            // 右の欄を操作しているか
+	drawer anim.Transition // 本文の欄を開く演出と一覧へ戻る逆の演出 (全幅の本文の板が右外から滑り込む・右外へ抜ける。drawerRows)
 	// showHidden は x で隠した話題も一覧に出すか (z で切り替える。出すときは淡い色)
 	showHidden bool
 	// stream は新着のタブ (全部のタブの話題を新着順に並べる。タブの最後) を開いているか。開いている間も cur は最後に見たチャンネル
@@ -100,7 +100,7 @@ type Model struct {
 	after    func(d time.Duration, f func(time.Time) tea.Msg) tea.Cmd
 	quitting bool
 	reads    *Reads
-	body1    bodyCache // 本文の欄の折り返しの覚え (bodyLines)
+	bodies   [2]bodyCache // 本文の欄の折り返しの覚え (bodyLines)。開閉の演出は狭い欄と全幅の欄を毎フレーム組むので 2 つの幅を覚える
 	// seq は読み直しの通し番号。チャンネルごとに数えると、購読から外して付け直したチャンネルで、外す前の読み直しの結果を
 	// 付け直した後の読み直しの結果と取り違える
 	seq      int
@@ -349,9 +349,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ticks.Fired(msg.seq) {
 			m.pager.Advance()
 		}
-		if m.opening.CloseLanded(m.now()) {
-			m.opening.EndClose()
-		}
+		m.drawer.Settle(m.now()) // 開閉の演出が時間どおり着地したら静止させる
 	}
 	return m, tea.Batch(m.frameCmds()...)
 }
@@ -363,9 +361,10 @@ func (m *Model) LastToast() string { return m.toast.Text() }
 type tickMsg struct{ seq uint64 }
 
 const (
-	// bodyOpenDuration は本文の欄を開く演出と、一覧へ戻る逆の演出の長さ。bodyGlideFrames は本文の半ページ送りを滑らせるフレーム数
-	// (× frameInterval ≒ 150ms)。どちらも試作を触って選んだ長さで、glogx (開く 175ms・スクロール約 100ms) より遅い
-	bodyOpenDuration = 300 * time.Millisecond
+	// bodyOpenDuration は本文の欄を開く演出と、一覧へ戻る逆の演出の長さ (glogx の issue viewer の引き出しの issuesDrawerDuration と同じ)。
+	// 長くしない: 300ms で試すと、端末の 1 枚ずつの段差が見えて滑らかに見えなかった。bodyGlideFrames は本文の半ページ送りを
+	// 滑らせるフレーム数 (× frameInterval ≒ 150ms。試作を触って選んだ)
+	bodyOpenDuration = 112 * time.Millisecond
 	bodyGlideFrames  = 9
 	frameInterval    = 16 * time.Millisecond // toast が滑り込む・滑り出る間の描き直しの周期
 	spinnerStep      = 80 * time.Millisecond // 回る印の 1 コマ (読み直し・一覧の読み込みを待つ間の描き直しの周期)
@@ -379,7 +378,7 @@ func (m *Model) frameCmds() []tea.Cmd {
 	}
 	var d time.Duration
 	switch {
-	case m.toast.Animating() || m.opening.Unsettled(m.now()) || m.pager.Animating():
+	case m.toast.Animating() || m.drawer.Unsettled(m.now()) || m.pager.Animating():
 		d = frameInterval
 	case m.busy():
 		d = spinnerStep
@@ -629,8 +628,10 @@ func (m *Model) key(k string) tea.Cmd {
 	case "l", "right", "enter":
 		if _, ok := m.selected(); ok {
 			m.body = true
-			m.opening.EndClose() // 閉じる途中に開き直すと Open は何もしないので、先に閉じ切らせる
-			m.opening.Open(m.now(), bodyOpenDuration)
+			if m.drawer.Phase() != anim.Closing {
+				m.drawer = anim.Transition{} // 演出なしで閉じた後 (チャンネルを替えた等) も、閉じた姿から開く
+			}
+			m.drawer.Open(m.now(), bodyOpenDuration) // 戻る途中なら、その位置から逆向きに開く
 			m.setRead(true)
 		}
 		return nil
@@ -677,7 +678,8 @@ func (m *Model) switchTo(i int) tea.Cmd {
 	if i == m.cur && !m.stream {
 		return nil
 	}
-	m.cur, m.body, m.stream = i, false, false
+	m.cur, m.stream = i, false
+	m.leaveBody()
 	m.list = listnav.List{}
 	m.pager.Reset()
 	c := &m.chans[i]
@@ -792,7 +794,8 @@ func (m *Model) setChannels(sel []subs.Channel) tea.Cmd {
 	case m.stream:
 		m.cur = 0 // 新着のタブの一覧と本文は選んでいた話題で決める (下の reselect)。最後に見たチャンネルが消えても閉じない
 	default:
-		m.cur, m.body = 0, false
+		m.cur = 0
+		m.leaveBody()
 		m.list = listnav.List{}
 		m.pager.Reset()
 	}
@@ -858,7 +861,7 @@ func (m *Model) leftWidth() int { return min(max(m.w*3/10, 24), 44) }
 
 // rightWidth は本文のカードの幅 (2 枚のカードの右の落ち影 1 桁ずつと、間の 1 桁を引く)。
 func (m *Model) rightWidth() int {
-	if m.body || m.closingBody() {
+	if m.body {
 		return m.w - 1 // 本文を読む間は左の一覧を出さず、本文の欄を全幅にする (screen)
 	}
 	return m.w - m.leftWidth() - 3
@@ -901,15 +904,17 @@ func (m *Model) bodyLines() (lines []string, first []bool) {
 		return []string{"期間内の発言はありません。"}, nil
 	}
 	key := bodyKey{page: c.page, topic: ti, width: m.bodyWidth(), before: c.beforeGen}
-	if m.body1.key == key {
-		return m.body1.lines, m.body1.first
+	for _, c := range m.bodies {
+		if c.key == key {
+			return c.lines, c.first
+		}
 	}
 	for _, l := range c.page.BodySince(c.page.Topics[ti], false, c.before) {
 		for i, w := range wrap(l, m.bodyWidth()) { // 色は rightLines が、折り返した後の画面に出す行にだけ付ける
 			lines, first = append(lines, w), append(first, i == 0)
 		}
 	}
-	m.body1 = bodyCache{key: key, lines: lines, first: first}
+	m.bodies[0], m.bodies[1] = bodyCache{key: key, lines: lines, first: first}, m.bodies[0]
 	return lines, first
 }
 
@@ -999,11 +1004,25 @@ func (m *Model) screen() []string {
 		return []string{termwidth.Truncate(fmt.Sprintf("端末が小さすぎる。q で終わる (%dx%d 以上にする)", MinWidth, MinHeight), max(m.w, 1), "")}
 	}
 	lines := []string{m.titleLine(), gradRule(m.w, cAccent, cPink, cPurple, cTeal, cBg), m.tabsLine(), m.noteLine()}
-	right := m.rightLines()
-	if (m.body && m.opening.Unsettled(m.now())) || m.closingBody() {
-		return append(append(lines, m.openingRows(right)...), m.helpLines()...)
+	var pane []string
+	if m.drawer.Animating(m.now()) {
+		pane = m.drawerRows()
+	} else {
+		pane = m.paneAs(m.body)
 	}
-	if m.body {
+	return append(append(lines, pane...), m.helpLines()...)
+}
+
+// paneAs は一覧と本文の欄の行を、本文の欄に入っているか (body) を指定して組む。止まっている画面と、開閉の演出が継ぎ合わせる
+// 2 枚の姿は、どちらもこれで組む (同じ関数で組むので、演出の始まりと終わりの姿が止まっている画面とずれない)。
+// m.body を一時的に差し替えて組む: 幅・折り返し・枠の色・選んだ行の地の色がどれも m.body を読むので、引数で渡すと全部に通すことになる。
+func (m *Model) paneAs(body bool) []string {
+	saved := m.body
+	m.body = body
+	defer func() { m.body = saved }()
+	right := m.rightLines()
+	out := make([]string, 0, m.paneRows())
+	if body {
 		// 本文を読む間は左の一覧を出さない。一覧と本文を同じ行に並べると、本文が 1 行動くたびに左の一覧の分まで描き直しになり、
 		// tmux から外側の端末へ送る量が 1 行で約 53KB になる (全幅なら約 5KB で less と同じ水準。Terminal.app でスクロールが
 		// もっさりした)。一覧に戻るのは h / q
@@ -1012,9 +1031,9 @@ func (m *Model) screen() []string {
 			if i < len(right) {
 				r = right[i]
 			}
-			lines = append(lines, r)
+			out = append(out, r)
 		}
-		return append(lines, m.helpLines()...)
+		return out
 	}
 	left := m.leftLines()
 	for i := range m.paneRows() {
@@ -1022,9 +1041,9 @@ func (m *Model) screen() []string {
 		if i < len(left) {
 			l, r = left[i], right[i]
 		}
-		lines = append(lines, l+" "+r)
+		out = append(out, l+" "+r)
 	}
-	return append(lines, m.helpLines()...)
+	return out
 }
 
 // titleLine はロゴと今のチャンネルの状態。右端に購読の画面を開くキーを出す (幅が足りなければ状態を詰め、それでも足りなければキーを外す)。
@@ -1356,7 +1375,7 @@ func (m *Model) reselect(keep string) bool {
 		}
 	}
 	m.fitList(1)
-	m.body = false
+	m.leaveBody()
 	return false
 }
 
@@ -1395,7 +1414,8 @@ func (m *Model) membersChanged(i int) tea.Cmd {
 // enterStream は新着のタブを開く: 全部のタブの話題を並べ直す。板がまだ無いタブ (キャッシュも無い) は読み始める
 // (キャッシュの前回の板があるタブは、その板を並べる。読み直しは r / R で)。
 func (m *Model) enterStream() tea.Cmd {
-	m.stream, m.body, m.streamRows = true, false, nil
+	m.stream, m.streamRows = true, nil
+	m.leaveBody()
 	m.list = listnav.List{}
 	m.pager.Reset()
 	var cmds []tea.Cmd
@@ -1449,38 +1469,25 @@ func (m *Model) hasSel() bool {
 // closeBody は本文の欄を閉じて一覧へ戻り、全幅の欄が右へ退く演出を始める。
 func (m *Model) closeBody() {
 	m.body = false
-	m.opening.Close(m.now(), bodyOpenDuration)
+	m.drawer.Close(m.now(), bodyOpenDuration) // 開く途中なら、その位置から逆向きに閉じる
 }
 
-// closingBody は一覧へ戻る演出の途中か。着地した後は tick が EndClose するまでの間も、もう一覧と並べた形で描く。
-func (m *Model) closingBody() bool {
-	return m.opening.Closing() && !m.opening.CloseLanded(m.now())
+// leaveBody は演出をせずに本文の欄を閉じる (タブを替えた・話題が消えた・隠した)。板の中身が別の話題に替わるので、滑らせて見せない。
+// 演出の状態も閉じた姿にする: 残すと、開く途中の板に別の話題が滑り込み続け、次に開くときは途中の位置から跳ぶ。
+func (m *Model) leaveBody() {
+	m.body = false
+	m.drawer = anim.Transition{}
 }
 
-// openingRows は本文の欄を開く演出と一覧へ戻る逆の演出の途中の欄の行。一覧との境目だけが左右へ動き、境目の左に一覧、右に全幅で
-// 描いた本文を最終の位置のまま出す。本文は最初から全幅で折り返す (動いている間に文の折り返しを変えない)。
-// 本文を中身ごと横へずらさない: 毎フレーム全部のセルが変わり、24bit 色の背景で塗ったカードを毎回送り直すことになる。437×104 の端末で
-// 1 フレーム 26〜77KB になり、tmux が外側の端末へ送るフレームが閉じる演出で 300ms に 4 枚ほどまで間引かれた (境目だけなら 5〜37KB で
-// 17ms ごとに届く)。
-func (m *Model) openingRows(right []string) []string {
-	p := anim.EaseOutCubic(m.opening.Progress(m.now()))
-	if m.opening.Closing() { // 閉じるときも動き出しが速く、着地の手前で減速する (開く動きを時間で逆に回すと着地が急になる)
-		p = 1 - anim.EaseOutCubic(1-m.opening.Progress(m.now()))
-	}
-	x0 := m.leftWidth() + 1                           // 一覧と並べていたときの右の欄の左端
-	x := min(max(int(float64(x0)*(1-p)+0.5), 0), m.w) // 今の右の欄の左端 (x0 から 0 へ)
-	left := m.leftLines()
-	out := make([]string, 0, m.paneRows())
-	for i := range m.paneRows() {
-		l, r := "", ""
-		if i < len(left) {
-			l = left[i]
-		}
-		if i < len(right) {
-			r = right[i]
-		}
-		l = termwidth.Truncate(l, x, "")
-		out = append(out, reset(l)+termwidth.PadSpaces(x-termwidth.Of(l))+termwidth.DropColumns(r, x))
-	}
-	return out
+// drawerRows は本文の欄を開く演出と一覧へ戻る逆の演出の途中の欄の行。glogx の issue viewer の引き出しと同じ形で、
+// 一覧の画面 (一覧と狭い本文の欄) の上に、全幅の本文の画面を板として右外から滑り込ませる (戻るときは右外へ抜ける)。
+// 板は開き切った姿のまま位置だけを動かすので、始まりは一覧の画面そのもの、終わりは本文の画面そのものになり、着地で跳ばない。
+// 本文は止めて境目だけを動かす形 (幕) にしない: 送る量は減るが、動く物が無いので、ゆっくり動かすと 1 枚ずつの段差が目立った。
+// 1 フレームに外側の端末へ送る量は幕より多い (437×104 で 50〜260KB。glogx の引き出しは 150〜290KB) が、112ms で終わるので
+// 約 17ms ごとに 6 枚ほど届く。
+func (m *Model) drawerRows() []string {
+	// ComposeDrawer にしない: 区切り線の 1 桁を入れて板を 1 桁右から描くので、止まっている本文の画面 (列 0 から全幅) と、
+	// 開き終わる瞬間・閉じ始める瞬間に板が横へ跳ぶ (glogx は止まっている間も引き出しを合成するので跳ばない)
+	w := layout.DrawerWidth(m.w, m.drawer.Openness(m.now(), anim.EaseOutCubic))
+	return layout.CoverFromRight(m.paneAs(false), m.paneAs(true), w, m.w)
 }

@@ -95,6 +95,36 @@ func ComposeDrawer(base, panel []string, w, total int, colored bool) []string {
 	return out
 }
 
+// CoverFromRight は base の上を、全幅の板 panel が右端から w 桁だけ覆った姿にする (total は画面幅)。
+// 板の列 0 を列 total-w に置き、板の左から w 桁を見せる。区切り線は引かない。w >= total で panel そのもの、w <= 0 で base そのもの。
+//
+// ComposeDrawer との使い分け: ComposeDrawer は止まっている間も一覧の端を残す引き出し (区切り線の 1 桁を入れ、板の列 0 を区切り線の
+// 右に置く)。こちらは開き切ると板が画面全部になり、止まっている間は板を合成せずに描く画面向け。ComposeDrawer で全幅の板を
+// 滑らせると、着地の前後で板が区切り線の分だけ横へ跳ぶ。
+func CoverFromRight(base, panel []string, w, total int) []string {
+	w = min(max(w, 0), total)
+	left := total - w
+	out := make([]string, len(base))
+	for i, b := range base {
+		var p string
+		if i < len(panel) {
+			p = panel[i]
+		}
+		switch {
+		case w == 0:
+			out[i] = b
+			continue
+		case left == 0:
+			out[i] = p
+			continue
+		}
+		line, lw := termwidth.CutMeasure(b, left)
+		vis, vw := cutMeasure(p, w)
+		out[i] = line + sgr.Reset + termwidth.PadSpaces(max(left-lw, 0)) + vis + sgr.Reset + termwidth.PadSpaces(max(w-vw, 0))
+	}
+	return out
+}
+
 // cutMeasure は termwidth.Cut と同じ切り詰めを行い、結果の表示幅も返す。
 //
 // 本文側用: 本文は開ききった幅で整形済みなので、開いている間は必ず収まる。先に測って収まれば

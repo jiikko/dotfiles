@@ -210,7 +210,7 @@ func (m *Model) toggleHidden() {
 		m.toast.Show("この話題を隠した (z で隠した話題を出すのをやめる)", true)
 	default:
 		m.toast.Show("この話題を隠した (z で隠した話題も出し、その上で x を押すと戻す)", true)
-		m.body = false  // 隠した話題の本文を開いたままにしない
+		m.leaveBody()   // 隠した話題の本文を開いたままにしない
 		m.pager.Reset() // カーソルは次の話題へ移る。隠した話題を送った位置から読ませない
 	}
 	m.fitList(1)

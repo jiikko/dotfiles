@@ -119,3 +119,32 @@ func TestComposeKeepsWidthWithKeycaps(t *testing.T) {
 		}
 	}
 }
+
+// CoverFromRight は、覆う幅 0 で base そのもの、全幅で panel そのものを返し (開閉の演出の始まりと着地が止まっている画面と同じになる)、
+// 途中は左に base の左端、右に panel の左端を並べる。どの幅でも行の幅は total のまま。
+func TestCoverFromRight(t *testing.T) {
+	base := []string{"\x1b[31mABCDEFGHIJ\x1b[0m", "あいうえお"}
+	panel := []string{"\x1b[42m0123456789\x1b[0m", "かきくけこ"}
+	const total = 10
+	if got := CoverFromRight(base, panel, 0, total); got[0] != base[0] || got[1] != base[1] {
+		t.Errorf("幅 0 で base そのものでない: %q", got)
+	}
+	if got := CoverFromRight(base, panel, total, total); got[0] != panel[0] || got[1] != panel[1] {
+		t.Errorf("全幅で panel そのものでない: %q", got)
+	}
+	for w := 0; w <= total; w++ {
+		for i, l := range CoverFromRight(base, panel, w, total) {
+			if got := termwidth.Of(l); got != total {
+				t.Errorf("w=%d 行 %d: 幅 %d, want %d: %q", w, i, got, total, l)
+			}
+		}
+	}
+	got := termwidth.StripSGR(CoverFromRight(base, panel, 4, total)[0])
+	if got != "ABCDEF0123" {
+		t.Errorf("w=4: %q, want 左に base の 6 桁・右に panel の左の 4 桁", got)
+	}
+	got = termwidth.StripSGR(CoverFromRight(base, panel, 5, total)[1])
+	if got != "あい かき " {
+		t.Errorf("全角をまたぐ w=5: %q, want 両側とも、切った全角を空白で埋める", got)
+	}
+}

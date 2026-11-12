@@ -9,6 +9,7 @@ import (
 
 	"slack-bbs/board"
 
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 )
@@ -47,20 +48,27 @@ func pane(m *Model) []string {
 	return out
 }
 
-// edgeOf は frame の全部の行が「列 x より左は list と同じ、右は body と同じ」になる x を返す (無ければ -1)。
-// 境目をまたぐ全角の字は落として空白で詰めるので、境目の前後 2 桁は比べない。
-func edgeOf(frame, list, body []string, below int) int {
-	for x := 3; x < below; x++ {
+// rawPane は一覧と本文の欄の全部の行を色ごと返す (演出の始まりと着地の姿を、止まっている画面と色まで比べる)。知らせは消しておく。
+func rawPane(m *Model) string {
+	m.toast.Clear()
+	return strings.Join(m.Lines()[topRows:topRows+m.paneRows()], "\n")
+}
+
+// drawerLeft は frame の全部の行が「列 L より左は list と同じ、L から右は body の左端から」になる L を返す (無ければ -1)。
+// 境目をまたぐ全角の字は落として空白で詰め、右端は板の幅で切るので、境目の手前 2 桁と右端の 3 桁は比べない。
+func drawerLeft(frame, list, body []string, total int) int {
+	for l := 3; l < total-4; l++ {
 		ok := true
 		for i := range frame {
-			if termwidth.Truncate(frame[i], x-2, "") != termwidth.Truncate(list[i], x-2, "") ||
-				termwidth.SliceFrom(frame[i], x+2) != termwidth.SliceFrom(body[i], x+2) {
+			room := total - l - 3
+			if termwidth.Truncate(frame[i], l-2, "") != termwidth.Truncate(list[i], l-2, "") ||
+				termwidth.Truncate(termwidth.SliceFrom(frame[i], l), room, "") != termwidth.Truncate(body[i], room, "") {
 				ok = false
 				break
 			}
 		}
 		if ok {
-			return x
+			return l
 		}
 	}
 	return -1
@@ -74,51 +82,72 @@ func twoTopics(t *testing.T) *Model {
 	return m
 }
 
-// 本文の欄を開くときと一覧へ戻るときは、一覧との境目だけが動き、境目の右の本文は開き切った姿と同じ位置に出る
-// (本文を中身ごと横へずらすと、毎フレーム全部のセルを送り直して端末が追いつかない。openingRows の doc)。
-// 開くときは境目が左へ、戻るときは右へ進み、着地すると開き切った姿・一覧の姿そのものになる。
-func TestBodyOpensAndClosesByMovingOnlyTheEdge(t *testing.T) {
+// 本文の欄を開くときと一覧へ戻るときは、glogx の issue viewer の引き出しと同じく、一覧の画面の上を全幅の本文の画面が板として
+// 右外から滑り込み (戻るときは右外へ抜け)、板は開き切った姿のまま位置だけが動く。始まりは一覧の画面そのもの、着地すると本文の画面・
+// 一覧の画面そのものになる (板の中身を途中の幅で組み直すと、着地の瞬間に折り返しが変わって跳ぶ)。
+func TestBodyOpensAndClosesAsDrawer(t *testing.T) {
 	m := twoTopics(t)
 	adv := clockAt(m, day0)
 	press(m, "l")
 	adv(time.Second)
-	body := pane(m)
+	body, bodyRaw := pane(m), rawPane(m)
 	press(m, "h")
 	adv(time.Second)
-	list := pane(m)
-	if m.opening.Closing() {
-		t.Fatal("閉じ切った後も閉じる途中のまま (tick で片付けていない)")
+	list, listRaw := pane(m), rawPane(m)
+	if m.drawer.Unsettled(m.now()) {
+		t.Fatal("閉じ切った後も演出が片付いていない (tick で Settle していない)")
 	}
-	x0 := m.leftWidth() + 1
-	step := bodyOpenDuration / 6
-	edges := func(key string) (a, b int) {
+	samples := func(key string, at ...time.Duration) []int {
 		press(m, key)
-		adv(step)
-		a = edgeOf(pane(m), list, body, x0)
-		adv(step)
-		b = edgeOf(pane(m), list, body, x0)
-		if a <= 0 || b <= 0 {
-			t.Fatalf("%s: 途中の姿が「左は一覧・右は開き切った本文」になっていない (境目 %d → %d):\n%s", key, a, b, strings.Join(pane(m), "\n"))
+		var got []int
+		prev := time.Duration(0)
+		for _, d := range at {
+			adv(d - prev)
+			prev = d
+			l := drawerLeft(pane(m), list, body, m.w)
+			if l <= 0 {
+				t.Fatalf("%s の %v 後: 途中の姿が「左は一覧の画面・右は本文の板」になっていない:\n%s", key, d, strings.Join(pane(m), "\n"))
+			}
+			got = append(got, l)
 		}
 		adv(time.Second)
-		return a, b
+		return got
 	}
-	if a, b := edges("l"); b >= a {
-		t.Errorf("開く途中で境目が左へ進まない: %d → %d", a, b)
+	press(m, "l")
+	if got := rawPane(m); got != listRaw {
+		t.Errorf("開いた直後の姿が一覧の画面と (色を含めて) 違う (始まりで跳ぶ):\n%s", got)
 	}
-	if got := pane(m); strings.Join(got, "\n") != strings.Join(body, "\n") {
-		t.Errorf("開き切った姿が前と違う:\n%s", strings.Join(got, "\n"))
+	press(m, "h")
+	adv(time.Second)
+	if l := samples("l", bodyOpenDuration/4, bodyOpenDuration/2); l[1] >= l[0] {
+		t.Errorf("開く途中で板の左端が左へ進まない: %v", l)
 	}
-	if a, b := edges("h"); b <= a {
-		t.Errorf("一覧へ戻る途中で境目が右へ進まない: %d → %d", a, b)
+	if got := rawPane(m); got != bodyRaw {
+		t.Errorf("開き切った姿が前と (色を含めて) 違う:\n%s", got)
 	}
-	if got := pane(m); strings.Join(got, "\n") != strings.Join(list, "\n") {
-		t.Errorf("戻り切った姿が一覧と違う:\n%s", strings.Join(got, "\n"))
+	press(m, "l")
+	adv(bodyOpenDuration - time.Millisecond)
+	if got := rawPane(m); got != bodyRaw {
+		t.Errorf("開き終わる直前の姿が本文の画面と (色を含めて) 違う (着地で横へ跳ぶ):\n%s", got)
+	}
+	adv(time.Second)
+	press(m, "h")
+	if got := rawPane(m); got != bodyRaw {
+		t.Errorf("閉じ始めの姿が本文の画面と (色を含めて) 違う (閉じ始めで横へ跳ぶ):\n%s", got)
+	}
+	adv(time.Second)
+	press(m, "l")
+	adv(time.Second)
+	if l := samples("h", bodyOpenDuration/2, bodyOpenDuration*3/4); l[1] <= l[0] {
+		t.Errorf("一覧へ戻る途中で板の左端が右へ進まない: %v", l)
+	}
+	if got := rawPane(m); got != listRaw {
+		t.Errorf("戻り切った姿が一覧と (色を含めて) 違う:\n%s", got)
 	}
 }
 
-// 一覧へ戻る途中で開き直すと、その場で開く演出に切り替わる (戻る演出の続きを本文の上で見せない)。
-func TestReopeningWhileClosingOpensAgain(t *testing.T) {
+// 開く途中で戻る・戻る途中で開き直すと、板はその位置から逆向きに動く (端まで跳んでから動き直さない)。
+func TestDrawerReversesFromWhereItIs(t *testing.T) {
 	m := twoTopics(t)
 	adv := clockAt(m, day0)
 	press(m, "l")
@@ -127,18 +156,26 @@ func TestReopeningWhileClosingOpensAgain(t *testing.T) {
 	press(m, "h")
 	adv(time.Second)
 	list := pane(m)
-	press(m, "l")
-	adv(time.Second)
-	press(m, "h")
-	adv(bodyOpenDuration / 6)
-	press(m, "l")
-	step := bodyOpenDuration / 6
-	adv(step)
-	a := edgeOf(pane(m), list, body, m.leftWidth()+1)
-	adv(step)
-	b := edgeOf(pane(m), list, body, m.leftWidth()+1)
-	if a <= 0 || b <= 0 || b >= a {
-		t.Errorf("戻る途中で開き直したのに、境目が左へ進まない: %d → %d:\n%s", a, b, strings.Join(pane(m), "\n"))
+	left := func() int { return drawerLeft(pane(m), list, body, m.w) }
+	for _, tc := range []struct{ first, then string }{{"l", "h"}, {"h", "l"}} {
+		if tc.first == "h" {
+			press(m, "l")
+			adv(time.Second)
+		}
+		press(m, tc.first)
+		adv(bodyOpenDuration / 2)
+		before := left()
+		press(m, tc.then)
+		after := left()
+		if before <= 0 || after < before-1 || after > before+1 {
+			t.Errorf("%s の途中で %s: 板の左端が %d から %d へ跳んだ", tc.first, tc.then, before, after)
+		}
+		adv(bodyOpenDuration / 4)
+		moved := left()
+		if (tc.then == "h" && moved <= after) || (tc.then == "l" && moved >= after) {
+			t.Errorf("%s の途中で %s: 逆向きに動かない (%d → %d)", tc.first, tc.then, after, moved)
+		}
+		adv(time.Second)
 	}
 }
 
@@ -173,5 +210,24 @@ func TestHalfPageGlidesAndOneLineDoesNot(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 20}) // 折り返しが変わると、途中の行の番号が別の行を指す
 	if m.pager.Animating() {
 		t.Error("窓の大きさが変わっても半ページ送りが滑り続ける")
+	}
+}
+
+// 開く途中にタブを替えると、演出をやめて一覧のまま止まる (開きかけの板に別の話題を滑り込ませ続けない)。次に開くときは閉じた姿から始める。
+func TestSwitchingTabStopsDrawer(t *testing.T) {
+	m := twoTopics(t)
+	adv := clockAt(m, day0)
+	press(m, "l")
+	adv(bodyOpenDuration / 4)
+	if !m.drawer.Animating(m.now()) {
+		t.Fatal("前提: 開く途中でない")
+	}
+	press(m, "tab")
+	if m.body || m.drawer.Unsettled(m.now()) {
+		t.Errorf("タブを替えた後も本文の欄か演出が残る: body=%v phase=%v", m.body, m.drawer.Phase())
+	}
+	press(m, "l") // 新着のタブで開くと話題が既読の組へ移り一覧が変わるので、画面ではなく開き具合で見る
+	if o := m.drawer.Openness(m.now(), anim.EaseOutCubic); !m.body || o != 0 {
+		t.Errorf("タブを替えた後に開くと、閉じた姿から始まらない (body=%v 開き具合 %v。途中の位置から跳ぶ)", m.body, o)
 	}
 }
