@@ -1,5 +1,7 @@
 # 1080 (docs): ja-writing の skill に yomiyasu の推敲の規範を足す
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-13〜）
+
 起票日: 2026-11-13
 
 ## 概要
