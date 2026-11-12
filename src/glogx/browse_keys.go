@@ -12,7 +12,15 @@ import (
 )
 
 // prefixMsg は tmux prefix の取得結果 (起動時に 1 回、非同期)。
-type prefixMsg struct{ key string }
+// scratchClient と scratchErr は loadScratchClient の結果 (同じ起動時の取得に載せる)。
+type prefixMsg struct {
+	key           string
+	scratchClient string
+	scratchErr    error
+}
+
+// scratchDetachFailedMsg は prefix の後の t で scratch を閉じようとして失敗したとき (成功すると glogx ごと終わるので Msg は来ない)。
+type scratchDetachFailedMsg struct{ err error }
 
 // inputEditsWith は、全画面の入力欄に打っている最中で、key がその入力欄の編集キーか (tmux prefix の分岐が使う)。
 // F (treefiler) と L (mac-lan-manager) は入力欄にキャレットを出している間を「打っている最中」とする (CaretPos は入力欄があるときだけ ok)。
@@ -132,6 +140,9 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	m.keyed = true
+	// prefix の直後の 1 キーだけが scratch を閉じる候補。どこで飲まれたキーでも、ここで必ず外す
+	armed := m.scratchPrefixArmed
+	m.scratchPrefixArmed = false
 	if m.swallowKeyRepeat(key) {
 		return m, nil
 	}
@@ -195,9 +206,20 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// docs/glogx-ui-guide.md §7 の編集の語彙を優先する (案内を出して編集を捨てる方が、C-b を左へ使う人を壊す)。
 	// 入力欄が自分で捌く移動のキー (ctrl+n / ctrl+p) は lineedit の編集キーではないので、prefix にしている人には入力中も
 	// 案内に取られる。救うには入力欄のキーの表をここにもう 1 つ持つことになるので、稀な設定として採らない
+	//
+	// scratch の中で開いた glogx だけは、prefix の次の t / C-t を tmux の bind (_tmux.conf の bind t / C-t) の代わりに
+	// 受けて scratch を閉じる。それ以外の次のキーは上のとおり通常の操作になる。scratch の外では t は glogx のキーのまま
+	if armed && (key == "t" || key == "ctrl+t") {
+		return m, detachScratchCmd(m.scratchClient)
+	}
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !m.inputEditsWith(key) {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
-		m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
+		if m.scratchClient != "" {
+			m.scratchPrefixArmed = true
+			m.toast.Show("tmux prefix は popup では効きません (続けて t で scratch ごと閉じる)", false)
+		} else {
+			m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
+		}
 		return m, m.maybeTick()
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
@@ -465,4 +487,13 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 窓が伸び続ける。更新しないと keyRepeatGuard ごとに 1 回ずつ通ってしまう。
 	m.lastKey, m.lastKeyAt = key, now
 	return repeat
+}
+
+func detachScratchCmd(client string) tea.Cmd {
+	return func() tea.Msg {
+		if err := runTmuxDetachClient(client); err != nil {
+			return scratchDetachFailedMsg{err: err}
+		}
+		return nil
+	}
 }

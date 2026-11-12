@@ -129,17 +129,19 @@ type browseModel struct {
 	// git push / pull --rebase / claude update の確認〜実行〜結果モーダルの状態機械は
 	// actionModal 型 (action_modal.go) に切り出す。実行の orchestration (awaitCI 編成・
 	// reloadAfterPull・結果整形) は CI/コミット状態と密結合なので browseModel 側に残す。
-	actModal       actionModal
-	pullAnimating  bool            // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
-	opts           *Options        // pull 後のコミット再読込に使う (revs / max-count)
-	awaitCI        map[string]bool // push 直後で CI がまだ 1 つも見えない SHA (見えたら外れる。上限は ciAwaitMaxAttempts)
-	awaitAttempts  int             // awaitCI の試行回数 (上限で諦める)
-	ciPolling      bool            // ciPollMsg の自己更新チェーンが 1 本生きているか (single-flight)
-	ciPollInFlight bool            // ciPoll の再取得が in-flight (同一 SHA への GraphQL 並行を避ける)
-	ciPollGen      int             // ciPollMsg の世代 (reloadAfterPull で進めて残タイマーを無効化)
-	lastWarning    string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
-	tmuxPrefix     string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
-	verbatim       []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
+	actModal           actionModal
+	pullAnimating      bool            // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
+	opts               *Options        // pull 後のコミット再読込に使う (revs / max-count)
+	awaitCI            map[string]bool // push 直後で CI がまだ 1 つも見えない SHA (見えたら外れる。上限は ciAwaitMaxAttempts)
+	awaitAttempts      int             // awaitCI の試行回数 (上限で諦める)
+	ciPolling          bool            // ciPollMsg の自己更新チェーンが 1 本生きているか (single-flight)
+	ciPollInFlight     bool            // ciPoll の再取得が in-flight (同一 SHA への GraphQL 並行を避ける)
+	ciPollGen          int             // ciPollMsg の世代 (reloadAfterPull で進めて残タイマーを無効化)
+	lastWarning        string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
+	tmuxPrefix         string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
+	scratchClient      string          // glogx を開いた tmux クライアント (scratch セッションに居るときだけ。"" = scratch の外)
+	scratchPrefixArmed bool            // 直前のキーが prefix で、次の t / C-t で scratch を閉じる
+	verbatim           []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
 	// 状態と描画は usageview.UsageOverlay (internal/usageview/usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
@@ -283,7 +285,10 @@ func newBrowseModel(commits []gitdata.Commit, statuses map[string]gitdata.CIStat
 
 func (m *browseModel) Init() tea.Cmd {
 	// tmux prefix の取得は非同期 (fork 1 本 ≈ 6ms を初期描画のクリティカルパスに乗せない)
-	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
+	prefix := func() tea.Msg {
+		client, err := loadScratchClient()
+		return prefixMsg{key: loadTmuxPrefix(), scratchClient: client, scratchErr: err}
+	}
 	// 起動時はディスクキャッシュ可 (連続起動のたびに claude subprocess を起こさない)
 	// CI の取得中は usage の取得を預ける (下の deferredStartup) が、ディスクキャッシュを読むだけなら fork しないので
 	// 先に済ませて数字を出す。預けると CI の取得の間ずっと右上がスピナーになる
@@ -385,7 +390,15 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onDiff(msg)
 	case prefixMsg:
 		m.tmuxPrefix = msg.key
+		m.scratchClient = msg.scratchClient
+		if msg.scratchErr != nil {
+			m.showWarning(msg.scratchErr.Error())
+			return m, m.maybeTick()
+		}
 		return m, nil
+	case scratchDetachFailedMsg:
+		m.showWarning("scratch を閉じられません: " + msg.err.Error())
+		return m, m.maybeTick()
 	case usageview.UsageMsg:
 		return m, m.usageOv.Handle(msg)
 	case issuesview.IssuesWatchMsg:

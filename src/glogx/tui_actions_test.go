@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -496,6 +497,126 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 			t.Fatalf("tmux 外で prefix 案内が出た: %q", m.toast.Text())
 		}
 	})
+}
+
+// stubDetach は tmux の detach-client を差し替え、呼ばれたクライアント名を記録する。
+func stubDetach(t *testing.T, err error) *[]string {
+	t.Helper()
+	testenv.Restore(t, &runTmuxDetachClient)
+	var calls []string
+	runTmuxDetachClient = func(client string) error {
+		calls = append(calls, client)
+		return err
+	}
+	return &calls
+}
+
+// pressAndRun はキーを押し、返った Cmd を実行してその Msg を model に配る (detach の Cmd は 1 本の関数で、Batch ではない)。
+func pressAndRun(m *browseModel, key string) {
+	_, cmd := m.handleKey(key)
+	if cmd == nil {
+		return
+	}
+	if msg, ok := cmd().(scratchDetachFailedMsg); ok {
+		m.Update(msg)
+	}
+}
+
+// scratch の中で開いた glogx では、prefix の次の t / C-t が tmux の bind t / C-t の代わりに scratch を閉じる。
+// それ以外の次のキーと、scratch の外の glogx は今までどおり。
+func TestBrowseTmuxPrefixClosesScratch(t *testing.T) {
+	const client = "/dev/ttys089"
+	scratchModel := func(t *testing.T) *browseModel {
+		m := newTestBrowse(t, 2, map[string]gitdata.CIState{}, nil)
+		m.width, m.height = 80, 20
+		m.Update(prefixMsg{key: "ctrl+t", scratchClient: client})
+		return m
+	}
+	for _, second := range []string{"t", "ctrl+t"} {
+		t.Run("prefix の次の "+second+" で閉じる", func(t *testing.T) {
+			calls := stubDetach(t, nil)
+			m := scratchModel(t)
+			pressAndRun(m, "ctrl+t")
+			if !strings.Contains(m.toast.Text(), "scratch") {
+				t.Errorf("scratch の中の prefix の案内が閉じ方を言わない: %q", m.toast.Text())
+			}
+			pressAndRun(m, second)
+			if len(*calls) != 1 || (*calls)[0] != client {
+				t.Fatalf("detach の呼び出し = %v, want [%s]", *calls, client)
+			}
+		})
+	}
+	t.Run("prefix の無い t では閉じない", func(t *testing.T) {
+		calls := stubDetach(t, nil)
+		m := scratchModel(t)
+		pressAndRun(m, "t")
+		if len(*calls) != 0 {
+			t.Fatalf("prefix 無しで detach した: %v", *calls)
+		}
+	})
+	t.Run("prefix の次が別のキーなら通常操作で、その後の t では閉じない", func(t *testing.T) {
+		calls := stubDetach(t, nil)
+		m := scratchModel(t)
+		pressAndRun(m, "ctrl+t")
+		pressAndRun(m, "j")
+		if m.cursor != 1 {
+			t.Fatal("prefix の次の j が通常操作にならない")
+		}
+		pressAndRun(m, "t")
+		if len(*calls) != 0 {
+			t.Fatalf("prefix から 2 つ目のキーで detach した: %v", *calls)
+		}
+	})
+	t.Run("scratch の外では prefix の次の t でも閉じない", func(t *testing.T) {
+		calls := stubDetach(t, nil)
+		m := newTestBrowseWithPrefix(t, "ctrl+t")
+		pressAndRun(m, "ctrl+t")
+		if strings.Contains(m.toast.Text(), "scratch") {
+			t.Errorf("scratch の外で scratch を閉じる案内が出た: %q", m.toast.Text())
+		}
+		pressAndRun(m, "t")
+		if len(*calls) != 0 {
+			t.Fatalf("scratch の外で detach した: %v", *calls)
+		}
+	})
+	t.Run("detach の失敗は警告で出す", func(t *testing.T) {
+		stubDetach(t, errors.New("can't find client"))
+		m := scratchModel(t)
+		pressAndRun(m, "ctrl+t")
+		pressAndRun(m, "t")
+		if m.toast.OK() || !strings.Contains(m.toast.Text(), "can't find client") || !strings.Contains(m.lastWarning, "scratch") {
+			t.Fatalf("detach の失敗が警告にならない: text=%q lastWarning=%q", m.toast.Text(), m.lastWarning)
+		}
+	})
+	t.Run("クライアントを読めないときは警告で出す", func(t *testing.T) {
+		m := scratchModel(t)
+		m.Update(prefixMsg{key: "ctrl+t", scratchErr: errors.New("tmux の @glogx_client を読めません")})
+		if m.scratchClient != "" || !strings.Contains(m.lastWarning, "@glogx_client") {
+			t.Fatalf("読めないときの状態: client=%q lastWarning=%q", m.scratchClient, m.lastWarning)
+		}
+	})
+}
+
+// scratch のセッション名とクライアントの渡し方は Go の外 (スクリプトと tmux の設定) との写し。片方だけ変えると、
+// scratch の中でも閉じる機能が気づかないうちに無効になる。
+func TestScratchSessionNameMatchesScript(t *testing.T) {
+	script, err := os.ReadFile("../../scripts/tmux_scratch_popup.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`[ "$session" = "` + scratchSessionName + `" ]`, "attach -t " + scratchSessionName} {
+		if !strings.Contains(string(script), want) {
+			t.Errorf("scripts/tmux_scratch_popup.sh に %q が無い (scratchSessionName と食い違う)", want)
+		}
+	}
+	conf, err := os.ReadFile("../../_tmux.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "set -gF " + scratchClientOption + " '#{client_name}' ; display-popup"
+	if n := strings.Count(string(conf), want); n != 2 {
+		t.Errorf("_tmux.conf の glogx の bind (g と C-g) で %q が %d 回、want 2", want, n)
+	}
 }
 
 // 未 push が 1 件も無いときは確認に入らない。

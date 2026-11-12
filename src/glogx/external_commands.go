@@ -383,3 +383,56 @@ var loadTmuxPrefix = func() string {
 	// (理由は subproc.WaitDelay の doc。以降のクリップボード系も同じ)
 	return termcaps.TmuxPrefix(os.Getenv("TMUX"), subproc.Output)
 }
+
+// scratchSessionName は scripts/tmux_scratch_popup.sh が作るセッションの名前の写し (一致は TestScratchSessionNameMatchesScript)。
+const scratchSessionName = "scratch"
+
+// scratchClientOption は glogx を開いた tmux クライアントの名前を持つ tmux のユーザーオプション。_tmux.conf の g / C-g の bind が
+// popup を開く直前に `set -gF` で書く。
+// 🚨 popup のコマンドの環境変数 (VAR=#{client_name} / display-popup -e) では渡せない: 3.7c ではどちらも format が展開されず
+// 字面のまま届く (隔離サーバで実測 2026-11-12)。
+const scratchClientOption = "@glogx_client"
+
+// loadScratchClient は glogx を開いたクライアントが scratch セッションに居ればその名前を返す ("" = scratch の外 / tmux 外)。
+// err は tmux にオプションを聞けなかったとき (prefix の後の t で scratch を閉じる機能が無効になる)。
+//
+// 🚨 target 無しの `display -p '#{session_name}'` で聞かない: popup の中の TMUX が持つセッション番号は、popup を開いた
+// セッションと一致しない (3.7c を隔離サーバで実測 2026-11-12: main の popup でも scratch を返した)。それで判定すると、
+// 別の端末で開いている scratch を閉じる。クライアントは bind から名指しで受け、そのクライアントのセッションを聞く。
+var loadScratchClient = func() (string, error) {
+	if os.Getenv("TMUX") == "" {
+		return "", nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
+	defer cancel()
+	opt, err := subproc.Output(ctx, "tmux", "show-options", "-gqv", scratchClientOption)
+	if err != nil {
+		return "", fmt.Errorf("tmux の %s を読めません: %w", scratchClientOption, err)
+	}
+	client := strings.TrimSpace(opt)
+	if client == "" {
+		return "", nil
+	}
+	// 失敗は scratch の外として扱う: オプションは最後に bind を押したクライアントの名前が残り続けるので、popup の外で
+	// 起動した glogx が、もう居ないクライアントの名前を読むのは普通に起きる (その glogx に prefix は届かない)
+	out, err := subproc.Output(ctx, "tmux", "display-message", "-p", "-c", client, "#{client_session}")
+	if err != nil || strings.TrimSpace(out) != scratchSessionName {
+		return "", nil
+	}
+	return client, nil
+}
+
+// runTmuxDetachClient は scratch の入れ子のクライアントを detach する (scratch の popup が閉じ、中の glogx も終わる)。
+// scripts/tmux_scratch_popup.sh の閉じる側と同じ操作。テストが差し替えるので var。
+var runTmuxDetachClient = func(client string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
+	defer cancel()
+	out, err := subproc.CommandContext(ctx, "tmux", "detach-client", "-t", client).CombinedOutput()
+	if err != nil {
+		if line := app.FirstLine(strings.TrimSpace(string(out))); line != "" {
+			return errors.New(line)
+		}
+		return err
+	}
+	return nil
+}
