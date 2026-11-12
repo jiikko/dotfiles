@@ -27,7 +27,7 @@ dotfiles では skill・src の module・bin のコマンドを同じ名前に�
 | [1078](1078-feat-yomiyasu-go-dotfiles-integration.md) | hook と、dotfiles の ja-textlint・ja-textlint-on-edit・ja-writing への組み込み |
 | [1080](done/1080-docs-ja-writing-yomiyasu-norms.md) | ja-writing の skill に yomiyasu の推敲の規範の文を足す (Go の実装と独立。dotfiles-24 が担当) |
 | [1081](1081-feat-yomiyasu-go-difflib.md) | diff の照合 (`difflib.SequenceMatcher` と本家の速い照合) の写し (1076 から切り出した。dotfiles-bb が担当) |
-| [1082](1082-perf-ja-writing-bench-corpus-baseline.md) | ベンチマークの文章を集め、本家の Python の所要を測る (1079 の前半を切り出した。dotfiles-24 が担当) |
+| [1082](done/1082-perf-ja-writing-bench-corpus-baseline.md) | ベンチマークの文章を集め、本家の Python の所要を測る (1079 の前半を切り出した。dotfiles-24 が担当) |
 | [1079](1079-perf-yomiyasu-go-benchmark-loop.md) | 一通り終わった後に、ベンチマークの文章で計測して Go のソースを改善するループ (最大 10 周) |
 
 この epic の起点は、yomiyasu の要点が ja-writing / ja-textlint にどこまで入っているかを照合した結果 (2026-11-12)。
