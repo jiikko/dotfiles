@@ -2,6 +2,8 @@
 
 起票日: 2026-10-07
 
+> **done (2026-11-12)**: D と J を trigger 待ちのまま残して閉じた (末尾の「決着」)。下の pending の注記は閉じる前の状態
+
 > **pending の理由と再開の trigger**: E / F / D1 / D3 / U3 は 2026-10-08 に済んだ (進捗節)。残るのは trigger 待ちの 2 件だけ。
 > - D (本文 pager の状態を `docPager` 型へ): issue 662 (内蔵ファイラー) が本文 pager を流用し始めたとき
 > - J (疑似タブを表へ): 2 つ目の疑似タブが要るようになったとき
@@ -96,3 +98,8 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
   直した差分は判定ロジックを新設せず、各修正を変異で直接確かめたので、3 周目は回さずに閉じた (adversarial-review §7 の例外)
   - ②P2: `finishClose` もフィルタを解く経路だが未検査で、`endFilter` を外しても緑だった → `TestIssuesViewCloseDuringFilterDropsCollapse`
     (フィルタ中に畳む → i で閉じる → 開き直して同じ番号 → 自動展開される)。変異 (finishClose の endFilter を外す) → red
+
+## 決着 (2026-11-12)
+
+- ユーザーの判断で done にした (issue-sync で「E / F / D1 / D3 / U3 は済み、D と J は trigger 待ちで未実装」と報告し、「done に近いなら done でよい」との答え)
+- D (本文 pager の状態を `docPager` 型へ) と J (疑似タブを表へ) は実装していない。trigger (本文 pager を流用する 2 つ目の利用者 / 2 つ目の疑似タブ) が来たら、この issue の D・J の節を元に新しい issue を起こす

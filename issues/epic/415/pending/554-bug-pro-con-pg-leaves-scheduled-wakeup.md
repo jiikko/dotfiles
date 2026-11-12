@@ -54,4 +54,4 @@ dogfooding (2026-09-27) で分かったこと。C-089 の PG は作業の途中�
 
 ## 関連
 
-- 551 (pro-con 側の受け止め) / `dispatcher/dispatcher.go` の `Prompt`
+- 551 (pro-con 側の受け止め。2026-11-12 に done。本物の pro-con での確認は未実施のまま閉じた) / `dispatcher/dispatcher.go` の `Prompt`

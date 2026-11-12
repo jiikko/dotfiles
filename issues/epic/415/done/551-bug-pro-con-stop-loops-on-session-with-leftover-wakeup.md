@@ -1,10 +1,8 @@
 # 551 (bug): 予約した起床が残った PG の session を、止め終えたと読めずに止め直し続ける (終了で「止めきれなかった」)
 
-> 🚨 **担当中: dotfiles の issue 551 を実装しているセッション (worktree wt-551)**（2026-09-27〜）
-
 起票日: 2026-09-27
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -78,3 +76,10 @@ pro-con: 終了のときに止めきれなかった: exit status 1: pro-con disp
 - 残り:
   - [ ] 取り込み後、本物の pro-con を止めて「止めきれなかった」が出ないことを確かめる。今の dispatcher は C-089 (4bbb588c) を止め終えたと読めずにいるので、
     新バージョンへ入れ替わった後にもう一度止めれば確かめられる
+
+## 決着 (2026-11-12)
+
+- ユーザーの判断で done にした (issue-sync で「実装とテストは済み、残りは本物の pro-con を止める確認 (人の手)」と報告し、「done に近いなら done でよい」との答え)
+- 本物の pro-con での確認 (受け入れ条件の未チェックの 1 本) は行っていない。`src/pro-con/README.md` は pro-con を「今は使っていない (2026-11-12 時点)」と書いており、確かめる機会が当面無い
+- pro-con をまた使い始めて、終了のときに「止めきれなかった」が出たら、新しい issue を起こす
+- claim (2026-09-27〜、worktree wt-551) は、worktree が既に無いことを `git worktree list` で確かめてから外した
