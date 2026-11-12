@@ -2,7 +2,8 @@
 
 標準入力は使わない。標準出力は 1 つの JSON で、次のキーを持つ (範囲は両端を含む [lo, hi]、cp はコードポイント)。
   categories      [[開始 cp, 一般カテゴリ], ...]  0 から 0x10FFFF まで切れ目なく (次の開始の手前までがその値)
-  props           {名前: [[lo, hi], ...]}         str.isspace / isalpha / isdecimal / isdigit / isnumeric と splitlines の区切り
+  props           {名前: [[lo, hi], ...]}         str.isspace / isalpha / isdecimal / isdigit / isnumeric と splitlines の区切り、
+                                                  identifier_start (chr(cp).isidentifier()) と identifier_continue (("a" + chr(cp)).isidentifier())
   ccc             [[lo, hi, 結合クラス], ...]     0 でないものだけ
   nfd / nfkd      [[cp, [cp, ...]], ...]          1 字の正規化の結果が元と違うもの (ハングルの音節は算法で決まるので入れない)
   nfc / nfkc      同上 (単独の字を NFC / NFKC にした結果が元と違うもの。サロゲートは Go の文字列に入れられないので除く)
@@ -148,6 +149,23 @@ def normalize_cases(comp):
     for _ in range(500):
         n = 1 + rng.below(3)
         add("".join(chr(compat[rng.below(len(compat))]) for _ in range(n)) + chr(marks[rng.below(len(marks))]))
+    # 結合クラスが同じ字が 13 個以上並ぶ列 (並べ替えは同じクラスの字の順を保つ。短い列は挿入ソートで安定のまま通るので、長い列で試す)
+    same = {}
+    for cp in marks:
+        same.setdefault(unicodedata.combining(chr(cp)), []).append(cp)
+    for cls, members in sorted(same.items()):
+        if len(members) < 13:
+            continue
+        for n in (13, 14, 20, min(len(members), 60)):
+            pick = members[:n]
+            for seq in (pick, pick[::-1], pick[1::2] + pick[0::2]):
+                add("a" + "".join(chr(c) for c in seq))
+                add("a" + "".join(chr(c) for c in seq) + chr(0x0323) + "".join(chr(c) for c in seq[:3]))
+    # ハングルの合成の境界: 終声の前の U+11A7 (終声の範囲の外) と U+11A8 (範囲の内)、LV と LVT、先頭の子音・母音の両端
+    for first in (0x1100, 0x1112, 0x1113, 0xAC00, 0xAC01, 0xD7A3, 0xD7A4, 0xABFF):
+        for second in (0x1160, 0x1161, 0x1175, 0x1176, 0x11A7, 0x11A8, 0x11C2, 0x11C3):
+            add(chr(first) + chr(second))
+            add(chr(first) + chr(second) + chr(0x11A8))
     return cases
 
 
@@ -161,6 +179,8 @@ def main():
         "digit": ranges(lambda cp: chr(cp).isdigit()),
         "numeric": ranges(lambda cp: chr(cp).isnumeric()),
         "linebreak": ranges(lambda cp: len(("a" + chr(cp) + "b").splitlines()) > 1),
+        "identifier_start": ranges(lambda cp: chr(cp).isidentifier()),
+        "identifier_continue": ranges(lambda cp: ("a" + chr(cp)).isidentifier()),
     }
     # splitlines の区切りは決まった一覧のはず。一覧と違えば本家の Python が変わっている
     got = {cp for lo, hi in props["linebreak"] for cp in range(lo, hi + 1)}

@@ -202,6 +202,40 @@ def cases():
         add("sub", pattern, s, arg="", func=True)
         add("subn", pattern, s, arg="", func=True, n=2)
         add("sub", pattern, s, arg="-", n=1)
+    # 開始位置の字・BMP の外の字の否定・inline の (?a:) の中の分類・空になれる本体の {m,n}・pos > endpos・自分のグループを参照する条件
+    for pattern, s in [
+        ("x*[^\U0001f600]", "x_"), ("x|[^\U0001f600]", "x_"), ("(?:\\A|;)[^\U0001f600]", ";a"), ("x*[^\U0010ffff]", "x_"), ("x*[^\U0001f600-\U0001f601]", "x_"),
+        ("x*[^\U0001f600a]", "x_"), ("(?i)x*[^\U0001f600]", "xX_"), ("[^\U0001f600]+", "a\U0001f600b"), ("(?:x|[^\U00010000-\U0010ffff])+", "xy\U0001f600"),
+    ]:
+        add("search", pattern, s)
+        add("finditer", pattern, s)
+    for pattern in ["(?a:\\W)", "(?a:\\S)", "(?a:\\D)", "(?a:[^\\d])", "(?a:[\\W])", "(?a:\\w)", "(?a:\\d)", "(?a:\\s)", "(?a:\\B)", "(?a:\\b)", "(?a:\\Wx)", "(?a:\\W|y)",
+                    "(?a:(\\W))", "x(?a:\\W)", "(?a:[^a])", "(?a:\\W)+", "(?u:\\w)", "(?u:\\W)", "(?i:\\W)", "(?a:\\W)?x", "(?:(?a:\\W))", "(?a:\\D)(?u:\\D)", "(?a:[\\W\\d])"]:
+        for text in ["\u00c9", "\u3000", "\u0663", "!", "a", "x\u00c9", "\u00c9x", "y", "\u00c9\u0663 a1"]:
+            for flags in (0, int(re.A)):
+                add("search", pattern, text, flags=flags)
+                add("finditer", pattern, text, flags=flags)
+                add("match", pattern, text, flags=flags)
+    for pattern, s in [
+        ("(a*?){1,2}", "a"), ("(?:\\S*|.){1,2}", "a b"), ("(a*){2,3}", "aa"), ("(a|b*?){2,3}c", "abc"), ("(a*?){2,4}", "aaa"), ("(a*?){1,3}?", "aa"), ("(a*){1,2}?b", "aab"),
+        ("(a?){1,2}", "a"), ("(a??){1,3}", "aa"), ("((a)|b*?){1,2}", "ab"), ("(?:a*?){1,2}", "aa"), ("(?:(a)|(b)*?){2,3}", "ab"), ("(\\b){1,2}", "a b"), ("(^|a){1,2}", "aa"),
+        ("(a*?){1,2}+", "a"), ("(a*?){3}", "aa"), ("(a*?){0,2}", "a"), ("(a*?){1,}", "a"), ("((a*?)b?){1,2}", "ab"), ("(?:x*){1,2}y", "xxy"), ("(a*?|b){1,3}c", "abc"),
+        ("(?:(?:a*?){1,2}b?){1,2}", "ab"), ("(a*?){1,2}(b)", "ab"), ("(?P<n>a*?){1,2}(?P=n)", "aa"),
+    ]:
+        for flavor in ("search", "match", "fullmatch", "finditer", "findall"):
+            add(flavor, pattern, s)
+        add("sub", pattern, s, arg="[\\g<0>]")
+    for pattern, s, pos, endpos in [
+        ("(?!a)", "bk", 2, 1), ("(?<!x)", "bk", 2, 1), ("(?!x)", "bk", 3, 1), ("$", "ab", 2, 1), ("", "ab", 2, 1), ("\\b", "ab", 2, 1), ("a*", "aaa", 3, 1), ("(?<=a)", "ab", 2, 0),
+        ("\\B", "ab", 2, 1), ("^", "ab", 2, 1), ("(?m)^", "a\nb", 2, 1), ("\\Z", "ab", 2, 1),
+    ]:
+        for flavor in ("search", "match", "fullmatch", "finditer", "findall"):
+            add(flavor, pattern, s, pos=pos, endpos=endpos)
+    # 自分のグループの中から自分を参照する条件 ((?:(x?(?(1)_))[^a])*) は Go と違う。README の「揃わない範囲」で、ここには入れない
+    for pattern, s in [("(?:(x)?(?(1)_|-)y)*", "x_y-yx_y"),
+                  ("(x?(?(1)_))", "x_"), ("(?:(a?)(?(1)b|c))+", "abc")]:
+        for flavor in ("search", "match", "fullmatch", "finditer"):
+            add(flavor, pattern, s)
     # 本家の flag-patterns.txt の検査器 (markdown_visibility.check_pattern) が受ける部分集合のパターン (本家のテストと語の一覧の見本から)
     flag_patterns = [
         "(?<![一-龥々])枝(?![一-龥々])", "枝{2,3}葉", "ba{1,3}c", "ba{2}c", "依存先(?=に)", "鍵穴|(?<!公開)鍵", "(?<=の)枝(?![一-龥々])|(?<![一-龥々])枝(?=[のでにをはが]|ごと)",
@@ -234,6 +268,9 @@ def cases():
         "\\A*", "^*", "$+", "\\b?", "(?=a)*", "(?i:", "(?i:a", "(?>a", "(?s-s:a)", "(?a-a:x)", "(?u:a)(?a:b)", "[[:alpha:]]", "[a-z&&[^b]]", "x{1,2}{3}",
     ]:
         add("compile", pattern)
+    for name in ["a\u00b7", "\u1885", "\u037a", "a\u0e33", "\u2e2f", "\u2118", "\u1369a", "a\u1369", "\u212e", "a\u0387", "\u00b7", "\u0e33", "a\u2e2f", "a\U00016d70", "\U00016d70"]:
+        add("compile", "(?P<" + name + ">x)")
+        add("compile", "x(?P=" + name + ")")
     for pattern in ["(?i)a", "(?a)b", "(?u)c", "(?s)d", "(?m)e", "(?x)f", "(?aim)g", "(?P<n>x)(y)(?P<m>z)", "(a)(b)(c)", "(?:a)", "a(?=b)(c)"]:
         add("compile", pattern)
         add("compile", pattern, flags=int(re.A | re.I))

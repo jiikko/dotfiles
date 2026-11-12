@@ -288,7 +288,7 @@ func (p *parser) str(end int) (string, int, error) {
 		} else {
 			next++
 			end = next + 4
-			if end >= n {
+			if end > n {
 				return "", 0, p.errAt("Invalid \\uXXXX escape", next-1)
 			}
 			hi, ok := p.hex4(next)

@@ -52,15 +52,21 @@ func corpusUnits(t *testing.T, header []oracle.CorpusFile) []unit {
 }
 
 // recordPattern は 1 つのパターンを全単位に当てて、Python の記録と同じ形にする。
-func recordPattern(p *Pattern, units []unit) (digest string, matchedUnits, matches int, err error) {
+func recordPattern(p *Pattern, units []unit) (digest string, matchedUnits, matches int, windows *oracle.WindowDigest, err error) {
 	d := oracle.NewDigest()
+	windows = oracle.NewWindowDigest()
 	for _, u := range units {
 		ms, ferr := p.Finditer(u.text, 0, NoEnd)
 		if ferr != nil {
-			return "", 0, 0, ferr
+			return "", 0, 0, nil, ferr
 		}
 		if len(ms) == 0 {
 			continue
+		}
+		if matchedUnits < oracle.WindowUnits {
+			if err := recordWindows(windows, p, u, ms[0]); err != nil {
+				return "", 0, 0, nil, err
+			}
 		}
 		matchedUnits++
 		matches += len(ms)
@@ -69,7 +75,32 @@ func recordPattern(p *Pattern, units []unit) (digest string, matchedUnits, match
 			d.Match(m.spans...)
 		}
 	}
-	return d.Sum(), matchedUnits, matches, nil
+	return d.Sum(), matchedUnits, matches, windows, nil
+}
+
+// recordWindows は最初の一致のまわりの窓で search と match を呼び、結果を Python の記録と同じ並べ方で足す。
+func recordWindows(w *oracle.WindowDigest, p *Pattern, u unit, first *Match) error {
+	poss, endposs := oracle.WindowBounds(first.spans[0], first.spans[1], u.text.Len())
+	for _, pos := range poss {
+		for _, endpos := range endposs {
+			for _, op := range []string{"search", "match"} {
+				call := p.Search
+				if op == "match" {
+					call = p.Match
+				}
+				m, err := call(u.text, pos, endpos)
+				if err != nil {
+					return err
+				}
+				var spans []int
+				if m != nil {
+					spans = m.spans
+				}
+				w.Row(u.key, pos, endpos, op, spans)
+			}
+		}
+	}
+	return nil
 }
 
 // 本家の道具が実際に使った全パターンを、全入力の行と全文に当てた一致 (位置・長さ・グループ) が、Python の re と同じになること。
@@ -80,6 +111,20 @@ func TestPatternsMatchPythonRecording(t *testing.T) {
 	}
 	if len(g.Patterns) < 800 {
 		t.Fatalf("パターンの記録が %d 件しかない", len(g.Patterns))
+	}
+	static := 0
+	for _, rec := range g.Patterns {
+		if rec.Static {
+			static++
+		}
+		// 自分のグループの中から自分を参照する条件付きグループ (?(1)...) は、本家とグループの扱いがずれる (README の「揃わない範囲」)。
+		// 本家のパターンにこの形が入ったら、ずれが起きる形かを調べ直す
+		if strings.Contains(rec.Pattern, "(?(") {
+			t.Errorf("条件付きグループを含むパターンが記録にある: %q (README の揃わない範囲を見直す)", rec.Pattern)
+		}
+	}
+	if static != g.StaticPatterns || static < 90 || g.StaticCalls < static {
+		t.Fatalf("本家のソースの literal のパターンが記録に %d 個 (ast で数えた数 %d、呼び出し %d)", static, g.StaticPatterns, g.StaticCalls)
 	}
 	units := corpusUnits(t, g.Header.Corpus)
 
@@ -131,9 +176,12 @@ func checkRecord(rec oracle.PatternRecord, units []unit) string {
 	if p.Flags() != rec.CompiledFlags || p.Groups() != rec.Groups || !maps.Equal(p.GroupIndex(), rec.GroupIndex) {
 		return rec.Pattern + ": flags / groups / groupindex が Python と違う"
 	}
-	digest, matchedUnits, matches, err := recordPattern(p, units)
+	digest, matchedUnits, matches, windows, err := recordPattern(p, units)
 	if err != nil {
 		return rec.Pattern + ": " + err.Error()
+	}
+	if windows.Sum() != rec.WindowDigest || windows.Calls != rec.WindowCalls {
+		return rec.Pattern + ": 窓 (pos / endpos) つきの search / match が Python と違う (" + strconv.Itoa(windows.Calls) + " 回と " + strconv.Itoa(rec.WindowCalls) + " 回)"
 	}
 	if digest != rec.Digest || matchedUnits != rec.MatchedUnits || matches != rec.Matches {
 		return rec.Pattern + ": 一致が Python と違う (当たった単位 " + strconv.Itoa(matchedUnits) + " と " + strconv.Itoa(rec.MatchedUnits) + "、一致 " + strconv.Itoa(matches) + " と " + strconv.Itoa(rec.Matches) + ")"

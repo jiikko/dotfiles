@@ -1,6 +1,7 @@
 package pyre
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -135,21 +136,13 @@ func pyRepr(s string) string {
 
 func runeLen(s string) int { return len(pyunicode.Runes(s)) }
 
-// isIdentifier は str.isidentifier の近似 (XID_Start / XID_Continue を一般カテゴリで置き換える)。
+// isIdentifier は str.isidentifier。
 func isIdentifier(name string) bool {
 	rs := pyunicode.Runes(name)
-	if len(rs) == 0 {
+	if len(rs) == 0 || !pyunicode.IsIdentStart(rs[0]) {
 		return false
 	}
-	for i, r := range rs {
-		cat := pyunicode.Category(r)
-		start := r == '_' || strings.HasPrefix(cat, "L") || cat == "Nl"
-		cont := start || cat == "Mn" || cat == "Mc" || cat == "Nd" || cat == "Pc"
-		if i == 0 && !start || !cont {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(rs[1:], func(r rune) bool { return !pyunicode.IsIdentContinue(r) })
 }
 
 func (t *tokenizer) checkGroupName(name string, offset int) {
@@ -374,7 +367,69 @@ func parseSub(src *tokenizer, st *state, verbose bool, nested int) seq {
 	if len(items) == 1 {
 		return items[0]
 	}
-	return seq{{op: opBranch, alts: items}}
+	return mergeBranch(items)
+}
+
+// sameNode は CPython の SubPattern の要素どうしの == (re._parser._parse_sub が共通の先頭を見つける比べ方)。
+// 入れ子の SubPattern (捕獲しないグループを含む繰り返し・分岐・グループ) を持つ要素は別のオブジェクトなので、常に違うものとして扱う。
+func sameNode(a, b *node) bool {
+	if a.op != b.op {
+		return false
+	}
+	switch a.op {
+	case opLiteral, opNotLiteral:
+		return a.r == b.r
+	case opAny, opFailure:
+		return true
+	case opAt:
+		return a.at == b.at
+	case opIn:
+		return a.negate == b.negate && slices.Equal(a.items, b.items)
+	case opGroupRef:
+		return a.ref == b.ref
+	default:
+		return false
+	}
+}
+
+// mergeBranch は re._parser._parse_sub の分岐のまとめ方。全部の選択肢に共通の先頭の要素は分岐の外へ出し、
+// 残りが 1 つずつの字か集合なら 1 つの集合にする。検索の最初の字の絞り込み (searchFilter) は、この形を前提に本家の _compile_info を写す。
+func mergeBranch(items []seq) seq {
+	var out seq
+	for {
+		var prefix *node
+		same := true
+		for _, it := range items {
+			if len(it) == 0 || prefix != nil && !sameNode(it[0], prefix) {
+				same = false
+				break
+			}
+			if prefix == nil {
+				prefix = it[0]
+			}
+		}
+		if !same {
+			break
+		}
+		for i := range items {
+			items[i] = items[i][1:]
+		}
+		out = append(out, prefix)
+	}
+	var set []setItem
+	for _, it := range items {
+		switch {
+		case len(it) != 1:
+		case it[0].op == opLiteral:
+			set = append(set, setItem{kind: itemLiteral, lo: it[0].r})
+			continue
+		case it[0].op == opIn && !it[0].negate:
+			set = append(set, it[0].items...)
+			continue
+		}
+		return append(out, &node{op: opBranch, alts: items})
+	}
+	return append(out, &node{op: opIn, items: uniqItems(set)})
 }
 
 func atNode(k atKind) *node { return &node{op: opAt, at: k} }

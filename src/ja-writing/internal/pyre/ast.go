@@ -169,3 +169,16 @@ func (st *state) getWidth(s seq) width {
 	}
 	return width{min(lo, maxWidth), min(hi, maxWidth)}
 }
+
+// visit は s の全部の節点 (入れ子の中も) を、親より先に fn へ渡す。
+func visit(s seq, fn func(*node)) {
+	for _, n := range s {
+		fn(n)
+		for _, child := range []seq{n.sub, n.item, n.yes, n.no} {
+			visit(child, fn)
+		}
+		for _, alt := range n.alts {
+			visit(alt, fn)
+		}
+	}
+}

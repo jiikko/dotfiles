@@ -29,6 +29,7 @@ Go のテストは記録と突き合わせるだけで、**CI でも Python を�
    固定する commit を変えるときだけ `make pin-upstream` で一覧を取り直し、差分を読んでから commit する。
 2. **環境の固定**: `Runner` は環境変数を空から作り、`PATH` (python3 の dir と `/usr/bin:/bin`)・使い捨ての `HOME`・`TZ=UTC`・`PYTHONHASHSEED=0` だけを渡す
    (継承した `GIT_DIR` などは空から作るので入らない)。cwd と HOME は実行ごとの使い捨ての別の dir。python3 は起動時に 1 度だけ絶対パスで解決する。
+   使い捨ての dir は、上の dir に `.git`・`.yomiyasu-words`・`.yomiyasu` があると作らずに止まる (本家は cwd から上へ辿って拾うので、`TMPDIR` が repo の中だと記録が汚れる)。
    🚨 起動の形は `python3 -P -s -B -X utf8` で、`-I` ではない。`-I` は `PYTHONHASHSEED` を含む `PYTHON*` を全部無視するので、ハッシュがランダムになり、
    set の反復順に依存する出力が実行ごとに変わりうる (手元の 3.15.0 で `hash('a')` が実行ごとに違うことを確かめた)。`-P` は cwd と script の dir を `sys.path` に足さず、
    `-s` は user site を読まない。`-I` が止めたかったものは env を空から作ることと `-P -s` で止めている。
@@ -36,6 +37,8 @@ Go のテストは記録と突き合わせるだけで、**CI でも Python を�
    - **パターン** (`py/record_patterns.py`、`patterns.json`): 本家の道具を入力に通す間、`re._compile` を包んで使われた全 (パターン, フラグ) を集める (`re.compile`・`re.search` などが全部通る)。
      集めたパターンを入力の全単位 (ファイルごとの全文 `<path>#doc` と、`"\n"` で割った各行 `<path>#<行番号>`) に `finditer` で当て、パターンごとに
      全単位の一致 (位置は str の添字 = rune 単位、グループの位置つき) を並べた SHA-256 (`digest`) と、当たった単位・一致の数、最初の数単位の中身 (`sample`) を残す。
+     本家のソースの `re.xxx("文字列", フラグ)` の literal は `ast` で読み (実行しない)、道具を動かして使われなかったものもパターンに足す (`static`)。ast で数えた数と記録の数を照合し、違えば止まる。
+     パターンごとに、最初に当たった 8 単位の最初の一致のまわり (`pos` を ±1・`endpos` を ±1) の窓で `search` と `match` を呼んだ結果も SHA-256 にする (`window_digest`)。
      digest は全部の一致を縮めたもので、`internal/pyre` ができたら同じパターンを compile して `oracle.Digest` で同じ並べ方をして比べる。差が出たら `sample` で位置を見る。
    - **関数** (`py/call_function.py`、`Runner.CallFunctions`): 本家の module を import して関数に JSON の引数を渡し、戻り値か例外を JSON で返す。1 つの Python プロセスの中で順に呼ぶ。
    - **CLI** (`Runner.RunCLI`): 本家の `yomiyasu_*.py` を使い捨ての cwd (入力のファイルを置く) で動かし、stdout・stderr・rc を返す。
@@ -45,7 +48,9 @@ Go のテストは記録と突き合わせるだけで、**CI でも Python を�
      `py/record_json.py` は `json.dumps` (本家が使う組み合わせ全部)・`json.loads`・`round` を、`py/record_pystr.py` は `str` のメソッドを、決まった入力に通す。
      `unicode.json` からは `oracle/tablegen.go` が `internal/pyunicode/tables_gen.go` (生成した Go の表。手で編集しない) を作り、`TestGeneratedTablesMatchGolden` が古さを見る。
 4. **作り直し**: `make golden` (手で打つ。`make test` には含めない)。各記録に本家の commit・Python と `unicodedata` のバージョンを入れ、
-   今の環境と違えば止まる (`UPDATE=1` を付けたときだけ上書き)。記録は 2 回作って同じバイト列になったときだけ書く (所要は約 2 分)。作り直した記録の差分は commit の前に読む。
+   今の環境と違えば止まる (`UPDATE=1` を付けたときだけ上書き)。記録は `PYTHONHASHSEED` を 0 と別の値にして 2 回作り、同じバイト列になったときだけ書く (所要は約 2 分)。
+     パターンの記録だけは、文字列と並びを除いた (digest などの) 組が同じならよい。本家は語の一覧から選択肢を set で作るので、選択肢の並びと、どのパターンをいつ compile するかの順が seed で変わる。
+     記録の文字列と並びは seed 0 のもので、当たりの記録 (digest・窓の記録) は seed に依らないことを見る。作り直した記録の差分は commit の前に読む。
    - 入力の集まりを足しただけで、環境が同じなら `UPDATE=1` は要らない。
 
 ### 揃わないことを認める範囲 (この表に無い差は全部、不一致として落とす)
@@ -74,9 +79,10 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
 
 ## 記録の件数 (2026-11-13、Python 3.15.0・unicodedata 17.0.0・本家 db78b9bc)
 
-- パターン (本家が使った (パターン, フラグ) の組): **839**。うち入力に 1 回でも当たったのが 765、1 回も当たらなかったのが 74
+- パターン (本家が使った (パターン, フラグ) の組): **857** (道具を動かして集めた 839 と、本家のソースの literal 95 個のうち動かして使われなかった 18)。
+  ソースの literal は 111 呼び出し・重複を除いて 95 個。窓つきの呼び出しは 89,500 回
 - 当たった (パターン, 単位) の組: 1,624,214。一致の総数: 21,495,234 (digest に畳んでいて、記録には残らない)
-- 記録の大きさ: `patterns.json` 約 633 KB・`smoke.json` 約 3 KB・`unicode.json` 約 805 KB・`json.json` 約 1.1 MB・`pystr.json` 約 657 KB。**合計 約 3.2 MB** (目安 5 MB 以下)。
+- 記録の大きさ: `patterns.json` 約 730 KB・`smoke.json` 約 3 KB・`unicode.json` 約 876 KB・`json.json` 約 1.1 MB・`pystr.json` 約 657 KB。**合計 約 4.9 MB** (目安 5 MB 以下)。
   生成した表 `internal/pyunicode/tables_gen.go` は約 363 KB
 - 実行の件数は `go test ./oracle/` の `TestPatternGolden*` が見る。入力の集まりが 0 件・記録が無い・入力のファイル (SHA-256・行数) が記録と合わない・
   どのパターンも当たっていない・道具の run が 1 つも rc=0 で終わっていない、のどれでも落ちる
@@ -106,7 +112,14 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
     補集合の形の集合は 0xFFFF で 2 つのクラスの選択肢に割って渡す (`emitSet`。`TestZeroWidthAlternativeBeforeComplementSet`)。regexp2 を上げるときはこの迂回を外して試す。
   - パターンの記録との突き合わせ (`patterns_test.go`、2,800 万回の照合) は `-race` で時間の上限を超えるので build tag で race から外し、`make test` が race なしで別に回す。
   - 照合に時間の上限は付けない (本家に無い)。入れ子の量指定子による破局的な後戻り (`(a+)+b` など) は本家と同じく戻らない。regexp2 の後戻りの深さの上限は外してある。
-  - 揃わない範囲: `\N{名前}` (字の名前の表を持たない。`PatternError` で断る)・`isidentifier` の近似 (グループ名の検査。一般カテゴリで XID を置き換える)・
+  - 本家 (CPython) の癖を写している所: 先頭が文字の集合のパターンの search の開始位置の絞り込みは、全体のフラグの規則で引かれる (`(?a:\W)` は "É" に当たらない。`searchFilter`)。
+    空になれる本体の `{m,n}` は m 回のあとに必ず 1 回多く試す (`(a*?){1,2}` の group 1。`{m}` と `{0,n-m}` に割って書く。`unrollRepeat`)。
+    pos > endpos の `match` だけが、字を読まない空の一致を返す (`formPastEnd`。末尾の位置の判定・1 字の繰り返し・後読みは満たせない)。
+    グループ名の `isidentifier` は `unicode.json` の全コードポイントの表。
+  - 揃わない範囲 (本家のパターン 857 個に無いことは `TestPatternsMatchPythonRecording` が見る): 自分のグループの中から自分を参照する条件付きグループが、繰り返しの 2 周目に入るとき
+    (`(?:(x?(?(1)_))[^a])*` を "xyz" に search すると、Python は (0,3)、Go は (0,2))。Python は 2 周目の開き括弧の位置が前の周の閉じ括弧より後ろなら「閉じていない」と読み、regexp2 は前の周の捕獲を読む。
+    regexp2 は位置の比較を持たないので写せない。本家のパターンに `(?(` が入ったら落ちる。pos > endpos の `(?m)$` は本家が範囲の外の字を読むので、満たさない (`(?!)`) 扱い。
+  - 揃わない範囲: `\N{名前}` (字の名前の表を持たない。`PatternError` で断る)・
     `lastindex` (先読みの中のグループが後のグループより遠くまで進むときはずれうる)・IGNORECASE の後方参照 (regexp2 の大文字小文字の規則)・
     0xFFFF を超える字の範囲の `re.I` (大文字にする表が無いので、小文字化の逆写像で近似する)・DEBUG フラグは出力しない。
   - 本家の `flag-patterns.txt` の検査器が受けるパターンの部分集合は、本家のテストの例で確かめる (検査器そのものは 1074 で作る)。

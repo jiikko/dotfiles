@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"embed"
 	"encoding/json"
@@ -24,6 +25,14 @@ type Runner struct {
 	// Python は python3 の絶対パス。env を空から作るので PATH に頼らず、起動のたびに同じ実体を呼ぶ。
 	Python string
 	Tree   Tree
+	// HashSeed は PYTHONHASHSEED の値。空なら "0"。
+	HashSeed string
+}
+
+// WithHashSeed は PYTHONHASHSEED だけを変えた Runner。
+func (r Runner) WithHashSeed(seed string) Runner {
+	r.HashSeed = seed
+	return r
 }
 
 // NewRunner は今の環境の python3 を絶対パスで解決して Runner を作る。
@@ -48,10 +57,40 @@ type PyInfo struct {
 // sandbox は 1 回の実行の使い捨ての HOME と cwd と driver の置き場。cwd と HOME は別の dir にする。
 type sandbox struct{ root, cwd, home, drivers string }
 
+// upstreamMarkers は本家の道具が cwd から上へ辿って拾う名前 (git の最上位の .git・語の一覧・状態の置き場)。
+// 使い捨ての dir の上にこれがあると、本家の出力が TMPDIR の置き場所で変わり、記録がそれに汚れる。
+var upstreamMarkers = []string{".git", ".yomiyasu-words", ".yomiyasu"}
+
+// markerAbove は dir とその上の dir にある upstreamMarkers の最初のパス。無ければ空。
+func markerAbove(dir string) (string, error) {
+	for cur := dir; ; {
+		for _, name := range upstreamMarkers {
+			path := filepath.Join(cur, name)
+			if _, err := os.Lstat(path); err == nil {
+				return path, nil
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return "", fmt.Errorf("%s を調べられません: %w", path, err)
+			}
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", nil
+		}
+		cur = parent
+	}
+}
+
 func newSandbox() (sandbox, error) {
 	root, err := os.MkdirTemp("", "yomiyasu-oracle-")
 	if err != nil {
 		return sandbox{}, fmt.Errorf("使い捨ての dir を作れません: %w", err)
+	}
+	if path, err := markerAbove(root); path != "" || err != nil {
+		_ = os.RemoveAll(root)
+		if err != nil {
+			return sandbox{}, err
+		}
+		return sandbox{}, fmt.Errorf("使い捨ての dir %s の上に %s があります。本家の道具は上へ辿ってこれを拾い、記録の出力が置き場所で変わります。TMPDIR を、上に .git・.yomiyasu-words・.yomiyasu が無い場所に向けてください", root, path)
 	}
 	sb := sandbox{root: root, cwd: filepath.Join(root, "cwd"), home: filepath.Join(root, "home"), drivers: filepath.Join(root, "drivers")}
 	for _, d := range []string{sb.cwd, sb.home, sb.drivers} {
@@ -72,7 +111,7 @@ func (r Runner) env(home string) []string {
 		"PATH=" + filepath.Dir(r.Python) + ":/usr/bin:/bin",
 		"HOME=" + home,
 		"TZ=UTC",
-		"PYTHONHASHSEED=0",
+		"PYTHONHASHSEED=" + cmp.Or(r.HashSeed, "0"),
 	}
 }
 

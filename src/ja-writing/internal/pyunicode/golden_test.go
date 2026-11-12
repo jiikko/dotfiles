@@ -88,6 +88,7 @@ func TestPropertiesMatchPythonForEveryCodePoint(t *testing.T) {
 	g := loadGolden(t)
 	for name, fn := range map[string]func(rune) bool{
 		"space": IsSpace, "alpha": IsAlpha, "decimal": IsDecimal, "digit": IsDigit, "numeric": IsNumeric, "linebreak": IsLineBreak,
+		"identifier_start": IsIdentStart, "identifier_continue": IsIdentContinue,
 	} {
 		want := expand(g.Props[name])
 		count := 0

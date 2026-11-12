@@ -7,6 +7,7 @@ import (
 	"errors"
 	"hash"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -36,6 +37,43 @@ func (d *Digest) Match(spans ...int) {
 // Sum は 16 進の SHA-256 を返す。
 func (d *Digest) Sum() string { return hex.EncodeToString(d.h.Sum(nil)) }
 
+// WindowDigest は窓 (pos / endpos) つきの search / match の結果を並べて 1 つの SHA-256 にする。Python の driver (py/record_patterns.py の
+// window_digest) と同じ並べ方。窓の選び方は WindowUnits と WindowBounds にある。
+type WindowDigest struct {
+	*Digest
+	Calls int
+}
+
+// NewWindowDigest は空の WindowDigest を作る。
+func NewWindowDigest() *WindowDigest { return &WindowDigest{Digest: NewDigest()} }
+
+// Row は 1 回の呼び出しの結果を足す。spans は一致しなければ nil、一致したら start, end, 各グループの start, end。
+func (d *WindowDigest) Row(unit string, pos, endpos int, op string, spans []int) {
+	row := "-"
+	if spans != nil {
+		parts := make([]string, len(spans))
+		for i, v := range spans {
+			parts[i] = strconv.Itoa(v)
+		}
+		row = strings.Join(parts, " ")
+	}
+	_, _ = d.h.Write([]byte(unit + "|" + strconv.Itoa(pos) + "|" + strconv.Itoa(endpos) + "|" + op + "|" + row + "\n"))
+	d.Calls++
+}
+
+// WindowUnits はパターンごとに窓を当てる単位の数 (最初に当たった単位から数える)。
+const WindowUnits = 8
+
+// WindowBounds は最初の一致 [start, end) と単位の長さ length から、窓の pos と endpos の候補 (昇順・重複なし) を作る。
+func WindowBounds(start, end, length int) (poss, endposs []int) {
+	return uniqSorted(max(0, start-1), start, min(length, start+1)), uniqSorted(max(0, end-1), end, min(length, end+1))
+}
+
+func uniqSorted(vs ...int) []int {
+	slices.Sort(vs)
+	return slices.Compact(vs)
+}
+
 // PatternRecord は本家の道具が使った 1 つの (パターン, フラグ) と、入力の集まりに当てた一致の記録。
 type PatternRecord struct {
 	Pattern       string         `json:"pattern"`
@@ -47,6 +85,10 @@ type PatternRecord struct {
 	Matches       int            `json:"matches"`
 	Digest        string         `json:"digest"`
 	Sample        []SampleUnit   `json:"sample"`
+	WindowDigest  string         `json:"window_digest"`
+	WindowCalls   int            `json:"window_calls"`
+	// Static は本家のソースの re.xxx("文字列") の literal にあるパターン (道具を動かして使われなかったものも含む)。
+	Static bool `json:"static,omitempty"`
 }
 
 // SampleUnit は digest が合わなかったときに差を見るための、最初の数単位の一致 (各行は Digest.Match の spans)。
@@ -64,8 +106,11 @@ type ToolRun struct {
 
 // PatternRecording は RecordPatterns の結果。
 type PatternRecording struct {
-	Runs     []ToolRun       `json:"runs"`
-	Patterns []PatternRecord `json:"patterns"`
+	Runs []ToolRun `json:"runs"`
+	// StaticCalls は ast で数えた re.xxx("文字列") の呼び出しの数、StaticPatterns はその (パターン, フラグ) の重複を除いた数。
+	StaticCalls    int             `json:"static_calls"`
+	StaticPatterns int             `json:"static_patterns"`
+	Patterns       []PatternRecord `json:"patterns"`
 }
 
 type toolSpec struct {

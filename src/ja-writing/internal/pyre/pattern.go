@@ -21,6 +21,7 @@ const (
 	formSearch    form = iota // そのまま。どこからでも探す
 	formMatch                 // 探索の開始位置に張り付ける (match)
 	formFullmatch             // 開始位置から末尾までを覆う (fullmatch)
+	formPastEnd               // pos > endpos の match (空の一致だけ。emitter.pastEnd)
 	formAdvance               // 直前の一致が空だったときの次の探索。開始位置の空の一致を断る (Python 3.7 以降の規則)
 	formCount
 )
@@ -40,6 +41,8 @@ type Pattern struct {
 	groupNames []string
 	closeRank  []int
 	core       string
+	corePast   string // pos > endpos の match 用の core
+	filter     string // search の開始位置の絞り込み (startfilter.go)
 	forms      [formCount]compiled
 }
 
@@ -52,11 +55,18 @@ func Compile(pattern string, flags int) (*Pattern, error) {
 	}
 	st := res.state
 	var b strings.Builder
-	if err := (&emitter{st: st}).seq(&b, res.body, res.flags); err != nil {
+	em := &emitter{st: st}
+	em.explicit = em.needsExplicit(res.body)
+	if err := em.seq(&b, res.body, res.flags); err != nil {
 		return nil, err
 	}
-	p := &Pattern{
-		pattern: pattern, flags: res.flags, groups: res.groups, groupIndex: map[string]int{}, core: b.String(),
+	pastEm := &emitter{st: st, explicit: em.explicit, pastEnd: true}
+	var pastB strings.Builder
+	if err := pastEm.seq(&pastB, res.body, res.flags); err != nil {
+		return nil, err
+	}
+	p := &Pattern{corePast: pastB.String(),
+		pattern: pattern, flags: res.flags, groups: res.groups, groupIndex: map[string]int{}, core: b.String(), filter: st.searchFilter(res.body, res.flags),
 		groupNames: make([]string, res.groups+1), closeRank: closeRanks(res.body, res.groups),
 	}
 	for name, i := range st.groupDict {
@@ -105,9 +115,14 @@ func (p *Pattern) regexp(f form) (*regexp2.Regexp, error) {
 	c := &p.forms[f]
 	c.once.Do(func() {
 		src := p.core
+		if p.filter != "" && (f == formSearch || f == formAdvance) {
+			src = p.filter + "(?:" + src + ")"
+		}
 		switch f {
 		case formMatch:
 			src = `\G(?:` + src + `)`
+		case formPastEnd:
+			src = `\G(?:` + p.corePast + `)`
 		case formFullmatch:
 			src = `\G(?:` + src + `)\z`
 		case formAdvance:
@@ -262,18 +277,23 @@ func clamp(v, n int) int { return min(max(v, 0), n) }
 // run は rs[:endpos] の中で、pos から探して最初の一致を返す。
 func (p *Pattern) run(f form, t Text, pos, endpos int) (*Match, error) {
 	pos, endpos = clamp(pos, t.Len()), clamp(endpos, t.Len())
+	runes := t.runes[:endpos]
 	if pos > endpos {
-		return nil, nil
+		// 本家は pos > endpos の match だけが、字を読まない (空の) 一致を返す。search / fullmatch / finditer は一致しない
+		if f != formMatch {
+			return nil, nil
+		}
+		f, runes = formPastEnd, t.runes[:pos]
 	}
 	re, err := p.regexp(f)
 	if err != nil {
 		return nil, err
 	}
-	m, err := re.FindRunesMatchStartingAt(t.runes[:endpos], pos)
+	m, err := re.FindRunesMatchStartingAt(runes, pos)
 	if err != nil {
 		return nil, fmt.Errorf("パターン %q の照合に失敗しました: %w", p.pattern, err)
 	}
-	if m == nil {
+	if m == nil || f == formPastEnd && m.RuneLength != 0 {
 		return nil, nil
 	}
 	spans := make([]int, 2*(p.groups+1))

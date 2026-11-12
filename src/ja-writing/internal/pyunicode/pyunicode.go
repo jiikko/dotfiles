@@ -60,6 +60,12 @@ func IsDigit(r rune) bool { return inRanges(digitRanges[:], r) }
 // IsNumeric は Python の chr(r).isnumeric()。
 func IsNumeric(r rune) bool { return inRanges(numericRanges[:], r) }
 
+// IsIdentStart は Python の chr(r).isidentifier() (識別子の先頭に置ける字。'_' を含む)。
+func IsIdentStart(r rune) bool { return inRanges(identStartRanges[:], r) }
+
+// IsIdentContinue は Python の ("a" + chr(r)).isidentifier() (識別子の 2 字目以降に置ける字)。
+func IsIdentContinue(r rune) bool { return inRanges(identContinueRanges[:], r) }
+
 // IsAlnum は Python の chr(r).isalnum() (isalpha・isdecimal・isdigit・isnumeric のどれか)。re の \w は、これに '_' を足した字に当たる。
 func IsAlnum(r rune) bool { return IsAlpha(r) || IsDecimal(r) || IsDigit(r) || IsNumeric(r) }
 

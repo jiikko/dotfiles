@@ -12,6 +12,10 @@ func TestZeroWidthAlternativeBeforeComplementSet(t *testing.T) {
 		{`(?:^|;)[^,]b`, ";ab", [2]int{0, 3}},
 		{`(?:^|、)([^、]+?い)、`, "でも、これは努力じゃない、仕組み", [2]int{2, 13}},
 		{`(?:\Z|;).`, ";ab", [2]int{0, 2}},
+		{`x*[^😀]`, "x_", [2]int{0, 2}},
+		{`x|[^😀]`, "x_", [2]int{0, 1}},
+		{`(?:\A|;)[^😀]`, ";a", [2]int{0, 1}},
+		{`x*[^\U0010ffff]`, "x_", [2]int{0, 2}},
 	} {
 		m, err := MustCompile(c.pattern, 0).Search(NewText(c.text), 0, NoEnd)
 		if err != nil || m == nil {

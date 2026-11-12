@@ -3,18 +3,20 @@
 //	golden           記録を作る。記録の Python / unicodedata のバージョンか本家の commit が今と違えば止まる (UPDATE=1 で上書き)
 //	golden -pin      本家のファイルを固定の commit から取り直し、oracle/upstream.sha256 を書く
 //
-// 記録は 2 回作って同じバイト列になることを確かめてから書く。
+// 記録は PYTHONHASHSEED を変えて 2 回作り、同じバイト列になることを確かめてから書く (パターンの記録は選択肢の並びだけ違ってよい)。
 package main
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 
@@ -83,28 +85,28 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 	if err := checkEnv(p, header, update); err != nil {
 		return err
 	}
-	patterns, err := twice(func() ([]byte, error) { return buildPatterns(ctx, runner, corpus, p.words, header) })
+	patterns, err := twiceSame(runner, func(runner oracle.Runner) ([]byte, error) { return buildPatterns(ctx, runner, corpus, p.words, header) }, samePatternsIgnoringText)
 	if err != nil {
 		return fmt.Errorf("パターンの記録: %w", err)
 	}
-	smoke, err := twice(func() ([]byte, error) { return buildSmoke(ctx, runner, header.WithoutCorpus()) })
+	smoke, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildSmoke(ctx, runner, header.WithoutCorpus()) })
 	if err != nil {
 		return fmt.Errorf("関数と CLI の記録: %w", err)
 	}
 	std := header.WithoutCorpus()
-	unicode, err := twice(func() ([]byte, error) { return buildUnicode(ctx, runner, std) })
+	unicode, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildUnicode(ctx, runner, std) })
 	if err != nil {
 		return fmt.Errorf("全コードポイントの記録 (unicode): %w", err)
 	}
-	jsonRec, err := twice(func() ([]byte, error) { return buildJSON(ctx, runner, std) })
+	jsonRec, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildJSON(ctx, runner, std) })
 	if err != nil {
 		return fmt.Errorf("json の記録: %w", err)
 	}
-	pystr, err := twice(func() ([]byte, error) { return buildPystr(ctx, runner, std) })
+	pystr, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildPystr(ctx, runner, std) })
 	if err != nil {
 		return fmt.Errorf("str の記録: %w", err)
 	}
-	pyre, err := twice(func() ([]byte, error) { return buildPyre(ctx, runner, std) })
+	pyre, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildPyre(ctx, runner, std) })
 	if err != nil {
 		return fmt.Errorf("re の記録 (pyre): %w", err)
 	}
@@ -151,18 +153,26 @@ func checkEnv(p paths, now oracle.Header, update bool) error {
 	return nil
 }
 
-// twice は生成を 2 回走らせ、同じバイト列になったときだけ返す。
-func twice(gen func() ([]byte, error)) ([]byte, error) {
-	first, err := gen()
+// secondHashSeed は 2 回目の生成の PYTHONHASHSEED。0 のまま 2 回回すと、hash の順に依存する出力 (set の並び) も同じ順で出て、見つけられない。
+const secondHashSeed = "20261113"
+
+// twice は生成を 2 回、PYTHONHASHSEED を変えて走らせ、同じバイト列になったときだけ返す。
+func twice(r oracle.Runner, gen func(oracle.Runner) ([]byte, error)) ([]byte, error) {
+	return twiceSame(r, gen, bytes.Equal)
+}
+
+// twiceSame は twice の「同じ」の判定を差し替えられる形。
+func twiceSame(r oracle.Runner, gen func(oracle.Runner) ([]byte, error), same func(a, b []byte) bool) ([]byte, error) {
+	first, err := gen(r.WithHashSeed("0"))
 	if err != nil {
 		return nil, err
 	}
-	second, err := gen()
+	second, err := gen(r.WithHashSeed(secondHashSeed))
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(first, second) {
-		return nil, fmt.Errorf("同じ入力で 2 回作った記録が違います (本家の出力が決定的でない。%d バイトと %d バイト)", len(first), len(second))
+	if !same(first, second) {
+		return nil, fmt.Errorf("同じ入力で 2 回作った記録が違います (本家の出力が決定的でない。PYTHONHASHSEED の違いで出力が変わる出力が混ざっている可能性が高い。%d バイトと %d バイト)", len(first), len(second))
 	}
 	return first, nil
 }
@@ -172,7 +182,7 @@ func buildPatterns(ctx context.Context, r oracle.Runner, c oracle.Corpus, words 
 	if err != nil {
 		return nil, err
 	}
-	return oracle.MarshalPatterns(oracle.PatternsGolden{Header: h, Runs: rec.Runs, Patterns: rec.Patterns})
+	return oracle.MarshalPatterns(oracle.PatternsGolden{Header: h, Runs: rec.Runs, StaticCalls: rec.StaticCalls, StaticPatterns: rec.StaticPatterns, Patterns: rec.Patterns})
 }
 
 func buildSmoke(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, error) {
@@ -231,4 +241,35 @@ func buildPyreTables(pyre []byte) ([]byte, error) {
 		return nil, err
 	}
 	return oracle.GeneratePyreTables(g)
+}
+
+// samePatternsIgnoringText はパターンの記録 2 つが、パターンの文字列と並びを除いて同じか。本家は語の一覧から選択肢を set で作り、
+// 選択肢の並びと、どのパターンをいつ compile するかの順が PYTHONHASHSEED で変わる (文字列と並びは違うが、当たりの記録 (digest・当たった数・窓の記録) の組は同じ)。
+// 記録の文字列と並びは 1 回目 (seed 0) のもの。
+func samePatternsIgnoringText(a, b []byte) bool {
+	var ga, gb oracle.PatternsGolden
+	if json.Unmarshal(a, &ga) != nil || json.Unmarshal(b, &gb) != nil || len(ga.Patterns) != len(gb.Patterns) {
+		return false
+	}
+	canon := func(g oracle.PatternsGolden) ([]string, bool) {
+		rows := make([]string, len(g.Patterns))
+		for i, rec := range g.Patterns {
+			if !rec.Static {
+				rec.Pattern = ""
+			}
+			j, err := json.Marshal(rec)
+			if err != nil {
+				return nil, false
+			}
+			rows[i] = string(j)
+		}
+		slices.Sort(rows)
+		return rows, true
+	}
+	ra, okA := canon(ga)
+	rb, okB := canon(gb)
+	ga.Patterns, gb.Patterns = nil, nil
+	ja, err1 := json.Marshal(ga)
+	jb, err2 := json.Marshal(gb)
+	return okA && okB && err1 == nil && err2 == nil && slices.Equal(ra, rb) && bytes.Equal(ja, jb)
 }

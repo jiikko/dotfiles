@@ -37,7 +37,7 @@ func GenerateUnicodeTables(g UnicodeGolden) ([]byte, error) {
 
 	for _, p := range []struct{ key, name string }{
 		{"space", "spaceRanges"}, {"alpha", "alphaRanges"}, {"decimal", "decimalRanges"}, {"digit", "digitRanges"},
-		{"numeric", "numericRanges"}, {"linebreak", "linebreakRanges"},
+		{"numeric", "numericRanges"}, {"linebreak", "linebreakRanges"}, {"identifier_start", "identStartRanges"}, {"identifier_continue", "identContinueRanges"},
 	} {
 		rs, ok := g.Props[p.key]
 		if !ok || len(rs) == 0 {

@@ -52,9 +52,11 @@ func (h Header) EnvMismatch(now Header) string {
 
 // PatternsGolden は patterns.json の中身。
 type PatternsGolden struct {
-	Header   Header          `json:"header"`
-	Runs     []ToolRun       `json:"runs"`
-	Patterns []PatternRecord `json:"patterns"`
+	Header         Header          `json:"header"`
+	Runs           []ToolRun       `json:"runs"`
+	StaticCalls    int             `json:"static_calls"`
+	StaticPatterns int             `json:"static_patterns"`
+	Patterns       []PatternRecord `json:"patterns"`
 }
 
 // SmokeGolden は smoke.json の中身。関数と CLI の driver が動くことの確認と、1074 以降が記録を足すときの見本を兼ねる。
@@ -120,7 +122,8 @@ func MarshalPatterns(g PatternsGolden) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []byte("{\n" + header + ",\n\"runs\": " + runs + ",\n\"patterns\": " + patterns + "\n}\n"), nil
+	counts := fmt.Sprintf("\"static_calls\": %d,\n\"static_patterns\": %d", g.StaticCalls, g.StaticPatterns)
+	return []byte("{\n" + header + ",\n\"runs\": " + runs + ",\n" + counts + ",\n\"patterns\": " + patterns + "\n}\n"), nil
 }
 
 // MarshalSmoke は SmokeGolden を決まったバイト列にする。
