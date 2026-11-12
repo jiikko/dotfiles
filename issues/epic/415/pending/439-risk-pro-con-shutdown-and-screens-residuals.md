@@ -1,8 +1,12 @@
 # 439 (risk): pro-con の終了・複数の画面で、記録だけにした指摘と未確認のこと
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 記録だけにした指摘の発火と、「未確認」の節の観測 (どれも pro-con を動かしている間にしか起きない)
+
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

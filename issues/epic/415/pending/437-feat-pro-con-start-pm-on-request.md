@@ -1,8 +1,12 @@
 # 437 (feat): 新しい依頼が来たら pro-con が PM を起こして知らせる
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 本物の PM で質問を受けて答える通しの確認と、知らせの turn の途中で PM が落ちたときに自動の再開がその turn を続けるかの実測 (「残り / 未確認のリスク」)
+
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

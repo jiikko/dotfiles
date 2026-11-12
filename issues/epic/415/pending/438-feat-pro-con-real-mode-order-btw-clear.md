@@ -1,8 +1,12 @@
 # 438 (feat): 本物のモードで追加オーダー・btw・片付けを受ける
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 本物の PG の transcript を dispatcher が読んで haiku へ渡す通しの経路 (`pgOutputs` → `Ask`) と、`claude --bg` が `XDG_STATE_HOME` を受け継ぐかの実測 (「残り・未確認のリスク」)
+
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

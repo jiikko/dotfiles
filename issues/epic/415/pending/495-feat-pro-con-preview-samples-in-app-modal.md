@@ -1,10 +1,13 @@
 # 495 (feat): 見本の確認をアプリの中で — 選択肢から見本の出力をモーダルで開く (コマンドを貼り付けずに済む)
 
-> 🚨 **担当中: dotfiles-0d**（2026-09-28〜）
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 実際の PG が作った見本で使い勝手を見る (人の確認。進捗の未チェックの 1 本)
+> - claim (dotfiles-0d、2026-09-28〜) は外した。担当の session は動いている session の一覧に無い
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

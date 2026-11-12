@@ -1,10 +1,13 @@
 # 497 (feat): 完了から 1 週間たったカードを自動で消し、session と worktree は人が明示したときだけ消す
 
-> 🚨 **担当中: dotfiles-04 (1 週間の削除を予定の表へ移す)**（2026-09-28〜）
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 本物の dispatcher が新しいバージョンで `card-purge` を回し、`schedule.json` に記録が残ることの確認 (未チェックの 1 本)
+> - claim (dotfiles-04、2026-09-28〜) は外した。担当の session は動いている session の一覧に無い
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

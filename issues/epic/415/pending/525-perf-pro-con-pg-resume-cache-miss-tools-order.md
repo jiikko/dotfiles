@@ -1,8 +1,12 @@
 # 525 (perf): PG の再開がキャッシュに当たらない (tools の並びが起動ごとに揺れる。PG の書き込みの約 36%)
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 入れた後の本物の PG の再開で、cache の外れを数え直す (未チェックの 1 本。原因の続きは 546)
+
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

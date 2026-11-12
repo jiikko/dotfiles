@@ -1,8 +1,12 @@
 # 428 (feat): attach 中に人間が打った指示をカードに残す
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 本物の `claude attach` で打った文が human の印付きで transcript に入り、カードの履歴に出るかの通しの確認 (進捗の未チェックの 1 本目)
+
 起票日: 2026-09-24
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -20,7 +24,7 @@
   (ツールの結果・他 session からのメッセージは含まない)。読み方は `src/pro-con/live/transcript.go` の `parse` がすでに持っている
   (`Transcript.Prompts`)。attach の前後の時刻で絞れば、attach 中の発言だけを取れる見込み
 - 🚨 `claude --bg` の最初の依頼 (起動の引数) には human の印が付かない (last-prompt には出る)
-- attach できるのは pro-con が起動した session だけ ([424](done/424-feat-pro-con-readonly-real-backend.md) の範囲の変更)
+- attach できるのは pro-con が起動した session だけ ([424](../done/424-feat-pro-con-readonly-real-backend.md) の範囲の変更)
 
 ## 関連ファイル
 

@@ -1,8 +1,12 @@
 # 546 (research): PG の再開がキャッシュを外す残りの原因 (system prompt の EndConversation の段が gate の起動時の値で揺れる)
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 本番の PG の再開で cache が外れる原因の調べ (「次に調べること」。実験では再現せず、本番の再開が要る)
+
 起票日: 2026-09-27
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

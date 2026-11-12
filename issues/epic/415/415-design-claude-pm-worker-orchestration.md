@@ -50,7 +50,7 @@ worktree は `~/dotfiles-wt-night` を使っていた (残っていたら `git -
 | [425](done/425-research-claude-bg-remaining-measurements.md) | `claude --bg` の残りの挙動を実測する | — |
 | [426](done/426-design-pro-con-open-decisions.md) | 未決の論点を決める (論点 3 / 6 / 8 / 9 / 10 / 11) | 425 |
 | [427](427-feat-pro-con-real-pm-pg-backend.md) | 本物の PM / PG の backend (段階 3〜5) | 425 / 426 |
-| [428](428-feat-pro-con-record-attach-instructions.md) | attach 中に人間が打った指示をカードに残す | 424 の実測 |
+| [428](pending/428-feat-pro-con-record-attach-instructions.md) | attach 中に人間が打った指示をカードに残す | 424 の実測 |
 | [429](done/429-human-pro-con-try-mock-and-agent-view.md) | (human) 模擬版を触る / agent view との重なり / attach からの戻り方 | — |
 | [430](430-human-verify-bg-session-survives-reboot.md) | (human) bg session がマシンの再起動を越えて戻るか | — |
 | [431](pending/431-feat-pro-con-pg-session-settings.md) | PG・PM・取り込みの係の session の設定の正本を 1 箇所に寄せ、Opus 5.5 の読みの単価を直す (計測待ち) | 427 の前 |

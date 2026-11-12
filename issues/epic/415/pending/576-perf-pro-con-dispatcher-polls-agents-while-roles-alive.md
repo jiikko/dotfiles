@@ -1,12 +1,16 @@
 # 576 (perf): 役 (PM・取り込みの係) が生きている間、dispatcher が 3 秒ごとに `claude agents --json` を起こし続ける
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: 受け入れ条件 1・2 の実測 (本物の dispatcher での `claude agents --json` の回数と入力待ちの知らせの遅れ) と P3-a
+
 起票日: 2026-09-28
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
-[559](done/559-perf-pro-con-dispatcher-polls-claude-agents-every-tick.md) で、暇な間 (`dispatcher/idle.go` の `quiet` が真) に
+[559](../done/559-perf-pro-con-dispatcher-polls-claude-agents-every-tick.md) で、暇な間 (`dispatcher/idle.go` の `quiet` が真) に
 session の一覧を取る間隔を 3 秒から 30 秒 (`defaultQuietListEvery`) へ延ばした。ただし `quiet` は、**生きている役
 (`pm.Session != "" && !pm.Stopped`) が 1 つでも居ると偽**を返す。PM を常駐させる使い方では、カードが全部完了していても
 Tick (`dispatchercmd.go` の `dispatcherInterval` = 3 秒) のたびに `claude agents --json` (`agents/agents.go` の `execAgents`)
@@ -78,9 +82,9 @@ haiku の bg session を 1 本 (`--permission-mode default`・`touch` を頼ん�
 
 ## 関連
 
-- [559](done/559-perf-pro-con-dispatcher-polls-claude-agents-every-tick.md): 暇な間の間引き。本 issue はその「再開の trigger」
-- [502](done/502-perf-pro-con-agents-list-spawned-per-screen-and-dispatcher.md): 画面の側の呼び出し
-- [500](../../done/500-bug-macos-kernel-zone-leak-from-tmux-clients.md): カーネルのメモリの漏れ。559 は `claude agents` の多さを容疑の 1 つに挙げていた
+- [559](../done/559-perf-pro-con-dispatcher-polls-claude-agents-every-tick.md): 暇な間の間引き。本 issue はその「再開の trigger」
+- [502](../done/502-perf-pro-con-agents-list-spawned-per-screen-and-dispatcher.md): 画面の側の呼び出し
+- [500](../../../done/500-bug-macos-kernel-zone-leak-from-tmux-clients.md): カーネルのメモリの漏れ。559 は `claude agents` の多さを容疑の 1 つに挙げていた
 
 ## 進捗
 

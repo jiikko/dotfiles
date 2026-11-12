@@ -1,8 +1,12 @@
 # 440 (research): pro-con を Claude が使って pro-con を開発する (dogfooding) — 手触りと改善案
 
+> **pending (2026-11-12) の理由と再開の trigger**: 実装は済んでいて、残りは本物の pro-con を動かさないと確かめられない。pro-con は今は使っていない (`src/pro-con/README.md`)。
+> - 再開の trigger: pro-con をまた使い始めたとき
+> - 残り: dogfooding の記録の続きと、stop の直後の `--resume` が出す `note:` の行き先の確認 (未チェックの 1 本)
+
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -30,7 +34,7 @@ PG は変異 13 本・敵対的レビュー 1 周を自分で回し、残り (�
 - 🚨 **終了で止まったものを「止まっていない」と数え続けた** (実バグ)。作業を終えた session は `claude stop` 後も state が `done` のまま pid 無し。
   → 01dbb3b0 で直した (止まった = pid 無し かつ working でない)。直したものの `--stop` は 1 秒で ok
 - ✗ PM の CLI にカードを読む口が無い: `card add` は受付の箱の依頼 ID だけを返し、カード ID (C-002) が分からない。状態・PG の出力・質問は
-  cards.json を python で読んだ。状態の変化も 5 秒ごとに読んで待った → [442](done/442-feat-pro-con-card-list-show-wait.md)
+  cards.json を python で読んだ。状態の変化も 5 秒ごとに読んで待った → [442](../done/442-feat-pro-con-card-list-show-wait.md)
 - ✗ **PM がレビューで差し戻す口が無い**: 操作は add / plan / ask / answer / review / close / run / guide だけで、レビュー待ちのカードに
   直してほしい点を渡して PG を再開する操作が無い。今回は取り込めたが、直してほしい点 (下の「履歴の順」) を PG に返せなかった
 - ✗ 完了にしたカードの PG の session が止まらない (state done・pid ありの idle のまま残る)。終了のときには止まるが、それまでプロセスが残る

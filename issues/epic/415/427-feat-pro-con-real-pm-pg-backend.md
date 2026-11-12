@@ -195,7 +195,7 @@
     - 6 周目 P1: SIGTERM が画面と dispatcher に同時に届く (ログアウト・pkill) と、閉じる途中の画面を「開いている」と数えて止めずに抜ける →
       5 秒の間、画面が消えるのを待ってから決める。P2: 3 分の上限を 2 段で分け合って最後の確かめに届かない → 段ごとに別の上限
     - 7 周目 P1: 起動・再開の途中で取り込んだ session (記録にまだ無い) の停止が失敗しても ok になる → カードの側で止めようとした session も確かめる段に渡す
-    - 記録のみ・未確認の指摘は [439](439-risk-pro-con-shutdown-and-screens-residuals.md) に集めた
+    - 記録のみ・未確認の指摘は [439](pending/439-risk-pro-con-shutdown-and-screens-residuals.md) に集めた
   - 🚨 dogfooding (440) で本物の不具合: 作業を終えた session (state: done) は claude stop 後も state が done のまま pid が無くなる。
     state == stopped だけを見ていた判定が止まったものを止め直し続けた (手で起動した dispatcher の --stop が rc=1)。
     → 止まった = pid 無し かつ working でない、に直した (01dbb3b0)。直したものの --stop は本物の置き場で 1 秒・ok。
