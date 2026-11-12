@@ -15,6 +15,7 @@
 # 測るのは env -i の起動から python3 の終了までの壁時計の時間。使い捨ての cwd・HOME の用意と入力の写しは測る区間の外に置く。
 # Runner の RunCLI は run ごとに木を写し直すが、ここでは 1 回写した木を全 run で使う (写しは測りたい処理ではないため)。
 set -euo pipefail
+unset CDPATH
 
 [ "${BASH_VERSINFO[0]}" -ge 5 ] || { echo "pybench: bash 5 以上が要る (EPOCHREALTIME を使う)" >&2; exit 2; }
 
@@ -84,7 +85,7 @@ done
 # ケースが名指しする入力が manifest に在るかを確かめる (名前がずれた run を測らない)
 for c in "${cases[@]}"; do
   for a in $c; do
-    case "$a" in in/*) cut -f1 "$inputs/manifest.tsv" | grep -qxF "${a#in/}" || { echo "pybench: ケースの入力 ${a#in/} が manifest.tsv に無い" >&2; exit 2; } ;; esac
+    case "$a" in in/*) grep -qxF "${a#in/}" <<< "$(cut -f1 "$inputs/manifest.tsv")" || { echo "pybench: ケースの入力 ${a#in/} が manifest.tsv に無い" >&2; exit 2; } ;; esac
   done
 done
 
