@@ -1,5 +1,7 @@
 # 1073 (feat): yomiyasu の Go 実装の土台 (module・Python の re を写す層・本家の出力を正解にする検査)
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-12〜）
+
 起票日: 2026-11-12
 
 ## 概要
