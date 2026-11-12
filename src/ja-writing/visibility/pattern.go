@@ -221,12 +221,12 @@ func patternSequence(pattern []rune, index, depth int) (int, [][]string, int, *E
 		}
 		// 必ず当たる字 (? と {0,n} の外で、先読み・後読みの外の字)
 		if atomKind == "lit" && !optional {
-			run.WriteString(string(literal))
+			run.WriteString(str([]rune{literal}))
 			if repeated {
 				// x{m,n} の x は 2 回以上続くことがあるので、x の前と後で字の並びを分ける (ba{2}c は ba と ac)。
 				runs = append(runs, run.String())
 				run.Reset()
-				run.WriteString(string(literal))
+				run.WriteString(str([]rune{literal}))
 			}
 		} else {
 			flush()

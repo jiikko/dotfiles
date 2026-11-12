@@ -39,6 +39,9 @@ var htmlBlockTags = func() map[string]bool {
 }()
 
 // 本家は閉じ方の正規表現を行ごとに compile する (re のキャッシュが効く)。同じパターンを何度も pyre.Compile しない。
+// 上限 (本家の re は 512 件を超えると捨てる) を置かない理由: 鍵は HTML ブロックの固定の終わりの形と、柵の (字, 幅) の組だけ。柵の幅は別々の幅が n 種類あるなら、
+// その柵の行の長さの合計が n^2/2 以上になるので、読んだ文書の字数 L に対して幅は √(2L) 種類までで、字は ` と ~ の 2 つ。CLI は 1 回の実行で読む文書が限られるので、
+// 増える量は読んだ量の平方根。常駐して無数の文書を読む使い方を足すなら、そのとき上限を置く。
 var (
 	compiledMu    sync.Mutex
 	compiledCache = map[string]*pyre.Pattern{}
@@ -556,7 +559,14 @@ func kindSet(kinds []string) (map[string]bool, string) {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	return set, strings.Join(names, "\x00")
+	// 名前を区切り文字でつなぐと、名前に区切りを含む 1 つの種類 ("a\x00b") が 2 つの種類 ("a" と "b") の集合と同じ鍵になる。長さを前に付けて、集合と鍵を 1 対 1 にする。
+	var key strings.Builder
+	for _, n := range names {
+		key.WriteString(strconv.Itoa(len(n)))
+		key.WriteByte(':')
+		key.WriteString(n)
+	}
+	return set, key.String()
 }
 
 func (a *Analysis) masksFor(kinds []string) masks {

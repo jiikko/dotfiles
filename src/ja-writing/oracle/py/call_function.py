@@ -8,6 +8,7 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 1074 で足したもの (どれも足さなければ、前と一字も同じ出力):
 - "digest": true の呼び出しは、結果 (か例外) を正規の JSON (sort_keys・ensure_ascii・separators=(",", ":")・re.Pattern は {"flags", "pattern"}) にして
   SHA-256 の先頭 8 字を "digest" に入れ、例外だったときは "raised": true も足す。"keep": true も付けたときだけ、普通の result / exception も添える (大きな結果を記録に入れない)。
+  fixture の操作 ("op") が例外になったときは keep が無くても exception を添える (呼び出し側が、どの操作がなぜ失敗したかを出して止まるため)。
 - "get": true の呼び出しは関数を呼ばずに、module の属性 (定数) そのものを返す。
 - "save": "名前" の呼び出しは、戻り値の Python の値を覚える。args の中の {"$ref": "名前"} が、その値になる (JSON を経由しない)。
 - args の中の {"$bytes_b64": "..."} は bytes、{"$str": [コードポイント...]} は str (単独のサロゲートも持てる)。
@@ -83,7 +84,7 @@ def run_op(op):
     if kind == "write":
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if "bytes_b64" in op:
-            data = base64.b64decode(op["bytes_b64"])
+            data = base64.b64decode(op["bytes_b64"]).replace(ROOT_TOKEN.encode("ascii"), os.fsencode(ROOT))
         else:
             data = resolve(op.get("content", "")).encode("utf-8", "surrogatepass")
         with open(path, "wb") as handle:
@@ -151,7 +152,7 @@ for call in plan["calls"]:
         entry = {"digest": hashlib.sha256(canonical(record).encode("ascii")).hexdigest()[:8]}
         if "exception" in record:
             entry["raised"] = True
-        if call.get("keep"):
+        if call.get("keep") or ("op" in call and "exception" in record):
             entry.update(record)
         out.append(entry)
     else:

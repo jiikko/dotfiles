@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -128,6 +129,19 @@ func (f *Fixture) Restore() error {
 	return os.Chdir(f.Root)
 }
 
+// WriteData は op write が書くバイト列。BytesB64 があればそれ (中の RootToken は作業フォルダの実パスのバイト列になる)、なければ Content の UTF-8。
+// 不正な UTF-8 を含む中身は JSON の文字列を通すと U+FFFD になって Python に別のバイト列が渡るので、BytesB64 で渡す。
+func (f *Fixture) WriteData(op Op) ([]byte, error) {
+	if op.BytesB64 == "" {
+		return []byte(f.Sub(op.Content)), nil
+	}
+	data, err := base64.StdEncoding.DecodeString(op.BytesB64)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.ReplaceAll(data, []byte(RootToken), []byte(f.Root)), nil
+}
+
 // Apply は op 1 つを実行する。
 func (f *Fixture) Apply(ctx context.Context, op Op) error {
 	path := f.Sub(op.Path)
@@ -136,12 +150,9 @@ func (f *Fixture) Apply(ctx context.Context, op Op) error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
-		data := []byte(f.Sub(op.Content))
-		if op.BytesB64 != "" {
-			var err error
-			if data, err = base64.StdEncoding.DecodeString(op.BytesB64); err != nil {
-				return err
-			}
+		data, err := f.WriteData(op)
+		if err != nil {
+			return err
 		}
 		return os.WriteFile(path, data, 0o644)
 	case "mkdir":

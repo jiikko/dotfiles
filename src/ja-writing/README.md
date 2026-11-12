@@ -123,8 +123,8 @@ digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=("
 | 手書きの Markdown (105 件) | 柵・frontmatter・HTML ブロックの種類・setext・表・リスト・引用・参照定義・インラインのコード / リンク / 画像 / 裸の URL・CRLF と CR・`<ſcript>` (本家が `AssertionError` になる形) など。結果そのものを残す |
 | 乱数で組んだ入力 (400 文書・4,000 のインライン・3,000 の参照定義) | 解析の状態遷移を行の部品の組み合わせで通す。種は固定 (`xorshift`) |
 | `decode_source` の bytes | 全 256 バイト・先頭と継続の組み合わせ・途中で終わる形・サロゲートの形 (誤りの範囲と理由が CPython と同じ) |
-| `check_pattern` | 手書き 409 (受ける形と、断る理由ごとの形) と、26 字の全部の 3 字までの並び (18,278) と 11 字の全部の 4 字の並び (14,641。`re.compile` の誤りも含む) |
-| 語の一覧 | 本物の `git init` / `git worktree add` で作る 3 つの形 (通常の checkout・linked worktree・`--separate-git-dir` と `core.worktree` の共有の checkout)・手で書いた git の形 46 種 (config・config.worktree・commondir・.git ファイル)・`--words` の読み方と `~` の展開 (HOME を変えて)・`load_words` の中身の 63 種 (BOM・CRLF・1 万行・UTF-8 の誤り・タブ・正規表現の上限・フォルダ・リンクの輪・読めない権限)・`words_context` / `words_label` |
+| `check_pattern` | 手書き 409 (受ける形と、断る理由ごとの形)・単独のサロゲートを含む 7 (`Required` がサロゲートを保つ) と、26 字の全部の 3 字までの並び (18,278) と 11 字の全部の 4 字の並び (14,641。`re.compile` の誤りも含む) |
+| 語の一覧 | 本物の `git init` / `git worktree add` で作る 3 つの形 (通常の checkout・linked worktree・`--separate-git-dir` と `core.worktree` の共有の checkout)・手で書いた git の形 52 種 (config・config.worktree・commondir・.git ファイル。config の行を割る U+0085・U+2028・U+2029・VT・FF・FS・GS・RS を含む)・`--words` の読み方と `~` の展開 (HOME を変えて)・`load_words` の中身の 66 種 (BOM・CRLF・1 万行・行の中の U+0085・U+2028・U+2029 などは行を割らない・UTF-8 の誤り・タブ・正規表現の上限・フォルダ・リンクの輪・読めない権限)・`words_context` / `words_label` |
 | パスと cwd | `input_path_problem` (点で始まる名前・作業フォルダの外・symlink・輪・cwd が symlink の先・cwd が消えたとき)・`absolute_path`・`current_directory`・`unicode_whitespace` (U+0000〜U+3100 の全部と端の字)・定数 17 個 |
 
 - fixture は `oracle.Op` の並びで、Python の driver と Go の `oracle.Fixture` が同じ操作をする。git の引数は `subproc.GitArgs` を通し、環境変数は空から作る (`oracle.GitEnv`。利用者の git の設定・認証を持ち込まない)。
@@ -132,14 +132,17 @@ digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=("
 - 空振りを止める検査 (`TestRecordingCoversEveryPublicFunction`): 公開面の関数ごとに記録の件数が 0 でないこと、例外を投げうる関数は、例外になった呼び出しと成功した呼び出しの両方があること、記録に公開面の一覧 (`oracle.VisFunctions`) にない名前がないこと。
 - 保存できなかった `save` (例外で終わった呼び出し) の `Ref` は `KeyError` になる。case の名前を付けた名前にしてあるので、別の case の同じ名前の値を読むことはない (`scopeRefs`)。
 
-記録の関数の件数 (呼び出し数 / 例外になった数): `analyze_markdown` 5,685 / 4・`line_visible_text` 75,709 / 20・`range_overlaps_protected` 67,848 / 2・`inline_protected_spans` 38,165 / 0・`reference_definition_end` 3,241 / 6・
-`unicode_whitespace` 12,574 / 0・`decode_source` 2,413 / 1,299・`normalize_doc_type` 30 / 8・`normalize_reader` 10 / 4・`context_label` 25 / 16・`find_words_folder` 253 / 79・`load_words` 90 / 41・`resolve_words` 16 / 4・
-`words_context` 6 / 0・`words_label` 6 / 0・`check_pattern` 33,328 / 27,764・`input_path_problem` 89 / 0・`absolute_path` 40 / 1・`current_directory` 5 / 0・定数 17 個 (各 1)。
+記録の関数の件数 (呼び出し数 / 例外になった数): `analyze_markdown` 5,689 / 4・`line_visible_text` 75,719 / 20・`range_overlaps_protected` 67,853 / 2・`inline_protected_spans` 38,166 / 0・`reference_definition_end` 3,241 / 6・
+`unicode_whitespace` 12,574 / 0・`decode_source` 2,413 / 1,299・`normalize_doc_type` 30 / 8・`normalize_reader` 10 / 4・`context_label` 25 / 16・`find_words_folder` 268 / 79・`load_words` 93 / 42・`resolve_words` 16 / 4・
+`words_context` 6 / 0・`words_label` 6 / 0・`check_pattern` 33,335 / 27,764・`input_path_problem` 92 / 0・`absolute_path` 40 / 1・`current_directory` 5 / 0・定数 17 個 (各 1)。
 (`line_visible_text` と `range_overlaps_protected` の例外には、解析が例外で終わった後の `Ref` の `KeyError` が混ざる。)
 
 ### 揃わない範囲
 
 - Windows の分岐 (ドライブ・`USERPROFILE`) は写さない (macOS だけが対象)。
+- `HOME` が未設定のときの `~` の展開 (本家は `pwd.getpwuid(os.getuid()).pw_dir`、Go は `os/user.LookupId`) は記録に入れない: 結果に実行した人のホームのパスが入り、機械ごとに記録が変わる。
+  手元 (macOS・uid 501) では、`HOME` を外して `CGO_ENABLED=1` と `0` のどちらでも、両方が同じホームを返すことを確かめた。環境を作れる範囲 (HOME を変える・空にする) は記録の `option` の case にある。
+- `words_context` と `words_label` に `None` を渡す形は写さない: 本家の注釈は `dict` で (`Optional` ではない)、本家の呼び出し元 (check・lint・diff の 7 か所) は `words is not None` の後にだけ呼ぶ。Python は `TypeError` で落ちるだけで、契約ではない。
 - 関数の引数の型は、本家の注釈どおりの型だけを受ける (`normalize_doc_type` の引数は str か None だけで、`str(value)` で文字列になる int などは受けない。`decode_source` は str か bytes で、bytearray は別に持たない)。
 - `OSError.strerror` の文は macOS の `strerror(3)` の表で持つ (EPERM・EIO・EACCES・EISDIR・ELOOP・ENAMETOOLONG など 20 種。記録で確かめたのは EISDIR・ELOOP・EACCES・ENAMETOOLONG。ENOENT と ENOTDIR は文を出さず、ファイルが無いものとして扱う)。表に無い errno は `Unknown error: N`。
 - `str.lower()` は、ASCII の語と比べる用途に限って写す (`pyLowerASCII`: 小文字化で ASCII になる非 ASCII の字は U+212A だけ)。ほかの用途には使えない。
@@ -157,19 +160,19 @@ digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=("
 上限ちょうど (合計 512 を通し、513 を断る) の境界は記録の `words-load` の case (`patterns-cost-512`・`patterns-cost-513-total`・`patterns-cost-total-over-line2`・`patterns-cost-single-over`) で本家と同じ判定になることを見ている。テストの合否には時間を使わない。
 
 `go run ./oracle/cmd/worstcase -rounds 5 -shape <組>` が、同じ入力 (`a` が 99,999 字と `d` の 1 行) を Python (本家の `check_pattern` と `search`) と Go (`CheckPattern` と `internal/pyre` の `Search`) で、5 回ずつ交互に測る
-(奇数回目は Go を先に起こす。毎回新しいプロセス)。起動は、壁時計から driver (Go は子プロセスの `-child`) の中の所要を引いた値で、インタプリタ・バイナリの起動と module の初期化を含む。
-2026-11-13、Apple M3 Max・macOS・Python 3.15.0・go 1.26.0 (秒。最小 / 中央 / 最大):
+(奇数回目は Go を先に起こす。毎回新しいプロセス)。起動は、壁時計から driver (Go は子プロセスの `-child`) の中の所要を引いた値で、Python はインタプリタの起動と本家の module の import、Go はバイナリの起動と package の初期化を含む (driver の中の所要は、どちらも import・初期化の後から測る)。
+2026-11-13 (他の session が走っていて load average 12〜15 のときの測定)、Apple M3 Max・macOS・Python 3.15.0・go 1.26.0 (秒。最小 / 中央 / 最大):
 
 | 組 (試す数の合計はどれも 512) | Python の起動 | Python の search | Go の起動 | Go の search |
 |---|---|---|---|---|
-| `single`: `a{0,7}?[ab]{0,7}?[ac]{0,7}?d` (最短一致を 3 つ重ねる。字の集合を変えて畳めなくした) | 0.021 / 0.021 / 0.022 | 0.425 / 0.431 / 0.434 | 0.008 / 0.008 / 0.010 | 0.234 / 0.236 / 0.241 |
-| `word`: `\w{0,7}?[a-z]{0,7}?\S{0,7}?d` (`\w` と `\S` は Python の字の集合を範囲の列に開くので集合が大きい) | 0.021 / 0.022 / 0.023 | 0.483 / 0.487 / 0.519 | 0.008 / 0.008 / 0.008 | 0.638 / 0.640 / 0.643 |
-| `greedy`: `a{0,7}[ab]{0,7}[ac]{0,7}d` (最長一致) | 0.020 / 0.021 / 0.021 | 0.154 / 0.156 / 0.158 | 0.008 / 0.008 / 0.008 | 0.051 / 0.051 / 0.051 |
-| `split`: 試す数 64 のパターン 8 つ (合計 512) | 0.021 / 0.021 / 0.022 | 0.365 / 0.373 / 0.383 | 0.008 / 0.008 / 0.008 | 0.250 / 0.251 / 0.252 |
+| `single`: `a{0,7}?[ab]{0,7}?[ac]{0,7}?d` (最短一致を 3 つ重ねる。字の集合を変えて畳めなくした) | 0.035 / 0.037 / 0.046 | 0.425 / 0.442 / 0.447 | 0.009 / 0.009 / 0.010 | 0.237 / 0.241 / 0.242 |
+| `word`: `\w{0,7}?[a-z]{0,7}?\S{0,7}?d` (`\w` と `\S` は Python の字の集合を範囲の列に開くので集合が大きい) | 0.036 / 0.037 / 0.039 | 0.475 / 0.483 / 0.491 | 0.008 / 0.009 / 0.009 | 0.645 / 0.657 / 0.674 |
+| `greedy`: `a{0,7}[ab]{0,7}[ac]{0,7}d` (最長一致) | 0.036 / 0.038 / 0.040 | 0.158 / 0.161 / 0.164 | 0.008 / 0.010 / 0.010 | 0.052 / 0.053 / 0.054 |
+| `split`: 試す数 64 のパターン 8 つ (合計 512) | 0.036 / 0.037 / 0.039 | 0.374 / 0.378 / 0.384 | 0.008 / 0.009 / 0.009 | 0.253 / 0.254 / 0.258 |
 
-`check_pattern` (compile) はどちらも 1 ms 未満。本家の module の import は 0.012〜0.013 秒 (Python の起動に含まれる)。
+`check_pattern` (compile) はどちらも 1 ms 未満。本家の module の import は 0.013〜0.014 秒 (Python の起動に含まれる)。
 `a{0,7}?a{0,7}?a{0,7}?d` のように同じ字の繰り返しを重ねる形は、regexp2 が 1 つの繰り返しに畳んで 0.005 秒で終わり、Python は 0.31 秒かかった (`-shape merged`)。
-**判断: 上限は 512 のまま据え置く。** Go で測った最悪は `word` の 0.64 秒 (Python の同じ組は 0.49 秒で 1.3 倍) で、本家が上限を決めた根拠の約 0.7 秒を超えない。
+**判断: 上限は 512 のまま据え置く。** Go で測った最悪は `word` の 0.66 秒 (Python の同じ組は 0.48 秒で 1.4 倍) で、本家が上限を決めた根拠の約 0.7 秒を超えない。
 測ったのは macOS の手元 1 台だけで、CI の macOS runner では測っていない (本家が上限を決めた 1,024 は CI の Linux で 2 秒を超えたという記録があるが、この repo の CI は macOS)。
 lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で行を絞ってから正規表現を当てるなら、最悪の行はさらに限られる (未確認: 1075 の実装次第)。
 

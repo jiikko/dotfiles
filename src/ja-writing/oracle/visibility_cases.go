@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"subproc"
 )
@@ -316,6 +317,12 @@ func surrogateCases() []VisCase {
 		calls = append(calls, vkeep(vsave(vcall("analyze_markdown", t), name)), vkeep(vcall("inline_protected_spans", t)),
 			vkeep(vcall("line_visible_text", Ref(name), 1)), vkeep(vcall("decode_source", t)), vkeep(vcall("range_overlaps_protected", Ref(name), 0, len(t))))
 	}
+	// 単独のサロゲートを含むパターン。必須の字の列 (Required) と誤りの文は、サロゲートを U+FFFD に変えずに持ち続ける。
+	for _, p := range []Cps{
+		cps("a", hi, "b"), cps(hi, "{2}x"), cps("x", hi, "{1,2}y"), cps("a", hi, lo, "b"), cps("\\", hi), cps("(?:", hi, ")x"), cps("[", hi, "-", lo, "]x"),
+	} {
+		calls = append(calls, vkeep(vcall("check_pattern", p)))
+	}
 	return []VisCase{{Name: "surrogates", Calls: calls}}
 }
 
@@ -334,6 +341,15 @@ func indexErrorCases() []VisCase {
 	for _, kinds := range []any{nil, []any{}, []any{"inline_code"}, []any{"inline_code", "escape"}, []any{"escape", "inline_code"}, []any{"nope"}, []any{"link_destination"}} {
 		for range 2 {
 			calls = append(calls, vkeep(vcall("line_visible_text", Ref("p"), 1, kinds)), vkeep(vcall("range_overlaps_protected", Ref("p"), 0, 3, kinds)), vkeep(vcall("range_overlaps_protected", Ref("p"), 3, 4, kinds)))
+		}
+	}
+	// 種類の集合は覚えの鍵になる。名前に NUL を含む 1 つの種類 ("escape\x00inline_code") は、2 つの種類の集合と別物。どちらを先に問うても同じ答えになる。
+	both, joined := []any{"escape", "inline_code"}, []any{"escape\x00inline_code"}
+	for i, order := range [][][]any{{both, joined}, {joined, both}} {
+		name := "nul" + itoa3(i)
+		calls = append(calls, vsave(vcall("analyze_markdown", "`x`"), name))
+		for _, kinds := range order {
+			calls = append(calls, vkeep(vcall("line_visible_text", Ref(name), 1, kinds)), vkeep(vcall("range_overlaps_protected", Ref(name), 0, 3, kinds)))
 		}
 	}
 	return []VisCase{{Name: "analysis-queries", Calls: calls}}
@@ -429,7 +445,11 @@ func (f *fixtureCase) dir(rel ...string) string {
 	return strings.Join(append([]string{RootToken, f.name}, rel...), "/")
 }
 
+// op は fixture の操作を足す。不正な UTF-8 を含む write の中身は、JSON の文字列を通ると U+FFFD になるので BytesB64 に直す。
 func (f *fixtureCase) op(o Op) *fixtureCase {
+	if o.Kind == "write" && o.BytesB64 == "" && !utf8.ValidString(o.Content) {
+		o.BytesB64, o.Content = base64.StdEncoding.EncodeToString([]byte(o.Content)), ""
+	}
 	f.calls = append(f.calls, vop(o))
 	return f
 }

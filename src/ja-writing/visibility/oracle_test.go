@@ -683,7 +683,7 @@ func TestRecordingCoversEveryPublicFunction(t *testing.T) {
 			t.Errorf("記録に、公開面の一覧 (oracle.VisFunctions) にない名前 %s がある", f.Name)
 		}
 	}
-	// 記録のどの case も、呼び出しが 1 件以上。操作 (fixture を作る・環境を戻す) の失敗は、記録に残らず case の作り直しで止まる。
+	// 記録のどの case も、呼び出しが 1 件以上。操作 (fixture を作る・環境を戻す) の失敗は記録に入らない。記録の作り直し (oracle.RecordVisibility) が case 名と操作の位置を出して止まる。
 	for _, c := range g.Cases {
 		if c.Calls == 0 {
 			t.Errorf("case %s の呼び出しが 0 件", c.Name)

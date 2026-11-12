@@ -22,8 +22,8 @@ type PatternTiming struct {
 	Matched bool    `json:"matched"`
 }
 
-// TimingResult は 1 回の Python のプロセスの測定。Inner は driver の中の全体、Import は本家の module の import、Wall は呼び出し側から見た起動から終了までの壁時計。
-// 起動の時間は Wall から Inner を引いた値 (インタプリタの起動と、driver が標準入力を読む前)。
+// TimingResult は 1 回の Python のプロセスの測定。Inner は driver の中の、本家の module の import の後から終わりまで、Import は本家の module の import、Wall は呼び出し側から見た起動から終了までの壁時計。
+// 起動の時間は Wall から Inner を引いた値 (インタプリタの起動と、driver が標準入力を読む間と、本家の module の import)。
 type TimingResult struct {
 	Inner    float64         `json:"inner"`
 	Import   float64         `json:"import"`
