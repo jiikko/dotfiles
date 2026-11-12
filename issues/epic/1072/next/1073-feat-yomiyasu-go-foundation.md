@@ -1,1 +1,0 @@
-../1073-feat-yomiyasu-go-foundation.md

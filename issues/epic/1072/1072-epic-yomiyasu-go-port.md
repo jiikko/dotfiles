@@ -19,7 +19,7 @@ dotfiles では skill・src の module・bin のコマンドを同じ名前に�
 
 | issue | 内容 |
 |---|---|
-| [1073](1073-feat-yomiyasu-go-foundation.md) | 土台: module・Python の `re` を写す層・本家の出力を正解として記録する仕組み・CLI と CI の配線 |
+| [1073](done/1073-feat-yomiyasu-go-foundation.md) | 土台: module・Python の `re` を写す層・本家の出力を正解として記録する仕組み・CLI と CI の配線 |
 | [1074](1074-feat-yomiyasu-go-markdown-visibility.md) | markdown_visibility (Markdown の見える字・保護する範囲・語の一覧) |
 | [1075](1075-feat-yomiyasu-go-lint.md) | lint (40 規則) |
 | [1076](1076-feat-yomiyasu-go-diff.md) | diff (推敲の前後を比べて意味のずれを出す) |
