@@ -16,6 +16,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slack-bbs/source"
 )
@@ -679,7 +680,7 @@ func (p *Picker) tabsLine() string {
 		p.tab = t
 		text := fmt.Sprintf(" %s (%d) ", label, len(p.visible()))
 		if t == cur {
-			text = "\x1b[7m" + text + "\x1b[27m"
+			text = sgr.Reverse + text + sgr.ReverseOff
 		}
 		parts = append(parts, text)
 	}

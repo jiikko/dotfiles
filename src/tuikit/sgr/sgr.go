@@ -14,6 +14,12 @@ const (
 	Italic    = "\x1b[3m"
 	Underline = "\x1b[4m"
 	Reverse   = "\x1b[7m"
+	// BoldOff は太字と Dim の両方を戻す (SGR 22 は太字だけを戻す番号を持たない)。
+	BoldOff      = "\x1b[22m"
+	UnderlineOff = "\x1b[24m"
+	ReverseOff   = "\x1b[27m"
+	// DefaultFg は文字色だけを端末の色へ戻す (Reset と違い、地の色と装飾は残す)。
+	DefaultFg = "\x1b[39m"
 	Strike    = "\x1b[9m"
 	Red       = "\x1b[31m"
 	Green     = "\x1b[32m"

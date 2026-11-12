@@ -21,6 +21,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/hintfit"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/spinner"
 	"github.com/jiikko/dotfiles/src/tuikit/termcaps"
 	"github.com/jiikko/dotfiles/src/tuikit/termcolor"
@@ -182,7 +183,7 @@ type pickerMsg struct {
 }
 
 // toastInfoColor は中立の知らせ (読み直しの始まり) の色: 端末の文字色。
-const toastInfoColor = "\x1b[39m"
+const toastInfoColor = sgr.DefaultFg
 
 // reload はチャンネル i の読み直しを頼み、始めたことを知らせる (終わりは loaded が知らせる)。返す Cmd は画面の状態を触らない
 // (Loader と照合用の値だけを持つ)。
@@ -1020,28 +1021,17 @@ func (m *Model) paneAs(body bool) []string {
 	saved := m.body
 	m.body = body
 	defer func() { m.body = saved }()
-	right := m.rightLines()
-	out := make([]string, 0, m.paneRows())
+	right := layout.PadTo(m.rightLines(), m.paneRows())
 	if body {
 		// 本文を読む間は左の一覧を出さない。一覧と本文を同じ行に並べると、本文が 1 行動くたびに左の一覧の分まで描き直しになり、
 		// tmux から外側の端末へ送る量が 1 行で約 53KB になる (全幅なら約 5KB で less と同じ水準。Terminal.app でスクロールが
 		// もっさりした)。一覧に戻るのは h / q
-		for i := range m.paneRows() {
-			r := ""
-			if i < len(right) {
-				r = right[i]
-			}
-			out = append(out, r)
-		}
-		return out
+		return right
 	}
-	left := m.leftLines()
-	for i := range m.paneRows() {
-		l, r := "", ""
-		if i < len(left) {
-			l, r = left[i], right[i]
-		}
-		out = append(out, l+" "+r)
+	left := layout.PadTo(m.leftLines(), m.paneRows())
+	out := make([]string, len(right))
+	for i := range right {
+		out[i] = left[i] + " " + right[i]
 	}
 	return out
 }

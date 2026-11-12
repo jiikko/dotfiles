@@ -52,20 +52,20 @@ var (
 // 解除は太字・下線 (22・24) と前景だけにし、地 (面や選んだ行の色) を消さない。前景は端末の文字色 (39) でなく cText へ戻す
 var (
 	fgText = cText.fg()
-	offFg  = "\x1b[22;24m" + fgText
+	offFg  = sgr.BoldOff + sgr.UnderlineOff + fgText
 )
 
 func paintFg(c rgb, s string) string { return c.fg() + s + offFg }
-func boldFg(c rgb, s string) string  { return "\x1b[1m" + c.fg() + s + offFg }
+func boldFg(c rgb, s string) string  { return sgr.Bold + c.fg() + s + offFg }
 func dim(s string) string            { return paintFg(cDim, s) }
 func muted(s string) string          { return paintFg(cMuted, s) }
 func accent(s string) string         { return boldFg(cAccent, s) }
 func pink(s string) string           { return boldFg(cPink, s) }
-func boldText(s string) string       { return "\x1b[1m" + s + "\x1b[22m" }
+func boldText(s string) string       { return sgr.Bold + s + sgr.BoldOff }
 func reset(s string) string          { return s + sgr.Reset }
 func shadow(block []string) []string { return layout.DropShadow(block, true, cShadow.fg()) }
 func keycap(k, label string) string {
-	return reset(hex("#4A3A6E").bg()+"\x1b[1m"+hex("#E6DAFF").fg()+" "+k+" ") + " " + reset(dim(label))
+	return reset(hex("#4A3A6E").bg()+sgr.Bold+hex("#E6DAFF").fg()+" "+k+" ") + " " + reset(dim(label))
 }
 func hintText(key, desc string) string { return pink(key+":") + " " + dim(desc) }
 
@@ -105,7 +105,7 @@ func gradRule(w int, stops ...rgb) string { return gradient(w, "━", stops...) 
 func logo() string {
 	name := []rune("slack-bbs")
 	var b strings.Builder
-	b.WriteString("\x1b[1m")
+	b.WriteString(sgr.Bold)
 	for i, c := range blend(len(name), cAccent, cPink, cPurple) {
 		b.WriteString(c.fg() + string(name[i]))
 	}
@@ -116,7 +116,7 @@ func logo() string {
 func pillTab(label string, bg, fg rgb, bold bool) string {
 	b := ""
 	if bold {
-		b = "\x1b[1m"
+		b = sgr.Bold
 	}
 	return reset(bg.fg()+"▐") + reset(bg.bg()+b+fg.fg()+" "+label+" ") + reset(bg.fg()+"▌")
 }
@@ -147,6 +147,8 @@ func cardChrome(padX int) int { return 2 + 2*padX }
 //
 // 中身の行の SGR の全解除 (ESC[m・ESC[0m) の後には面の色と文字色を張り直す (layout.Scrollbar の行末などが全解除を出す)。
 // 下辺の ▆ の上の欠けは cBg で埋める: mac-lan-manager と同じく、端末の地が cBg から遠いと下辺の下に細い帯が見える。
+// tuikit の layout.Panel に寄せない: Panel は罫線の枠と題の行を持つ別の見た目。mac-lan-manager の card とも寄せない: 見た目は同じだが、
+// あちらは lipgloss の色で 1 つの文字列を組み、こちらは 24bit の色の SGR で行の配列を組む (寄せるなら両方の色の持ち方を揃えてから)。
 func card(lines []string, width, rows, padX int, surf rgb, edge []rgb) []string {
 	inner := max(width-cardChrome(padX), 1)
 	cs := blend(max(width-2, 1), edge...)

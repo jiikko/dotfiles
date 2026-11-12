@@ -6,18 +6,19 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"slack-bbs/render"
 )
 
 // 本文の色。配色は style.go (mac-lan-manager に揃えた 24bit の色) で、本文のカードの面の上に描く。見出しは橙の太字。
 // 解除は太字・下線 (22・24) と前景だけを戻し (前景は端末の文字色でなく cText へ)、面の地を消さない。
 var (
-	sgrHeading = "\x1b[1m" + cAccent.fg() // 欄の見出し
-	sgrName    = "\x1b[1m" + fgText       // 人の名前 (太字)
-	sgrMe      = "\x1b[1m" + cPurple.fg() // 自分の名前 (紫の太字)
-	sgrQuote   = cOK.fg()                 // 「」で引いた言葉 (緑)
-	sgrNumber  = cYellow.fg()             // PR・issue などの番号 (黄)
-	sgrDim     = cDim.fg()                // 原文の時刻 (薄く)
+	sgrHeading = sgr.Bold + cAccent.fg() // 欄の見出し
+	sgrName    = sgr.Bold + fgText       // 人の名前 (太字)
+	sgrMe      = sgr.Bold + cPurple.fg() // 自分の名前 (紫の太字)
+	sgrQuote   = cOK.fg()                // 「」で引いた言葉 (緑)
+	sgrNumber  = cYellow.fg()            // PR・issue などの番号 (黄)
+	sgrDim     = cDim.fg()               // 原文の時刻 (薄く)
 	sgrOff     = offFg
 )
 
@@ -26,6 +27,7 @@ const minNameLen = 3
 
 // highlighter は読む画面の本文の行に色を付ける。色は折り返した後の行ごとに付ける: 行をまたぐ色を持たないので、
 // 枠の線や次の行へ色が漏れない (その代わり、折り返しで割れた「」や名前には色が付かない)。
+// tuikit の highlight に寄せない: あちらはコードの構文の色付けで、Slack の名前・番号・時刻の色付けとは役割が違う。
 //
 // 受け入れていること (直すなら実害の実例を添えて再提起する):
 //   - 語の境目は英数字でしか見ないので、全角の名前は長い語の一部にも当たる (「山田太郎」が「小山田太郎」の中に当たる)。
@@ -171,11 +173,8 @@ func (h highlighter) nameAt(s string) string {
 
 // numberStart は s の i バイト目から番号を探してよいか。英字の直後 (「PR6600」) は許し、数字・「.」の直後 (長い数字の途中・版の番号) は許さない。
 func numberStart(s string, i int) bool {
-	if i == 0 {
-		return true
-	}
-	r, _ := utf8.DecodeLastRuneInString(s[:i])
-	return (r < '0' || r > '9') && r != '.'
+	r, ok := runeBefore(s, i)
+	return !ok || (r < '0' || r > '9') && r != '.'
 }
 
 // maxNumberDigits より長い数字は番号とみなさない (Slack の ts や permalink の数字に色を付けない)。
@@ -214,12 +213,19 @@ func wordRune(r rune) bool {
 	return r < utf8.RuneSelf && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-')
 }
 
+// boundaryBefore は s の i バイト目の前で語が切れているか (先頭か、直前が語の字でない)。
 func boundaryBefore(s string, i int) bool {
+	r, ok := runeBefore(s, i)
+	return !ok || !wordRune(r)
+}
+
+// runeBefore は s の i バイト目の直前の字。i が先頭なら ok は偽。
+func runeBefore(s string, i int) (r rune, ok bool) {
 	if i == 0 {
-		return true
+		return 0, false
 	}
-	r, _ := utf8.DecodeLastRuneInString(s[:i])
-	return !wordRune(r)
+	r, _ = utf8.DecodeLastRuneInString(s[:i])
+	return r, true
 }
 
 // boundaryAfter は s の i バイト目で語が終わるか。文末の「.」(次が語の字でない) は語の終わりとみなす。
