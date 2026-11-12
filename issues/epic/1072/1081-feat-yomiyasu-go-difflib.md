@@ -62,14 +62,14 @@
 
 ## 受け入れ条件
 
-- [ ] `internal/difflib` の `New` が、記録の全入力で Python の `difflib.SequenceMatcher` と同じ値を返す (使う API 全部)
-- [ ] `NewExact` が、記録の全入力 (difflib が遅すぎて本家の `_ExactSequenceMatcher` だけを通した入力を含む) で本家と同じ値を返す
-- [ ] 記録の driver が、difflib と本家の `_ExactSequenceMatcher` の答えが同じことを全入力で確かめている
-- [ ] Go の中で `New` と `NewExact` が同じ答えを返す試験があり、速い照合の求め方が全部試験で通る
-- [ ] 記録の driver が本家の照合の呼び出しの形・`difflib` の属性・照合のメソッドの名前を `ast` で確かめ、呼び出しの位置を記録に残す
-- [ ] 所要を Python と Go の両方で測った数字が README にある
-- [ ] 新しい試験は実装を壊すと落ちることを `mutate-verify-list` で確かめた
-- [ ] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通る
+- [x] `internal/difflib` の `New` が、記録の全入力で Python の `difflib.SequenceMatcher` と同じ値を返す (使う API 全部)
+- [x] `NewExact` が、記録の全入力 (difflib が遅すぎて本家の `_ExactSequenceMatcher` だけを通した入力を含む) で本家と同じ値を返す
+- [x] 記録の driver が、difflib と本家の `_ExactSequenceMatcher` の答えが同じことを全入力で確かめている
+- [x] Go の中で `New` と `NewExact` が同じ答えを返す試験があり、速い照合の求め方が全部試験で通る
+- [x] 記録の driver が本家の照合の呼び出しの形・`difflib` の属性・照合のメソッドの名前を `ast` で確かめ、呼び出しの位置を記録に残す
+- [x] 所要を Python と Go の両方で測った数字が README にある
+- [x] 新しい試験は実装を壊すと落ちることを `mutate-verify-list` で確かめた
+- [x] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通る
 
 ## 関連ファイル
 
@@ -79,5 +79,18 @@
 
 ## 進捗
 
+- 実装 (2026-11-13、dotfiles-bb): `feat(ja-writing): internal/difflib に difflib と本家の速い照合を写す (issue 1081)`
+  - `internal/difflib`: `New[T]` (difflib.SequenceMatcher)・`NewExact` (本家の _ExactSequenceMatcher。閾値は本家と同じ値を `defaultTuning` に持ち、試験だけが小さくする)
+  - 記録: `oracle/py/record_difflib.py`・`oracle/difflib.go`・`oracle/difflib_cases.go`・`testdata/golden/difflib.json` (約 560 KB)。入力 559 件 (字の列 478・リスト 76・使い回し 2。本家の速い照合だけを通した大きい入力 6)。
+    driver は全入力で difflib と本家の照合の答えが同じことを確かめた (違えば止まる)。本家の照合の呼び出しは ast で 15 か所、使うメソッドは 8 種 (`find_longest_match` `get_matching_blocks` `get_opcodes` `quick_ratio` `ratio` `real_quick_ratio` `set_seq1` `set_seq2`)
+  - 他の記録 (patterns・pyre など) は作り直しても 1 バイトも変わらなかった
+- 試験: `TestMatchesPythonRecording` (記録の 559 件で `New`・`NewExact` が Python と一致。本家と同じ閾値で、DP・種・候補の多さ・オートマトン・二分探索・b 全体の表の枝を通ることも見る)・
+  `TestExactMatchesPlain` (閾値 5 通り × 入力 380 組で `NewExact` と `New` が一致。19 の枝が全部 1 回以上通る)・`TestExactReuseWithSetSeq`・`TestIndexRunesMatchesStringsIndex`・`TestRollingHashesMatchPolyHash`
+- 実装を壊して落ちることの確認 (`mutate-verify-list`): 13 本中 12 本が想定どおり赤 (DP の同点・quick_ratio の残り数・左の範囲の上限・種の格子・種の後ろ向きの伸ばし・オートマトンの first・a の側の表の最も前・hash の衝突の比べ直し・b を替えたときの表の破棄・hash の top・KMP の失敗関数・負の rune の hash)。
+  緑のまま通った 1 本 (`GetMatchingBlocks` の隣り合う一致をつなぐ処理を外す) は等価: 捨てる要素が無いと隣り合う一致は生まれない (隣り合うなら親の範囲の答えを伸ばせる)。敵対的レビューも Python で乱数 30,000 組を数えて 0 箇所 (isjunk を渡すと 7,496) を確かめた。理由はコードのコメントに書いた
+- 敵対的レビュー (opus 1 体、壊す観点): 閾値を乱数で選んだ Go の 83,000 組と、本家の定数を差し替えた Python の 40,000 組で、食い違い・panic・無限ループは出なかった。
+  再現したのは P3 の 1 件: 負の rune で hash の前提 (2^61 未満) が崩れ、`NewExact` が `New` と違う答えを返す (Python の str と `pyunicode.Runes` は負の値を作らず、呼び出し元も無い)。
+  `code()` で uint32 に収めて直し、試験に負の値を足した (戻すと `TestRollingHashesMatchPolyHash` が赤)。未確認として残したもの: `extendSeeds` の「同じ a で b の位置だけが前」の比べ方は通る入力が 0 回 (同じ格子の位置の種は u の小さい順に並ぶので等価と見ている)
+- 所要: README の「`difflib` の作りと揃わない範囲」の表 (Go の `NewExact` は本家の Python の速い照合の 2〜9 倍、Go の `New` は Python の difflib の約 40 倍速い)
 - 反証レビュー (opus 1 体、2026-11-13): P1 1・P2 3・P3 5。全部を本文に入れた (大きい入力は本家の速い照合だけを記録する・1902 行の使い回し・driver で 2 つの一致を確かめる・
   hash の 128 ビットの剰余・枝の数え方・ast でメソッドと属性も見る・サロゲートの組・本文の数と出典)。反証できなかった主張: 呼び出しの形 15 か所・並びの型・find_longest_match を外から呼ばない・本家の docstring の証明 (読んだ範囲)
