@@ -26,6 +26,9 @@ type Options struct {
 
 // Dumps は json.dumps(v, ensure_ascii=True, **opts) と同じ文字列を返す。
 // 数の桁数が上限 (4300 桁) を超える整数と、Value の型でないものは Python と同じ種類のエラーにする。
+// 循環した値 (自分を要素に持つ []Value・*Object) は受けない: 検出せず再帰が戻らない。Python は ValueError("Circular reference detected") にするが、
+// 循環した値を作る経路が無い (本家は json.dumps に循環した値を渡さず、Value は移植したコードが木として組み立てる)。作る経路を足すなら、
+// 今の経路にある容器を覚えて再入で ClassValueError を返す検出 (共有しているだけの容器は拒否しない) を同じ変更で足す。
 func Dumps(v Value, opts Options) (string, error) {
 	e := encoder{opts: opts}
 	e.item, e.key = ", ", ": "

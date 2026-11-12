@@ -194,7 +194,7 @@ func planRuns(c Corpus) []toolSpec {
 // RecordPatterns は入力の集まりと語の一覧のフォルダ (wordsDir) を使い捨ての cwd に写し、本家の道具を動かして
 // 使われた全 (パターン, フラグ) を集め、各パターンを全単位に当てた記録を返す。
 func (r Runner) RecordPatterns(ctx context.Context, c Corpus, wordsDir string) (PatternRecording, error) {
-	sb, err := newSandbox()
+	sb, err := r.newStagedSandbox()
 	if err != nil {
 		return PatternRecording{}, err
 	}
@@ -225,7 +225,7 @@ func (r Runner) RecordPatterns(ctx context.Context, c Corpus, wordsDir string) (
 		ScriptsDir string     `json:"scripts_dir"`
 		Files      []string   `json:"files"`
 		Runs       []toolSpec `json:"runs"`
-	}{r.Tree.Path(ScriptsDir), paths, planRuns(c)}
+	}{sb.tree.Path(ScriptsDir), paths, planRuns(c)}
 	var out PatternRecording
 	if err := r.runDriver(ctx, sb, "record_patterns.py", in, &out); err != nil {
 		return PatternRecording{}, err

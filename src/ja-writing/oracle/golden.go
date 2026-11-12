@@ -3,7 +3,9 @@ package oracle
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,6 +156,10 @@ func ReadGolden(dir, name string, v any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("記録 %s を読めません: %w", name, err)
+	}
+	// Decode は 1 つの値を読んで止まるので、後ろに別の JSON (連結・追記) があっても前半だけを検査して緑になる。
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("記録 %s の後ろに余りがあります (JSON が 1 つで終わっていません)", name)
 	}
 	return nil
 }

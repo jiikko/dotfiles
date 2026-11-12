@@ -3,6 +3,7 @@ package oracle
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -97,5 +98,75 @@ func TestNewSandboxRefusesSymlinkedTmpdirUnderMarker(t *testing.T) {
 				t.Errorf("断った sandbox の dir が残った: %v", left)
 			}
 		})
+	}
+}
+
+func writeSrcTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// 実行する木は、検証したファイルだけを写した新しい dir。置き場の __pycache__ (SHA-256 を見ない .pyc) や一覧に無い .py を import させない。
+func TestStageTreeCopiesOnlyVerifiedFiles(t *testing.T) {
+	files, sums, bodies := fakeFiles()
+	src := Tree{Root: t.TempDir()}
+	writeSrcTree(t, src.Root, bodies)
+	writeSrcTree(t, src.Root, map[string]string{"a/__pycache__/one.cpython-315.pyc": "偽の bytecode", "a/evil.py": "raise SystemExit(1)\n"})
+	dst := Tree{Root: filepath.Join(t.TempDir(), "run")}
+	if err := stageTree(src, dst, files, sums); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := filepath.WalkDir(dst.Root, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(dst.Root, path)
+			got = append(got, filepath.ToSlash(rel))
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a/one.py", "b/two.txt"}; !slices.Equal(got, want) {
+		t.Fatalf("写したファイル %v、期待 %v (置き場の __pycache__ や一覧に無い .py を写してはいけない)", got, want)
+	}
+	for rel, body := range bodies {
+		if have, _ := os.ReadFile(dst.Path(rel)); string(have) != body {
+			t.Errorf("%s の中身が違う: %q", rel, have)
+		}
+	}
+}
+
+func TestStageTreeRefusesTamperedAndMissingFiles(t *testing.T) {
+	files, sums, bodies := fakeFiles()
+	src := Tree{Root: t.TempDir()}
+	writeSrcTree(t, src.Root, bodies)
+	writeSrcTree(t, src.Root, map[string]string{"b/two.txt": "改ざん\n"})
+	err := stageTree(src, Tree{Root: t.TempDir()}, files, sums)
+	if err == nil || !strings.Contains(err.Error(), "SHA-256") {
+		t.Fatalf("SHA-256 が合わない置き場は断るはず: %v", err)
+	}
+	if err := stageTree(Tree{Root: t.TempDir()}, Tree{Root: t.TempDir()}, files, sums); err == nil {
+		t.Fatal("置き場にファイルが無いのに写せた")
+	}
+}
+
+// site を読ませない (-S) と、cwd・user site・.pyc の書き込みを止める引数が、起動の形に入っていること。
+// 外すと、system site の sitecustomize が driver より前に走って誤った記録を正解にできる (Python を動かさない検査の代わりに、引数そのものを固定する)。
+func TestPythonFlagsKeepSiteAndCwdOut(t *testing.T) {
+	for _, f := range []string{"-P", "-s", "-S", "-B"} {
+		if !slices.Contains(pythonFlags, f) {
+			t.Errorf("python3 の起動の引数に %s が無い: %v", f, pythonFlags)
+		}
+	}
+	if slices.Contains(pythonFlags, "-I") {
+		t.Error("-I は PYTHONHASHSEED を無視するので使わない")
 	}
 }

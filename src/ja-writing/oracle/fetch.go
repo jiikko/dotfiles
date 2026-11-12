@@ -78,8 +78,11 @@ func Fetch(ctx context.Context, cacheRoot string, get Getter) (Tree, error) {
 }
 
 // fetchFiles は Fetch の本体。files と sums を引数にして、テストが本物の本家のファイルなしで検証の経路を通せるようにする。
+// 2 段にする: 足りないファイルを全部取って検証し、1 つでも合わなければ 1 つも書かない
+// (逐次に書くと、途中で止まったときに一部だけが新しい置き場が残る)。
 func fetchFiles(ctx context.Context, cacheRoot string, files []string, sums map[string]string, get Getter) (Tree, error) {
 	tree := Tree{Root: filepath.Join(cacheRoot, Commit)}
+	fetched := make(map[string][]byte)
 	for _, rel := range files {
 		dst := tree.Path(rel)
 		if have, rerr := os.ReadFile(dst); rerr == nil && SHA256Hex(have) == sums[rel] {
@@ -94,7 +97,14 @@ func fetchFiles(ctx context.Context, cacheRoot string, files []string, sums map[
 		if got := SHA256Hex(body); got != sums[rel] {
 			return Tree{}, fmt.Errorf("%s の SHA-256 が upstream.sha256 と合いません (取得 %s、期待 %s)。何も書かずに止めます", rel, got, sums[rel])
 		}
-		if err := writeFileAtomic(dst, body); err != nil {
+		fetched[rel] = body
+	}
+	for _, rel := range files {
+		body, ok := fetched[rel]
+		if !ok {
+			continue
+		}
+		if err := writeFileAtomic(tree.Path(rel), body); err != nil {
 			return Tree{}, err
 		}
 	}

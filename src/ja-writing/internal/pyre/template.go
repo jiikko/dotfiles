@@ -69,11 +69,7 @@ func (p *Pattern) ParseTemplate(src string) (t *Template, err error) {
 				}
 				index = i
 			} else {
-				v, err := strconv.Atoi(name)
-				if err != nil || v >= maxGroups {
-					panic(s.errorAt("invalid group reference "+name, len(name)+1))
-				}
-				index = v
+				index = groupNumber(name, func(msg string) *Error { return s.errorAt(msg, len(name)+1) })
 			}
 			addGroup(index, len(name)+1)
 		case c == '0':

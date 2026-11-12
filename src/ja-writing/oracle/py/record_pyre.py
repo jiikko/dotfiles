@@ -12,7 +12,8 @@
              candidates                      [cp, ...]        大文字小文字の照合を試す字 (大小のある字・対応のある字・間引いた字)
              ignorecase                      [[cp, [当たる cp, ...]], ...]  re.escape(chr(cp)) を re.I で candidates に当てた結果
              classes                         [{"src": 文字の集合, "flags": フラグ, "hits": [当たる cp, ...]}, ...]
-  funcs    関数ごとの入力と結果 (Go のテストが同じ入力で呼んで比べる)
+  funcs    関数ごとの入力と結果 (Go のテストが同じ入力で呼んで比べる)。文字列 (pattern・s・arg と結果の中の全部の文字列) は、
+           単独のサロゲートを含むなら {"ws": [cp, ...]}、含まなければ JSON の文字列 (JSON の "\\ud800" は Go の string にできず U+FFFD になって、入力も期待値も別の字に変わるため)
 """
 import json
 import re
@@ -25,6 +26,23 @@ import _sre
 warnings.simplefilter("ignore")  # 入れ子の集合の FutureWarning は stderr に出るだけで、結果は変わらない
 MAX = 0x110000
 ALL = "".join(map(chr, range(MAX)))
+
+
+def enc(s):
+    return {"ws": [ord(c) for c in s]} if any(0xD800 <= ord(c) <= 0xDFFF for c in s) else s
+
+
+def enc_value(v):
+    if isinstance(v, str):
+        return enc(v)
+    if isinstance(v, list):
+        return [enc_value(x) for x in v]
+    if isinstance(v, dict):
+        for k in v:
+            if enc(k) is not k:
+                raise SystemExit("サロゲートを含む鍵は符号化できない: %r" % k)
+        return {k: enc_value(x) for k, x in v.items()}
+    return v
 
 
 def ranges_of(compiled):
@@ -292,6 +310,49 @@ def cases():
         add("compile", pattern)
         add("compile", pattern, flags=int(re.A | re.I))
         add("compile", pattern, flags=int(re.X | re.S | re.M))
+    # 単独のサロゲートを含む入力・パターン・置き換えの文字列と結果 (Go の string は WTF-8 で持つ)
+    for pattern, s in [(".", "\ud800"), ("a.b", "a\udfffb"), ("(.)", "\ud83d\ude00x"), ("[\ud800-\udfff]+", "a\ud800\udc00b"), ("\\w", "\ud800"), ("\\W+", "a\ud800b"),
+                       ("(?i)\ud800", "\ud800"), ("\ud800|x", "x\ud800"), ("(?P<n>.)", "\udfff"), ("[^a]", "\ud800a"), ("\ud800*", "\ud800\ud800"), ("", "\ud800")]:
+        for flavor in ("search", "match", "fullmatch", "finditer", "findall", "split"):
+            add(flavor, pattern, s)
+        add("sub", pattern, s, arg="-")
+        add("sub", pattern, s, arg="\ud800\\g<0>")
+        add("sub", pattern, s, arg="", func=True)
+        add("expand", pattern, s, arg="\ud800\\g<0>")
+    for pattern in ["(?P<a\ud800>x)", "(?P=\ud800)", "x(?P=a\ud800)", "(?(\ud800)a)", "[\ud800-\udc00]", "\ud800{2,1}"]:
+        add("compile", pattern)
+    # エラーの文の repr (引用符の選び方・制御文字・印字できない字の escape)。名前に使える字は identifier だけなので、不正な名前で repr を通す
+    for name in ["a\n", "a\t", "a\r", "a\x00", "a\x1f", "a\x7f", "a\x80", "a\x85", "a\xa0", "a\xad", "a'b", 'a"b', "a'\"b", "a\\b", "a b", "a\u2028", "a\u2029",
+                 "a\u200b", "a\u3000", "a\ufeff", "a\ue000", "a\ufffe", "a\U0001f600", "a\U000e0001", "a\U0010ffff", "a\u0378", "a\ud800", "a\udfff", "a-b", "1a", "a\u00e9\u3042"]:
+        add("compile", "(?P<" + name + ">x)")
+        add("compile", "(?P=" + name + ")")
+        add("compile", "(?(" + name + ")a)")
+        add("sub", "(x)", "x", arg="\\g<" + name + ">")
+    add("compile", "(?P<a>x)(?P<a>y)")
+    add("compile", "(?P<a\n>x)")
+    add("sub", "(?P<a>x)", "x", arg="\\g<b\n>")
+    add("sub", "(?P<a>x)", "x", arg="\\g<b'c>")
+    # int() の桁数の上限 (sys.get_int_max_str_digits() の 4300。先頭の 0 も数える)
+    for n in (4299, 4300, 4301, 5000):
+        z = "0" * n
+        add("compile", "a{" + z + "1}")
+        add("compile", "a{1," + z + "1}")
+        add("compile", "a{" + z + "1,2}")
+        add("compile", "a{" + z + "}")
+        add("compile", "(a)(?(" + z + "1)b)")
+        add("compile", "(a)(?(" + z + ")b)")
+        add("sub", "(a)", "a", arg="\\g<" + z + "1>")
+        add("sub", "(a)", "a", arg="\\g<" + z + ">")
+        add("sub", "(a)", "a", arg="\\g<" + z + "2>")
+        add("compile", "a{4294967294," + "0" * n + "}")
+    for pattern in ["a{4294967295}", "a{1,4294967295}", "(a)(?(1073741823)b)", "(a)(?(1073741822)b)", "(a)(?(00001073741823)b)", "(a)(?(0)b)", "(a)(?(00)b)"]:
+        add("compile", pattern)
+    add("sub", "(a)", "a", arg="\\g<1073741823>")
+    add("sub", "(a)", "a", arg="\\g<00001073741823>")
+    # 条件付きの参照の検査は参照の初出の順 (dict の挿入順)。番号の順でも、位置の順の逆でもない
+    for pattern in ["(?(2)a)(?(3)b)", "(?(3)a)(?(2)b)", "(?(2)a)(?(3)b)(?(4)c)(?(5)d)", "(?(5)a)(?(4)b)(?(3)c)(?(2)d)", "(?(3)a)(?(2)b)(?(3)c)", "(a)(?(2)a)(?(3)b)", "(a)(?(3)a)(?(2)b)",
+                    "(?(9)a)(?(2)b)(?(7)c)(?(2)d)", "(?(2)a|(?(5)b))(?(3)c)", "(?(4)a)(?(3)b)(a)(b)", "(a)(b)(?(5)x)(?(4)y)(?(3)z)", "(?(7)a)(?(6)b)(?(8)c)(?(5)d)(?(9)e)"]:
+        add("compile", pattern)
     for s in ["", "a.b", "a b", "\u3042-\u3044", "[x]{y}", "#&~ \t\n\r\x0b\x0c", "\u00e9\U0001f600", "()*+?^$|\\"]:
         add("escape", s)
     return out
@@ -302,7 +363,10 @@ def main():
     out = {"tables": tab, "chars": chars(tab)}
     funcs = []
     for case in cases():
-        funcs.append(dict(case, result=run_case(case)))
+        enc_case = dict(case, pattern=enc(case["pattern"]), s=enc(case["s"]))
+        if "arg" in case:
+            enc_case["arg"] = enc(case["arg"])
+        funcs.append(dict(enc_case, result=enc_value(run_case(case))))
     out["funcs"] = funcs
     json.dump(out, sys.stdout, ensure_ascii=True, separators=(",", ":"))
 

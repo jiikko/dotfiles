@@ -133,6 +133,31 @@ def evaluate(node, scopes, depth=0):
     return set(), False
 
 
+SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
+def scope_nodes(root):
+    """root の scope が名前を束縛する node の一覧 (bindings に渡す)。内側の関数・class・lambda・内包表記の中は見ない
+    (そこの代入は内側の名前で、外の同じ名前の束縛ではない。ast.walk で全部拾うと、内側の関数が同じ名前に代入するだけで、外の値が集まらなくなる)。
+    内側の scope は、その名前 (def / class) が外の束縛になるので node そのものだけを入れる。ただし外の名前を書き換えうるものは中も入れる:
+    nonlocal / global を持つ内側の scope と、内包表記・lambda の中の := (外の scope に束縛する)。
+    class の本体の代入は class の scope のもので、メソッドからは見えないが、本体の直下の式からは見える (呼び出し側が scope の連なりに入れる)。"""
+    out, stack = [], list(ast.iter_child_nodes(root))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, SCOPES):
+            out.append(node)
+            inner = list(ast.walk(node))
+            if any(isinstance(n, (ast.Nonlocal, ast.Global)) for n in inner):
+                out.extend(inner)
+            else:
+                out.extend(n for n in inner if isinstance(n, ast.NamedExpr))
+            continue
+        out.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
 def static_literals(scripts_dir, unread_ok):
     """ソースの re.xxx(...) の第 1 引数が読める (パターン, フラグ) を、出てくる順 (ファイル名順) に重複なしで返す。読めた呼び出しの数も返す。
     ast と字面の数え方が合わない・一覧に無い読み残し・古くなった一覧の行があれば止まる。"""
@@ -144,19 +169,20 @@ def static_literals(scripts_dir, unread_ok):
             source = handle.read().decode("utf-8")
         tree = ast.parse(source, name)
         parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-        module_nodes = list(ast.walk(tree))
         ast_count = {}
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
                     and node.func.value.id == "re" and node.func.attr in FLAG_POSITION):
                 continue
             ast_count[node.lineno] = ast_count.get(node.lineno, 0) + 1
-            scopes, cur = [], node
+            scopes, seen_scope, cur = [], False, node
             while cur in parent:
                 cur = parent[cur]
-                if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    scopes.append(list(ast.walk(cur)))
-            scopes.append(module_nodes)
+                if isinstance(cur, SCOPES) and not (isinstance(cur, ast.ClassDef) and seen_scope):
+                    scopes.append(scope_nodes(cur))  # class の名前は class の本体の直下の式にだけ見える (内側の関数・内包表記からは見えない)
+                if isinstance(cur, SCOPES):
+                    seen_scope = True
+            scopes.append(scope_nodes(tree))
             patterns, complete = evaluate(node.args[0], scopes) if node.args else (set(), False)
             position = FLAG_POSITION[node.func.attr]
             flag_node = node.args[position] if len(node.args) > position else None
@@ -236,6 +262,8 @@ for key in sorted(static, key=lambda k: static[k]):
 
 units = []
 for rel in plan["files"]:
+    if any(c in rel for c in "\n\r|#"):  # 単位の名前は digest に区切りなしで書くので、これらの字を含む名前は別の並びと衝突する (oracle/corpus.go の CheckUnitPath)
+        raise SystemExit("入力のパスに記録の区切りに使う字がある: %r" % rel)
     with open("corpus/" + rel, "rb") as handle:
         text = handle.read().decode("utf-8")
     units.append((rel + "#doc", text))

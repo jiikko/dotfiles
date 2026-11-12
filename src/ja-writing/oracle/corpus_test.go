@@ -67,3 +67,24 @@ func TestUnitKey(t *testing.T) {
 		t.Fatal("単位の名前の形が変わっている")
 	}
 }
+
+// 単位の名前は digest に区切りなしで書かれる。改行・'|'・'#' を含む名前は別の (単位, 一致) の並びと同じバイト列になるので、入力に置けない。
+func TestLoadCorpusRejectsPathsThatCollideInDigest(t *testing.T) {
+	for _, name := range []string{"a\nb.md", "a\rb.md", "a|b.md", "a#0.md"} {
+		dir := writeTree(t, map[string]string{name: "x\n"})
+		if _, err := LoadCorpus(dir); err == nil {
+			t.Errorf("入力のパス %q を受けた", name)
+		}
+	}
+	// 衝突そのもの: 名前に改行を入れると、ファイル 1 つが別の 2 つのファイルと同じ digest になる
+	one, two := NewDigest(), NewDigest()
+	one.Unit("a#0\n0 1\nb#0")
+	one.Match(0, 1)
+	two.Unit("a#0")
+	two.Match(0, 1)
+	two.Unit("b#0")
+	two.Match(0, 1)
+	if one.Sum() != two.Sum() {
+		t.Fatal("衝突の例が衝突しなくなった。CheckUnitPath の理由を見直す")
+	}
+}

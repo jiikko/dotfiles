@@ -69,6 +69,20 @@ func IsIdentContinue(r rune) bool { return inRanges(identContinueRanges[:], r) }
 // IsAlnum は Python の chr(r).isalnum() (isalpha・isdecimal・isdigit・isnumeric のどれか)。re の \w は、これに '_' を足した字に当たる。
 func IsAlnum(r rune) bool { return IsAlpha(r) || IsDecimal(r) || IsDigit(r) || IsNumeric(r) }
 
+// IsPrintable は Python の chr(r).isprintable() (repr が escape せずに出す字)。
+// CPython は一般カテゴリが Cc Cf Cs Co Cn Zl Zp Zs の字を印字できないとし、ASCII の空白 ' ' だけを例外にする。
+// 全コードポイントで記録 (unicode.json の printable) と同じになることは golden_test.go が見る。
+func IsPrintable(r rune) bool {
+	if r == ' ' {
+		return true
+	}
+	switch Category(r) {
+	case "Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp", "Zs":
+		return false
+	}
+	return true
+}
+
 // IsLineBreak は str.splitlines が行の終わりとみなす 1 字 (\n \r \v \f \x1c \x1d \x1e \x85 U+2028 U+2029)。
 // \x1f は isspace だが区切りではない。\r\n の組は SplitLines (pystr) が 1 つの区切りにする。
 func IsLineBreak(r rune) bool { return inRanges(linebreakRanges[:], r) }

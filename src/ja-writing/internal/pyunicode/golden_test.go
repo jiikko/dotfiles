@@ -88,7 +88,7 @@ func TestPropertiesMatchPythonForEveryCodePoint(t *testing.T) {
 	g := loadGolden(t)
 	for name, fn := range map[string]func(rune) bool{
 		"space": IsSpace, "alpha": IsAlpha, "decimal": IsDecimal, "digit": IsDigit, "numeric": IsNumeric, "linebreak": IsLineBreak,
-		"identifier_start": IsIdentStart, "identifier_continue": IsIdentContinue,
+		"printable": IsPrintable, "identifier_start": IsIdentStart, "identifier_continue": IsIdentContinue,
 	} {
 		want := expand(g.Props[name])
 		count := 0
@@ -132,7 +132,7 @@ func TestCombiningClassMatchesPythonForEveryCodePoint(t *testing.T) {
 
 func isSurrogate(r rune) bool { return r >= 0xD800 && r <= 0xDFFF }
 
-// 全コードポイントの 1 字ずつの正規化。NFC / NFKC は元と違う字を記録の一覧と照らし (診断のため)、4 形式とも記録の digest と照らす。
+// サロゲートを除く全コードポイントの 1 字ずつの正規化。NFC / NFKC は元と違う字を記録の一覧と照らし (診断のため)、4 形式とも記録の digest と照らす。
 func TestNormalizeSingleCharactersMatchPython(t *testing.T) {
 	g := loadGolden(t)
 	exceptions := map[Form]map[rune][]rune{NFC: {}, NFKC: {}}
@@ -178,7 +178,7 @@ func TestNormalizeSingleCharactersMatchPython(t *testing.T) {
 			h.Write([]byte(line.String()))
 		}
 		if got := hex.EncodeToString(h.Sum(nil)); got != c.digest {
-			t.Errorf("%s の全コードポイントの digest %s、Python は %s", c.name, got, c.digest)
+			t.Errorf("%s のサロゲートを除く全コードポイントの digest %s、Python は %s", c.name, got, c.digest)
 		}
 	}
 }

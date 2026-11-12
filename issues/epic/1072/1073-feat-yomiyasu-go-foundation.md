@@ -205,3 +205,30 @@ P1 は 0 件、P2 は 3 件、P3 は 6 項目 (1 周目の P2 5 件・P3 の再�
 | P3-E `cmdenv_test.go` の環境変数 `YOMIYASU_CMDENV_TEST` | 直す | `JA_WRITING_CMDENV_TEST` にした |
 | P3-F README の古い記述 | 直す | 直した (土台の範囲・`internal/pyre` は作った・パターン数 870・`internal/pyre` の突き合わせ) |
 | `PYTHONHASHSEED` でパターンの文字列と並びが変わる (本家が語の一覧の set から選択肢を組む) | 記録の比べ方は変えない。1075 に書く | 1075 の「対応方針」に 1 行足した |
+
+### 敵対的レビュー 3 周目 (codex、2026-11-13)
+
+codex は道具の接続が `timed out negotiating with the code-mode host` で 3 回とも失敗し、コマンドを実行できなかった。差分をプロンプトに入れて読ませたので、指摘はコードを読んだだけの主張で、#1・#7・#8 は main agent が Go と Python で再現した。P1 の指摘 8 件と P3 の 1 件、未確認リスク。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| #1 先読みがなくても lastindex / lastgroup が違う (`(?:(?P<early>a*$)\|(?P<late>b))*` を "b" に search。Python は early、Go は late) | 直さない。Python の lastindex は成功した経路の中で最後に実行された閉じの印で、regexp2 は閉じた順を返さない。推定の規則を複雑にしても当たる形が増えるだけ。README の範囲を「先読みの中のグループ」に限らない形 (同じ位置で閉じる 2 つのグループの、実行の順と閉じ括弧の並びの食い違い) に書き直し、本家が使う diff.py の 5 か所は記録の `last_digest` が入力の集まりの上で守ることを書いた | README と `Match.LastIndex` の comment を直した。2 つの例が Python と違うことを再現で確かめた |
+| #2 循環する JSON の値で `ValueError` を返せない | 採らない。循環した値を作る経路が無い (本家は渡さず、Go の `Value` は移植したコードが木として組み立てる) | `Dumps` の doc comment に Why not と、作る経路を足すときの検出の条件を書いた |
+| #3 長い先頭ゼロの量指定子・条件付きの参照・`\g<番号>` の数字を、Python が桁数の上限 (4300) で断るのに受ける | `pyDecimal` で `int()` と同じ上限を当て、同じ例外の種類と文にする。`invalid group reference` の数は十進に直して出す (先頭の 0 を残さない) | 直した。記録に 4299〜5000 桁の case を足した。`digits-limit-off`・`template-atoi`・`cond-atoi` の変異で `TestFunctionsMatchPython` が落ちる |
+| #4 oracle の起動で system site の `sitecustomize` が driver より前に走り、誤った記録と生成表を同時に正解にできる | `-S` を足した (`pythonFlags`)。本家の道具と driver が標準ライブラリだけで動くことは、`-S` で全記録を作り直して確かめた。README の `-I` の説明を直した | 直した。`TestPythonFlagsKeepSiteAndCwdOut`。`flags-no-S` の変異で落ちる |
+| #5 SHA-256 が合う `.py` と別の `.pyc` を実行できる | 検証したバイト列だけを実行ごとの使い捨ての木に写し、そこから import する (`stageTree`)。`-X pycache_prefix` は標準ライブラリの `.pyc` も使えなくなり 675 回の起動が遅くなるので採らない | 直した。`TestStageTreeCopiesOnlyVerifiedFiles` (置き場の `__pycache__` と一覧に無い `.py` を写さない)。実機で、キャッシュに unchecked-hash の偽の `.pyc` を置くと、置き場から import すると偽が動き (対照)、`CallFunctions` では本物のソースが動くことを確かめた (偽の `.pyc` は消した) |
+| #6 サロゲートの関数の記録が、入力と期待値を U+FFFD に変えたまま緑になる | 関数の記録の文字列 (入力と結果の全部) を、サロゲートを含むなら `{"ws": [cp...]}` にする (`oracle.WStr`)。Go の比べ方は `encoding/json` で文字列を読み直さず、結果を同じ形に符号化して比べる (`wsEncode`)。JSON の文字列でサロゲートの escape を書いたものは読むときに断る | 直した。サロゲートの case 126 件を記録に足した。`wstr-marshal-plain`・`wstr-accept-lone`・`wsencode-plain` の変異で落ちる |
+| #7 複数の不正な条件付き参照のエラーが map の順で変わる | 参照の初出の順 (`groupRefs`) で検査する | 直した。12 パターンを記録に足した。`groupref-reverse` の変異で落ちる |
+| #8 グループ名のエラーの `repr` が Python と違う (改行など) | `pyRepr` を `repr(str)` に合わせた (引用符・短い escape・`\xNN` `\uNNNN` `\UNNNNNNNN`)。印字できるかは一般カテゴリから決める `pyunicode.IsPrintable` で、Python の `isprintable` と全コードポイントで同じことを `unicode.json` の `printable` の範囲 (今回足した) と照らす | 直した。名前 31 種 × 4 経路の case を記録に足した。`repr-raw`・`printable-no-Zs`・`printable-no-space-exception` の変異で落ちる |
+| #9 「不一致なら何も書かない」を実装もテストも満たしていない | 全部取って検証してから書く 2 段にした | 直した。テストは合った 1 件目も書かれないことを見る。`fetch-write-early` の変異で落ちる |
+| 未確認 入力のパス (単位の名前) の改行などで digest が別の並びと衝突する | 改行・`\r`・`\|`・`#` を、記録を作る側 (`record_patterns.py`) と読む側 (`LoadCorpus` の `CheckUnitPath`) の両方で断る | 直した。衝突そのものも test にした。`unitpath-off` の変異で落ちる |
+| 未確認 静的収集が内側の関数・class・内包表記の束縛を外の束縛として拾う | `scope_nodes` で scope ごとの束縛だけを見る (内側の scope は名前と、`nonlocal` / `global` と `:=` だけ)。本家のソースにこの形があるかを、新旧の集め方で 107 パターン・120 呼び出しを比べて確かめた | 直した。本家のソースには無かった (新旧で同じ集合なので `patterns.json` は変わらない)。codex の例と `nonlocal` と class の例は使い捨ての入力で期待どおりに集まることを確かめた (Python を動かす検査は CI に無い) |
+| 未確認 `(Pattern, Flags)` の一意性を見ない | `TestPatternGoldenKeysAreUnique` | 足した。`patterns-duplicate-key` の変異で落ちる |
+| 未確認 `ReadGolden` が記録の後ろの余りを読まない | 2 回目の `Token` が `io.EOF` でなければ断る | 直した。`TestReadGoldenRejectsTrailingData`。`readgolden-trailing-off` の変異で落ちる |
+| 未確認 `pyre.json` の header を照合しない・`info.py` が prerelease を落とす | 6 つの記録の header が同じ環境であることを見る `TestGoldenFilesShareOneEnvironment`。`info.py` は final 以外に `a` `b` `rc` と番号を付ける (今の 3.15.0 は変わらない) | 足した。`header-env-differs` の変異で落ちる。`info.py` の分岐は Python を動かさないと見えないので、final の出力が変わらないことだけ確かめた |
+| 未確認 `\B` の検査が件数だけ | 全位置で `\b` の位置と `\B` の位置のどちらか一方にだけあることを見る | 直した。`nonboundary-weak` の変異で落ちる |
+| 未確認 正規化の「全コードポイント」の digest がサロゲートを除く | README とテストの文言を範囲 (サロゲート 2,048 字を除く 1,112,064 字) に合わせた | 直した |
+
+記録を作り直した差分: `pyre.json` は 315 行の追加だけ (関数の入力のサロゲート・エラーの repr・桁数の上限・参照の順)、`unicode.json` は `props` に `printable` の 1 キーの追加だけ。`patterns.json` `smoke.json` `json.json` `pystr.json` と 2 つの生成表は `-S` と使い捨ての木に変えても同じバイト列だった。作り直しは 2 回、同じバイト列になることも確かめた。
+
+揃わないまま残るもの (本家のパターンに無い): `a{4294967294}` (regexp2 の繰り返しの上限で、Python の MAXREPEAT 未満)。README に書いた。

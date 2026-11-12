@@ -3,7 +3,7 @@
 標準入力は使わない。標準出力は 1 つの JSON で、次のキーを持つ (範囲は両端を含む [lo, hi]、cp はコードポイント)。
   categories      [[開始 cp, 一般カテゴリ], ...]  0 から 0x10FFFF まで切れ目なく (次の開始の手前までがその値)
   props           {名前: [[lo, hi], ...]}         str.isspace / isalpha / isdecimal / isdigit / isnumeric と splitlines の区切り、
-                                                  identifier_start (chr(cp).isidentifier()) と identifier_continue (("a" + chr(cp)).isidentifier())
+                                                  printable (chr(cp).isprintable())、identifier_start (chr(cp).isidentifier()) と identifier_continue (("a" + chr(cp)).isidentifier())
   ccc             [[lo, hi, 結合クラス], ...]     0 でないものだけ
   nfd / nfkd      [[cp, [cp, ...]], ...]          1 字の正規化の結果が元と違うもの (ハングルの音節は算法で決まるので入れない)
   nfc / nfkc      同上 (単独の字を NFC / NFKC にした結果が元と違うもの。サロゲートは Go の文字列に入れられないので除く)
@@ -179,6 +179,7 @@ def main():
         "digit": ranges(lambda cp: chr(cp).isdigit()),
         "numeric": ranges(lambda cp: chr(cp).isnumeric()),
         "linebreak": ranges(lambda cp: len(("a" + chr(cp) + "b").splitlines()) > 1),
+        "printable": ranges(lambda cp: chr(cp).isprintable()),
         "identifier_start": ranges(lambda cp: chr(cp).isidentifier()),
         "identifier_continue": ranges(lambda cp: ("a" + chr(cp)).isidentifier()),
     }

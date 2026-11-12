@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // PyreFile は internal/pyre の表と正解の記録 (testdata/golden/ の中)。表は PyreTablesPath の Go のソースにする。
@@ -77,16 +79,105 @@ type PyreChars struct {
 	Classes       []ClassHits `json:"classes"`
 }
 
+// WStr は Python の str を WTF-8 (単独のサロゲートを 3 バイトの形のまま持つ Go の string) で持つ型。
+// JSON では、サロゲートを含まなければ普通の文字列、含めば {"ws": [cp, ...]} にする。JSON の "\ud800" は encoding/json が U+FFFD に変えるので、
+// 入力も期待値も別の字になったまま比べてしまう (README の「pystr / pyjson と同じくコードポイントの列」)。
+type WStr string
+
+// MarshalJSON はサロゲートを含まない文字列は文字列として、含むものは {"ws": [cp, ...]} として書く。
+func (w WStr) MarshalJSON() ([]byte, error) {
+	if rs, ok := surrogateRunes(string(w)); ok {
+		return json.Marshal(struct {
+			WS []rune `json:"ws"`
+		}{rs})
+	}
+	return json.Marshal(string(w))
+}
+
+// UnmarshalJSON は MarshalJSON の逆。サロゲートの escape を含む普通の文字列は、読むと U+FFFD になるので断る。
+func (w *WStr) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		if hasLoneSurrogateEscape(string(b)) {
+			return fmt.Errorf("単独のサロゲートを文字列で書いてはいけません ({\"ws\": [...]} にする): %s", b)
+		}
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*w = WStr(s)
+		return nil
+	}
+	var ws struct {
+		WS []rune `json:"ws"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&ws); err != nil || ws.WS == nil {
+		return fmt.Errorf("文字列を読めません: %s", b)
+	}
+	*w = WStr(fromRunes(ws.WS))
+	return nil
+}
+
+// surrogateEscape は JSON の文字列の中の \uXXXX のうち、サロゲート (D800〜DFFF) のもの。上位 (D800〜DBFF) と下位 (DC00〜DFFF) を捕獲で分ける。
+var surrogateEscape = regexp.MustCompile(`(?i)\\u(?:(d[89ab][0-9a-f]{2})|(d[c-f][0-9a-f]{2}))`)
+
+// hasLoneSurrogateEscape は、上位の次に下位が続く組 (ensure_ascii が書く、BMP の外の 1 字) でない単独のサロゲートの escape があるか。
+func hasLoneSurrogateEscape(raw string) bool {
+	ms := surrogateEscape.FindAllStringSubmatchIndex(raw, -1)
+	for i := 0; i < len(ms); i++ {
+		high := ms[i][2] >= 0
+		if high && i+1 < len(ms) && ms[i+1][4] >= 0 && ms[i+1][0] == ms[i][1] {
+			i++
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// surrogateRunes は s が単独のサロゲートを 3 バイトの形 (ED A0..BF xx) で含むとき、s を 1 字ずつの列にして true を返す。
+func surrogateRunes(s string) ([]rune, bool) {
+	var rs []rune
+	found := false
+	for i := 0; i < len(s); {
+		if i+2 < len(s) && s[i] == 0xED && s[i+1] >= 0xA0 && s[i+1] <= 0xBF && s[i+2]&0xC0 == 0x80 {
+			rs = append(rs, 0xD000|rune(s[i+1]&0x3F)<<6|rune(s[i+2]&0x3F))
+			found = true
+			i += 3
+			continue
+		}
+		r, n := utf8.DecodeRuneInString(s[i:])
+		rs = append(rs, r)
+		i += n
+	}
+	return rs, found
+}
+
+// fromRunes は文字の列を WTF-8 の string にする (サロゲートも 3 バイトの形で入れる)。
+func fromRunes(rs []rune) string {
+	var b []byte
+	for _, r := range rs {
+		if r >= 0xD800 && r <= 0xDFFF {
+			b = append(b, 0xED, 0x80|byte(r>>6)&0x3F, 0x80|byte(r)&0x3F)
+		} else {
+			b = utf8.AppendRune(b, r)
+		}
+	}
+	return string(b)
+}
+
 // PyreCase は関数 1 回の入力と、Python の結果 (op ごとに形が違う JSON。読み方は internal/pyre のテストにある)。
+// Result の中の文字列も、サロゲートを含むものは {"ws": [cp, ...]} の形 (WStr と同じ)。
 type PyreCase struct {
 	Op      string          `json:"op"`
-	Pattern string          `json:"pattern"`
-	S       string          `json:"s"`
+	Pattern WStr            `json:"pattern"`
+	S       WStr            `json:"s"`
 	Flags   int             `json:"flags,omitempty"`
 	Pos     int             `json:"pos,omitempty"`
 	EndPos  *int            `json:"endpos,omitempty"`
 	N       int             `json:"n,omitempty"`
-	Arg     string          `json:"arg,omitempty"`
+	Arg     WStr            `json:"arg,omitempty"`
 	Func    bool            `json:"func,omitempty"`
 	Result  json.RawMessage `json:"result"`
 }

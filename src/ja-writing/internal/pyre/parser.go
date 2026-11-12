@@ -1,6 +1,8 @@
 package pyre
 
 import (
+	"fmt"
+	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -125,13 +127,38 @@ func (t *tokenizer) errorAt(msg string, offset int) *Error {
 	return newPatternError(msg, t.src, t.tell()-offset)
 }
 
-// pyRepr は Python の str の repr (簡易。単引用符で囲み、中に単引用符があって二重引用符が無ければ二重引用符で囲む)。
+// pyRepr は Python の repr(str)。引用符は単引用符で、中に単引用符があって二重引用符が無いときだけ二重引用符にする。
+// バックスラッシュ・引用符・\t \n \r は短い escape、印字できない字 (str.isprintable が偽) は \xNN \uNNNN \UNNNNNNNN にし、印字できる字はそのまま出す。
 func pyRepr(s string) string {
-	q := "'"
+	q := '\''
 	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		q = `"`
+		q = '"'
 	}
-	return q + strings.ReplaceAll(s, `\`, `\\`) + q
+	var b strings.Builder
+	b.WriteRune(q)
+	for _, r := range pyunicode.Runes(s) {
+		switch {
+		case r == q || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case pyunicode.IsPrintable(r):
+			b.WriteString(pyunicode.FromRunes([]rune{r}))
+		case r < 0x100:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case r < 0x10000:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		}
+	}
+	b.WriteRune(q)
+	return b.String()
 }
 
 func runeLen(s string) int { return len(pyunicode.Runes(s)) }
@@ -163,6 +190,10 @@ func isASCIIDecimal(s string) bool {
 	return true
 }
 
+// groupRef は条件付きの参照 (?(n)...) の初出の番号と位置。本家は dict (挿入順) に入れて初出の順に検査するので、
+// map を range すると実行ごとに違う参照が先にエラーになる。
+type groupRef struct{ group, pos int }
+
 // state は re._parser.State。
 type state struct {
 	flags            int
@@ -170,11 +201,12 @@ type state struct {
 	groupWidths      []width // 添字 0 は全体の分
 	widthSet         []bool  // グループを閉じたか (閉じる前は参照できない)
 	lookbehindGroups int     // -1 は None
-	groupRefPos      map[int]int
+	groupRefs        []groupRef
+	groupRefSeen     map[int]bool
 }
 
 func newState(flags int) *state {
-	return &state{flags: flags, groupDict: map[string]int{}, groupWidths: []width{{}}, widthSet: []bool{false}, lookbehindGroups: -1, groupRefPos: map[int]int{}}
+	return &state{flags: flags, groupDict: map[string]int{}, groupWidths: []width{{}}, widthSet: []bool{false}, lookbehindGroups: -1, groupRefSeen: map[int]bool{}}
 }
 
 func (st *state) groups() int { return len(st.groupWidths) }
@@ -640,12 +672,38 @@ func parseRepeat(src *tokenizer, this token, sp seq) seq {
 	return sp
 }
 
+// intMaxStrDigits は int(str) が受ける十進の桁数の上限 (sys.get_int_max_str_digits() の 4300)。
+// 先頭の 0 も数える。oracle は環境変数を空から作る (PYTHONINTMAXSTRDIGITS を渡さない) ので、本家の記録もこの上限で取れている。
+const intMaxStrDigits = 4300
+
+// pyDecimal は ASCII の数字だけの文字列への int() で、上限を超えたら Python と同じ ValueError を投げる。
+// strconv は桁数の上限を持たず、先頭が 0 の長い列を値 1 として受けてしまう (本家は断る)。
+func pyDecimal(digits string) *big.Int {
+	if len(digits) > intMaxStrDigits {
+		panic(newError(ClassValue, fmt.Sprintf("Exceeds the limit (%d digits) for integer string conversion: value has %d digits; use sys.set_int_max_str_digits() to increase the limit", intMaxStrDigits, len(digits))))
+	}
+	n, ok := new(big.Int).SetString(digits, 10)
+	if !ok {
+		panic("pyDecimal: 数字以外が入った: " + digits)
+	}
+	return n
+}
+
+// groupNumber は条件付きの参照と \g<番号> の番号。MAXGROUPS 以上なら Python と同じ文 (十進に直した値) の PatternError を errAt で作って投げる。
+func groupNumber(digits string, errAt func(msg string) *Error) int {
+	n := pyDecimal(digits)
+	if n.Cmp(big.NewInt(maxGroups)) >= 0 {
+		panic(errAt("invalid group reference " + n.String()))
+	}
+	return int(n.Int64())
+}
+
 func repeatNumber(digits string) int {
-	v, err := strconv.ParseUint(digits, 10, 64)
-	if err != nil || v >= maxRepeat {
+	n := pyDecimal(digits)
+	if n.Cmp(big.NewInt(maxRepeat)) >= 0 {
 		panic(newError(ClassOverflow, "the repetition number is too large"))
 	}
-	return int(v)
+	return int(n.Int64())
 }
 
 // parseGroup は '(' の続きを読む。nil を返すときは何も足さない (コメント・グローバルなフラグ)。
@@ -792,16 +850,13 @@ func parseConditional(src *tokenizer, st *state, verbose bool, nested int, start
 		}
 		condGroup = g
 	} else {
-		v, err := strconv.Atoi(condName)
-		if err != nil || v >= maxGroups {
-			panic(src.errorAt("invalid group reference "+condName, len(condName)+1))
-		}
-		condGroup = v
+		condGroup = groupNumber(condName, func(msg string) *Error { return src.errorAt(msg, len(condName)+1) })
 		if condGroup == 0 {
 			panic(src.errorAt("bad group number", len(condName)+1))
 		}
-		if _, ok := st.groupRefPos[condGroup]; !ok {
-			st.groupRefPos[condGroup] = src.tell() - len(condName) - 1
+		if !st.groupRefSeen[condGroup] {
+			st.groupRefSeen[condGroup] = true
+			st.groupRefs = append(st.groupRefs, groupRef{group: condGroup, pos: src.tell() - len(condName) - 1})
 		}
 	}
 	st.checkLookbehindGroup(condGroup, src)
@@ -940,9 +995,9 @@ func parsePattern(src []rune, flags int) (res *parsed, err *Error) {
 	if tk.next != nil {
 		return nil, tk.errorAt("unbalanced parenthesis", 0)
 	}
-	for g, pos := range st.groupRefPos {
-		if g >= st.groups() {
-			return nil, newPatternError("invalid group reference "+strconv.Itoa(g), src, pos)
+	for _, ref := range st.groupRefs {
+		if ref.group >= st.groups() {
+			return nil, newPatternError("invalid group reference "+strconv.Itoa(ref.group), src, ref.pos)
 		}
 	}
 	return &parsed{body: body, state: st, flags: fixed, groups: st.groups() - 1}, nil

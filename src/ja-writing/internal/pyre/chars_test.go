@@ -84,25 +84,23 @@ func TestWordBoundaryMatchesPythonForEveryCodePoint(t *testing.T) {
 		if len(got) < 4 {
 			t.Errorf("flags=%d: \\b が 4 か所も当たらない。記録が空振りしている", c.flags)
 		}
-		// \B は、空でない文字列では \b の補集合 (全位置から \b の位置を引いたもの)
-		nb, err := MustCompile(`\B`, c.flags).Finditer(Text{text.runes[:20000]}, 0, NoEnd)
+		// \B は、空でない文字列では \b の補集合。全位置 (0 から長さまで) のそれぞれが、記録の \b の位置と \B の位置のどちらか一方にだけある
+		nb, err := MustCompile(`\B`, c.flags).Finditer(text, 0, NoEnd)
 		if err != nil {
 			t.Fatal(err)
 		}
-		inB := map[int]bool{}
+		isB := make([]bool, len(text.runes)+1)
 		for _, pos := range c.want {
-			if pos < 20000 {
-				inB[pos] = true
-			}
+			isB[pos] = true
 		}
-		nbBefore := 0
+		isNB := make([]bool, len(text.runes)+1)
 		for _, m := range nb {
-			if m.spans[0] < 20000 {
-				nbBefore++
-			}
+			isNB[m.spans[0]] = true
 		}
-		if nbBefore+len(inB) != 20000 {
-			t.Errorf("flags=%d: \\B (%d) と \\b (%d) が 20001 の位置を分けていない", c.flags, len(nb), len(inB))
+		for pos := range isB {
+			if isB[pos] == isNB[pos] {
+				t.Fatalf("flags=%d: 位置 %d が \\b の位置=%v・\\B の位置=%v (どちらか一方だけのはず)", c.flags, pos, isB[pos], isNB[pos])
+			}
 		}
 	}
 }

@@ -89,8 +89,10 @@ func TestFetchStopsOnChecksumMismatchWithoutWriting(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "SHA-256") {
 		t.Fatalf("SHA-256 の不一致で止まるはず: %v", err)
 	}
-	if _, serr := os.Stat(tree.Path("b/two.txt")); !errors.Is(serr, os.ErrNotExist) {
-		t.Fatalf("合わなかったファイルを書いてはいけない: %v", serr)
+	for _, rel := range files {
+		if _, serr := os.Stat(tree.Path(rel)); !errors.Is(serr, os.ErrNotExist) {
+			t.Fatalf("1 つでも合わなければ、合ったファイル %s も書いてはいけない: %v", rel, serr)
+		}
 	}
 }
 

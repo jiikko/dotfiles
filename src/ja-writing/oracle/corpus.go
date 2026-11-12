@@ -24,6 +24,19 @@ type Corpus struct {
 	Files []CorpusFile
 }
 
+// unitPathForbidden は単位の名前に使えない字。名前は digest に "<名前>\n" や "<名前>|<pos>|..." の形で区切りなしに書かれ、UnitKey は "#" で行番号を足すので、
+// これらの字を含む名前は別の (名前, 一致) の並びと同じバイト列になる ("a#0\n0 1\nb" を持つファイル 1 つと、"a" "b" の 2 つ)。
+// 記録を作る側 (py/record_patterns.py) も同じ字を断る。
+const unitPathForbidden = "\n\r|#"
+
+// CheckUnitPath は path が単位の名前に使える (digest で別の並びと衝突しない) ことを確かめる。
+func CheckUnitPath(path string) error {
+	if i := strings.IndexAny(path, unitPathForbidden); i >= 0 {
+		return fmt.Errorf("入力のパス %q に、記録の区切りに使う字 %q があります", path, path[i])
+	}
+	return nil
+}
+
 // LoadCorpus は root 以下の通常のファイルを全部読み、UTF-8 として読めることを確かめる。0 件はエラー (空振りで緑にしない)。
 func LoadCorpus(root string) (Corpus, error) {
 	var files []CorpusFile
@@ -37,6 +50,9 @@ func LoadCorpus(root string) (Corpus, error) {
 		rel, rerr := filepath.Rel(root, p)
 		if rerr != nil {
 			return rerr
+		}
+		if cerr := CheckUnitPath(filepath.ToSlash(rel)); cerr != nil {
+			return cerr
 		}
 		body, rerr := os.ReadFile(p)
 		if rerr != nil {

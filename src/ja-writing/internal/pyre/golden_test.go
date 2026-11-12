@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 
+	"ja-writing/internal/pyunicode"
 	"ja-writing/oracle"
 )
 
@@ -26,6 +28,43 @@ func loadPyre(t *testing.T) oracle.PyreGolden {
 		t.Fatalf("make golden で記録を作る: %v", pyreErr)
 	}
 	return pyreData
+}
+
+// wsEncode は Go の値の中の文字列を、記録と同じ形 (単独のサロゲートを含むなら {"ws": [cp, ...]}、含まなければ文字列) にする。
+// encoding/json は WTF-8 の文字列を U+FFFD にするので、json.Marshal の前に通す。記録の期待値は encoding/json で読み直さない。
+func wsEncode(v reflect.Value) any {
+	switch v.Kind() {
+	case reflect.Invalid:
+		return nil
+	case reflect.Interface, reflect.Pointer:
+		if v.IsNil() {
+			return nil
+		}
+		return wsEncode(v.Elem())
+	case reflect.String:
+		rs := pyunicode.Runes(v.String())
+		if slices.ContainsFunc(rs, func(r rune) bool { return r >= 0xD800 && r <= 0xDFFF }) {
+			return map[string]any{"ws": rs}
+		}
+		return v.String()
+	case reflect.Slice, reflect.Array:
+		out := make([]any, v.Len())
+		for i := range out {
+			out[i] = wsEncode(v.Index(i))
+		}
+		return out
+	case reflect.Map:
+		out := make(map[string]any, v.Len())
+		for _, k := range v.MapKeys() {
+			if _, ok := wsEncode(k).(string); !ok {
+				panic("サロゲートを含む鍵は符号化できない")
+			}
+			out[k.String()] = wsEncode(v.MapIndex(k))
+		}
+		return out
+	default:
+		return v.Interface()
+	}
 }
 
 // toAny は値を JSON を通して any にする (Python の結果と同じ形で比べるため)。
@@ -95,9 +134,9 @@ func brackets(m *Match) string {
 // runCase は 1 つの記録の入力を Go で動かして、Python の結果と同じ形の値にする。
 func runCase(c oracle.PyreCase) (any, error) {
 	if c.Op == "escape" {
-		return Escape(c.Pattern), nil
+		return Escape(string(c.Pattern)), nil
 	}
-	p, err := Compile(c.Pattern, c.Flags)
+	p, err := Compile(string(c.Pattern), c.Flags)
 	if err != nil {
 		return errorJSON(err), nil
 	}
@@ -105,7 +144,7 @@ func runCase(c oracle.PyreCase) (any, error) {
 	if c.EndPos != nil {
 		end = *c.EndPos
 	}
-	text := NewText(c.S)
+	text := NewText(string(c.S))
 	var out any
 	switch c.Op {
 	case "compile":
@@ -150,7 +189,7 @@ func runCase(c oracle.PyreCase) (any, error) {
 		if c.Func {
 			s, n, err = p.SubnFunc(brackets, text, c.N)
 		} else {
-			s, n, err = p.Subn(c.Arg, text, c.N)
+			s, n, err = p.Subn(string(c.Arg), text, c.N)
 		}
 		if err != nil {
 			return errorJSON(err), nil
@@ -177,7 +216,7 @@ func runCase(c oracle.PyreCase) (any, error) {
 		if m == nil {
 			return nil, nil
 		}
-		s, err := m.Expand(c.Arg)
+		s, err := m.Expand(string(c.Arg))
 		if err != nil {
 			return errorJSON(err), nil
 		}
@@ -203,8 +242,8 @@ func TestFunctionsMatchPython(t *testing.T) {
 		if err := json.Unmarshal(c.Result, &want); err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(toAny(t, got), want) {
-			t.Errorf("#%d %s %q s=%q flags=%d pos=%d end=%v n=%d arg=%q func=%v\n  Go     %s\n  Python %s", i, c.Op, c.Pattern, c.S, c.Flags, c.Pos, c.EndPos, c.N, c.Arg, c.Func, mustJSON(t, got), c.Result)
+		if !reflect.DeepEqual(toAny(t, wsEncode(reflect.ValueOf(got))), want) {
+			t.Errorf("#%d %s %+q s=%+q flags=%d pos=%d end=%v n=%d arg=%+q func=%v\n  Go     %s\n  Python %s", i, c.Op, c.Pattern, c.S, c.Flags, c.Pos, c.EndPos, c.N, c.Arg, c.Func, mustJSON(t, wsEncode(reflect.ValueOf(got))), c.Result)
 			bad++
 		}
 		if bad > 40 {

@@ -99,6 +99,23 @@ func TestPatternGoldenIsNotVacuous(t *testing.T) {
 	}
 }
 
+// (パターン, フラグ) は記録の鍵。重複があると、1 つを別の 1 つの写しに置き換えても件数の下限は満たされたままで、失われたパターンが検査から外れる。
+func TestPatternGoldenKeysAreUnique(t *testing.T) {
+	g := loadPatterns(t)
+	type key struct {
+		pattern string
+		flags   int
+	}
+	seen := map[key]bool{}
+	for _, p := range g.Patterns {
+		k := key{p.Pattern, p.Flags}
+		if seen[k] {
+			t.Errorf("(パターン, フラグ) = (%q, %d) が記録に 2 回ある", p.Pattern, p.Flags)
+		}
+		seen[k] = true
+	}
+}
+
 func TestPatternGoldenSamplesPointAtRealUnits(t *testing.T) {
 	g := loadPatterns(t)
 	lines := map[string]int{}
@@ -205,6 +222,47 @@ func TestPlanRunsCoversTools(t *testing.T) {
 	for m, min := range map[string]int{"yomiyasu_lint": 4, "yomiyasu_diff": 4, "yomiyasu_check": 1, "yomiyasu_hook": 3} {
 		if seen[m] < min {
 			t.Errorf("%s の run が %d 件 (最低 %d)", m, seen[m], min)
+		}
+	}
+}
+
+// 6 つの記録は 1 回の make golden で同じ環境から作る。1 つでも本家の commit・Python・unicodedata のバージョンが違えば、混ざった環境の記録になる。
+func TestGoldenFilesShareOneEnvironment(t *testing.T) {
+	var first Header
+	for i, name := range []string{PatternsFile, PyreFile, UnicodeFile, JSONFile, PystrFile, SmokeFile} {
+		var file struct{ Header Header }
+		if err := ReadGoldenHeader(goldenDir, name, &file); err != nil {
+			t.Fatal(err)
+		}
+		h := file.Header
+		if h.UpstreamCommit != Commit || h.PythonVersion == "" || h.UnicodedataVersion == "" {
+			t.Errorf("%s の header が想定と違う: %+v", name, h)
+		}
+		if i == 0 {
+			first = h
+			continue
+		}
+		if diff := first.EnvMismatch(h); diff != "" {
+			t.Errorf("%s の環境が %s と違う (%s)", name, PatternsFile, diff)
+		}
+	}
+}
+
+func TestReadGoldenRejectsTrailingData(t *testing.T) {
+	dir := t.TempDir()
+	good := `{"header":{"upstream_commit":"x","python_version":"3","unicodedata_version":"1"}}`
+	for name, body := range map[string]string{"one.json": good + "\n", "two.json": good + "\n" + good + "\n", "junk.json": good + " x"} {
+		if err := os.WriteFile(dir+"/"+name, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var v struct{ Header Header }
+	if err := ReadGolden(dir, "one.json", &v); err != nil {
+		t.Fatalf("1 つだけの JSON は読める: %v", err)
+	}
+	for _, name := range []string{"two.json", "junk.json"} {
+		if err := ReadGolden(dir, name, &v); err == nil {
+			t.Errorf("%s: 後ろに余りのある記録を受けた", name)
 		}
 	}
 }

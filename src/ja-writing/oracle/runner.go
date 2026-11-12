@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -55,7 +56,11 @@ type PyInfo struct {
 }
 
 // sandbox は 1 回の実行の使い捨ての HOME と cwd と driver の置き場。cwd と HOME は別の dir にする。
-type sandbox struct{ root, cwd, home, drivers string }
+// tree は stage が本家のファイルを写した新しい木 (stage を通した sandbox だけが持つ)。
+type sandbox struct {
+	root, cwd, home, drivers string
+	tree                     Tree
+}
 
 // upstreamMarkers は本家の道具が cwd から上へ辿って拾う名前 (git の最上位の .git・語の一覧・状態の置き場)。
 // 使い捨ての dir の上にこれがあると、本家の出力が TMPDIR の置き場所で変わり、記録がそれに汚れる。
@@ -111,8 +116,45 @@ func newSandbox() (sandbox, error) {
 
 func (s sandbox) remove() { _ = os.RemoveAll(s.root) }
 
+// newStagedSandbox は newSandbox に、検証した本家のファイルの写し (stage) を足したもの。本家の道具を動かす実行はこれを使う。
+func (r Runner) newStagedSandbox() (sandbox, error) {
+	sb, err := newSandbox()
+	if err != nil {
+		return sandbox{}, err
+	}
+	sums, err := Manifest()
+	if err == nil {
+		sb.tree = Tree{Root: filepath.Join(sb.root, "upstream")}
+		err = stageTree(r.Tree, sb.tree, UpstreamFiles, sums)
+	}
+	if err != nil {
+		sb.remove()
+		return sandbox{}, err
+	}
+	return sb, nil
+}
+
+// stageTree は files だけを、src から読んだバイト列の SHA-256 が sums と合うことを確かめて dst に書く (1 つでも合わなければ error で、書き終えた分は呼び出し側が消す)。
+// src の木をそのまま import させない: SHA-256 を見るのは .py の中身だけで、同じ dir の __pycache__ の .pyc (-B は書かないだけで、有効な .pyc は読む) や
+// 一覧に無い .py は検証の外にあり、実行されるものが検証したソースと別になりうる。確かめたバイト列を新しい dir に書けば、そこには検証したファイルしか無い。
+func stageTree(src, dst Tree, files []string, sums map[string]string) error {
+	for _, rel := range files {
+		body, err := os.ReadFile(src.Path(rel))
+		if err != nil {
+			return fmt.Errorf("本家のファイル %s を読めません (make golden で取り直す): %w", rel, err)
+		}
+		if got := SHA256Hex(body); got != sums[rel] {
+			return fmt.Errorf("本家のファイル %s の SHA-256 が upstream.sha256 と合いません (置き場の %s、取得 %s、期待 %s)", rel, src.Root, got, sums[rel])
+		}
+		if err := writeFileAtomic(dst.Path(rel), body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // env は空から作る環境変数。PYTHONHASHSEED=0 は python3 を -I で動かすと無視される (環境変数を全部読まなくなる) ので、
-// -I でなく -P -s -B で動かし (args を参照)、継承した PYTHON* が無いことは env を空から作ることで保つ。
+// -I でなく -P -s -S -B で動かし (pythonFlags を参照)、継承した PYTHON* が無いことは env を空から作ることで保つ。
 func (r Runner) env(home string) []string {
 	return []string{
 		"PATH=" + filepath.Dir(r.Python) + ":/usr/bin:/bin",
@@ -129,9 +171,14 @@ type RawResult struct {
 	RC     int
 }
 
+// pythonFlags は python3 の起動の引数。
+// -P: cwd や script の dir を sys.path に足さない / -s: user site を読まない / -S: site を import しない (system site の .pth と sitecustomize が
+// driver より前に走って unicodedata などを差し替えると、誤った記録と生成表が同時に正解になる) / -B: .pyc を書かない / -X utf8: locale に依らず UTF-8。
+// -I にしない (PYTHONHASHSEED も無視される)。本家のファイルの .pyc は stage の写しに無いので読まれない。
+var pythonFlags = []string{"-P", "-s", "-S", "-B", "-X", "utf8"}
+
 func (r Runner) exec(ctx context.Context, sb sandbox, stdin []byte, args ...string) (RawResult, error) {
-	// -P: cwd や script の dir を sys.path に足さない / -s: user site を読まない / -B: .pyc を書かない / -X utf8: locale に依らず UTF-8。
-	full := append([]string{"-P", "-s", "-B", "-X", "utf8"}, args...)
+	full := append(slices.Clone(pythonFlags), args...)
 	cmd := subproc.CommandContext(ctx, r.Python, full...)
 	cmd.Dir = sb.cwd
 	cmd.Env = r.env(sb.home)
@@ -211,7 +258,7 @@ type CLIResult struct {
 
 // RunCLI は本家の CLI を cwd の使い捨ての dir で動かして、stdout・stderr・rc を返す。
 func (r Runner) RunCLI(ctx context.Context, spec CLISpec) (CLIResult, error) {
-	sb, err := newSandbox()
+	sb, err := r.newStagedSandbox()
 	if err != nil {
 		return CLIResult{}, err
 	}
@@ -219,7 +266,7 @@ func (r Runner) RunCLI(ctx context.Context, spec CLISpec) (CLIResult, error) {
 	if err := placeFiles(sb.cwd, spec.Files); err != nil {
 		return CLIResult{}, err
 	}
-	res, err := r.exec(ctx, sb, []byte(spec.Stdin), append([]string{r.Tree.Path(ScriptsDir + "/" + spec.Script)}, spec.Args...)...)
+	res, err := r.exec(ctx, sb, []byte(spec.Stdin), append([]string{sb.tree.Path(ScriptsDir + "/" + spec.Script)}, spec.Args...)...)
 	if err != nil {
 		return CLIResult{}, err
 	}
@@ -265,7 +312,7 @@ type CallResult struct {
 
 // CallFunctions は calls を 1 つの Python プロセスの中で順に呼ぶ (呼び出しごとに起動しない)。結果は calls と同じ順。
 func (r Runner) CallFunctions(ctx context.Context, calls []Call) ([]CallResult, error) {
-	sb, err := newSandbox()
+	sb, err := r.newStagedSandbox()
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +321,7 @@ func (r Runner) CallFunctions(ctx context.Context, calls []Call) ([]CallResult, 
 	in := struct {
 		ScriptsDir string `json:"scripts_dir"`
 		Calls      []Call `json:"calls"`
-	}{r.Tree.Path(ScriptsDir), calls}
+	}{sb.tree.Path(ScriptsDir), calls}
 	if err := r.runDriver(ctx, sb, "call_function.py", in, &out); err != nil {
 		return nil, err
 	}
