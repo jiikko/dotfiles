@@ -76,6 +76,7 @@ type Model struct {
 	list   listnav.List
 	pager  listnav.Pager
 	body   bool            // 右の欄を操作しているか
+	drop   listDrop        // 読み直しで一覧の先頭へ増えた話題を上から降らせる演出 (list_reload.go)
 	drawer anim.Transition // 本文の欄を開く演出と一覧へ戻る逆の演出 (全幅の本文の板が右外から滑り込む・右外へ抜ける。drawerRows)
 	// showHidden は x で隠した話題も一覧に出すか (z で切り替える。出すときは淡い色)
 	showHidden bool
@@ -286,7 +287,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
-		m.pager.Stop() // 折り返しが変わると、滑っている途中の行の番号が別の行を指す
+		m.finishListDrop() // 着地の位置は窓の行数で決めたので、行数が変わったら着地させる
+		m.pager.Stop()     // 折り返しが変わると、滑っている途中の行の番号が別の行を指す
 	case loadedMsg:
 		if cmd := m.loaded(msg); cmd != nil {
 			return m, tea.Batch(append(m.frameCmds(), cmd)...)
@@ -326,6 +328,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.picker.Paste(msg.Content) // 読む画面には入力欄が無いので、貼った文字はキーとして解釈しない
 		}
 	case tea.KeyPressMsg:
+		m.finishListDrop()
 		var cmd tea.Cmd
 		switch {
 		case msg.String() == "ctrl+c":
@@ -351,6 +354,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pager.Advance()
 		}
 		m.drawer.Settle(m.now()) // 開閉の演出が時間どおり着地したら静止させる
+		m.advanceListDrop()
 	}
 	return m, tea.Batch(m.frameCmds()...)
 }
@@ -381,7 +385,7 @@ func (m *Model) frameCmds() []tea.Cmd {
 	switch {
 	case m.toast.Animating() || m.drawer.Unsettled(m.now()) || m.pager.Animating():
 		d = frameInterval
-	case m.busy():
+	case m.busy() || m.drop.active:
 		d = spinnerStep
 	case m.apiActive():
 		d = time.Second // 右下の呼び出しの頻度を、何もしないでいる間も 1 秒ごとに描き直す (直近 1 分の数が減っていく)
@@ -435,7 +439,11 @@ func (m *Model) loaded(msg loadedMsg) tea.Cmd {
 		m.toast.Show(c.ch.Label()+" を"+verb+": "+msg.err.Error(), false)
 		return nil
 	}
-	keep, owner := m.selKey(), m.selOwner()
+	var view listView
+	if m.stream || idx == m.cur { // 窓を戻すのは、今見ている一覧が組み直されるときだけ (控えると降らせている途中の演出を着地させる)
+		view = m.captureListView()
+	}
+	owner := m.selOwner()
 	verb := "読み直した"
 	if c.page == nil {
 		verb = "読んだ"
@@ -445,7 +453,7 @@ func (m *Model) loaded(msg loadedMsg) tea.Cmd {
 	if m.stream {
 		// 新着のタブは読み直しが終わったら並べ直し、見ていた話題に戻す。読み直したタブの話題を見ていたなら、本文は先頭から
 		m.streamRows = nil
-		m.reselect(keep)
+		m.restoreListView(view, true)
 		if owner == idx {
 			m.pager.Reset()
 		}
@@ -453,9 +461,8 @@ func (m *Model) loaded(msg loadedMsg) tea.Cmd {
 		return nil
 	}
 	if idx == m.cur {
-		// 読み直しで話題が並び替わっても、見ていた話題 (最初の単位で同一視する) にカーソルを戻す。無くなっていたら先頭へ
-		m.list = listnav.List{}
-		m.reselect(keep)
+		// 読み直しで話題が並び替わっても、見ていた話題にカーソルを戻し、窓の見え方も保つ (list_reload.go)。無くなっていたら先頭へ
+		m.restoreListView(view, false)
 		m.pager.Reset()
 		m.restoreTopic()
 		// 読み直しは既読にしない (本文の欄に出ていても): 欄は先頭へ戻り、付いた返信は欄の外にありうる。小さい端末・購読の画面の裏では
@@ -1343,8 +1350,8 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 // selKey は選んだ話題の鍵 (持ち主のタブの ID と最初の単位の ID。reselect に渡す)。選んでいなければ空。
 // タブの ID まで持つのは、新着のタブで同じチャンネルの同じ単位が、単独の購読とグループの両方から並びうるため。
 func (m *Model) selKey() string {
-	if t, ok := m.selected(); ok {
-		return m.chans[m.selOwner()].ch.ID + "|" + t.Units[0].ID
+	if r, ok := m.selRow(); ok {
+		return m.keyOf(r)
 	}
 	return ""
 }
@@ -1352,17 +1359,11 @@ func (m *Model) selKey() string {
 // reselect は一覧の行を作り直した後、selKey が keep の話題にカーソルを戻し、戻せたかを返す。戻せなければ (話題が消えた・隠れた)
 // 本文の欄を閉じる: 黙って別の話題の本文に替えない (替えると、選んでいない話題を読んだことになる)。
 func (m *Model) reselect(keep string) bool {
-	ch, unit, _ := strings.Cut(keep, "|")
-	for i, r := range m.rows() {
-		if r.header() {
-			continue
-		}
-		c := &m.chans[m.ownerOf(r)]
-		if c.ch.ID == ch && c.page != nil && slices.ContainsFunc(c.page.Topics[r.topic].Units, func(u board.Unit) bool { return u.ID == unit }) {
-			m.list.Cursor = i
-			m.fitList(1)
-			return true
-		}
+	m.finishListDrop() // カーソルを動かすので、前のカーソルで決めた着地の位置へ降らせ続けない (起動のときに前回の話題へ戻す等)
+	if i := m.indexOf(keep); i >= 0 {
+		m.list.Cursor = i
+		m.fitList(1)
+		return true
 	}
 	m.fitList(1)
 	m.leaveBody()
