@@ -146,7 +146,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 		filepath.Join(p.golden, oracle.PatternsFile): patterns, filepath.Join(p.golden, oracle.SmokeFile): smoke,
 		filepath.Join(p.golden, oracle.UnicodeFile): unicode, filepath.Join(p.golden, oracle.JSONFile): jsonRec,
 		filepath.Join(p.golden, oracle.PystrFile): pystr, filepath.Join(p.golden, oracle.PyreFile): pyre, p.tables: tables, p.pyreTables: pyreTables,
-		filepath.Join(p.golden, oracle.DifflibFile): difflibRec,
+		filepath.Join(p.golden, oracle.DifflibFile):    difflibRec,
 		filepath.Join(p.golden, oracle.VisibilityFile): vis,
 	} {
 		if err := atomicfile.Write(path, body, 0o644); err != nil {
