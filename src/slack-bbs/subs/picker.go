@@ -528,8 +528,9 @@ func (p *Picker) Lines() []string {
 	case p.editing != nil:
 		line1 = []hintfit.Item{{Prio: 2, Text: "Space/x: グループに入れる・外す"}, {Prio: 2, Text: "/: 名前で検索"}, {Prio: 1, Text: "Enter/Esc: グループの編集を終える"}}
 		line2 = []hintfit.Item{{Prio: 2, Text: "h/l: タブ"}, {Prio: 3, Text: "n/p: 次・前のページ"}}
-	case onGroup:
-		line1 = []hintfit.Item{{Prio: 2, Text: "e: グループを編集"}, {Prio: 2, Text: "d: グループを消す"}, {Prio: 1, Text: "Enter: 保存して閉じる"}}
+	case onGroup: // グループの行では Space/x は効かない (toggle) が、/ と g は効く
+		line1 = []hintfit.Item{{Prio: 2, Text: "e: グループを編集"}, {Prio: 2, Text: "d: グループを消す"}, {Prio: 3, Text: "/: 名前で検索"},
+			{Prio: 3, Text: "g: グループを作る"}, {Prio: 1, Text: "Enter: 保存して閉じる"}}
 	default:
 		line1 = append(line1[:2:2], hintfit.Item{Prio: 3, Text: "g: グループを作る"}, line1[2])
 	}

@@ -382,3 +382,23 @@ func TestPickerRefreshKeepsDeleteConfirmation(t *testing.T) {
 		t.Fatalf("y で、確かめていたグループを消していない: %+v done=%v", sel, p.Done())
 	}
 }
+
+// カーソルがグループの行にあっても、どの行でも効く / (名前で検索) と g (グループを作る) を案内する。Space/x はグループの行では効かないので出さない。
+func TestPickerGroupRowHintsKeysThatStillWork(t *testing.T) {
+	g := Channel{ID: "grp0123abcd", Name: "times", Members: []Channel{{ID: "C1", Name: "times_a"}}}
+	p := NewPicker([]source.Channel{{ID: "C1", Name: "times_a", IsMember: true}}, []Channel{g})
+	p.Resize(200, 14)
+	lines := p.Lines()
+	help := strings.Join(lines[len(lines)-2:], "\n")
+	if !strings.Contains(help, "e: グループを編集") {
+		t.Fatalf("前提: カーソルがグループの行にない:\n%s", help)
+	}
+	for _, want := range []string{"/: 名前で検索", "g: グループを作る"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("グループの行で %q を案内しない:\n%s", want, help)
+		}
+	}
+	if strings.Contains(help, "Space/x") {
+		t.Errorf("グループの行では効かない Space/x を案内した:\n%s", help)
+	}
+}

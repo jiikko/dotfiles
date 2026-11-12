@@ -1248,15 +1248,17 @@ func (m *Model) helpLines() []string {
 	} else {
 		pane = []hintfit.Item{h(2, "j/k", "話題を選ぶ"), h(2, "l/Enter", "本文を読む")}
 	}
+	// 半ページ送りと先頭・末尾は一覧でも本文でも効く (listnav.MotionOf)。幅が足りなければ先に落とす
+	pane = append(pane, h(6, "Ctrl-D/U", "半ページ送る"), h(6, "g/G", "先頭・末尾へ"))
 	// 本文の欄では Tab が 1 行目に入らず幅 100 で落ちるが、案内に無くても効く
 	pane = append(pane, h(3, "o", "Slack で開く"), h(3, "u", "既読と未読の切り替え"), h(4, "x", "話題を隠す"), h(5, "z", zHint(m.showHidden)))
 	rHint := "今のチャンネルを読み直す"
 	if m.stream {
 		rHint = "選んだ話題のタブを読み直す"
 	}
-	chans := []hintfit.Item{h(4, "Tab", "次のタブ (最後は新着)"), h(3, "r", rHint), h(4, "R", "全チャンネルを読み直す")}
-	if m.subs != nil { // d が効くのは購読を変えられる起動だけ (案内に出したキーは必ず効く。TUI ガイド)
-		chans = append(chans, h(5, "d", "購読を外す"))
+	chans := []hintfit.Item{h(4, "Tab", "次のタブ (最後は新着)"), h(6, "Shift-Tab", "前のタブ"), h(3, "r", rHint), h(4, "R", "全チャンネルを読み直す")}
+	if m.subs != nil { // s と d が効くのは購読を変えられる起動だけ (案内に出したキーは必ず効く。TUI ガイド)
+		chans = append(chans, h(5, "s", "購読するチャンネルを選ぶ"), h(5, "d", "購読を外す"))
 	}
 	if !m.body {
 		chans = append(chans, h(1, "q", "終わる"))

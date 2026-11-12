@@ -745,3 +745,30 @@ func TestEmptyListSaysWhy(t *testing.T) {
 		t.Errorf("話題のある前の板を読み直している間は、話題を出す:\n%s", got)
 	}
 }
+
+// 幅が足りれば、一覧でも本文でも効く半ページ送り・先頭と末尾・前のタブと、購読を変えられる起動の s を案内する
+// (どれも効くのに案内に無かった)。購読を変えられない起動では s を出さない (押すと断る)。
+func TestHelpListsWorkingKeysWhenWide(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	plainHelp := func(m *Model) string {
+		return sgrRe.ReplaceAllString(strings.Join(m.helpLines(), "\n"), "")
+	}
+	m := subsModel(l, &saved, &opened)
+	m.w = 300
+	for _, body := range []bool{false, true} {
+		m.body = body
+		help := plainHelp(m)
+		for _, want := range []string{"Ctrl-D/U: 半ページ送る", "g/G: 先頭・末尾へ", "Shift-Tab: 前のタブ", "s: 購読するチャンネルを選ぶ"} {
+			if !strings.Contains(help, want) {
+				t.Errorf("body=%v: 幅 300 の案内に %q が無い:\n%s", body, want, help)
+			}
+		}
+	}
+	plainModel := newModel(l)
+	plainModel.w = 300
+	if help := plainHelp(plainModel); strings.Contains(help, "s: 購読するチャンネルを選ぶ") {
+		t.Errorf("購読を変えられない起動で s を案内した:\n%s", help)
+	}
+}
