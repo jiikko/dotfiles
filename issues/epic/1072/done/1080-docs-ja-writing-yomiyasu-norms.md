@@ -1,7 +1,5 @@
 # 1080 (docs): ja-writing の skill に yomiyasu の推敲の規範を足す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-13〜）
-
 起票日: 2026-11-13
 
 ## 概要
@@ -66,7 +64,7 @@
 - [x] 76 項目の全部に行き先がある (8 + 19 + 40 + 9 = 76)
 - [x] `ja-textlint _claude/skills/ja-writing/SKILL.md` が rc 0・指摘 0 件 (warning を含む)
 - [x] 観点を変えた整合の確認 3 回 (下の進捗) と `bin/skill-eval ja-writing`
-- [ ] 反証レビュー
+- [x] 反証レビュー (下の進捗。採った指摘はすべて直した)
 
 ## 進捗
 
