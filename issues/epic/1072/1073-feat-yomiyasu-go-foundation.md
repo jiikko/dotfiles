@@ -152,4 +152,38 @@
 
 ## 進捗
 
-- (未着手)
+### 1 周目の実装 (2026-11-13、係 3 体を 1 体ずつ。commit は下の 4 本。仮の名前 src/yomiyasu で作った)
+
+- 骨組みと oracle: `feat(yomiyasu): Go 実装の骨組みと、本家 (Python) の出力を正解にする oracle を作る`・`fix(yomiyasu): 200 以外の応答でも本文を閉じ、lint と dupscan の指摘を直す`
+  - 入力の集まり 331 ファイル (本家の tests/corpus 187・本家のテストの文字列 114・references 9・dotfiles 7・端の入力 14)
+  - 本家が使った (パターン, フラグ) は 839。そのうち 765 が入力のどこかに当たった。本家の道具を 674 回動かし、全部 rc=0
+  - Python の起動は `-I` でなく `-P -s -B -X utf8` にした。`-I` は `PYTHONHASHSEED` を含む `PYTHON*` を全部無視し、set の反復順に依存する出力が実行ごとに変わりうるため (手元の 3.15.0 で `hash('a')` が実行ごとに違うことを確かめた)
+- pyunicode・pystr・pyjson: `feat(yomiyasu): pyunicode・pystr・pyjson と、Python から作る記録・表`
+  - pyunicode は Go の unicode と x/text の norm を使わず、Python から生成した完全な表と正規化の算法を持つ (Unicode 16/17 で増えた合成を文字列の中で取りこぼさないため)
+  - splitlines が区切るのは `\x1c`〜`\x1e` で、`\x1f` は入らない (`\s` は `\x1c`〜`\x1f`)
+- pyre: `feat(yomiyasu): internal/pyre を作る (Python の re を regexp2 v2 で写す層)`
+  - 構文木への読み込みは CPython の `re._parser` の写し。`\s \w \d \b` と re.I は Python の表を字の範囲に開く
+  - regexp2 の後戻りの誤り: 幅の無い選択肢 (`(?:^|;)` など) の後に「1 字以外」の集合が来ると当たりを落とす。補集合を 0xFFFF で 2 つに割って避けた (`TestZeroWidthAlternativeBeforeComplementSet`)
+- 検査: module の lint・test (race つき。パターンの突き合わせは race 無しの 1 本)・`make test-dupscan-gate`・`scripts/go_packages_index.sh --check` が通った。
+  実装をわざと壊して落ちることを `mutate-verify-list` で 52 本確かめた (係ごとに 8・35・9)
+- 記録の大きさ: golden 4.3 MB・入力の集まり 2.4 MB・生成した表 `tables_gen.go` 363 KB
+
+### 敵対的レビュー 1 周目 (opus、2026-11-13)
+
+P1 (本家と違う答えを緑のまま通す) は 0 件、P2 は 5 件、P3 は 7 項目。どれも再現の手順つき。
+
+| 指摘 | 扱い |
+|---|---|
+| P2-1 BMP の外の字 1 つの否定 (`x*[^😀]` を `x_` に当てると Python (0,2)・Go (1,2)) | 直す: 補集合を割る条件が `last.lo <= 0xFFFF` に限られていた |
+| P2-2 行内の `(?a:...)` の中の `\W \S \D \B` と否定クラス | 直す |
+| P2-3 空になれる本体の `{m,n}` (`(a*?){1,2}` の group 1) | 直せるか試す。直せなければ揃わない範囲として README に書く (本家の 839 パターンには無い形) |
+| P2-4 oracle の sandbox が TMPDIR の上の repo の `.git` と `.yomiyasu-words/` を拾い、記録が汚れる | 直す |
+| P2-5 pyjson で `"\u0041` のように `\u` の直後で終わる文字列のエラーの種類と位置 | 直す |
+| P3 `pos > endpos` のときの空の一致 | 直す |
+| P3 グループ名の isidentifier の近似 (26 字・36 字の差) | 直す (Python から表を作る) |
+| P3 自分のグループを参照する条件付きグループ | 直せるか試す。直せなければ README に書く |
+| P3 本家のソースにあるのに 674 回の実行で compile されなかったパターン 18 個 | 直す: 記録に入れる |
+| P3 窓 (pos / endpos) つきの当て方は関数の記録 1,380 件にしか無い | 直す: 本家のパターンに窓つきで当てた記録を足す (大きさの目安の中で) |
+| P3 落ちないテスト: 結合クラスの安定ソート・ハングルの境界・打ち切りの escape | 直す: 落ちるテストを足す |
+| P3 落ちないテスト: `MaxDepth` | 記録して閉じる: 上限は環境のスタックの量で変わる (README に書いた)。境界の近くは揃うと主張しない |
+| P3 2 回の生成が同じ `PYTHONHASHSEED` で、hash の順に依存する出力を見つけられない | 直す: 2 回目の seed を変える |
