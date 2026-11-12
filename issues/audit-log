@@ -482,3 +482,4 @@
 2026-11-11 22:02	ci	direct	issues/1065-research-slack-bbs-audit-2026-11-11.md (src/slack-bbs。内訳は 1065)
 2026-11-11 22:02	lint-from-done	direct	issues/1065-research-slack-bbs-audit-2026-11-11.md (src/slack-bbs。内訳は 1065)
 2026-11-11 22:02	general	direct	issues/1065-research-slack-bbs-audit-2026-11-11.md (src/slack-bbs。内訳は 1065)
+2026-11-12 16:40	performance	direct	issues/1069-perf-slack-bbs-sync-output-redraws-whole-pane-under-tmux.md (src/slack-bbs の本文のスクロール)
