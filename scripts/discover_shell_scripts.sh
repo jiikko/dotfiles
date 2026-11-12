@@ -33,7 +33,7 @@ cd "$(dirname "$0")/.." || exit 1
 # src/lockman は追加 (ab_abandoned.sh = 見捨てた goroutine の副作用を測る A-B
 # ハーネス)。**src/glogx/tools と違い tools/ を掘っていない** — 対象が 1 本で、測る相手
 # (src/lockman のコード) と同じ階層に居るほうが見つかるため。増えたら tools/ へ寄せる。
-LINT_DIRS="setup.sh bin scripts zshlib _claude mac src/glogx/tools src/lockman src/pro-con"
+LINT_DIRS="setup.sh bin scripts zshlib _claude mac src/glogx/tools src/lockman src/pro-con src/ja-writing/bench"
 
 # find の失敗 (ディレクトリ不在・権限エラー) をパイプに隠さない: 失敗時は番兵を stdout に出して
 # 非 0 で終わる。Make の $(shell) は exit code を捨てるが、番兵が実在しないファイル名として
