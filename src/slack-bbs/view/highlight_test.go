@@ -95,7 +95,8 @@ func TestHighlightColorsMessageHeadsRenderBuilds(t *testing.T) {
 		for _, m := range msgs {
 			if strings.Contains(l, m.Name+": ") {
 				got := h.line(l, true)
-				if !strings.Contains(got, sgrName+m.Name+sgrOff) || !strings.Contains(got, sgrDim) {
+				// 名前は時刻の直後で見る (本文の名前の色付けでも同じ色が付くので、名前の色だけでは発言の頭を見分けたか分からない)
+				if !strings.Contains(got, sgrDim) || !strings.Contains(got, sgrOff+" "+sgrName+m.Name+sgrOff+": ") {
 					t.Errorf("render の発言の行に色が付かない: %q → %q", l, got)
 				}
 				seen[m.Name] = true
