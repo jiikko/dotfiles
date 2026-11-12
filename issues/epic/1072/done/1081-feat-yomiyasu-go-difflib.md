@@ -1,7 +1,5 @@
 # 1081 (feat): yomiyasu の diff の照合 (difflib と本家の速い照合) を Go で作り直す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-13〜）
-
 起票日: 2026-11-13
 
 ## 概要
@@ -91,6 +89,7 @@
 - 敵対的レビュー (opus 1 体、壊す観点): 閾値を乱数で選んだ Go の 83,000 組と、本家の定数を差し替えた Python の 40,000 組で、食い違い・panic・無限ループは出なかった。
   再現したのは P3 の 1 件: 負の rune で hash の前提 (2^61 未満) が崩れ、`NewExact` が `New` と違う答えを返す (Python の str と `pyunicode.Runes` は負の値を作らず、呼び出し元も無い)。
   `code()` で uint32 に収めて直し、試験に負の値を足した (戻すと `TestRollingHashesMatchPolyHash` が赤)。未確認として残したもの: `extendSeeds` の「同じ a で b の位置だけが前」の比べ方は通る入力が 0 回 (同じ格子の位置の種は u の小さい順に並ぶので等価と見ている)
+- CI (2026-11-13、227012130): src/ja-writing・Lint・dupscan gate・unused・Tests (heavy) が緑。Tests (rest) の赤は `tests/scripts/test_enumerations_are_derived.sh` の 1 件で、先に入った 1082 の `src/ja-writing/bench/pybench.sh` が shell の lint の対象の外にあるもの (1081 は shell を足していない。1082 の係に伝えた)
 - 所要: README の「`difflib` の作りと揃わない範囲」の表 (Go の `NewExact` は本家の Python の速い照合の 2〜9 倍、Go の `New` は Python の difflib の約 40 倍速い)
 - 反証レビュー (opus 1 体、2026-11-13): P1 1・P2 3・P3 5。全部を本文に入れた (大きい入力は本家の速い照合だけを記録する・1902 行の使い回し・driver で 2 つの一致を確かめる・
   hash の 128 ビットの剰余・枝の数え方・ast でメソッドと属性も見る・サロゲートの組・本文の数と出典)。反証できなかった主張: 呼び出しの形 15 か所・並びの型・find_longest_match を外から呼ばない・本家の docstring の証明 (読んだ範囲)
