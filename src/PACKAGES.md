@@ -80,6 +80,8 @@
 - `src/ja-writing/lists` (`ja-writing/lists`) — Package lists は本家 yomiyasu の語の一覧 (references/lists/*.txt の 8 本) を埋め込んで持つ。
 - `src/ja-writing/oracle` (`ja-writing/oracle`) — Package oracle は本家 yomiyasu (Python) を正解 (oracle) として動かし、出力を記録して Go の実装と突き合わせる仕組み。
 - `src/ja-writing/oracle/cmd/golden` (`ja-writing/oracle/cmd/golden`) — Command golden は本家 yomiyasu (Python) を環境を固定して動かし、testdata/golden/ の記録を作り直す (make golden)。 (main)
+- `src/ja-writing/oracle/cmd/worstcase` (`ja-writing/oracle/cmd/worstcase`) — Command worstcase は flag-patterns.txt の試す数の上限 (PATTERNS_MAX_COST = 512) の最悪の組を、本家 (Python の re) と Go (internal/pyre) で測る。 (main)
+- `src/ja-writing/visibility` (`ja-writing/visibility`) — Package visibility は yomiyasu v3.1.0 の markdown_visibility.py (lint・diff・check が共有する、Markdown の読み方・語の一覧・入力の扱い) を Go で作り直したもの。
 - `src/lockman` (`lockman`) — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
 - `src/mac-lan-manager` (`mac-lan-manager`) — mac-lan-manager は手元の Mac 同士を内部の網で繋いで管理する道具 (bin/mac-lan-manager)。 (main)
 - `src/mac-lan-manager/discover` (`mac-lan-manager/discover`) — Package discover は、Bonjour (dns-sd) で LAN の Mac を見つけるときの出力を読む。

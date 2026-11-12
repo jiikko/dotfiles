@@ -290,12 +290,19 @@ func placeFiles(dir string, files map[string]string) error {
 	return nil
 }
 
-// Call は本家の module の関数 1 つの呼び出し。引数は JSON で表せるものだけ。
+// Call は本家の module の関数 1 つの呼び出し。引数は JSON で表せるものだけ (Ref・Bytes・Cps で、前の結果・bytes・単独のサロゲートを含む str も渡せる)。
+// 1074 で足した欄 (どれも空なら前と同じ): Get は関数を呼ばずに module の属性 (定数) を返す・Save は戻り値を覚える (Ref で渡す)・Digest は結果を SHA-256 の先頭 8 字にして返す
+// (Keep も付けると結果も添える)・Op は関数でなく、作業フォルダへの操作 (fixture を作る・環境を変える)。
 type Call struct {
 	Module   string         `json:"module"`
 	Function string         `json:"function"`
 	Args     []any          `json:"args,omitempty"`
 	Kwargs   map[string]any `json:"kwargs,omitempty"`
+	Get      bool           `json:"get,omitempty"`
+	Save     string         `json:"save,omitempty"`
+	Digest   bool           `json:"digest,omitempty"`
+	Keep     bool           `json:"keep,omitempty"`
+	Op       *Op            `json:"op,omitempty"`
 }
 
 // PyException は本家の関数が投げた例外。Type が "Unserializable" のときは戻り値が JSON にできなかった。
@@ -304,10 +311,13 @@ type PyException struct {
 	Message string `json:"message"`
 }
 
-// CallResult は Call の結果。Exception が nil のとき Result が戻り値の JSON。
+// CallResult は Call の結果。Exception が nil のとき Result が戻り値の JSON。Digest を求めた呼び出しは Digest (と、例外のときの Raised) が入り、
+// Keep も付けたときだけ Result か Exception も入る。
 type CallResult struct {
 	Result    json.RawMessage `json:"result,omitempty"`
 	Exception *PyException    `json:"exception,omitempty"`
+	Digest    string          `json:"digest,omitempty"`
+	Raised    bool            `json:"raised,omitempty"`
 }
 
 // CallFunctions は calls を 1 つの Python プロセスの中で順に呼ぶ (呼び出しごとに起動しない)。結果は calls と同じ順。
@@ -318,10 +328,22 @@ func (r Runner) CallFunctions(ctx context.Context, calls []Call) ([]CallResult, 
 	}
 	defer sb.remove()
 	var out []CallResult
+	git, gitEnv := "", GitEnv("")
+	if needsGit(calls) {
+		if git, err = exec.LookPath("git"); err != nil {
+			return nil, fmt.Errorf("git が見つかりません (fixture を作る op が要ります): %w", err)
+		}
+		if git, err = filepath.Abs(git); err != nil {
+			return nil, err
+		}
+		gitEnv = GitEnv(git)
+	}
 	in := struct {
-		ScriptsDir string `json:"scripts_dir"`
-		Calls      []Call `json:"calls"`
-	}{sb.tree.Path(ScriptsDir), calls}
+		ScriptsDir string            `json:"scripts_dir"`
+		Calls      []Call            `json:"calls"`
+		Git        string            `json:"git"`
+		GitEnv     map[string]string `json:"git_env"`
+	}{sb.tree.Path(ScriptsDir), calls, git, gitEnv}
 	if err := r.runDriver(ctx, sb, "call_function.py", in, &out); err != nil {
 		return nil, err
 	}

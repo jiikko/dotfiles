@@ -3,8 +3,8 @@
 日本語の文章の読みやすさを点検する本家 [yomiyasu](https://github.com/nanaism/yomiyasu) v3.1.0 (commit `db78b9bc`、MIT) の Go 実装 (skill `ja-writing` の本体。名前は skill に合わせ、本家の写しであることは出典として残す)。
 入口は `bin/ja-writing` (1 本の CLI に subcommand `lint` / `diff` / `check` / `hook`)。設計と受け入れ条件は epic 1072 と issue 1073〜1078。
 
-いまあるのは土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) だけで、subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す。
-lint は 1075、diff は 1076、check と hook は 1077 で実装する。
+いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
+subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す。lint は 1075、diff は 1076、check と hook は 1077 で実装する。
 
 ## 構成
 
@@ -13,8 +13,9 @@ lint は 1075、diff は 1076、check と hook は 1077 で実装する。
 | `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
 | `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (いまは未実装の stub) |
+| `visibility/` | 本家の `markdown_visibility.py` (Markdown の読み方・語の一覧・入力の扱い) の Go 実装。本家の名前との対応表は package doc (`visibility/doc.go`)。下の「markdown_visibility の Go 実装」 |
 | `lists/` | 語の一覧 (`references/lists/*.txt` の 8 本) を `go:embed` で持つ。本家と同じバイト列で、`.gitattributes` が改行の変換を止める。SHA-256 は `oracle/upstream.sha256` と照合するテストがある |
-| `oracle/` | 本家を正解として動かし、出力を記録して突き合わせる仕組み (下) |
+| `oracle/` | 本家を正解として動かし、出力を記録して突き合わせる仕組み (下)。`oracle/cmd/golden` が記録を作り、`oracle/cmd/worstcase` が試す数の上限の最悪の組の所要を測る |
 | `testdata/corpus/` | 入力の集まり (下) |
 | `testdata/words/` | 語の一覧のフォルダの見本 (`allow.txt` / `flag.txt` / `flag-patterns.txt`)。本家の `--words` の経路を通すために使う |
 | `testdata/golden/` | 本家の出力の記録 (`make golden` が作る) |
@@ -53,6 +54,10 @@ Go のテストは記録と突き合わせるだけで、**CI でも Python を�
      グループを持つパターンは、各一致の `lastindex` (None は -1) と `lastgroup` (None は `-`) を同じ並べ方で縮めた `last_digest` も残す (`Digest.Last`。span の digest には入らない)。
      digest は全部の一致を縮めたもので、`internal/pyre` の `TestPatternsMatchPythonRecording` が同じパターンを compile して `oracle.Digest` で同じ並べ方をして比べる。差が出たら `sample` で位置を見る。
    - **関数** (`py/call_function.py`、`Runner.CallFunctions`): 本家の module を import して関数に JSON の引数を渡し、戻り値か例外を JSON で返す。1 つの Python プロセスの中で順に呼ぶ。
+     1074 で、関数の記録 (`visibility.json`) のために driver に次を足した (どれも指定しなければ前と同じ出力): `get` (関数を呼ばずに定数を返す)・`save` と `{"$ref": 名前}` (戻り値の Python の値を覚え、次の呼び出しへ JSON を経由せず渡す。
+     解析の結果を行ごとの問い合わせに渡すため)・`{"$bytes_b64": ...}` と `{"$str": [コードポイント...]}` (bytes と、単独のサロゲートを含む str)・`digest` (結果を正規の JSON にして SHA-256 の先頭 8 字だけを返す。`keep` も付けると結果も返す)・
+     `<<ROOT>>` (実行の作業フォルダの印。引数では実パスに、結果では印に戻る)・`op` (作業フォルダへの操作: write・mkdir・symlink・chdir・chmod・remove・setenv・unsetenv・restoreenv・git)。
+     Go のテストは同じ操作を `oracle.Fixture` で `t.TempDir()` の実パスにする。
    - **CLI** (`Runner.RunCLI`): 本家の `yomiyasu_*.py` を使い捨ての cwd (入力のファイルを置く) で動かし、stdout・stderr・rc を返す。
    関数と CLI の記録は `smoke.json` に最小の見本 (`--version`・使えない値の例外など) を置いてある。1074 以降は `oracle.Call` / `oracle.CLISpec` の一覧を足して `RecordSmoke` と同じ形で記録する。
    - **標準ライブラリの記録** (`internal/pyunicode`・`internal/pyjson`・`internal/pystr` の正解。`unicode.json`・`json.json`・`pystr.json`): 入力は driver が決まった算法 (乱数を使わない) で作る。
@@ -94,10 +99,78 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
 - パターン (本家が使った (パターン, フラグ) の組): **870** (道具を動かして集めたものと、本家のソースの literal 107 個。literal のうち道具が使わなかったものも含む)。
   ソースの literal は 120 呼び出し・重複を除いて 107 個。窓つきの呼び出しは 90,490 回。グループを持ち `last_digest` を持つパターンは 106
 - 当たった (パターン, 単位) の組: 1,728,306。一致の総数: 22,143,048 (digest に畳んでいて、記録には残らない)
-- 記録の大きさ: `patterns.json` 約 749 KB・`pyre.json` 約 1.8 MB・`smoke.json` 約 3 KB・`unicode.json` 約 886 KB・`json.json` 約 1.1 MB・`pystr.json` 約 657 KB。**合計 約 5.2 MB** (目安 5 MB 前後)。
+- 記録の大きさ: `patterns.json` 約 749 KB・`pyre.json` 約 1.8 MB・`smoke.json` 約 3 KB・`unicode.json` 約 886 KB・`json.json` 約 1.1 MB・`pystr.json` 約 657 KB・`visibility.json` 約 2.5 MB。**合計 約 7.7 MB**。
   生成した表 `internal/pyunicode/tables_gen.go` は約 392 KB
 - 実行の件数は `go test ./oracle/` の `TestPatternGolden*` が見る。入力の集まりが 0 件・記録が無い・入力のファイル (SHA-256・行数) が記録と合わない・
   どのパターンも当たっていない・道具の run が 1 つも rc=0 で終わっていない、のどれでも落ちる
+
+## markdown_visibility の Go 実装 (`visibility/`)
+
+lint・diff・check が import する公開面の全部 (`analyze_markdown`・`line_visible_text`・`range_overlaps_protected`・`inline_protected_spans`・`unicode_whitespace`・`decode_source`・`DOC_TYPES`・`READER_LEVELS`・
+`normalize_doc_type`・`normalize_reader`・`context_label`・`WordsError`・`resolve_words`・`current_directory`・`words_context`・`words_label`・`input_path_problem`・`absolute_path`) と、その下の
+`reference_definition_end`・`find_words_folder`・`load_words`・`check_pattern` (flag-patterns.txt の検査器) を Go の関数にした。本家の名前との対応表は `visibility/doc.go`。
+位置は Python の str の添字と同じ rune の添字 (byte の添字と混ぜない)。正規表現は本家と同じパターン・同じフラグで `internal/pyre` を通す。例外は `*visibility.Error` (`Type` が Python の例外の型名、`Message` が `str(exc)`)。
+
+### 本家との突き合わせ (`visibility/oracle_test.go`・`testdata/golden/visibility.json`)
+
+`oracle.VisibilityCases` が公開面の全関数への呼び出し (903 case・240,196 呼び出し) を作り、`make golden` が本家に通して、呼び出しごとの結果 (か例外) の digest を記録する。
+digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=(",", ":")`) にした SHA-256 の先頭 8 字。dict と list は形ごと、例外は型名と文 (`str(exc)`) ごと比べている。Go のテストは同じ呼び出しを Go の実装に通し、`internal/pyjson` で同じ正規の JSON を作って比べる。
+結果そのものを残した呼び出し (小さな入力) は、食い違ったときに記録の中身が見える。
+
+| 入力 | 中身 |
+|---|---|
+| 入力の集まり (`testdata/corpus/` の 332 ファイル) | ファイルごとに `analyze_markdown` (frontmatter を読む・読まない)・`decode_source` (bytes と str)、行ごとに `line_visible_text` (全部の種類・種類を絞る)・`range_overlaps_protected` (行の範囲・行をまたぐ範囲)・`inline_protected_spans` |
+| 手書きの Markdown (105 件) | 柵・frontmatter・HTML ブロックの種類・setext・表・リスト・引用・参照定義・インラインのコード / リンク / 画像 / 裸の URL・CRLF と CR・`<ſcript>` (本家が `AssertionError` になる形) など。結果そのものを残す |
+| 乱数で組んだ入力 (400 文書・4,000 のインライン・3,000 の参照定義) | 解析の状態遷移を行の部品の組み合わせで通す。種は固定 (`xorshift`) |
+| `decode_source` の bytes | 全 256 バイト・先頭と継続の組み合わせ・途中で終わる形・サロゲートの形 (誤りの範囲と理由が CPython と同じ) |
+| `check_pattern` | 手書き 409 (受ける形と、断る理由ごとの形) と、26 字の全部の 3 字までの並び (18,278) と 11 字の全部の 4 字の並び (14,641。`re.compile` の誤りも含む) |
+| 語の一覧 | 本物の `git init` / `git worktree add` で作る 3 つの形 (通常の checkout・linked worktree・`--separate-git-dir` と `core.worktree` の共有の checkout)・手で書いた git の形 46 種 (config・config.worktree・commondir・.git ファイル)・`--words` の読み方と `~` の展開 (HOME を変えて)・`load_words` の中身の 63 種 (BOM・CRLF・1 万行・UTF-8 の誤り・タブ・正規表現の上限・フォルダ・リンクの輪・読めない権限)・`words_context` / `words_label` |
+| パスと cwd | `input_path_problem` (点で始まる名前・作業フォルダの外・symlink・輪・cwd が symlink の先・cwd が消えたとき)・`absolute_path`・`current_directory`・`unicode_whitespace` (U+0000〜U+3100 の全部と端の字)・定数 17 個 |
+
+- fixture は `oracle.Op` の並びで、Python の driver と Go の `oracle.Fixture` が同じ操作をする。git の引数は `subproc.GitArgs` を通し、環境変数は空から作る (`oracle.GitEnv`。利用者の git の設定・認証を持ち込まない)。
+  テストの作業フォルダは `t.TempDir()` の実パスで、上に `.git`・`.yomiyasu-words`・`.yomiyasu` があると、探索が上まで届いて結果が置き場所で変わるので、本家の使い捨ての dir と同じく止まる (`TMPDIR` をその外に向ける)。
+- 空振りを止める検査 (`TestRecordingCoversEveryPublicFunction`): 公開面の関数ごとに記録の件数が 0 でないこと、例外を投げうる関数は、例外になった呼び出しと成功した呼び出しの両方があること、記録に公開面の一覧 (`oracle.VisFunctions`) にない名前がないこと。
+- 保存できなかった `save` (例外で終わった呼び出し) の `Ref` は `KeyError` になる。case の名前を付けた名前にしてあるので、別の case の同じ名前の値を読むことはない (`scopeRefs`)。
+
+記録の関数の件数 (呼び出し数 / 例外になった数): `analyze_markdown` 5,685 / 4・`line_visible_text` 75,709 / 20・`range_overlaps_protected` 67,848 / 2・`inline_protected_spans` 38,165 / 0・`reference_definition_end` 3,197 / 0・
+`unicode_whitespace` 12,574 / 0・`decode_source` 2,413 / 1,299・`normalize_doc_type` 30 / 8・`normalize_reader` 10 / 4・`context_label` 25 / 16・`find_words_folder` 252 / 79・`load_words` 90 / 41・`resolve_words` 16 / 4・
+`words_context` 6 / 0・`words_label` 6 / 0・`check_pattern` 33,328 / 27,764・`input_path_problem` 86 / 0・`absolute_path` 40 / 1・`current_directory` 4 / 0・定数 17 個 (各 1)。
+(`line_visible_text` と `range_overlaps_protected` の例外には、解析が例外で終わった後の `Ref` の `KeyError` が混ざる。)
+
+### 揃わない範囲
+
+- Windows の分岐 (ドライブ・`USERPROFILE`) は写さない (macOS だけが対象)。
+- 関数の引数の型は、本家の注釈どおりの型だけを受ける (`normalize_doc_type` の引数は str か None だけで、`str(value)` で文字列になる int などは受けない。`decode_source` は str か bytes で、bytearray は別に持たない)。
+- `OSError.strerror` の文は macOS の `strerror(3)` の表で持つ (EPERM・EIO・EACCES・EISDIR・ELOOP・ENAMETOOLONG など 20 種。記録で確かめたのは EISDIR・ELOOP・EACCES・ENAMETOOLONG。ENOENT と ENOTDIR は文を出さず、ファイルが無いものとして扱う)。表に無い errno は `Unknown error: N`。
+- `str.lower()` は、ASCII の語と比べる用途に限って写す (`pyLowerASCII`: 小文字化で ASCII になる非 ASCII の字は U+212A だけ)。ほかの用途には使えない。
+- `check_pattern` の「Python が警告を出す書き方」の分岐は、Go にない: 走査が `[ ]` の中の入れ子と `--` `&&` `~~` `||` を先に断るので、走査を通った書き方で 3.15.0 の `re.compile` が警告を出す形は見つかっていない
+  (26 字の 3 字までの並びと手書きの警告の形を本家に通して確かめた)。
+- `*Analysis` の `LineVisibleText` と `RangeOverlapsProtected` は、結果の覚え (本家の dict の `_line_visible_cache` と `_kind_mask_cache`) を書くので、複数の goroutine から同時に呼ばない。
+- `getcwd` は `syscall.Getwd` に、消えたフォルダを検出する `os.Stat` を足している (macOS の `syscall.Getwd` は消えたフォルダの元のパスを返し、libc の `getcwd` (Python の `os.getcwd`) は ENOENT で失敗する。記録の `paths` の case で確かめた)。
+- `InputPathProblem` の `os.path.realpath` は、本家と同じ規則 (存在しない部分は字面のまま・リンクの輪は手前で止める) を Go で書き直したもので、Python 3.15.0 の `posixpath.realpath` の移し。macOS の NFC / NFD の同じフォルダは `os.SameFile` (dev と ino) で見る。
+
+### 試す数の上限 (`PATTERNS_MAX_COST = 512`) の判断
+
+本家は上限を、Python の `re` で 10 万字の行に最短一致の繰り返しを重ねた組を当てる時間 (手元の macOS で約 0.7 秒) から決めている。値は `visibility.PatternsMaxCost` などに同じ値で写した
+(`PATTERN_MAX_COST` = 512・`PATTERNS_MAX_COST` = 512・`PATTERNS_MAX` = 500・`PATTERN_MAX_LENGTH` = 200・`PATTERN_MAX_REPEAT` = 30・`PATTERN_NAME_MAX` = 40・`FLAG_REPLACEMENT_MAX` = 80・`WORDS_MAX_LINES` = 10,000)。
+上限ちょうど (合計 512 を通し、513 を断る) の境界は記録の `words-load` の case (`patterns-cost-512`・`patterns-cost-513-total`・`patterns-cost-total-over-line2`・`patterns-cost-single-over`) で本家と同じ判定になることを見ている。テストの合否には時間を使わない。
+
+`go run ./oracle/cmd/worstcase -rounds 5 -shape <組>` が、同じ入力 (`a` が 99,999 字と `d` の 1 行) を Python (本家の `check_pattern` と `search`) と Go (`CheckPattern` と `internal/pyre` の `Search`) で、5 回ずつ交互に測る
+(奇数回目は Go を先に起こす。毎回新しいプロセス)。起動は、壁時計から driver (Go は子プロセスの `-child`) の中の所要を引いた値で、インタプリタ・バイナリの起動と module の初期化を含む。
+2026-11-13、Apple M3 Max・macOS・Python 3.15.0・go 1.26.0 (秒。最小 / 中央 / 最大):
+
+| 組 (試す数の合計はどれも 512) | Python の起動 | Python の search | Go の起動 | Go の search |
+|---|---|---|---|---|
+| `single`: `a{0,7}?[ab]{0,7}?[ac]{0,7}?d` (最短一致を 3 つ重ねる。字の集合を変えて畳めなくした) | 0.021 / 0.021 / 0.022 | 0.425 / 0.431 / 0.434 | 0.008 / 0.008 / 0.010 | 0.234 / 0.236 / 0.241 |
+| `word`: `\w{0,7}?[a-z]{0,7}?\S{0,7}?d` (`\w` と `\S` は Python の字の集合を範囲の列に開くので集合が大きい) | 0.021 / 0.022 / 0.023 | 0.483 / 0.487 / 0.519 | 0.008 / 0.008 / 0.008 | 0.638 / 0.640 / 0.643 |
+| `greedy`: `a{0,7}[ab]{0,7}[ac]{0,7}d` (最長一致) | 0.020 / 0.021 / 0.021 | 0.154 / 0.156 / 0.158 | 0.008 / 0.008 / 0.008 | 0.051 / 0.051 / 0.051 |
+| `split`: 試す数 64 のパターン 8 つ (合計 512) | 0.021 / 0.021 / 0.022 | 0.365 / 0.373 / 0.383 | 0.008 / 0.008 / 0.008 | 0.250 / 0.251 / 0.252 |
+
+`check_pattern` (compile) はどちらも 1 ms 未満。本家の module の import は 0.012〜0.013 秒 (Python の起動に含まれる)。
+`a{0,7}?a{0,7}?a{0,7}?d` のように同じ字の繰り返しを重ねる形は、regexp2 が 1 つの繰り返しに畳んで 0.005 秒で終わり、Python は 0.31 秒かかった (`-shape merged`)。
+**判断: 上限は 512 のまま据え置く。** Go で測った最悪は `word` の 0.64 秒 (Python の同じ組は 0.49 秒で 1.3 倍) で、本家が上限を決めた根拠の約 0.7 秒を超えない。
+測ったのは macOS の手元 1 台だけで、CI の macOS runner では測っていない (本家が上限を決めた 1,024 は CI の Linux で 2 秒を超えたという記録があるが、この repo の CI は macOS)。
+lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で行を絞ってから正規表現を当てるなら、最悪の行はさらに限られる (未確認: 1075 の実装次第)。
 
 ## 標準ライブラリを写す package (`internal/`)
 
@@ -154,7 +227,7 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
     `(a)(?:(b)(?<=(a)b))` を "ab" に search すると Python は lastindex=3、Go は 2) も同じ仕組みで外れる。regexp2 が閉じの順を返さない限り、推定の規則を複雑にしても当たる形が増えるだけで、実行の順は復元できないので、規則は直さない。
     本家が `lastindex` / `lastgroup` を使うのは `yomiyasu_diff.py` の 5 か所 (4220・5765・5795・5800・9791 行) で、そのパターンは記録の `last_digest` が入力の集まりの上で守る
     (`TestPatternsMatchPythonRecording`)。入力の集まりに無い入力で外れるかは保証しない。
-  - 本家の `flag-patterns.txt` の検査器が受けるパターンの部分集合は、本家のテストの例で確かめる (検査器そのものは 1074 で作る)。
+  - 本家の `flag-patterns.txt` の検査器が受けるパターンの部分集合は、`visibility/` の `CheckPattern` と記録の `check_pattern` の呼び出し (約 3.3 万) で確かめた。
   - `pos > endpos` で `(?m)$` を持つパターンを呼ばないことは、本家の `yomiyasu_diff.py` の `.match(text, pos, endpos)` の 11 か所のパターンがどれも `(?m)` を持たないことをソースで読んだだけで、検査は無い (diff を写す 1076 で、窓つきの呼び出しを写すときに見る)。
 
 - `difflib` の作りと揃わない範囲 (issue 1081):
@@ -177,6 +250,9 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
 ```sh
 make -C src/ja-writing lint test    # CI と同じ (Python は動かさない)
 make -C src/ja-writing golden       # 記録を作り直す (Python と ネットワークが要る。UPDATE=1 で環境の違いを許す)
+                                    #   TMPDIR は、上に .git・.yomiyasu-words・.yomiyasu が無い場所に向ける (repo の中の tmp/ は使えない)
+go run ./oracle/cmd/golden -only visibility   # markdown_visibility の関数の記録 (visibility.json) だけを作り直す (約 10 秒)
+go run ./oracle/cmd/worstcase -rounds 5 -shape single   # 試す数の上限の最悪の組の所要を本家と Go で測る (テストの合否には使わない)
 make -C src/ja-writing pin-upstream # 固定する commit を変えるときだけ
 ```
 
@@ -184,5 +260,5 @@ make -C src/ja-writing pin-upstream # 固定する commit を変えるときだ�
 
 ## 今後 (別の issue)
 
-`internal/pyre` (Python の `re` を regexp2 で写す) は作った。Markdown の構造を読む層 (`markdown_visibility.py` と `flag-patterns.txt` の検査器) は 1074 で作る。
-このディレクトリの記録と `oracle.Digest` が、それらの突き合わせの基準になる。
+`internal/pyre` (Python の `re` を regexp2 で写す) と、Markdown の構造を読む層 (`visibility/`。`markdown_visibility.py` と `flag-patterns.txt` の検査器) は作った。
+lint (1075)・diff (1076)・check と hook (1077) がこの 2 つの上に載る。このディレクトリの記録と `oracle.Digest` が、それらの突き合わせの基準になる。

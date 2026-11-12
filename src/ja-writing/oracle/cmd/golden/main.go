@@ -32,13 +32,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	pin := flag.Bool("pin", false, "本家のファイルを取り直して oracle/upstream.sha256 を書く")
+	only := flag.String("only", "", "visibility だけを作り直す (markdown_visibility の関数の記録。ほかは作り直さない)")
 	flag.Parse()
 	p := paths{corpus: "testdata/corpus", words: "testdata/words", golden: "testdata/golden", manifest: "oracle/upstream.sha256", tables: oracle.PyunicodeTablesPath, pyreTables: oracle.PyreTablesPath}
 	var err error
 	if *pin {
 		err = runPin(ctx, p)
 	} else {
-		err = runGolden(ctx, p, os.Getenv("UPDATE") == "1")
+		err = runGolden(ctx, p, os.Getenv("UPDATE") == "1", *only)
 	}
 	cancel()
 	stop()
@@ -60,7 +61,7 @@ func runPin(ctx context.Context, p paths) error {
 	return nil
 }
 
-func runGolden(ctx context.Context, p paths, update bool) error {
+func runGolden(ctx context.Context, p paths, update bool, only string) error {
 	cache, err := oracle.DefaultCacheRoot()
 	if err != nil {
 		return err
@@ -84,6 +85,25 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 	header := oracle.NewHeader(info, corpus)
 	if err := checkEnv(p, header, update); err != nil {
 		return err
+	}
+	visCases, err := oracle.VisibilityCases(corpus)
+	if err != nil {
+		return err
+	}
+	vis, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildVisibility(ctx, runner, visCases, header) })
+	if err != nil {
+		return fmt.Errorf("markdown_visibility の関数の記録: %w", err)
+	}
+	if only == "visibility" {
+		path := filepath.Join(p.golden, oracle.VisibilityFile)
+		if err := atomicfile.Write(path, vis, 0o644); err != nil {
+			return fmt.Errorf("%s へ書けません: %w", path, err)
+		}
+		fmt.Printf("%s: %d バイト\n", path, len(vis))
+		return nil
+	}
+	if only != "" {
+		return fmt.Errorf("-only は visibility だけを受けます: %q", only)
 	}
 	patterns, err := twiceSame(runner, func(runner oracle.Runner) ([]byte, error) { return buildPatterns(ctx, runner, corpus, p.words, header) }, samePatternsIgnoringText)
 	if err != nil {
@@ -127,6 +147,7 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 		filepath.Join(p.golden, oracle.UnicodeFile): unicode, filepath.Join(p.golden, oracle.JSONFile): jsonRec,
 		filepath.Join(p.golden, oracle.PystrFile): pystr, filepath.Join(p.golden, oracle.PyreFile): pyre, p.tables: tables, p.pyreTables: pyreTables,
 		filepath.Join(p.golden, oracle.DifflibFile): difflibRec,
+		filepath.Join(p.golden, oracle.VisibilityFile): vis,
 	} {
 		if err := atomicfile.Write(path, body, 0o644); err != nil {
 			return fmt.Errorf("%s へ書けません: %w", path, err)
@@ -140,7 +161,7 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 
 // checkEnv は記録の環境が今と違うときに止める。記録がまだ無いときと update のときは通す。
 func checkEnv(p paths, now oracle.Header, update bool) error {
-	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile} {
+	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile, oracle.VisibilityFile} {
 		var old struct {
 			Header oracle.Header `json:"header"`
 		}
@@ -188,6 +209,14 @@ func buildPatterns(ctx context.Context, r oracle.Runner, c oracle.Corpus, words 
 		return nil, err
 	}
 	return oracle.MarshalPatterns(oracle.PatternsGolden{Header: h, Runs: rec.Runs, StaticCalls: rec.StaticCalls, StaticPatterns: rec.StaticPatterns, Patterns: rec.Patterns})
+}
+
+func buildVisibility(ctx context.Context, r oracle.Runner, cases []oracle.VisCase, h oracle.Header) ([]byte, error) {
+	g, err := r.RecordVisibility(ctx, h, cases)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalVisibility(g)
 }
 
 func buildSmoke(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, error) {
