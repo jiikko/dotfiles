@@ -5,7 +5,13 @@ Claude Code 2.1.287 の mods を、settings の hook (`_claude/settings.json` �
 API の正本は plugin-authoring skill が書き出す `claude-code.d.ts` で、**early access なのでリリースごとに変わる**。
 初めて触るなら、全体像と変更の手順を [`claude-mods-guide.md`](claude-mods-guide.md) で先に読む。
 
-## 🚨 このマシンでは mod に届かないイベントがある — **2026-10-07 に消えた (条件付き)**
+## 🚨 このマシンでは mod に届かないイベントがある — **2026-11-13 にまた届かなくなった**
+
+> **2026-11-13 (claude 2.1.322) の実測**: probe の mod の `classic.Stop` は呼ばれず、transcript に
+> `bgw-probe: its classic.Stop hook was skipped. "cc-plugin-sec-default" runs first and sent the event on past it.` が出た
+> (`ratelimit-warn` の `classic.UserPromptSubmit` にも同じ通知が出ている)。`session.start` / `prompt.submit` / `turn.start` / `turn.complete` / `tool.call` は届いた。
+> 下の 2026-10-07 の「消えた」は今は当てはまらない。新しい mod は `classic.*` に頼らない (bg-watchdog は背景タスクの表を `tool.call` の結果と通知から自分で作る)。
+
 
 > **2026-10-07 (claude 2.1.292) の測り直し**: 619 の probe (`prompt.compose` / `prompt.context` を足した 15 イベント) を `--plugin-dir` で載せ `claude -p` (Bash 1 回) で回すと、
 > **15 イベント全部に印が付き、debug log に `bypassed by` は 0 本**。理由は debug log の

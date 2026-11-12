@@ -292,5 +292,13 @@ case "$(tmux -L "$SOCKET" show -p -v -t "$WK_PANE" @claude_state_since 2>/dev/nu
   *) ok '@claude_state_since に epoch 秒を書く' ;;
 esac
 
+# mod bg-watchdog が呼ぶ経路。bg 待機で抑えたベルを、止まったと判断したときだけ鳴らし直す
+printf 'Test 10: bg-stuck (mod bg-watchdog) → bg 待機中でも鳴らし、bg フラグは残す\n'
+expect_bell_seq 1 'bg 待機中でも bg-stuck はベルを鳴らす' \
+  idle "$BG_JSON" \
+  bg-stuck '{}'
+expect_state '🔔 input (bg 停滞)' '状態は 🔔 input (bg 停滞)'
+if [ "$(tmux -L "$SOCKET" show -p -v -t "$PANE" @claude_bg 2>/dev/null)" = 1 ]; then ok 'bg フラグは残す (bg はまだ走っている)'; else bad 'bg フラグが落ちた (後の承認待ちの催促で鳴りすぎる)'; fi
+
 [ "$fail" -eq 0 ] || { printf '✗ 失敗あり\n'; exit 1; }
 printf '✓ すべて成功\n'

@@ -1,0 +1,21 @@
+{
+  "name": "bg-watchdog",
+  "version": "0.1.0",
+  "description": "背景タスク (run_in_background の Bash / Agent) の完了を待ったまま一定時間動きがないセッションを、toast・status line・tmux のベルと通知で知らせる。設定で agent を起こして状態を確かめさせることもできる",
+  "author": { "name": "jiikko" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "thresholdMinutes": {
+      "type": "number",
+      "title": "知らせるまでの分数",
+      "description": "背景タスクの完了待ちのまま、この分数のあいだ何も起きなければ知らせる。知らせた後も、同じ分数ごとに繰り返す",
+      "default": 20
+    },
+    "wake": {
+      "type": "boolean",
+      "title": "agent を起こす",
+      "description": "知らせるときに、背景タスクの状態を確かめさせるプロンプトを agent に送る (1 回ごとに 1 ターン使う)",
+      "default": false
+    }
+  }
+}

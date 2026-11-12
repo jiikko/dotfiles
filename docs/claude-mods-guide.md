@@ -57,6 +57,7 @@ _claude/mods/<name>/                 1 つの mod = 1 ディレクトリ
 | `peer-inbox` | 他セッション / teammate との SendMessage の送受信を、プロンプトの上の帯 (直近 3 件と受信・送信の回数・隠す)・toast・status line の受信・送信の回数 (`📨 受信 N・送信 M`。届いた送信だけを数える) に残す。既読・未読は持たない。transcript に流れる本文は止めない (流れない写し) | `hooks/register.tsx` |
 | `tool-elapsed` | 20 秒以上走っている tool 呼び出し (codex exec / swift test / make test …) をプロンプトの上の帯に経過時間つきで出し、5 分ごとに toast で知らせる。何も止めない (待ちの上限を人が判断する材料) | `hooks/register.tsx` (配線) / `hooks/elapsed.ts` (判定・文面) |
 | `ratelimit-warn` | Claude の 5h 枠が 80% 以上なら、プロンプトに hook と同じ 1 行を注入し (`classic.UserPromptSubmit`)、status line に `🚨 5h NN%` を出す。settings の hook `ratelimit-warn.sh` は fallback として残り、mod が判定できたプロンプトでは env の印で黙る (issue 658) | `hooks/register.ts` (配線) / `hooks/limit.ts` (判定・文面) |
+| `bg-watchdog` | 背景タスク (run_in_background の Bash / Agent) の完了待ちのまま、メインのターンが止まって 20 分動きがないと、toast・status line (`🚨 背景待ち N 分`)・tmux の `🔔 input (bg 停滞)` とベル・macOS 通知で知らせ、20 分ごとに繰り返す。`/config` の `wake` を入れると、状態を確かめさせるプロンプトを agent に送る (分数は `thresholdMinutes`) | `hooks/register.ts` (配線) / `hooks/watch.ts` (表・判定・文面)。tmux の表示は `_claude/hooks/tmux-pane-state.sh bg-stuck` |
 
 ## desktop-statusline の仕組み
 

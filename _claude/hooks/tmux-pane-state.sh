@@ -22,6 +22,11 @@
 #             表示側 (_tmux.conf / tmux_agent_panel.sh / tmux_agent_jump.sh) は
 #             "*working*" の部分一致で色分けするため、このラベルも working 色になる
 #   start   : "✓ idle" を表示     (SessionStart — 起動直後なので通知しない)
+#   bg-stuck <文>: "🔔 input (bg 停滞)" を表示 + ベル + 見えていなければ macOS 通知 (音あり)
+#             mod bg-watchdog (_claude/mods/bg-watchdog) が、背景タスクの完了待ちのまま動かないと判断したときに呼ぶ。
+#             settings の hook からは呼ばない。@claude_bg は触らない (bg はまだ走っている)。
+#             名前に input を含めるのは、表示側の *input* の照合 (赤・🔔) に載せるため。tmux-mark-seen.sh の
+#             「見た」への降格は厳密に "🔔 input" だけなので、この状態は agent が動き出す (working) まで残る
 #   clear   : 状態を消す          (SessionEnd — Claude 終了後は通常シェルへ戻す)
 #
 # @claude_bg (pane option) = 「直近の Stop 時点で bg タスクが in-flight だった」
@@ -209,6 +214,9 @@ case "${1:-}" in
     fi
     ;;
   start)   set_state "✓ idle" 0 ;;
+  bg-stuck)
+    set_state "🔔 input (bg 停滞)"; ring_bell; notify_if_hidden "${2:-🚨 背景タスクの完了待ちのまま動きがない}" "default"
+    ;;
   clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state \; \
                 set -p -u -t "$TMUX_PANE" @claude_state_since \; \
                 set -p -u -t "$TMUX_PANE" @claude_bg 2>/dev/null ;;
