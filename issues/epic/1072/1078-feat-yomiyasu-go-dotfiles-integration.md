@@ -60,6 +60,9 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 6. **ja-writing (`_claude/skills/ja-writing/SKILL.md`)**
    - 規範の文を足すことと、76 項目のうちコードでない規範の行き先を決めることは、[1080](1080-docs-ja-writing-yomiyasu-norms.md) に切り出した (dotfiles-24 が担当。2026-11-13)。
      この issue に残るのは「ja-textlint の中身」の節の書き直しと、`ja-writing diff` を使う手順の文
+   - 1080 からの申し送り (dotfiles-24、2026-11-13): 1080 は規範 8 (否定対比)・9 (擬人化)・10 (前置き・定型の結び・言い直しの締め) を新しく足し、
+     規範 3 に直訳語の型、規範 7 に含みと慣用句を残す話を足した。「ja-textlint の中身」の「見ないもの」の行は規範 8〜10 を挙げていないので、書き直すときに
+     `ja-writing lint` が拾う範囲と合わせて直す。hook (`ja-textlint-on-edit.sh`) が引く「規範 7」の番号は変わっていない
    - 否定対比・擬人化・前置きと定型の結び・直訳語の型・直す前後の比較 (`ja-writing diff`) の規範の文を足す
    - 「ja-textlint の中身」の節を書き直す
    - SKILL.md を直したら、観点を変えた整合の確認を 3 回と `bin/skill-eval` を回す
