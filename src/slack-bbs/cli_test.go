@@ -229,6 +229,33 @@ func TestCLIFetchesChannelListAtMostOnce(t *testing.T) {
 	}
 }
 
+// アーカイブ済みのチャンネルは、購読にもグループにも新しく入れない (購読の画面と同じ。入れると読み直しのたびに「読めなかった」の注記が出続ける)。
+// 外すのは購読の画面と同じく受ける。
+func TestCLIRefusesToAddArchivedChannels(t *testing.T) {
+	d, sl, dir := cliDeps(t)
+	list := []source.Channel{{ID: "C1", Name: "dev", IsMember: true}, {ID: "C4", Name: "old-proj", IsArchived: true}}
+	if err := (cache.Store{Dir: dir}).SaveChannels(list, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, rc := runCLI(t, d, "group", "create", "g", "dev"); rc != 0 {
+		t.Fatalf("group create: rc=%d", rc)
+	}
+	path, _ := d.subsPath()
+	before, _ := os.ReadFile(path)
+	for _, args := range [][]string{{"sub", "add", "#old-proj"}, {"sub", "add", "C4"}, {"group", "add", "g", "old-proj"}, {"group", "create", "h", "old-proj"}} {
+		_, errs, rc := runCLI(t, d, args...)
+		if rc != 1 || !strings.Contains(errs, "アーカイブ") {
+			t.Errorf("%v: rc=%d err=%q (アーカイブ済みだと断るはず)", args, rc, errs)
+		}
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(before, after) {
+		t.Errorf("断った操作が購読を書き換えた:\n%s", after)
+	}
+	if len(sl.calls) != 0 {
+		t.Errorf("前に取った一覧で引けるのに Slack を呼んだ: %v", sl.calls)
+	}
+}
+
 // writeSubs は今の購読に重ねて書く (テストの準備。production と同じ照合の道を通す)。
 func writeSubs(t *testing.T, path string, chs []subs.Channel) error {
 	t.Helper()

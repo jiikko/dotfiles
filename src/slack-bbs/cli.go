@@ -271,6 +271,10 @@ func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, err
 		if err != nil {
 			return nil, err
 		}
+		// 購読の画面と同じく、アーカイブ済みは新しく入れない (読み直しのたびに「読めなかった」の注記が出続ける)。外す側 (resolveIDs) は受ける
+		if slices.ContainsFunc(list, func(x source.Channel) bool { return x.ID == c.ID && x.IsArchived }) {
+			return nil, fmt.Errorf("#%s はアーカイブ済みなので、購読にもグループにも入れない", clean(c.Name))
+		}
 		out = append(out, c)
 	}
 	return out, nil
