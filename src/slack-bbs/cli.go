@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -55,7 +56,7 @@ func cmdSubOps(ctx context.Context, d deps, args []string, stdout io.Writer) err
 		}
 		return saveSubs(path, next, base, stdout, fmt.Sprintf("購読を %d 件外した", n))
 	}
-	chs, err := resolveAll(ctx, d, args[1:])
+	chs, archived, err := resolveAll(ctx, d, args[1:])
 	if err != nil {
 		return err
 	}
@@ -63,6 +64,9 @@ func cmdSubOps(ctx context.Context, d deps, args []string, stdout io.Writer) err
 	if n == 0 {
 		fmt.Fprintln(stdout, "どれももう購読している (変えていない)")
 		return nil
+	}
+	if err := refuseNewArchived(cur, next, archived); err != nil {
+		return err
 	}
 	return saveSubs(path, next, base, stdout, fmt.Sprintf("購読を %d 件足した", n))
 }
@@ -95,7 +99,7 @@ func cmdGroup(ctx context.Context, d deps, args []string, stdout io.Writer) erro
 		}
 		return nil
 	case "create":
-		chs, err := resolveAll(ctx, d, args[2:])
+		chs, archived, err := resolveAll(ctx, d, args[2:])
 		if err != nil {
 			return err
 		}
@@ -103,9 +107,12 @@ func cmdGroup(ctx context.Context, d deps, args []string, stdout io.Writer) erro
 		if err != nil {
 			return err
 		}
+		if err := refuseNewArchived(cur, next, archived); err != nil {
+			return err
+		}
 		return saveSubs(path, next, base, stdout, fmt.Sprintf("グループ「%s」を作った (%d チャンネル)", name, len(chs)))
 	case "add":
-		chs, err := resolveAll(ctx, d, args[2:])
+		chs, archived, err := resolveAll(ctx, d, args[2:])
 		if err != nil {
 			return err
 		}
@@ -116,6 +123,9 @@ func cmdGroup(ctx context.Context, d deps, args []string, stdout io.Writer) erro
 		if n == 0 {
 			fmt.Fprintf(stdout, "どれももうグループ「%s」に入っている (変えていない)\n", name)
 			return nil
+		}
+		if err := refuseNewArchived(cur, next, archived); err != nil {
+			return err
 		}
 		return saveSubs(path, next, base, stdout, fmt.Sprintf("グループ「%s」に %d 件入れた", name, n))
 	case "rm":
@@ -242,7 +252,8 @@ func channelList(ctx context.Context, d deps, st cache.Store, refresh bool, stde
 
 // resolveAll は引数のチャンネルを、チャンネルの一覧で引く (ID でも一覧にあれば名前を付ける)。前に取った一覧を使い、
 // 無いときは、名前で指したものがあるときだけ slack-cli で取る (ID だけなら Slack を呼ばずに ID を名前にする)。
-func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, error) {
+// archived は、引いたうちのアーカイブ済みのチャンネル (ID → 名前。前に取った一覧で分かるものだけ)。
+func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, map[string]string, error) {
 	st := openStore(d, io.Discard)
 	var list []source.Channel
 	refreshed := false // 一覧を取り直したら真 (取り直すのは 1 回だけ。1 回約 1 分かかる)
@@ -251,11 +262,12 @@ func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, err
 	} else if slices.ContainsFunc(args, func(a string) bool { return !source.IsChannelID(strings.TrimPrefix(a, "#")) }) {
 		var err error
 		if list, err = channelList(ctx, d, st, true, io.Discard); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		refreshed = true
 	}
 	out := make([]subs.Channel, 0, len(args))
+	archived := map[string]string{}
 	for _, a := range args {
 		c, err := subs.Resolve(list, a)
 		if errors.Is(err, subs.ErrNoChannel) && !refreshed && len(list) > 0 {
@@ -263,21 +275,45 @@ func resolveAll(ctx context.Context, d deps, args []string) ([]subs.Channel, err
 			refreshed = true
 			fresh, ferr := channelList(ctx, d, st, true, io.Discard)
 			if ferr != nil {
-				return nil, fmt.Errorf("%w (一覧の取り直しにも失敗した: %w)", err, ferr)
+				return nil, nil, fmt.Errorf("%w (一覧の取り直しにも失敗した: %w)", err, ferr)
 			}
 			list = fresh
 			c, err = subs.Resolve(list, a)
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		// 購読の画面と同じく、アーカイブ済みは新しく入れない (読み直しのたびに「読めなかった」の注記が出続ける)。外す側 (resolveIDs) は受ける
 		if slices.ContainsFunc(list, func(x source.Channel) bool { return x.ID == c.ID && x.IsArchived }) {
-			return nil, fmt.Errorf("#%s はアーカイブ済みなので、購読にもグループにも入れない", clean(c.Name))
+			archived[c.ID] = c.Name
 		}
 		out = append(out, c)
 	}
-	return out, nil
+	return out, archived, nil
+}
+
+// refuseNewArchived は、next が cur よりアーカイブ済みのチャンネルを多く持つ (新しく購読・グループに入れる) なら誤りを返す
+// (読み直しのたびに「読めなかった」の注記が出続ける)。購読済み・メンバー済みのものを指しただけなら断らない
+// (購読の画面も、購読済みのアーカイブ済みの行は出したまま付け外しできる)。
+func refuseNewArchived(cur, next []subs.Channel, archived map[string]string) error {
+	count := func(chs []subs.Channel) map[string]int {
+		n := map[string]int{}
+		for _, c := range chs {
+			if !c.IsGroup() {
+				n[c.ID]++
+			}
+			for _, m := range c.Members {
+				n[m.ID]++
+			}
+		}
+		return n
+	}
+	before, after := count(cur), count(next)
+	for _, id := range slices.Sorted(maps.Keys(archived)) {
+		if after[id] > before[id] {
+			return fmt.Errorf("#%s はアーカイブ済みなので、購読にもグループにも入れない (アーカイブを解除したなら slack-bbs channels -refresh で一覧を取り直す)", clean(archived[id]))
+		}
+	}
+	return nil
 }
 
 // resolveIDs は外すチャンネルの ID を引く。名前は、今の購読 (グループのメンバーを含む) にある名前から先に引き、無ければ前に取った

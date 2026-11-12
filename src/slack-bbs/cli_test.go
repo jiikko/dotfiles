@@ -272,3 +272,34 @@ func readSubs(t *testing.T, path string) ([]subs.Channel, error) {
 	chs, _, err := subs.LoadVersion(path)
 	return chs, err
 }
+
+// 断るのは、アーカイブ済みのチャンネルを新しく入れる操作だけ。購読済み・メンバー済みのものを指しても、前と同じく「もう入っている」で
+// rc=0、同じ引数に並べた別のチャンネルは入る (購読の画面も、購読済みのアーカイブ済みの行は出したまま付け外しできる)。
+func TestCLIArchivedAlreadyInIsNotRefused(t *testing.T) {
+	d, _, dir := cliDeps(t)
+	list := []source.Channel{{ID: "C1", Name: "dev", IsMember: true}, {ID: "C4", Name: "old-proj", IsArchived: true}}
+	if err := (cache.Store{Dir: dir}).SaveChannels(list, now); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := d.subsPath()
+	g := subs.Channel{ID: "grp0123abcd", Name: "g", Members: []subs.Channel{{ID: "C4", Name: "old-proj"}}}
+	if err := writeSubs(t, path, []subs.Channel{{ID: "C4", Name: "old-proj"}, g}); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"sub", "add", "#old-proj"}, "どれももう購読している"},
+		{[]string{"group", "add", "g", "old-proj"}, "どれももうグループ「g」に入っている"},
+		{[]string{"sub", "add", "dev", "old-proj"}, "購読を 1 件足した"},
+	} {
+		out, errs, rc := runCLI(t, d, s.args...)
+		if rc != 0 || !strings.Contains(out, s.want) {
+			t.Errorf("%v: rc=%d out=%q err=%q", s.args, rc, out, errs)
+		}
+	}
+	if _, errs, rc := runCLI(t, d, "group", "create", "h", "old-proj"); rc != 1 || !strings.Contains(errs, "channels -refresh") {
+		t.Errorf("新しいグループにアーカイブ済みを入れる: rc=%d err=%q (断り、一覧の取り直し方を添えるはず)", rc, errs)
+	}
+}
