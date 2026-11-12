@@ -86,7 +86,7 @@ Feedback: FB25090184 / FB25224901 / FB25346707。
 - `sudo footprint 546`: footprint 16 GB。**ほぼ全部が `Malloc Small` の Dirty** (4,487 regions)、Reclaimable 1136 KB、`phys_footprint_peak` = 現在値。上の 31 GB の Mac と同じ形
 - 32 日で 16 GB = 1 日あたり約 0.5 GB (55 日で 31 GB の上の Mac とほぼ同じ速さ。通しの増え方は測っていない)
 
-## 再起動した直後の fseventsd では溜まらない (2026-11-12 14:56〜15:01、上の macOS 27.0.1 の Mac)
+## 再起動した直後の fseventsd では溜まらない (2026-11-12 14:49〜14:54、上の macOS 27.0.1 の Mac)
 
 `sudo killall fseventsd` の直後 (新 pid 88105) に、「溜まる操作」と同じ区間 (下の「操作の種類ごとの区間を流す」のスクリプト) を流した。
 root なしで測るため、footprint ではなく RSS (`ps -o rss=`) を 5 秒ごとに記録した (起動直後で圧縮がほぼ無いので、増え方は追える)。
