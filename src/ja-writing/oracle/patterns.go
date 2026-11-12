@@ -37,6 +37,12 @@ func (d *Digest) Match(spans ...int) {
 // Sum は 16 進の SHA-256 を返す。
 func (d *Digest) Sum() string { return hex.EncodeToString(d.h.Sum(nil)) }
 
+// Last は直前の Unit の一致 1 つの lastindex と lastgroup を足す (Python の driver の last_digest と同じ並べ方)。
+// 無いもの (None) は、lastindex は -1、lastgroup は "-"。
+func (d *Digest) Last(index int, group string) {
+	_, _ = d.h.Write([]byte(strconv.Itoa(index) + " " + group + "\n"))
+}
+
 // WindowDigest は窓 (pos / endpos) つきの search / match の結果を並べて 1 つの SHA-256 にする。Python の driver (py/record_patterns.py の
 // window_digest) と同じ並べ方。窓の選び方は WindowUnits と WindowBounds にある。
 type WindowDigest struct {
@@ -87,6 +93,8 @@ type PatternRecord struct {
 	Sample        []SampleUnit   `json:"sample"`
 	WindowDigest  string         `json:"window_digest"`
 	WindowCalls   int            `json:"window_calls"`
+	// LastDigest はグループを持つパターンだけにある、各一致の lastindex と lastgroup を Digest と同じ並べ方にした SHA-256 (Digest.Last)。
+	LastDigest string `json:"last_digest,omitempty"`
 	// Static は本家のソースの re.xxx("文字列") の literal にあるパターン (道具を動かして使われなかったものも含む)。
 	Static bool `json:"static,omitempty"`
 }

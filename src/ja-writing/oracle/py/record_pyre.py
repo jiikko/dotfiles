@@ -268,6 +268,23 @@ def cases():
         "\\A*", "^*", "$+", "\\b?", "(?=a)*", "(?i:", "(?i:a", "(?>a", "(?s-s:a)", "(?a-a:x)", "(?u:a)(?a:b)", "[[:alpha:]]", "[a-z&&[^b]]", "x{1,2}{3}",
     ]:
         add("compile", pattern)
+    # search の開始位置の絞り込み (searchFilter) の IGNORECASE の断り・グループつきの繰り返しの pos > endpos・分岐の共通の先頭 (sameNode) の集合
+    for pattern, texts in [
+        ("(?i)[\\Wk]", ["K", "k", "\u212a", "!", "a"]), ("(?i)[\\Wa-z]", ["A", "a", "\u212a", "!", "1"]), ("(?i)[\\Wk]x", ["Kx", "kx", "!x"]),
+        ("(?i)[\\W\u00e9]", ["\u00c9", "\u00e9", "x"]), ("(?i)[\\W\U00010428]", ["\U00010400", "\U00010428", "x"]),
+        ("(?a:\\Wx|\\Wy)", ["\u00c9x", "\u00c9y", "!x", "!y", "x", "ax", "\u00c9\u00c9y"]), ("(?a:\\W|y)x", ["\u00c9x", "yx", "!x"]),
+        ("(?a:[\\W]x|[\\W]y)", ["\u00c9x", "!y", "x"]), ("(?a:\\bx|\\by)", ["x", " x", "\u00c9x", "y"]), ("(?a:\\b\\Wx|\\b\\Wy)", ["\u00c9x", "!y", " !x"]),
+        ("(?a:^\\Wx|^\\Wy)", ["\u00c9x", "!y", "a!x"]), ("(?:\\Wx|\\Wy)", ["\u00c9x", "!y"]),
+    ]:
+        for text in texts:
+            for flags in (0, int(re.A)):
+                for op in ("search", "match", "finditer"):
+                    add(op, pattern, text, flags=flags)
+    for pattern, s in [("(?i:a)*", "aaa"), ("(?:a)*", "aaa"), ("(?i:a)+", "aaa"), ("(?i:ab)*", "abab"), ("(a)*", "aaa"), ("(?i:(a))*", "aAa"), ("(?:(?i:a))*", "aaa"), ("(?s:.)*", "a\nb"),
+                       ("(?i:a)?", "aa"), ("(?i:a){2}", "aaa"), ("(?i:\\W)*", "!!x"), ("(?a:\\w)*", "ab")]:
+        for pos, endpos in [(2, 1), (3, 1), (3, 2), (2, 0), (1, 2), (0, 3), (3, 3)]:
+            for flavor in ("search", "match", "fullmatch", "finditer"):
+                add(flavor, pattern, s, pos=pos, endpos=endpos)
     for name in ["a\u00b7", "\u1885", "\u037a", "a\u0e33", "\u2e2f", "\u2118", "\u1369a", "a\u1369", "\u212e", "a\u0387", "\u00b7", "\u0e33", "a\u2e2f", "a\U00016d70", "\U00016d70"]:
         add("compile", "(?P<" + name + ">x)")
         add("compile", "x(?P=" + name + ")")

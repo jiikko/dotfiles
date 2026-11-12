@@ -85,6 +85,13 @@ func newSandbox() (sandbox, error) {
 	if err != nil {
 		return sandbox{}, fmt.Errorf("使い捨ての dir を作れません: %w", err)
 	}
+	// 本家は Path.cwd() (実パス) から上へ辿る。TMPDIR が symlink だと字面の親と実パスの親が別なので、実パスにしてから辿る。
+	real, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		_ = os.RemoveAll(root)
+		return sandbox{}, fmt.Errorf("使い捨ての dir %s の実パスを引けません: %w", root, err)
+	}
+	root = real
 	if path, err := markerAbove(root); path != "" || err != nil {
 		_ = os.RemoveAll(root)
 		if err != nil {

@@ -115,7 +115,8 @@ func (p *Pattern) regexp(f form) (*regexp2.Regexp, error) {
 	c := &p.forms[f]
 	c.once.Do(func() {
 		src := p.core
-		if p.filter != "" && (f == formSearch || f == formAdvance) {
+		// formAdvance には足さない: 絞り込みがあるのは先頭が字の集合のパターンで、空の一致をしないので、空の一致のあとの探索 (formAdvance) は起きない。
+		if p.filter != "" && f == formSearch {
 			src = p.filter + "(?:" + src + ")"
 		}
 		switch f {
@@ -293,7 +294,8 @@ func (p *Pattern) run(f form, t Text, pos, endpos int) (*Match, error) {
 	if err != nil {
 		return nil, fmt.Errorf("パターン %q の照合に失敗しました: %w", p.pattern, err)
 	}
-	if m == nil || f == formPastEnd && m.RuneLength != 0 {
+	// formPastEnd は rs[:pos] の末尾 (pos) から探すので、一致は必ず空になる。長さは見ない。
+	if m == nil {
 		return nil, nil
 	}
 	spans := make([]int, 2*(p.groups+1))

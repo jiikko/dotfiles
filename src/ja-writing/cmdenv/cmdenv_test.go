@@ -15,12 +15,12 @@ func TestUnimplementedNamesTheSubcommandAndReturnsUsageCode(t *testing.T) {
 }
 
 func TestFromProcessFillsCwdAndGetenv(t *testing.T) {
-	t.Setenv("YOMIYASU_CMDENV_TEST", "v")
+	t.Setenv("JA_WRITING_CMDENV_TEST", "v")
 	env, err := FromProcess([]string{"a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.Cwd == "" || env.Getenv("YOMIYASU_CMDENV_TEST") != "v" || len(env.Args) != 1 || env.Stdin == nil || env.Stdout == nil || env.Stderr == nil {
+	if env.Cwd == "" || env.Getenv("JA_WRITING_CMDENV_TEST") != "v" || len(env.Args) != 1 || env.Stdin == nil || env.Stdout == nil || env.Stderr == nil {
 		t.Fatalf("%+v", env)
 	}
 }

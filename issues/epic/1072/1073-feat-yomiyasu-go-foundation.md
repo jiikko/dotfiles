@@ -187,3 +187,21 @@ P1 (本家と違う答えを緑のまま通す) は 0 件、P2 は 5 件、P3 �
 | P3 落ちないテスト: 結合クラスの安定ソート・ハングルの境界・打ち切りの escape | 直す: 落ちるテストを足す。→ 直した: 同じ結合クラスの 13 字以上の列とハングルの境界 (U+11A7) を記録に足し、変異 (`SortFunc`・`>=`) で赤を確かめた。打ち切りの escape は P2-5 の記録 |
 | P3 落ちないテスト: `MaxDepth` | 記録して閉じる: 上限は環境のスタックの量で変わる (README に書いた)。境界の近くは揃うと主張しない |
 | P3 2 回の生成が同じ `PYTHONHASHSEED` で、hash の順に依存する出力を見つけられない | 直す: 2 回目の seed を変える。→ 直した: 2 回目は seed を変える。本家は語の一覧から選択肢を set で作るので、パターンの文字列と並びは seed で変わる (当たりの記録は同じ)。パターンの記録だけ文字列と並びを除いて比べる |
+
+### 敵対的レビュー 2 周目 (fable、2026-11-13)
+
+P1 は 0 件、P2 は 3 件、P3 は 6 項目 (1 周目の P2 5 件・P3 の再現は全部直っていた)。P2-A と P3-A は修正の前からある regexp2 の誤り。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P2-A possessive / atomic を、空になれる繰り返しの中に置くと当たりを落とす (`(?:a?+)?a` を "a" に。regexp2 v2.5.2 の誤り) | 直せないので README の「揃わない範囲」に書き、記録に入ったら落ちる検査を足す。本家の検査器 (`check_pattern`) が `?+` `{m,n}+` `(?>` を断ることを本家のコードで確かめた | README に書いた。`TestPatternsMatchPythonRecording` が記録の全パターンを pyre の構文木で数える (`unreliableShapes`。書き方に依らない)。記録に possessive・atomic は 0 個 |
+| P3-A 先頭が U+FFFF の字のパターンの search が、開始位置より後ろの一致を落とす (regexp2 の `FindRunesMatch`) | P2-A と同じ | README に書き、同じ検査で U+FFFF を字や集合の端に明示した形を数える。検査器は U+FFFF の字そのものを受ける (`\u` の書き方は断る) ので、`flag-patterns.txt` に U+FFFF を書くとずれうると README に書いた |
+| P2-B sandbox の汚れの検査が `TMPDIR` の symlink を素通りする | `filepath.EvalSymlinks` を通してから辿る | 直した。symlink の `TMPDIR` を 3 つの印ごとに断るテスト (`TestNewSandboxRefusesSymlinkedTmpdirUnderMarker`) |
+| P3-B sandbox のテストが実装の `upstreamMarkers` を回す | 守る名前をテストに直に書く | 直した |
+| P2-C 変数に入れてから渡す literal (`markdown_visibility.py` の `html_until`) を集められず、数の照合は空振りする (印の数は作り方からして必ず同じ) | ast で名前の代入を全部集め、ast と別の数え方 (本家のソースの `re.xxx(` の字面を行ごとに数える) で照合し、読み残しは理由つきの一覧 (`UNREAD_OK` 41 行) にあるものだけを許す。入力の集まりに HTML の塊の文書を足す。README の主張を範囲に合わせる | 直した。literal は 95 → 107 個になり、`-->` `\?>` `\]\]>` `>` と、`</pre\s*>` などの動的なパターンが記録に入った。HTML の塊の開始の判定 (`<(?:script|pre|style|textarea)...`) は 0 件から 12 件に当たる。照合は golden を作るときの Python 側で止める (CI は Python を動かさないので、Go の側は literal の数の下限と、4 つの literal が記録にあることを見る) |
+| P3-C 壊しても緑のまま通った新しいコード (M1・M2・M9・M14・M15) | 落ちる入力を記録に足す | `(?i)[\Wk]` ほか IGNORECASE の集合・グループつきの繰り返しの pos > endpos・分岐の共通の先頭の集合を記録に足した (関数の入力 +600)。M15 (`sameNode` の `opAt`) は後述 |
+| P3-C 届かないと読まれたコード (`literalPrefixLen` 全体・`searchFilter` の幅 0・`formAdvance` の絞り込み・`formPastEnd` の長さ) | 届かないことを証明してから消す | 消した。証明: 先頭が字の集合 (`opIn`) なら幅は 1 以上、字の接頭辞を数えるのは先頭が字か空の `(?:)` のときだけで、降りた先は字か空になり `first.op != opIn` と同じ空を返す。絞り込みがあるのは空の一致をしないパターンだけなので、空の一致のあとの探索 (`formAdvance`) に要らない。`formPastEnd` は `rs[:pos]` の末尾から探すので一致は必ず空 |
+| P3-D lastindex / lastgroup を、本家のパターンについて守る検査が無い | 記録に足す | グループを持つ 106 パターンに `last_digest` (各一致の lastindex と lastgroup) を足し、`TestPatternsMatchPythonRecording` が比べる。全部 Python と一致した |
+| P3-E `cmdenv_test.go` の環境変数 `YOMIYASU_CMDENV_TEST` | 直す | `JA_WRITING_CMDENV_TEST` にした |
+| P3-F README の古い記述 | 直す | 直した (土台の範囲・`internal/pyre` は作った・パターン数 870・`internal/pyre` の突き合わせ) |
+| `PYTHONHASHSEED` でパターンの文字列と並びが変わる (本家が語の一覧の set から選択肢を組む) | 記録の比べ方は変えない。1075 に書く | 1075 の「対応方針」に 1 行足した |
