@@ -2,6 +2,7 @@
 name: security-auditor
 description: "Use when: code changes involve authentication, authorization, session management, user input handling, file operations, or network communications. MUST be triggered for login flows, permission checks, form submissions, API endpoints accepting user data, file upload/download, or external service integrations. Language-agnostic; applies to all codebases."
 model: opus
+disallowedTools: Edit, Write, NotebookEdit
 color: purple
 ---
 

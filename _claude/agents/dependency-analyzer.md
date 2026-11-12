@@ -2,6 +2,7 @@
 name: dependency-analyzer
 description: "Use when: analyzing code dependencies before refactoring. This is the primary agent for: identifying file dependencies, mapping import relationships, analyzing change impact radius, detecting circular dependencies, and predicting ripple effects of modifications. MUST be used before significant refactoring to understand blast radius. Goal: 'know what breaks before you break it'."
 model: sonnet
+disallowedTools: Edit, Write, NotebookEdit
 color: orange
 ---
 

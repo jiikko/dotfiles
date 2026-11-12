@@ -2,6 +2,7 @@
 name: test-coverage-advisor
 description: "Use when: planning test strategy for refactoring or new features. This is the primary agent for: identifying test gaps before risky changes, recommending test types (unit/integration/E2E), prioritizing what to test first, ensuring regression protection, and evaluating existing test quality. MUST be used before significant refactoring. Goal: 'test what matters, catch regressions early'."
 model: opus
+disallowedTools: Edit, Write, NotebookEdit
 color: yellow
 ---
 

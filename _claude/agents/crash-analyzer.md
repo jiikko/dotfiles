@@ -2,6 +2,7 @@
 name: crash-analyzer
 description: "Use when: a macOS app crashed and a crash report (.ips) exists. Reads the given report (or finds the latest one), extracts the exception, Application Specific Information, the faulting thread and the last exception backtrace, maps app frames to source, and returns a report with the root cause (or a hypothesis with confidence) and a fix. Does not create issues. macOS only."
 model: sonnet
+disallowedTools: Edit, Write, NotebookEdit
 color: red
 ---
 

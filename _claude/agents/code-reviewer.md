@@ -2,6 +2,7 @@
 name: code-reviewer
 description: "Use when: (1) user explicitly requests code review, or (2) code has been written, modified, or refactored and needs quality review before commit. For language-specific reviews, prefer language-specific agents first: go-architecture-designer (Go), rails-domain-designer (Rails/Ruby), swift-language-expert/swiftui-macos-designer (Swift/SwiftUI). Use code-reviewer for general quality checks, cross-language projects, or languages without a specific expert agent."
 model: opus
+disallowedTools: Edit, Write, NotebookEdit
 color: orange
 ---
 
