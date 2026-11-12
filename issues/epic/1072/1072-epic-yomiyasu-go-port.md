@@ -15,7 +15,7 @@ dotfiles では skill・src の module・bin のコマンドを同じ名前に�
 
 ## 状態
 
-子 issue 7 本 (1073〜1079) のうち 1 本完了 (1073 の土台。2026-11-13)。依存の順 (1073 → 1074 → 1075 → 1076 → 1077 → 1078 → 1079) に進める。
+子 issue 8 本 (1073〜1080) のうち 1 本完了 (1073 の土台。2026-11-13)。依存の順 (1073 → 1074 → 1075 → 1076 → 1077 → 1078 → 1079) に進める。
 
 | issue | 内容 |
 |---|---|
@@ -25,6 +25,7 @@ dotfiles では skill・src の module・bin のコマンドを同じ名前に�
 | [1076](1076-feat-yomiyasu-go-diff.md) | diff (推敲の前後を比べて意味のずれを出す) |
 | [1077](1077-feat-yomiyasu-go-check.md) | check (検査の記録と最終稿の照合) |
 | [1078](1078-feat-yomiyasu-go-dotfiles-integration.md) | hook と、dotfiles の ja-textlint・ja-textlint-on-edit・ja-writing への組み込み |
+| [1080](1080-docs-ja-writing-yomiyasu-norms.md) | ja-writing の skill に yomiyasu の推敲の規範の文を足す (Go の実装と独立。dotfiles-24 が担当) |
 | [1079](1079-perf-yomiyasu-go-benchmark-loop.md) | 一通り終わった後に、ベンチマークの文章で計測して Go のソースを改善するループ (最大 10 周) |
 
 この epic の起点は、yomiyasu の要点が ja-writing / ja-textlint にどこまで入っているかを照合した結果 (2026-11-12)。

@@ -58,6 +58,8 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
      Go の実装の `bold_not_rendered` が同じ箇所を拾うことを確かめてから外し、hook の jq の絞り込みも直す
 <!-- textlint-enable ja-ai-vocabulary -->
 6. **ja-writing (`_claude/skills/ja-writing/SKILL.md`)**
+   - 規範の文を足すことと、76 項目のうちコードでない規範の行き先を決めることは、[1080](1080-docs-ja-writing-yomiyasu-norms.md) に切り出した (dotfiles-24 が担当。2026-11-13)。
+     この issue に残るのは「ja-textlint の中身」の節の書き直しと、`ja-writing diff` を使う手順の文
    - 否定対比・擬人化・前置きと定型の結び・直訳語の型・直す前後の比較 (`ja-writing diff`) の規範の文を足す
    - 「ja-textlint の中身」の節を書き直す
    - SKILL.md を直したら、観点を変えた整合の確認を 3 回と `bin/skill-eval` を回す
