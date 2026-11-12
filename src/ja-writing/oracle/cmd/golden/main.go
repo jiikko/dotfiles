@@ -110,6 +110,10 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 	if err != nil {
 		return fmt.Errorf("re の記録 (pyre): %w", err)
 	}
+	difflibRec, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildDifflib(ctx, runner, std, p.corpus) })
+	if err != nil {
+		return fmt.Errorf("difflib の記録: %w", err)
+	}
 	tables, err := buildTables(unicode)
 	if err != nil {
 		return err
@@ -122,6 +126,7 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 		filepath.Join(p.golden, oracle.PatternsFile): patterns, filepath.Join(p.golden, oracle.SmokeFile): smoke,
 		filepath.Join(p.golden, oracle.UnicodeFile): unicode, filepath.Join(p.golden, oracle.JSONFile): jsonRec,
 		filepath.Join(p.golden, oracle.PystrFile): pystr, filepath.Join(p.golden, oracle.PyreFile): pyre, p.tables: tables, p.pyreTables: pyreTables,
+		filepath.Join(p.golden, oracle.DifflibFile): difflibRec,
 	} {
 		if err := atomicfile.Write(path, body, 0o644); err != nil {
 			return fmt.Errorf("%s へ書けません: %w", path, err)
@@ -135,7 +140,7 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 
 // checkEnv は記録の環境が今と違うときに止める。記録がまだ無いときと update のときは通す。
 func checkEnv(p paths, now oracle.Header, update bool) error {
-	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile} {
+	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile} {
 		var old struct {
 			Header oracle.Header `json:"header"`
 		}
@@ -232,6 +237,14 @@ func buildPyre(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, e
 		return nil, err
 	}
 	return oracle.MarshalPyre(g)
+}
+
+func buildDifflib(ctx context.Context, r oracle.Runner, h oracle.Header, corpusDir string) ([]byte, error) {
+	g, err := r.RecordDifflib(ctx, h, corpusDir)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalDifflib(g)
 }
 
 // buildPyreTables は書き出す pyre.json のバイト列を読み直して Go の表にする。

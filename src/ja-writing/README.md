@@ -107,6 +107,7 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
 | `pystr` | `str` の `splitlines` `strip` `lstrip` `rstrip` (引数あり・なし)・`isspace` などの分類・`len` | `pystr.json` | 1,622 文字列 |
 | `pyjson` | `json.dumps` (`ensure_ascii=True`・`indent`・`sort_keys`・`separators`)・`json.loads(bytes.decode("utf-8"))`・`round(x, n)`・`round(x)`・`repr(float)` | `json.json` | dumps 4,140・loads 1,819・round 7,643・round(x) 503 |
 | `pyre` | `re` (str のパターン): `compile` `search` `match` `fullmatch` (`pos` / `endpos`)・`finditer` `findall` `sub` `subn` `split` `escape`・`Match` の `group` `span` `lastindex` `lastgroup` `groupdict`・`Pattern` の `flags` `groups` `groupindex`。regexp2 v2 の上に載せる | `pyre.json` と `patterns.json` | 本家が使った 870 パターン × 33,644 単位・全コードポイントの `\w` `\s` `\d` `\b` と `re.I` の 1 字・関数の入力 3,800 |
+| `difflib` | `difflib.SequenceMatcher(None, a, b, autojunk=False)` (`New[T]`。字の列と文字列のリスト) と本家の `_ExactSequenceMatcher` (`NewExact`。difflib と同じ答えを長い文書で速く出す照合) | `difflib.json` | 559 入力 (字の列 478・リスト 76・使い回し 2。うち本家の速い照合だけを通した大きい入力 6)・本家の照合の呼び出し 15 か所 |
 
 - 表は Python の `unicodedata` を読んで作り、Go の `unicode` と `golang.org/x/text/unicode/norm` (Unicode 15.0.0) は使わない。Unicode 16 / 17 で増えた字の分類・合成が違うため。
   正規化は 1 字の結果だけでなく、並べ替えと合成を止める並びを含む 7,383 の文字列で Python と比べる。全コードポイントからサロゲート 2,048 字を除いた 1,112,064 字の 4 形式の結果は SHA-256 で比べる (サロゲートの 1 字の結果は記録に無い。記録の文字列にもサロゲートは入れていない)。
@@ -155,6 +156,21 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
     (`TestPatternsMatchPythonRecording`)。入力の集まりに無い入力で外れるかは保証しない。
   - 本家の `flag-patterns.txt` の検査器が受けるパターンの部分集合は、本家のテストの例で確かめる (検査器そのものは 1074 で作る)。
   - `pos > endpos` で `(?m)$` を持つパターンを呼ばないことは、本家の `yomiyasu_diff.py` の `.match(text, pos, endpos)` の 11 か所のパターンがどれも `(?m)` を持たないことをソースで読んだだけで、検査は無い (diff を写す 1076 で、窓つきの呼び出しを写すときに見る)。
+
+- `difflib` の作りと揃わない範囲 (issue 1081):
+  - 本家は照合を全部 `(None, a, b, autojunk=False)` で作るので、`isjunk` と `autojunk` の引数は持たない。記録の driver (`py/record_difflib.py`) は本家のソースを `ast` で読み、
+    この形でない呼び出し・`difflib.` の `SequenceMatcher` と `Match` の外の属性・Go が持たないメソッド (`get_grouped_opcodes` など) があれば止まる。`FindLongestMatch` は範囲が並びの中の呼び方だけを受ける (外は panic)
+  - driver は同じ入力を Python の difflib と本家の `_ExactSequenceMatcher` に通し、2 つが違えば止まる。difflib が長さの 2 乗で遅い大きい入力 (同じ字の 8 万字の繰り返しなど) は本家の照合だけに通す
+  - 本家の速い照合の Go の写しは、求め方の選び方 (閾値と順) を本家と同じにし、Go に無い道具の所だけ置き換えた: Python の `hash(str)` → 1 字ずつずらす多項式の hash (法 2^61-1、128 ビットの積で剰余)、
+    `str.find` → `[]rune` の KMP、`_common_prefix_len` の倍々の切り出し → 1 字ずつの比較、`_first_of_length` の短い長さの枝 → 長さによらず多項式の hash。hash は表を引く手がかりにだけ使い、引いた位置は必ず字で比べる
+  - Go の中の試験 (`exact_test.go`) は閾値を小さくした matcher と hash を弱くした matcher で、短い入力でも全部の求め方 (19 の枝) を通し、`New` と同じ答えを確かめる
+  - 所要 (2026-11-13、M3 の Mac、照合の処理だけ。起動は含まない。同じ入力を Python の 2 つと Go の 2 つで交互に 3 周。周ごとの揺れは 2% 以内):
+
+    | 入力 | 字数 (a / b) | Python difflib | 本家の速い照合 (Python) | Go `New` | Go `NewExact` |
+    |---|---|---|---|---|---|
+    | 同じ段落を 400 回繰り返して 1 つ直す | 22,400 / 22,403 | 1.10 秒 | 0.013 秒 | 0.027 秒 | 0.007 秒 |
+    | 入力の集まりの直す前と後を全部つないで 3 回 (全面の書き直し) | 31,455 / 34,827 | 2.44 秒 | 0.106 秒 | 0.063 秒 | 0.018 秒 |
+    | 同じ字の 8 万字の繰り返しで 1 字違い | 80,001 / 80,001 | (測らない。長さの 2 乗) | 0.45 秒 | (測らない) | 0.050 秒 |
 
 ## 開発
 
