@@ -79,6 +79,9 @@ type Model struct {
 	// streamRows は新着のタブの行。nil なら rows が作り直す。並べ直すのは新着のタブを開いたとき・読み直しが終わったとき・隠した話題を
 	// 変えたときだけ: 選ぶたびに既読が変わって並べ直すと、選んだ話題が下へ動いてカーソルが跳ぶ
 	streamRows []row
+	// restore は起動のときに戻す話題 (Start。selKey の形)。板が届くたびに探し、戻せたら空にする。人がキーを押しても空にする
+	// (押した後に届いた板で、カーソルを前回の話題へ奪い返さない)
+	restore string
 	// unsub は d で購読を外すか確かめているチャンネルの ID (確かめていなければ空)。チャンネルは ID で持つ
 	// (確かめている間に読み直し・購読の保存でタブの番号がずれても、別のチャンネルを外さない)
 	unsub string
@@ -206,6 +209,7 @@ func (m *Model) Init() tea.Cmd {
 		return tea.Quit
 	}
 	if !m.stream {
+		m.restoreTopic() // 前回の板 (キャッシュ) があれば、読み直しを待たずに戻す
 		return m.reload(m.cur)
 	}
 	cmds := []tea.Cmd{m.enterStream()}
@@ -214,15 +218,18 @@ func (m *Model) Init() tea.Cmd {
 			cmds = append(cmds, m.reload(i))
 		}
 	}
+	m.restoreTopic() // enterStream が一覧を先頭へ戻した後に戻す
 	return tea.Batch(cmds...)
 }
 
 // StreamTab は新着のタブを指す Tab / Start の値 (チャンネルとグループの ID は英大文字か grp で始まるので重ならない)。
 const StreamTab = "stream"
 
-// Start は起動のときに最初に開くタブ (前回最後に見ていたタブ。Tab が返した値) を決める。Init より前に呼ぶ。
-// 購読に無いタブ (外した・消えた) なら先頭のタブのまま。
-func (m *Model) Start(tab string) {
+// Start は起動のときに最初に開くタブと選ぶ話題 (前回最後に見ていた所。Tab と Topic が返した値) を決める。Init より前に呼ぶ。
+// 購読に無いタブ (外した・消えた) なら先頭のタブのまま。話題は板が届いたときに探し、無ければ (消えた・隠した) 先頭の話題のまま。
+// 戻した話題は既読にしない (起動で先頭に乗ったときと同じ。本文の欄も開かない)。
+func (m *Model) Start(tab, topic string) {
+	m.restore = topic
 	if tab == StreamTab && len(m.chans) > 0 {
 		m.stream = true
 		return
@@ -241,6 +248,32 @@ func (m *Model) Tab() string {
 		return StreamTab
 	}
 	return m.chans[m.cur].ch.ID
+}
+
+// Topic は今選んでいる話題 (Start に渡す値。選んでいなければ空)。前回の話題をまだ戻せていない (板が届く前・キーを押す前) なら、その話題。
+func (m *Model) Topic() string {
+	if m.restore != "" {
+		return m.restore
+	}
+	return m.selKey()
+}
+
+// restoreTopic は Start の話題がまだ戻せていなければ、今の一覧から探してカーソルを置く。戻せたら探すのをやめる。
+// 戻せないとき reselect は本文の欄を閉じるが、ここに来るのはキーを押す前 (欄はまだ開いていない) だけ。キー以外で欄を開く経路を足すなら見直す。
+func (m *Model) restoreTopic() {
+	if m.restore == "" || len(m.chans) == 0 {
+		return
+	}
+	if m.reselect(m.restore) {
+		m.restore = ""
+		return
+	}
+	// 持ち主のタブが無い (購読から外した) か、読み直した板にも無い (消えた・隠した) なら諦める。持ち続けると、先頭の話題を見て
+	// 終えたときに古い話題を覚え直す。前回の板 (キャッシュ) のままなら読み直しを待つ
+	ch, _, _ := strings.Cut(m.restore, "|")
+	if i := slices.IndexFunc(m.chans, func(c chanState) bool { return c.ch.ID == ch }); i < 0 || (m.chans[i].page != nil && !m.chans[i].stale) {
+		m.restore = ""
+	}
 }
 
 // Update はメッセージを処理する。
@@ -299,8 +332,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = m.key(msg.String())
 		}
 		if m.quitting {
-			return m, tea.Quit
+			return m, tea.Quit // 戻す予定は残す: 戻す前に終えたら、Topic は前回の話題を返す (先頭の話題・空で覚えを上書きしない)
 		}
+		m.restore = "" // 人が動かし始めたら、後から届いた板で前回の話題へ引き戻さない
 		return m, tea.Batch(append(m.frameCmds(), cmd)...)
 	case toast.Msg:
 		m.toast.StartLeaving(msg)
@@ -399,6 +433,7 @@ func (m *Model) loaded(msg loadedMsg) tea.Cmd {
 		if owner == idx {
 			m.pager.Reset()
 		}
+		m.restoreTopic()
 		return nil
 	}
 	if idx == m.cur {
@@ -406,6 +441,7 @@ func (m *Model) loaded(msg loadedMsg) tea.Cmd {
 		m.list = listnav.List{}
 		m.reselect(keep)
 		m.pager.Reset()
+		m.restoreTopic()
 		// 読み直しは既読にしない (本文の欄に出ていても): 欄は先頭へ戻り、付いた返信は欄の外にありうる。小さい端末・購読の画面の裏では
 		// 欄が描かれていない。読んでいる最中に付いた返信は、選び直すまで ● で出す
 	}

@@ -819,23 +819,23 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 			}
 		}
 	}
-	// 購読を読む起動では、前回最後に見ていたタブを最初に開き、終わるときに今のタブを覚える。チャンネルを引数で渡した起動は、
+	// 購読を読む起動では、前回最後に見ていたタブと話題を最初に開き、終わるときに今のタブと話題を覚える。チャンネルを引数で渡した起動は、
 	// 購読のタブと並びが違うので、覚えも書き換えもしない (書くと、次の購読の起動で引数のチャンネルを探して先頭に戻る)
 	remember := len(o.channels) == 0
 	var loadErr error
 	if remember {
-		var tab string
-		tab, loadErr = st.LoadTab()
-		m.Start(tab) // 読めなければ空で、先頭のタブのまま
+		var last cache.LastView
+		last, loadErr = st.LoadView()
+		m.Start(last.Tab, last.Topic) // 読めなければ空で、先頭のタブの先頭の話題のまま
 	}
 	err = d.browse(m)
 	if remember {
 		// 画面を閉じた後に出す (画面の中では stderr が見えない)。読めなかったファイルも、ここで書き直せば次の起動で読める
 		if loadErr != nil {
-			fmt.Fprintf(stderr, "slack-bbs: 🚨 前回見ていたタブを読めなかったので、先頭のタブから開いた: %s\n", clean(loadErr.Error()))
+			fmt.Fprintf(stderr, "slack-bbs: 🚨 前回見ていたタブと話題を読めなかったので、先頭のタブから開いた: %s\n", clean(loadErr.Error()))
 		}
-		if serr := st.SaveTab(m.Tab()); serr != nil {
-			fmt.Fprintf(stderr, "slack-bbs: 🚨 今見ていたタブを覚えられなかった (次の起動は先頭のタブから): %s\n", clean(serr.Error()))
+		if serr := st.SaveView(cache.LastView{Tab: m.Tab(), Topic: m.Topic()}); serr != nil {
+			fmt.Fprintf(stderr, "slack-bbs: 🚨 今見ていたタブと話題を覚えられなかった (次の起動は先頭のタブから): %s\n", clean(serr.Error()))
 		}
 	}
 	return err

@@ -789,21 +789,21 @@ func TestGroupMembersChangedClearsError(t *testing.T) {
 func TestStartOpensLastTab(t *testing.T) {
 	l := &loader{calls: map[string]int{}}
 	m := newModel(l)
-	m.Start("C2")
+	m.Start("C2", "")
 	run(m, m.Init())
 	if m.Tab() != "C2" || l.calls["C2"] != 1 || l.calls["C1"] != 0 {
 		t.Errorf("前回のタブ C2 を開いて読んでいない: tab=%s calls=%v", m.Tab(), l.calls)
 	}
 	l = &loader{calls: map[string]int{}}
 	m = newModel(l)
-	m.Start("C9")
+	m.Start("C9", "")
 	run(m, m.Init())
 	if m.Tab() != "C1" || l.calls["C1"] != 1 {
 		t.Errorf("購読に無いタブなら先頭を開く: tab=%s calls=%v", m.Tab(), l.calls)
 	}
 	l = &loader{calls: map[string]int{}}
 	m = newModel(l)
-	m.Start(StreamTab)
+	m.Start(StreamTab, "")
 	run(m, m.Init())
 	if m.Tab() != StreamTab || l.calls["C1"] != 1 || l.calls["C2"] != 1 {
 		t.Errorf("新着のタブを開いて全部のタブを読んでいない: tab=%s calls=%v", m.Tab(), l.calls)
@@ -813,10 +813,111 @@ func TestStartOpensLastTab(t *testing.T) {
 	m = newModel(l)
 	m.Preload(0, page("C1", "前"), t0)
 	m.Preload(1, page("C2", "前"), t0)
-	m.Start(StreamTab)
+	m.Start(StreamTab, "")
 	run(m, m.Init())
 	if l.calls["C1"] != 1 || l.calls["C2"] != 1 {
 		t.Errorf("前回の板のままのタブを、新着のタブの起動で読み直していない: calls=%v", l.calls)
+	}
+}
+
+// 起動のときに前回選んでいた話題 (Start の topic) にカーソルを戻す。前回の板 (キャッシュ) があれば読み直しを待たずに、無ければ読めたときに戻す。
+// 戻した話題は既読にしない。人がキーを押した後に届いた板では引き戻さない。消えた話題なら先頭の話題のまま。新着のタブでも、持ち主のタブまで合わせて戻す。
+func TestStartRestoresLastTopic(t *testing.T) {
+	topics := []board.Topic{topicAt("a", day0), topicAt("b", day0.Add(-time.Hour)), topicAt("c", day0.Add(-2*time.Hour))}
+	pg := func(ch string) render.Page {
+		return render.Page{Channel: ch, ChannelName: ch, Since: day0, Until: day0, Lookback: day0, Topics: topics}
+	}
+	mk := func() *Model {
+		load := func(_ context.Context, ch subs.Channel) (render.Page, error) { return pg(ch.ID), nil }
+		m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}, load, nil, func() time.Time { return day0 }))
+		m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+		return m
+	}
+	key := func(ch string, i int) string { return ch + "|" + topics[i].Units[0].ID }
+	// 戻したかは selKey (カーソルの実際の位置) で見る。Topic は戻す前なら戻す予定をそのまま返すので、戻さなくても一致する
+
+	m := mk()
+	m.Start("C2", key("C2", 2))
+	run(m, m.Init())
+	if m.selKey() != key("C2", 2) {
+		t.Errorf("読めた板で前回の話題へ戻していない: %q", m.selKey())
+	}
+	if m.unreadCount(1) != 3 || m.body {
+		t.Errorf("戻した話題を既読にしたか本文の欄を開いた: 未読 %d body=%v", m.unreadCount(1), m.body)
+	}
+
+	m = mk()
+	m.Preload(1, pg("C2"), day0)
+	m.Start("C2", key("C2", 1))
+	cmd := m.Init()
+	if m.selKey() != key("C2", 1) {
+		t.Errorf("前回の板があるのに、読み直しを待たないと戻さない: %q", m.selKey())
+	}
+	run(m, cmd)
+	if m.selKey() != key("C2", 1) || m.body {
+		t.Errorf("読み直しの後に前回の話題から外れたか本文の欄を開いた: %q body=%v", m.selKey(), m.body)
+	}
+
+	// 板が届く前に終えたら、覚えるのは前回の話題 (空や先頭の話題で覚えを上書きしない)。新着のタブで持ち主のタブが届く前も同じ
+	for _, q := range []string{"q", "ctrl+c"} {
+		m = mk()
+		m.Start("C2", key("C2", 2))
+		m.Init()
+		press(m, q)
+		if m.Topic() != key("C2", 2) {
+			t.Errorf("板が届く前に %s で終えたら前回の話題を失った: %q", q, m.Topic())
+		}
+	}
+	m = mk()
+	m.Preload(0, pg("C1"), day0)
+	m.Start(StreamTab, key("C2", 2))
+	m.Init()
+	press(m, "q")
+	if m.Topic() != key("C2", 2) {
+		t.Errorf("新着のタブで持ち主のタブが届く前に終えたら、別の話題で覚えを上書きした: %q", m.Topic())
+	}
+
+	m = mk()
+	m.Start("C2", key("C2", 2))
+	cmd = m.Init()
+	press(m, "j")
+	run(m, cmd)
+	if m.Topic() != key("C2", 0) {
+		t.Errorf("キーを押した後に届いた板で前回の話題へ引き戻した: %q", m.Topic())
+	}
+
+	m = mk()
+	m.Start("C2", "C2|9.000000")
+	m.Preload(1, pg("C2"), day0)
+	cmd = m.Init()
+	if m.Topic() != "C2|9.000000" {
+		t.Errorf("前回の板 (キャッシュ) に無いだけで、読み直しを待たずに前回の話題を諦めた: %q", m.Topic())
+	}
+	run(m, cmd)
+	if m.Topic() != key("C2", 0) { // 戻せない話題を覚え続けない (先頭の話題を見て終えたら、先頭の話題を覚える)
+		t.Errorf("読み直した板にも無い話題を諦めず、先頭の話題を見ていても覚え直す: %q", m.Topic())
+	}
+	m = mk()
+	m.Start("C9", "C9|1.000000")
+	run(m, m.Init())
+	if m.Topic() != key("C1", 0) {
+		t.Errorf("購読から外したタブの話題を諦めない: %q", m.Topic())
+	}
+
+	m = mk()
+	m.Preload(0, pg("C1"), day0)
+	m.Preload(1, pg("C2"), day0)
+	m.Start(StreamTab, key("C2", 1))
+	m.Init()
+	if m.selKey() != key("C2", 1) || m.unreadCount(1) != 3 || m.body {
+		t.Errorf("前回の板があるのに、新着のタブで読み直しを待たないと戻さないか既読・本文の欄が変わった: %q 未読 %d body=%v", m.selKey(), m.unreadCount(1), m.body)
+	}
+
+	m = mk()
+	m.Start(StreamTab, key("C2", 2))
+	run(m, m.Init())
+	if m.Tab() != StreamTab || m.selKey() != key("C2", 2) {
+		t.Errorf("新着のタブで前回の話題 (C2 の c) へ戻していない: tab=%s topic=%q", m.Tab(), m.selKey())
 	}
 }
 

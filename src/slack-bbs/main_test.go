@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"slack-bbs/board"
 	"slack-bbs/cache"
 	"slack-bbs/job"
 	"slack-bbs/llm"
@@ -756,6 +757,44 @@ func TestBrowseRemembersLastTab(t *testing.T) {
 	}
 }
 
+// 終わるときに選んでいた話題も覚え、次の起動ではその話題にカーソルを置く。前の形の覚え (話題の欄が無い) はタブだけを開く。
+func TestBrowseRemembersLastTopic(t *testing.T) {
+	d := newDeps(t, &fakeSlack{history: `[]`}, &fakeClaude{})
+	dir := t.TempDir()
+	d.cacheDir = func() (string, error) { return dir, nil }
+	d.tty = func() bool { return true }
+	path, _ := d.subsPath()
+	if err := subs.Save(path, []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}); err != nil {
+		t.Fatal(err)
+	}
+	pg := render.Page{Channel: "C2", ChannelName: "ops", Topics: []board.Topic{
+		{Title: "a", Units: []board.Unit{{ID: "3.000000", Msgs: []board.Msg{{Ts: "3.000000", Text: "a"}}}}},
+		{Title: "b", Units: []board.Unit{{ID: "2.000000", Msgs: []board.Msg{{Ts: "2.000000", Text: "b"}}}}},
+	}}
+	if err := os.WriteFile(filepath.Join(dir, "view.json"), []byte(`{"version":1,"tab":"C2"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	d.browse = func(m *view.Model) error {
+		m.Preload(1, pg, now)
+		m.Init()
+		m.View() // 描く前のカーソルは先頭の日付の見出しに乗っている (描くと話題へ逃がす)
+		first = m.Topic()
+		m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+		return nil
+	}
+	var out, errb bytes.Buffer
+	if rc := run(context.Background(), nil, &out, &errb, d); rc != 0 || first != "C2|3.000000" {
+		t.Fatalf("前の形の覚えでタブ C2 の先頭の話題を開いていない: rc=%d first=%q %s", rc, first, errb.String())
+	}
+	if v, err := (cache.Store{Dir: dir}).LoadView(); err != nil || v.Tab != "C2" || v.Topic != "C2|2.000000" {
+		t.Fatalf("選んでいた話題を覚えていない: %+v %v", v, err)
+	}
+	if rc := run(context.Background(), nil, &out, &errb, d); rc != 0 || first != "C2|2.000000" {
+		t.Errorf("覚えた話題にカーソルを置いていない: rc=%d first=%q %s", rc, first, errb.String())
+	}
+}
+
 // 覚えのファイルが壊れていたら、先頭のタブで開いて知らせ、終わるときに書き直す (次の起動ではそのタブを開く)。
 func TestBrowseRewritesBrokenLastTab(t *testing.T) {
 	d := newDeps(t, &fakeSlack{history: `[]`}, &fakeClaude{})
@@ -776,7 +815,7 @@ func TestBrowseRewritesBrokenLastTab(t *testing.T) {
 		return nil
 	}
 	var out, errb bytes.Buffer
-	if rc := run(context.Background(), nil, &out, &errb, d); rc != 0 || first != "C1" || !strings.Contains(errb.String(), "前回見ていたタブを読めなかった") {
+	if rc := run(context.Background(), nil, &out, &errb, d); rc != 0 || first != "C1" || !strings.Contains(errb.String(), "前回見ていたタブと話題を読めなかった") {
 		t.Fatalf("壊れた覚え: rc=%d first=%s stderr=%s", rc, first, errb.String())
 	}
 	errb.Reset()

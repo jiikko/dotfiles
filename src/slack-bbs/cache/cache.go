@@ -240,7 +240,7 @@ const CacheKeep = 14 * 24 * time.Hour
 //   - <ID>.raw.json と .summary.json は組で数え、新しい方の時刻から CacheKeep を過ぎたら両方消す。summary だけで数えない:
 //     分類を使い回した読み直し (main.go の classify) は raw だけを書き直すので、毎日読んでいるチャンネルの summary も古い時刻のまま残る
 //   - <ID>.read.json と .hidden.json は ReadKeep
-//   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>。チャンネルの一覧 channels.json と最後のタブ view.json のものも) は CacheKeep
+//   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>。チャンネルの一覧 channels.json と最後に見ていた所 view.json のものも) は CacheKeep
 //
 // この形でないファイル (slack-cli の lock など) には触らない。消す直前に時刻を取り直す (並んで起動した別の slack-bbs が
 // 書き直したばかりのファイルを、先に読んだ古い時刻で消さない。組のどれかが新しくなっていたら組ごと残す。窓は残る)。1 つ消せなくても残りは続け、消せなかったものをまとめて返す。
@@ -383,36 +383,39 @@ func (s Store) SaveChannels(chs []source.Channel, now time.Time) error {
 	return s.saveFile(filepath.Join(s.Dir, channelsFile), Channels{Version: ChannelsVersion, SavedAt: now, Channels: chs})
 }
 
-// TabVersion は最後に見ていたタブのファイルの形の版。
+// TabVersion は最後に見ていた所のファイルの形の版。topic の欄は後から足した欄で、無いファイル (前の形) は話題を選ばずに開くだけなので版を上げない。
 const TabVersion = 1
 
-// tabFile は読む画面で最後に見ていたタブの置き場 (次の起動で最初に開く)。Expire はこのファイルを消さない (書きかけの一時ファイルだけを消す)。
+// tabFile は読む画面で最後に見ていた所の置き場 (次の起動で最初に開く)。Expire はこのファイルを消さない (書きかけの一時ファイルだけを消す)。
 const tabFile = "view.json"
 
-type lastTab struct {
+// LastView は読む画面で最後に見ていた所。
+type LastView struct {
 	Version int    `json:"version"`
-	Tab     string `json:"tab"` // view.Model.Tab の値
+	Tab     string `json:"tab"`             // view.Model.Tab の値
+	Topic   string `json:"topic,omitempty"` // view.Model.Topic の値 (選んでいた話題。選んでいなければ空)
 }
 
-// LoadTab は最後に見ていたタブを読む。無い・版が違うときは空 (誤りではない)。
-func (s Store) LoadTab() (string, error) {
+// LoadView は最後に見ていた所を読む。無い・版が違うときは空 (誤りではない)。
+func (s Store) LoadView() (LastView, error) {
 	if s.Dir == "" {
-		return "", nil
+		return LastView{}, nil
 	}
-	var t lastTab
+	var t LastView
 	ok, err := loadFile(filepath.Join(s.Dir, tabFile), &t, func() bool { return t.Version == TabVersion })
 	if err != nil || !ok {
-		return "", err
+		return LastView{}, err
 	}
-	return t.Tab, nil
+	return t, nil
 }
 
-// SaveTab は最後に見ていたタブを書く。
-func (s Store) SaveTab(tab string) error {
+// SaveView は最後に見ていた所を書く (Version は書くときに埋める)。
+func (s Store) SaveView(v LastView) error {
 	if s.Dir == "" {
 		return nil
 	}
-	return s.saveFile(filepath.Join(s.Dir, tabFile), lastTab{Version: TabVersion, Tab: tab})
+	v.Version = TabVersion
+	return s.saveFile(filepath.Join(s.Dir, tabFile), v)
 }
 
 // LastPostsVersion は最終投稿のファイルの形の版。
