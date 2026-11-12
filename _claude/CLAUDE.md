@@ -188,6 +188,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている, 使っていない worktree を片付け | `cleanup-tmp-dir` (消す前に承認を取る。dotfiles の tmp/ は `make clean-tmp`) |
 | claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `claude-md-refresh` (引数で対象ディレクトリを指定。issues/ は対象外) |
 | claude-md-compact, CLAUDE.md を圧縮, rules を縮める, 常時読み込みを減らす, instruction files の上限 | `claude-md-compact` (規範を残して実例・重複を外へ移す。ずれを直すのは claude-md-refresh) |
+| claude-assets-review, Claude の資産を評価, hooks / skills / agents を公式ドキュメントと照らす, claude 系の設定の改善点 | `claude-assets-review` (提案だけ。直すのは選んだ提案の issue) |
 | refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `refresh-on-session` (差分だけを見る。バグ探しは `/code-review`) |
 | events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `my-products-update-apps-event` |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `crash-log-analyzer` |
