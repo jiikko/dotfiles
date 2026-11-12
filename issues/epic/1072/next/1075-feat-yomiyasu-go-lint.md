@@ -1,0 +1,1 @@
+../1075-feat-yomiyasu-go-lint.md
