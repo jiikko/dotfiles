@@ -126,18 +126,24 @@ func NewPicker(all []source.Channel, subscribed []Channel) *Picker {
 // Refresh は一覧を fresh (取り直した一覧で作った画面) のチャンネルに差し替える。付け外し・検索の語・カーソルのチャンネルは
 // 今の画面のものを保つ (前に取った一覧で開いた画面を、取り直しの間に操作していても失わない)。並びは差し替えた時点の購読で組み直す。
 func (p *Picker) Refresh(fresh *Picker) {
-	curID, editID := "", ""
+	curID, editID, delID := "", "", ""
 	if vis := p.visible(); len(vis) > 0 {
 		curID = p.items[vis[min(p.list.Cursor, len(vis)-1)]].ch.ID
 	}
 	if p.editing != nil {
 		editID = p.editing.ID
 	}
+	if p.deleting >= 0 {
+		delID = p.items[p.deleting].grp.ID
+	}
 	n := NewPicker(fresh.all, p.Selected())
 	p.all, p.items, p.editing, p.deleting = n.all, n.items, nil, -1
-	for _, it := range p.items {
+	for i, it := range p.items {
 		if it.grp != nil && it.grp.ID == editID {
 			p.editing = it.grp // 編集しているグループは差し替えた後の行を指し直す
+		}
+		if it.grp != nil && it.grp.ID == delID {
+			p.deleting = i // 消すか確かめているグループも指し直す (確認の板を知らせずに消すと、確認のつもりの Enter で画面が閉じる)
 		}
 	}
 	p.list.Cursor, p.list.Offset = 0, 0

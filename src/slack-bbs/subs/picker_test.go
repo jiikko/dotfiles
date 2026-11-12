@@ -360,3 +360,25 @@ func TestPickerRefusesDuplicateGroupName(t *testing.T) {
 		t.Errorf("同じ名前のグループを作った: %d 個 / 注記 %q", groups, p.Note())
 	}
 }
+
+// グループを消すか確かめている間に、裏で取り直した一覧が届いても、確認の板はそのグループを指したまま残る
+// (消えると、確認のつもりの Enter が「保存して閉じる」になり、グループを消さずに画面が閉じる)。
+func TestPickerRefreshKeepsDeleteConfirmation(t *testing.T) {
+	all := []source.Channel{{ID: "C1", Name: "times_a", IsMember: true}, {ID: "C3", Name: "dev", IsMember: true}}
+	g := Channel{ID: "grp0123abcd", Name: "times", Members: []Channel{{ID: "C1", Name: "times_a"}}}
+	p := NewPicker(all, []Channel{{ID: "C3", Name: "dev"}, g})
+	p.Resize(100, 14)
+	p.list.Cursor = 0
+	p.Key("d")
+	if !strings.Contains(strings.Join(p.Lines(), "\n"), "を消しますか？") {
+		t.Fatalf("d で確認の板が出ない:\n%s", strings.Join(p.Lines(), "\n"))
+	}
+	p.Refresh(NewPicker(append([]source.Channel{{ID: "C0", Name: "aaa", IsMember: true}}, all...), nil))
+	if !strings.Contains(strings.Join(p.Lines(), "\n"), "を消しますか？") {
+		t.Fatalf("取り直した一覧が届いたら確認の板が消えた:\n%s", strings.Join(p.Lines(), "\n"))
+	}
+	p.Key("y")
+	if sel := p.Selected(); len(sel) != 1 || sel[0].ID != "C3" || p.Done() {
+		t.Fatalf("y で、確かめていたグループを消していない: %+v done=%v", sel, p.Done())
+	}
+}
