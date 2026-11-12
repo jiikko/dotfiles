@@ -39,7 +39,7 @@ func lastCell(l string) string {
 func TestBodyHasScrollbarOnlyWhenOverflowing(t *testing.T) {
 	m := datedModel(t, func() []board.Topic {
 		long := topicAt("long", day0)
-		long.Units[0].Msgs[0].Text = strings.Repeat("長い本文を折り返して欄からはみ出させる。", 30)
+		long.Units[0].Msgs[0].Text = strings.Repeat("長い本文を折り返して欄からはみ出させる。", 80) // 本文の欄は全幅なので、はみ出すだけの長さにする
 		return []board.Topic{long, topicAt("short", day0.Add(-time.Hour))}
 	})
 	press(m, "l")
@@ -291,5 +291,31 @@ func TestMentionsMakeTopicUnread(t *testing.T) {
 	}
 	if n := m.unreadCount(0); n != 1 {
 		t.Errorf("言及の付いた話題を開いても既読にならない: 未読 %d", n)
+	}
+}
+
+// 本文を読む間は左の一覧を出さず、本文の欄を全幅にする (一覧と並べると、本文が 1 行動くたびに一覧の分まで描き直しになり、
+// tmux の中の Terminal.app でスクロールがもっさりした)。h で一覧へ戻ると、一覧と本文が並ぶ形に戻る。
+func TestBodyUsesFullWidthWhileReading(t *testing.T) {
+	m := datedModel(t, func() []board.Topic {
+		return []board.Topic{topicAt("読んでいる話題", day0), topicAt("別件", day0.Add(-time.Hour))}
+	})
+	m.View()
+	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "別件") {
+		t.Fatalf("一覧に別件が無い (前提):\n%s", screen)
+	}
+	press(m, "l")
+	screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), "")
+	if strings.Contains(screen, "別件") {
+		t.Errorf("本文を読む間に左の一覧が出ている:\n%s", screen)
+	}
+	for _, l := range m.Lines() {
+		if w := termwidth.Of(l); w > 90 {
+			t.Errorf("全幅の本文の行が端末の幅を超えた (%d): %q", w, l)
+		}
+	}
+	press(m, "h")
+	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "別件") {
+		t.Errorf("h で戻っても一覧が出ない:\n%s", screen)
 	}
 }

@@ -841,8 +841,13 @@ func (m *Model) bodyRows() int  { return max(m.cardRows()-bodyHeadRows, 1) }
 func (m *Model) leftWidth() int { return min(max(m.w*3/10, 24), 44) }
 
 // rightWidth は本文のカードの幅 (2 枚のカードの右の落ち影 1 桁ずつと、間の 1 桁を引く)。
-func (m *Model) rightWidth() int { return m.w - m.leftWidth() - 3 }
-func (m *Model) bodyInner() int  { return m.rightWidth() - cardChrome(cardPadX(m.w)) } // 本文のカードの中身の幅
+func (m *Model) rightWidth() int {
+	if m.body {
+		return m.w - 1 // 本文を読む間は左の一覧を出さず、本文の欄を全幅にする (screen)
+	}
+	return m.w - m.leftWidth() - 3
+}
+func (m *Model) bodyInner() int { return m.rightWidth() - cardChrome(cardPadX(m.w)) } // 本文のカードの中身の幅
 
 const (
 	topRows      = 4
@@ -978,8 +983,21 @@ func (m *Model) screen() []string {
 		return []string{termwidth.Truncate(fmt.Sprintf("端末が小さすぎる。q で終わる (%dx%d 以上にする)", MinWidth, MinHeight), max(m.w, 1), "")}
 	}
 	lines := []string{m.titleLine(), gradRule(m.w, cAccent, cPink, cPurple, cTeal, cBg), m.tabsLine(), m.noteLine()}
-	left := m.leftLines()
 	right := m.rightLines()
+	if m.body {
+		// 本文を読む間は左の一覧を出さない。一覧と本文を同じ行に並べると、本文が 1 行動くたびに左の一覧の分まで描き直しになり、
+		// tmux から外側の端末へ送る量が 1 行で約 53KB になる (全幅なら約 5KB で less と同じ水準。Terminal.app でスクロールが
+		// もっさりした)。一覧に戻るのは h / q
+		for i := range m.paneRows() {
+			r := ""
+			if i < len(right) {
+				r = right[i]
+			}
+			lines = append(lines, r)
+		}
+		return append(lines, m.helpLines()...)
+	}
+	left := m.leftLines()
 	for i := range m.paneRows() {
 		l, r := "", ""
 		if i < len(left) {
