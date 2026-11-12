@@ -216,6 +216,14 @@ func (p Page) Body(t board.Topic, md bool) []string { return p.BodySince(t, md, 
 // NewMark は本文で、前に読んだ所より後の発言の前に入れる区切り。
 const NewMark = "    ── ここから新着 ──"
 
+// 発言の行の頭「MsgIndent [BeforeMark]時刻 名前: 本文」の部品。読む画面の色付け (view/highlight.go の messageHead) がこの 3 つで
+// 発言の頭を見分けるので、形を変えるならここを変える (片方だけ変えると、ビルドは通ったまま名前と時刻の色が消える)。
+const (
+	MsgIndent   = "    "
+	BeforeMark  = "(前) "
+	StampLayout = "01/02 15:04"
+)
+
 // BodySince は Body に、前に読んだ所の区切りを入れたもの。since は単位の ID → 前に読んだときの単位の最後の発言の ts
 // (無い単位・空の印の単位は、全部が初めてなので区切らない)。区切りは単位ごとに、印より後の他の人の期間内の発言の前に 1 つ入れる
 // (自分の発言だけが増えた単位は区切らない: 未読の判定と同じく、自分の発言は新着に数えない)。
@@ -289,7 +297,7 @@ func (p Page) BodySince(t board.Topic, md bool, since map[string]string) []strin
 // 何を引用したか (自分の発言なら「あなたの発言」) を添える。
 func mentionLines(m Mention, md bool) []string {
 	lines := strings.Split(m.Text, "\n")
-	out := []string{fmt.Sprintf("    %s %s: [#%s] %s", tsTime(m.Ts).Format("01/02 15:04"), clean(m.Name), clean(m.ChannelName), clean(lines[0]))}
+	out := []string{fmt.Sprintf("%s%s %s: [#%s] %s", MsgIndent, stamp(tsTime(m.Ts)), clean(m.Name), clean(m.ChannelName), clean(lines[0]))}
 	for _, l := range lines[1:] {
 		out = append(out, "      "+clean(l))
 	}
@@ -344,12 +352,12 @@ func (p Page) unit(u board.Unit, links bool, since string) []string {
 		if !marked && m.New && !m.Mine && board.TsBefore(since, m.Ts) {
 			out, marked = append(out, NewMark), true
 		}
-		prefix := "    "
+		prefix := MsgIndent
 		if !m.New {
-			prefix = "    (前) "
+			prefix = MsgIndent + BeforeMark
 		}
 		lines := strings.Split(m.Text, "\n")
-		out = append(out, fmt.Sprintf("%s%s %s: %s", prefix, tsTime(m.Ts).Format("01/02 15:04"), clean(m.Name), clean(lines[0])))
+		out = append(out, fmt.Sprintf("%s%s %s: %s", prefix, stamp(tsTime(m.Ts)), clean(m.Name), clean(lines[0])))
 		// 続きの行は時刻の頭から 2 桁下げる。prefix は全角の「前」を含むので、バイト数ではなく表示幅で数える
 		for _, l := range lines[1:] {
 			out = append(out, strings.Repeat(" ", termwidth.Of(prefix)+2)+clean(l))
@@ -425,6 +433,6 @@ func (p Page) memberName(ch string) string {
 
 func clean(s string) string { return termsafe.PlainLine(s) }
 
-func stamp(t time.Time) string { return t.Format("01/02 15:04") }
+func stamp(t time.Time) string { return t.Format(StampLayout) }
 
 func tsTime(ts string) time.Time { return board.TsTime(ts) }

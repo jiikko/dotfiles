@@ -80,3 +80,29 @@ func TestHighlightContinuationIsNotHead(t *testing.T) {
 		}
 	}
 }
+
+// render が組んだ発言の行 (新しい発言と期間前の発言) に、名前と時刻の色が付く。行の形は render が持ち、色付けはその定数で見分ける。
+// 手で書いた行だけで確かめると、render の形を変えたときに色が消えても気づけない。
+func TestHighlightColorsMessageHeadsRenderBuilds(t *testing.T) {
+	msgs := []board.Msg{
+		{Ts: board.TsOf(1_000_000), Name: "hiroyuki.sato", Text: "PR を見た"},
+		{Ts: board.TsOf(1_000_060), Name: "kawaguchi.koji", Text: "了解", New: true},
+	}
+	p := render.Page{Topics: []board.Topic{{Title: "t", Units: []board.Unit{{ID: msgs[0].Ts, Thread: true, Msgs: msgs}}}}}
+	h := newHighlighter(p)
+	seen := map[string]bool{}
+	for _, l := range p.BodySince(p.Topics[0], false, nil) {
+		for _, m := range msgs {
+			if strings.Contains(l, m.Name+": ") {
+				got := h.line(l, true)
+				if !strings.Contains(got, sgrName+m.Name+sgrOff) || !strings.Contains(got, sgrDim) {
+					t.Errorf("render の発言の行に色が付かない: %q → %q", l, got)
+				}
+				seen[m.Name] = true
+			}
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("render の本文に発言の行が出ていない (見たのは %v)", seen)
+	}
+}

@@ -66,7 +66,7 @@ func (h highlighter) line(s string, first bool) string {
 	if first && indent == "" && strings.HasPrefix(body, render.HeadingMark) {
 		return sgrHeading + body + sgrOff
 	}
-	if first && len(indent) == messageIndent {
+	if first && indent == render.MsgIndent {
 		if head, rest, ok := h.messageHead(body); ok {
 			return indent + head + h.text(rest)
 		}
@@ -74,17 +74,14 @@ func (h highlighter) line(s string, first bool) string {
 	return indent + h.text(body)
 }
 
-// messageIndent は原文の発言の 1 行目の字下げ (render.Page.unit の prefix の空白)。
-const messageIndent = 4
-
 // messageHead は原文の発言の行の頭 (「(前) 」・時刻・名前・「: 」) に色を付ける。発言の行でなければ ok が偽。
 // 行の形は render.Page.unit が組む「[(前) ]MM/DD HH:MM 名前: 本文」。
 func (h highlighter) messageHead(s string) (head, rest string, ok bool) {
 	pre := ""
-	if p := "(前) "; strings.HasPrefix(s, p) {
+	if p := render.BeforeMark; strings.HasPrefix(s, p) {
 		pre, s = p, s[len(p):]
 	}
-	const stamp = len("01/02 15:04")
+	const stamp = len(render.StampLayout)
 	if len(s) < stamp+1 || !isStamp(s[:stamp]) || s[stamp] != ' ' {
 		return "", "", false
 	}
