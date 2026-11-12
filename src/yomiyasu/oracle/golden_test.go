@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -153,22 +154,13 @@ func TestPatternGoldenRunsRanTheTools(t *testing.T) {
 	// words の一覧つきの run が全部 rc=2 だと、語の一覧のパターンの経路を通っていない。
 	wordsOK := 0
 	for _, r := range g.Runs {
-		if r.RC == 0 && contains(r.Argv, "--words") {
+		if r.RC == 0 && slices.Contains(r.Argv, "--words") {
 			wordsOK++
 		}
 	}
 	if wordsOK == 0 {
 		t.Error("--words つきで rc=0 の run が無い (語の一覧が読まれていない)")
 	}
-}
-
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }
 
 func TestSmokeGoldenShowsDriversRan(t *testing.T) {

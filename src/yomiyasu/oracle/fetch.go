@@ -32,15 +32,15 @@ func HTTPGetter(ctx context.Context, url string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("要求を作れません (%s): %w", url, err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:bodyclose // 本文は readLimited が読み終えて閉じる (bodyclose は関数をまたいだ close を追えない)
 	if err != nil {
 		return nil, fmt.Errorf("取得に失敗しました (%s): %w", url, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// 200 以外でも本文は閉じる (接続を返す)。先に読み終えてから状態を見る。
+	body, err := readLimited(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("取得に失敗しました (%s): %s", url, resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFileBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("本文を読めません (%s): %w", url, err)
 	}
@@ -50,14 +50,21 @@ func HTTPGetter(ctx context.Context, url string) ([]byte, error) {
 	return body, nil
 }
 
+// readLimited は r を上限つきで読み、読み終えたら閉じる (閉じるのに失敗したらそれも返す)。
+func readLimited(r io.ReadCloser) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxFileBytes+1))
+	return body, errors.Join(err, r.Close())
+}
+
 func rawURL(rel string) string {
 	return "https://raw.githubusercontent.com/" + Repo + "/" + Commit + "/" + rel
 }
 
 // SHA256Hex は中身の SHA-256 を 16 進で返す (本家との照合と入力の記録に使う)。
 func SHA256Hex(b []byte) string {
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
+	h := sha256.New()
+	h.Write(b)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Fetch は本家のファイルを cacheRoot/<Commit>/ に揃える。すでにあって SHA-256 が合うものは取り直さない。
