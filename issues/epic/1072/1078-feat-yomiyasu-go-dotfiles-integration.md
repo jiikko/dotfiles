@@ -6,7 +6,7 @@
 
 ## 概要
 
-本家の `yomiyasu_hook.py` (944 行) を `yomiyasu hook` として作り直し、1075〜1077 の Go の実装を dotfiles の文章の検査の入口に組み込む。
+本家の `yomiyasu_hook.py` (944 行) を `ja-writing hook` として作り直し、1075〜1077 の Go の実装を dotfiles の文章の検査の入口に組み込む。
 ユーザー決定 (2026-11-12): textlint に新しい規則は足さず、Go の実装に寄せる。
 
 ## 本家の hook が何をするか (v3.1.0)
@@ -32,21 +32,21 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 
 ## 対応方針
 
-1. **`yomiyasu hook`**: 本家と同じ入出力で作り直す (入力の集まりは、イベントの JSON と状態フォルダの組)。
+1. **`ja-writing hook`**: 本家と同じ入出力で作り直す (入力の集まりは、イベントの JSON と状態フォルダの組)。
    dotfiles の `_claude/settings.json` に登録するかは、登録した原稿が無いときの所要 (全イベントで起動する) を測ってからユーザーに聞く。
    登録しないと決まった場合は、その決定と理由をこの issue に書いて、この項目を閉じる
-2. **`bin/ja-textlint`**: textlint の後に `yomiyasu lint` を同じファイル (と `--stdin`) に掛け、両方の指摘を出す
-   - textlint だけに渡す引数 (`--fix` など) の扱いを決める (`yomiyasu lint` は受けない)
+2. **`bin/ja-textlint`**: textlint の後に `ja-writing lint` を同じファイル (と `--stdin`) に掛け、両方の指摘を出す
+   - textlint だけに渡す引数 (`--fix` など) の扱いを決める (`ja-writing lint` は受けない)
    - rc の合成の表を作る。今の契約 (warning と info だけなら rc 0) を保つのを基本にする。片方が rc 2 / 3 やビルドの失敗で終わっても、もう片方の指摘は捨てない
    - 決めた表に合わせて、上の呼び出し元のテストと文書を同じ変更で直す
-3. **`ja-textlint-on-edit.sh`**: 書いた行に当たった `yomiyasu lint` の指摘も知らせる
+3. **`ja-textlint-on-edit.sh`**: 書いた行に当たった `ja-writing lint` の指摘も知らせる
    - 知らせる重さ (error・warn・info) と規則は、dotfiles の文書に掛けた当たりを抜き取りで読んでから決める (retro 1064 の D: 当たりを読まずに広げない)
-   - 知らせない規則は dotfiles の側 (`--json` の出力の jq の絞り込み) で外す。`yomiyasu lint` に規則を外す引数を足すと本家の答えと揃わなくなるので、足さない
+   - 知らせない規則は dotfiles の側 (`--json` の出力の jq の絞り込み) で外す。`ja-writing lint` に規則を外す引数を足すと本家の答えと揃わなくなるので、足さない
    - Go のビルドを hook の時間に入れない。hook からは `go_autobuild_exec --no-build` で起こし、ビルドが無ければ知らせずに通す (npm の `JA_TEXTLINT_NO_INSTALL` と同じ扱い)。
      `--async` は古いバイナリの結果を今の結果と取り違えるので使わない
    - 時間の上限の中に収まるかを、ビルド済みで cache が冷えた状態と温まった状態の両方で測る
 4. **語の一覧**: dotfiles で定義した用語 (正本・ゲート・台帳・入口・印。ユーザー決定 2026-11-11) を外す一覧を dotfiles に置く
-   - どの repo から `ja-textlint` を呼んでも同じ用語が外れるように、`yomiyasu lint` に `--words` で dotfiles の一覧を渡す。repo が自分の `.yomiyasu-words/` を持つときにどちらを使うかを決める
+   - どの repo から `ja-textlint` を呼んでも同じ用語が外れるように、`ja-writing lint` に `--words` で dotfiles の一覧を渡す。repo が自分の `.yomiyasu-words/` を持つときにどちらを使うかを決める
      (本家の `--words` はフォルダを 1 つだけ受ける)
    - 当たりを読んで、ほかに定義した用語があれば足す
 5. **dotfiles の textlint の規則の整理**
@@ -58,7 +58,7 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
      Go の実装の `bold_not_rendered` が同じ箇所を拾うことを確かめてから外し、hook の jq の絞り込みも直す
 <!-- textlint-enable ja-ai-vocabulary -->
 6. **ja-writing (`_claude/skills/ja-writing/SKILL.md`)**
-   - 否定対比・擬人化・前置きと定型の結び・直訳語の型・直す前後の比較 (`yomiyasu diff`) の規範の文を足す
+   - 否定対比・擬人化・前置きと定型の結び・直訳語の型・直す前後の比較 (`ja-writing diff`) の規範の文を足す
    - 「ja-textlint の中身」の節を書き直す
    - SKILL.md を直したら、観点を変えた整合の確認を 3 回と `bin/skill-eval` を回す
    - 2026-11-12 の照合の要点 76 項目のうち、Go の lint / diff でも ja-writing の文でも扱わないもの (本家の SKILL.md の推敲の手順・読み手の段階・事実を補う手順など、
@@ -66,18 +66,18 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 
 ## ユーザーに聞くこと (着手のときに)
 
-- `yomiyasu hook` を dotfiles の settings に登録するか (所要の数字を添えて)
+- `ja-writing hook` を dotfiles の settings に登録するか (所要の数字を添えて)
 - 装飾の記号の規則 (`dash_decoration` などの 3 本。warn なので `--strict` の判定にも入る): dotfiles の issues と `_claude` の Markdown 606 本が「—」を使っている
   (2026-11-12 に `git grep -l` で数えた)。書いた行だけを知らせる hook でも、Claude が規範の文書に「—」を書くたびに知らせが出る。知らせるか、外すか
 
 ## 受け入れ条件
 
-- [ ] `yomiyasu hook` が入力の集まりで本家と同じ出力と rc を返す
-- [ ] `ja-textlint` が textlint と `yomiyasu lint` の両方の指摘を出す。rc の合成の表のとおりに、`tests/bin/test_ja_textlint.sh` が両方を見る
-- [ ] `ja-textlint-on-edit.sh` が書いた行の `yomiyasu lint` の指摘を知らせる。ビルドが無いとき・時間切れのときに知らせずに通ることもテストで見る。測った所要の数字を書く
-- [ ] dotfiles で定義した用語 5 つを、`yomiyasu lint` の全規則 (組み込みの一覧を含む) に通して当たりが 0 件になる。dotfiles の外の repo から呼んでも 0 件になる
+- [ ] `ja-writing hook` が入力の集まりで本家と同じ出力と rc を返す
+- [ ] `ja-textlint` が textlint と `ja-writing lint` の両方の指摘を出す。rc の合成の表のとおりに、`tests/bin/test_ja_textlint.sh` が両方を見る
+- [ ] `ja-textlint-on-edit.sh` が書いた行の `ja-writing lint` の指摘を知らせる。ビルドが無いとき・時間切れのときに知らせずに通ることもテストで見る。測った所要の数字を書く
+- [ ] dotfiles で定義した用語 5 つを、`ja-writing lint` の全規則 (組み込みの一覧を含む) に通して当たりが 0 件になる。dotfiles の外の repo から呼んでも 0 件になる
 - [ ] ja-writing の規範と「ja-textlint の中身」が新しい形に合っている
-- [ ] CI の Tests の各ジョブで、`test_ja_textlint.sh` が `yomiyasu lint` を飛ばして緑になっていない (Go の要るジョブで回っていることを、ログの行で確かめる)
+- [ ] CI の Tests の各ジョブで、`test_ja_textlint.sh` が `ja-writing lint` を飛ばして緑になっていない (Go の要るジョブで回っていることを、ログの行で確かめる)
 
 ## 関連ファイル
 

@@ -6,7 +6,7 @@
 
 ## 概要
 
-本家の `markdown_visibility.py` (1,429 行) を `src/yomiyasu` の package として作り直す。lint・diff・check がどれも読む共通部で、1073 の土台の次に要る。
+本家の `markdown_visibility.py` (1,429 行) を `src/ja-writing` の package として作り直す。lint・diff・check がどれも読む共通部で、1073 の土台の次に要る。
 
 ## 本家が持つもの (v3.1.0 の top-level の定義から)
 

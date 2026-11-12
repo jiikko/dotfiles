@@ -48,7 +48,7 @@ ZSH_SYNTAX_FILES := \
   bin/treefiler \
   bin/validate-mp4 \
   bin/video_health \
-  bin/yomiyasu \
+  bin/ja-writing \
   bin/zundamon-kaisetsu \
   scripts/check_syntax.zsh \
   zshlib/_av1ify_lock.zsh \

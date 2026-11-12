@@ -1,9 +1,0 @@
-#!/usr/bin/env zsh
-# yomiyasu — 日本語の文章の読みやすさを点検する本家 yomiyasu (Python) の Go 実装。
-# Go implementation at:
-#   ~/dotfiles/src/yomiyasu/
-#     yomiyasu lint|diff|check|hook ...   (使い方は src/yomiyasu/README.md。subcommand は issue 1075〜1077 で実装する)
-# 再ビルドは同期 (--async にしない): 呼び出し側は出力と rc で判定するので、旧版の結果を新版のものと誤認させない。
-set -u
-source "${0:A:h}/lib/go_autobuild.zsh"
-go_autobuild_exec "${0:A:h}/../src/yomiyasu" yomiyasu -- "$@"

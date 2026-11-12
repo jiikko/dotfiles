@@ -66,6 +66,19 @@
 - `src/glogx/issues` (`glogx/issues`) — Package issues は repo 内の issue markdown ファイルの探索・分類と、端末表示用の整形を担う。
 - `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
 - `src/glogx/tools/width-probe` (`glogx/tools/width-probe`) — width-probe は「端末が各文字に実際に何セル割り当てるか」を端末自身に問い合わせて表示する。 (main)
+- `src/ja-writing` (`ja-writing`) — Command ja-writing は、日本語の文章の読みやすさを点検する本家 yomiyasu (Python) の Go 実装。 (main)
+- `src/ja-writing/check` (`ja-writing/check`) — Package check は ja-writing check (lint と diff をまとめて実行して記録を残す) の Main を持つ。
+- `src/ja-writing/cmdenv` (`ja-writing/cmdenv`) — Package cmdenv は ja-writing の各 subcommand の Main が受け取る実行環境 (引数・標準入出力・cwd・環境変数) を持つ。
+- `src/ja-writing/diff` (`ja-writing/diff`) — Package diff は ja-writing diff (元の文と書き直した文の差分の検査) の Main を持つ。
+- `src/ja-writing/hook` (`ja-writing/hook`) — Package hook は ja-writing hook (エージェントの hook から check へつなぐ入口) の Main を持つ。
+- `src/ja-writing/internal/pyjson` (`ja-writing/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
+- `src/ja-writing/internal/pyre` (`ja-writing/internal/pyre`) — Package pyre は Python 3.15.0 の re (str のパターン) を regexp2 の上に写す。 (internal)
+- `src/ja-writing/internal/pystr` (`ja-writing/internal/pystr`) — Package pystr は Python の str の振る舞い (splitlines・strip・isspace などの分類・len) を Go で再現する。 (internal)
+- `src/ja-writing/internal/pyunicode` (`ja-writing/internal/pyunicode`) — Package pyunicode は Python 3.15.0 (unicodedata 17.0.0) の文字の性質を Go で再現する。 (internal)
+- `src/ja-writing/lint` (`ja-writing/lint`) — Package lint は ja-writing lint (表現と書式の検査) の Main を持つ。
+- `src/ja-writing/lists` (`ja-writing/lists`) — Package lists は本家 yomiyasu の語の一覧 (references/lists/*.txt の 8 本) を埋め込んで持つ。
+- `src/ja-writing/oracle` (`ja-writing/oracle`) — Package oracle は本家 yomiyasu (Python) を正解 (oracle) として動かし、出力を記録して Go の実装と突き合わせる仕組み。
+- `src/ja-writing/oracle/cmd/golden` (`ja-writing/oracle/cmd/golden`) — Command golden は本家 yomiyasu (Python) を環境を固定して動かし、testdata/golden/ の記録を作り直す (make golden)。 (main)
 - `src/lockman` (`lockman`) — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
 - `src/mac-lan-manager` (`mac-lan-manager`) — mac-lan-manager は手元の Mac 同士を内部の網で繋いで管理する道具 (bin/mac-lan-manager)。 (main)
 - `src/mac-lan-manager/discover` (`mac-lan-manager/discover`) — Package discover は、Bonjour (dns-sd) で LAN の Mac を見つけるときの出力を読む。
@@ -172,19 +185,6 @@
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
 - `src/userdirs` (`userdirs`) — Package userdirs は道具ごとの設定の置き場を 1 か所で決める。
-- `src/yomiyasu` (`yomiyasu`) — Command yomiyasu は、日本語の文章の読みやすさを点検する本家 yomiyasu (Python) の Go 実装。 (main)
-- `src/yomiyasu/check` (`yomiyasu/check`) — Package check は yomiyasu check (lint と diff をまとめて実行して記録を残す) の Main を持つ。
-- `src/yomiyasu/cmdenv` (`yomiyasu/cmdenv`) — Package cmdenv は yomiyasu の各 subcommand の Main が受け取る実行環境 (引数・標準入出力・cwd・環境変数) を持つ。
-- `src/yomiyasu/diff` (`yomiyasu/diff`) — Package diff は yomiyasu diff (元の文と書き直した文の差分の検査) の Main を持つ。
-- `src/yomiyasu/hook` (`yomiyasu/hook`) — Package hook は yomiyasu hook (エージェントの hook から check へつなぐ入口) の Main を持つ。
-- `src/yomiyasu/internal/pyjson` (`yomiyasu/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
-- `src/yomiyasu/internal/pyre` (`yomiyasu/internal/pyre`) — Package pyre は Python 3.15.0 の re (str のパターン) を regexp2 の上に写す。 (internal)
-- `src/yomiyasu/internal/pystr` (`yomiyasu/internal/pystr`) — Package pystr は Python の str の振る舞い (splitlines・strip・isspace などの分類・len) を Go で再現する。 (internal)
-- `src/yomiyasu/internal/pyunicode` (`yomiyasu/internal/pyunicode`) — Package pyunicode は Python 3.15.0 (unicodedata 17.0.0) の文字の性質を Go で再現する。 (internal)
-- `src/yomiyasu/lint` (`yomiyasu/lint`) — Package lint は yomiyasu lint (表現と書式の検査) の Main を持つ。
-- `src/yomiyasu/lists` (`yomiyasu/lists`) — Package lists は本家 yomiyasu の語の一覧 (references/lists/*.txt の 8 本) を埋め込んで持つ。
-- `src/yomiyasu/oracle` (`yomiyasu/oracle`) — Package oracle は本家 yomiyasu (Python) を正解 (oracle) として動かし、出力を記録して Go の実装と突き合わせる仕組み。
-- `src/yomiyasu/oracle/cmd/golden` (`yomiyasu/oracle/cmd/golden`) — Command golden は本家 yomiyasu (Python) を環境を固定して動かし、testdata/golden/ の記録を作り直す (make golden)。 (main)
 - `src/zundamon-kaisetsu` (`zundamon-kaisetsu`) — zundamon-kaisetsu は VOICEVOX で台本を合成し、四国めたんとずんだもんの掛け合い動画 (HTML プレイヤー / mp4) を作る。 (main)
 - `src/zundamon-kaisetsu/internal/app` (`zundamon-kaisetsu/internal/app`) — Package app は CLI の実行の文脈: 環境 (Env。 (internal)
 - `src/zundamon-kaisetsu/internal/build` (`zundamon-kaisetsu/internal/build`) — Package build は組み立て (Assemble: wav の連結・口の開き・まばたき・プレイヤーのデータ) と、HTML / mp4 への書き出し。 (internal)

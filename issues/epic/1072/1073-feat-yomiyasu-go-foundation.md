@@ -8,7 +8,7 @@
 
 1074〜1078 が共通に使う土台を作る。中身は 4 つ。
 
-- `src/yomiyasu` の module と CLI の入口、package どうしの公開面
+- `src/ja-writing` の module と CLI の入口、package どうしの公開面
 - Python の標準ライブラリの振る舞い (`re`・`json`・`str`・`unicodedata`) を Go で写す内部の package
 - 本家の Python の実装を正解 (oracle) として出力を記録し、Go の実装と突き合わせる仕組み
 - 本家と揃わないことを認める範囲の表
@@ -49,15 +49,15 @@
 
 ### 置き場所・CLI・公開面
 
-- `src/yomiyasu` (module `yomiyasu`)。CLI は 1 本の `yomiyasu` で、subcommand に `lint` / `diff` / `check` / `hook` を持つ。
+- `src/ja-writing` (module `ja-writing`)。CLI は 1 本の `ja-writing` で、subcommand に `lint` / `diff` / `check` / `hook` を持つ。
   各 subcommand のオプションは本家の argparse の定義と同じにする
 - 各 subcommand を `Main(ctx, env) int` の形の関数にする。`env` は引数・標準入出力・cwd・環境変数を持つ。
   check (1077) が lint と diff を子プロセスで動かすか関数で呼ぶかを後で決めても、公開面が変わらないようにする。
   diff が借りる絵文字の数え方は lint の package の公開の関数にする
-- 入口は `bin/yomiyasu` (`go_autobuild_exec`。zsh なら root Makefile の `ZSH_SYNTAX_FILES` に登録する)
-- `src/README.md` の 3 点セット (Makefile の `lint` / `test`・`go.mod` と `go.sum`・`.github/workflows/src_yomiyasu.yml`) と、package の doc comment を揃える。
+- 入口は `bin/ja-writing` (`go_autobuild_exec`。zsh なら root Makefile の `ZSH_SYNTAX_FILES` に登録する)
+- `src/README.md` の 3 点セット (Makefile の `lint` / `test`・`go.mod` と `go.sum`・`.github/workflows/src_ja-writing.yml`) と、package の doc comment を揃える。
   `src/README.md` の一覧と `src/PACKAGES.md` (生成物) に足す
-- ライセンス: 本家の `LICENSE` (MIT) と `UNICODE-LICENSE.txt` を `src/yomiyasu/` に置く。`_claude/skills/ja-writing/textlint/LICENSE-yomiyasu` は
+- ライセンス: 本家の `LICENSE` (MIT) と `UNICODE-LICENSE.txt` を `src/ja-writing/` に置く。`_claude/skills/ja-writing/textlint/LICENSE-yomiyasu` は
   別の配布物 (textlint の規則) に付くので残し、module には複製を置く
 - 語の一覧 (`references/lists/*.txt` の 8 本) は lint・diff・check が共通に読むので、ここで `go:embed` で埋め込む。
   中身と SHA-256 を本家と同じにし、`.gitattributes` で改行の変換を止める (`-text`)。check の記録はこの SHA-256 を入れる
@@ -80,7 +80,7 @@
 
 ### 本家の出力を正解にする仕組み
 
-- `src/yomiyasu/oracle/` は本家のファイルを固定の commit (db78b9bc) から取ってくる。git clone はしない
+- `src/ja-writing/oracle/` は本家のファイルを固定の commit (db78b9bc) から取ってくる。git clone はしない
   - 取ってきたファイルを sha256 の一覧で照合し、`${XDG_CACHE_HOME:-~/.cache}/yomiyasu-oracle/<commit>/` に置く
   - 取ってきたファイルには手を入れない
 - 本家を動かす環境を固定する
@@ -112,19 +112,19 @@
 | 範囲 | 扱い |
 |---|---|
 | argparse の usage とエラーの文面 | rc だけを揃え、文面は比べない |
-| 本家のコマンド名 (`yomiyasu_lint.py` など) を含む案内の文 | `yomiyasu lint` などに置き換えてから比べる |
+| 本家のコマンド名 (`yomiyasu_lint.py` など) を含む案内の文 | `ja-writing lint` などに置き換えてから比べる |
 | check の記録の時刻・ホスト・パス・`python` の欄 | 置き換えの印にしてから比べる (欄の扱いの中身は 1077 で決める) |
 | `--version` の文字列 | 本家と同じ `3.1.0` を出す (Go の実装であることは別の欄で出すかを 1078 で決める) |
 
 ## 受け入れ条件
 
-- [ ] `make -C src/yomiyasu lint test`・root の `make test-lint`・`make test-dupscan-gate` が通り、CI の `src/yomiyasu` が緑
+- [ ] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通り、CI の `src/ja-writing` が緑
 - [ ] `internal/pyre` が、パターンの記録の全パターン・全入力の行で Python の `re` と同じ一致を返す
 - [ ] `\w` `\s` `\d` `\b` と `re.I` の 1 字の照合が、全コードポイントで Python と同じになる (生成した表で試す)
 - [ ] `internal/pyunicode` の一般カテゴリと NFKC / NFC が、全コードポイントで Python 3.15.0 (Unicode 17.0.0) と同じになる
 - [ ] `internal/pyjson` が本家の使う全部の組み合わせで `json.dumps` と同じ字を出し、`json.loads` の受け方・断り方も揃う
 - [ ] `make golden` が環境を固定して本家を動かし、2 回作って同じ記録になる。取ってきたファイルの sha256 が合わなければ止まる
-- [ ] 揃わないことを認める範囲の表が `src/yomiyasu/README.md` にある
+- [ ] 揃わないことを認める範囲の表が `src/ja-writing/README.md` にある
 - [ ] 実装をわざと壊して落ちることを確かめた記録がある (`mutate-verify`)。最低限は次の 3 つ
   - `\s` の直しを外す
   - 空の一致の規則を外す
