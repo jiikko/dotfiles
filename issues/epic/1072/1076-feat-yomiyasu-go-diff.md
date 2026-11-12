@@ -4,32 +4,42 @@
 
 ## 概要
 
-本家の `yomiyasu_diff.py` (11,577 行。本家で最も大きい) を `yomiyasu diff` として作り直す。直す前と後の文を比べ、数値・否定・伝聞・動作主・
-慎重表現・言い切りの強さなど、意味が変わった疑いのある所を出す道具。2026-11-12 の照合で「直す前後の比較」は dotfiles に原則の文しか無く、
+本家の `yomiyasu_diff.py` (11,577 行。本家で最も大きい) を `yomiyasu diff` として作り直す。直す前と後の文を比べ、意味が変わった疑いのある所を出す道具。
+見るのは数値・否定・伝聞・動作主・慎重表現・言い切りの強さなど。2026-11-12 の照合で「直す前後の比較」は、dotfiles に原則の文しか無く、
 機械で比べる手段が無かった。
 
 ## 本家が持つもの (v3.1.0)
 
-- オプション: `--stance` `--json` `--fail-on` `--doc-type` `--reader` `--words` `--no-words` `--material` `--endings` `--version`
-- 照合は `difflib.SequenceMatcher` を土台にしている (`SequenceMatcher` 21 か所・`difflib.Match` 26 か所)。本家は 2.0.1 と 2.2.2 で
-  「difflib と同じ答えのまま」照合を速くした (同じ段落を何十回も繰り返す文書で遅かったため)。比の計算に `fractions.Fraction` を使う
+- オプション: `--stance` `--json` `--fail-on` `--doc-type` `--reader` `--words` `--no-words` `--material` `--endings` `--version`。`--json` は `indent=1`
+- 照合は `difflib.SequenceMatcher` を土台にしている (21 か所)。どれも `autojunk=False` で、`isjunk` は渡さない
+  - 使う API: `get_matching_blocks`・`get_opcodes`・`ratio`・`quick_ratio`・`real_quick_ratio`・`set_seq1` / `set_seq2`・`find_longest_match`
+  - 字の列のほか、リストどうしの照合もある
+  - 本家は 2.0.1 と 2.2.2 で「difflib と同じ答えのまま」照合を速くした (同じ段落を何十回も繰り返す文書で遅かったため)
+- `fractions.Fraction` は 6 回使うが、読点の増え方の閾値の比較の 1 か所だけ。出力の数は `{:.2f}` と `round(x, 2)` の float
 - 正規表現の後読み 265 か所・先読み 256 か所 (本家で最も多い)
+- 語の一覧のうち 4 本 (nominalization・intensifiers・feelings・hedges) を読む
 - 絵文字の数え方は lint の `_emoji_matches` を読み込んで使い、読めなければ簡単な数え方に切り替える
 
 ## 対応方針
 
-- `difflib.SequenceMatcher` (Python 3.15 の `Lib/difflib.py`。autojunk の規則を含む) を `internal/difflib` に写し、本家の速い照合と
-  答えが同じことを、本家の試験の入力と記録で確かめる。本家の速い照合は「difflib と同じ答え」を前提にしているので、Go でも 2 つを突き合わせる試験を残す
-- `Fraction` は `math/big.Rat` で持ち、出力に出る値の書き方 (小数・分数) を本家と揃える
+- `difflib.SequenceMatcher` (Python 3.15 の `Lib/difflib.py`) を `internal/difflib` に写す。本家が使う API だけでよい。
+  autojunk は本家が使わない。引数の形は Python と同じにし、本家と同じく常に `autojunk=False` で呼ぶ
+- 本家の速い照合も写す。「difflib と同じ答え」が本家の前提なので、Go でも 2 つを突き合わせる試験を残す
+- `Fraction` は閾値の比較の 1 か所だけなので `math/big.Rat` で持つ。出力の数は 1073 の `internal/pyjson` と同じ規則 (Python の `round` と `repr`、`format` の `.2f`) で書く
+- 語の一覧は 1073 で埋め込んだものを使う
 - 11,577 行を検出の群ごとに分けて commit する。分け方は本家のコードを読んでから決め、群の一覧をこの issue に書く
-- 所要: 同じ段落を繰り返す長い文書 (本家の `tests/test_v202_diff_bold_performance.py` などの入力) を本家と Go で測る
+- 所要: 同じ段落を繰り返す長い文書 (本家の `tests/test_v202_diff_bold_performance.py` などの入力) を本家と Go で測る。
+  起動の時間と処理の時間を分け、同じ入力を交互に複数回測る。テストの合否には時間を使わない
 
 ## 受け入れ条件
 
 - [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す
-- [ ] `internal/difflib` が Python の `difflib.SequenceMatcher` と同じ `get_matching_blocks` / `get_opcodes` / `ratio` を返す (記録との突き合わせ)
+- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査)
+- [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`)
+- [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
 
