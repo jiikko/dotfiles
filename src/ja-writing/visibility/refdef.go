@@ -36,6 +36,16 @@ func (c *rowCursor) advance() {
 	}
 }
 
+// nextRowBlank は cursor.lines[cursor.row + 1].strip(' \t') が空か。行の中に改行の字があると最後の行でも char が '\n' を返し、
+// 本家はここで IndexError になる。analyze_markdown は改行を含まない行だけを渡すので届かないが、呼び出し側 (lint など) が
+// 改行つきの行を渡しても panic にせず、本家と同じ例外にする (ReferenceDefinitionEnd が recover する)。
+func (c *rowCursor) nextRowBlank() bool {
+	if c.row+1 >= len(c.lines) {
+		panic(newError(TypeIndexError, "list index out of range"))
+	}
+	return len(stripSpaceTab(c.lines[c.row+1])) == 0
+}
+
 func (c *rowCursor) escape() bool {
 	if c.char() == '\\' && c.following() != noChar && isASCIIPunct(rune(c.following())) {
 		c.advance()
@@ -135,7 +145,7 @@ func referenceTitleEnd(c *rowCursor) (int, bool) {
 		if opener == '(' && ch == '(' {
 			return 0, false
 		}
-		if ch == '\n' && len(stripSpaceTab(c.lines[c.row+1])) == 0 {
+		if ch == '\n' && c.nextRowBlank() {
 			return 0, false
 		}
 		c.advance()
@@ -146,12 +156,22 @@ func referenceTitleEnd(c *rowCursor) (int, bool) {
 // ReferenceDefinitionEnd は reference_definition_end。定義の最後の行 (その行を含む) の添字を返し、不透明な境界が無ければ ok が偽。
 // 行は改行を持たず、行ごとの同一性を保つ。呼び出し側がコンテナの所有と通常の段落が開いているかを決めてある前提で、
 // 段落の途中 (paragraphContext) なら定義にならない。次の行のタイトルが失敗しても、宛先だけの行は残る。同じ行の余計な文字は定義全体を無効にする。
-func ReferenceDefinitionEnd(lines []string, start int, paragraphContext bool) (int, bool) {
+func ReferenceDefinitionEnd(lines []string, start int, paragraphContext bool) (end int, ok bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			e, isErr := r.(*Error)
+			if !isErr {
+				panic(r)
+			}
+			end, ok, err = 0, false, e
+		}
+	}()
 	rows := make([][]rune, len(lines))
 	for i, l := range lines {
 		rows[i] = runesOf(l)
 	}
-	return referenceDefinitionEnd(rows, start, paragraphContext)
+	end, ok = referenceDefinitionEnd(rows, start, paragraphContext)
+	return end, ok, nil
 }
 
 func referenceDefinitionEnd(lines [][]rune, start int, paragraphContext bool) (int, bool) {
@@ -178,7 +198,7 @@ func referenceDefinitionEnd(lines [][]rune, start int, paragraphContext bool) (i
 			if ch == '[' {
 				return 0, false
 			}
-			if ch == '\n' && len(stripSpaceTab(c.lines[c.row+1])) == 0 {
+			if ch == '\n' && c.nextRowBlank() {
 				return 0, false
 			}
 			meaningful = meaningful || (ch != ' ' && ch != '\t' && ch != '\n')

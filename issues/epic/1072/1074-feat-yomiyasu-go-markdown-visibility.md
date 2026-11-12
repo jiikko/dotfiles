@@ -64,3 +64,16 @@
   最初に落ちなかった `tag-closing`・`samefile-branch` は、入力 (`</b c>` と大文字小文字だけが違う cwd のパス) を足して落ちるようにした。
 - 確かめたコマンド: `make -C src/ja-writing lint test`・`make test-dupscan-gate`・root の `make test-lint` (`src/PACKAGES.md` は `scripts/go_packages_index.sh` で作り直し)。
 - 未確認: CI の macOS runner での所要 (測ったのは手元の 1 台)・lint (1075) が `Required` で行を絞るか。
+
+### 敵対的レビュー (opus、2026-11-13)
+
+P1・P2 は無し (壊せなかったもの: `analyze_markdown` 系の乱数 2 万文書超・長大入力・範囲の端 26 万回・`decode_source` 2 万件・Unicode 全 code point 350 万字列・`check_pattern` 約 20 万件・`load_words` と `find_words_folder` の実フォルダ各約 3,000・`input_path_problem` 3,000 件で、本家と不一致 0)。指摘は P3 の 2 件で、どちらも再現して直した。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P3-1: `ReferenceDefinitionEnd` が、行の中に改行の字がある入力 (`{"[a]: b \"t", "\n"}`) で panic する (本家は `IndexError`)。`analyze_markdown` は改行のない行だけを渡すので届かないが、lint などが改行つきの行を渡すと本家の例外でなく panic になる | 直した。`rowCursor.nextRowBlank` が範囲を見て `*Error` (`IndexError: list index out of range`) を投げ、公開の `ReferenceDefinitionEnd` が `error` として返す (署名に `error` を足した)。記録の `reference-definition-end` に改行つきの行 10 通りを足した (6 件が例外) | 本家と一致。記録の呼び出しは 3,197 から 3,241 に増えた |
+| P3-2: `CurrentDirectory` / `InputPathProblem` が、作業フォルダを消して同じ名前で作り直したとき本家と違う (Python は読めない、Go は読めると答える) | 直した。`getcwd` が `syscall.Getwd` の字面の `os.Stat` と `.` の `os.Stat` を `os.SameFile` で比べ、違えば失敗にする。記録の `paths` の case に `reborn` (作り直したフォルダ) の呼び出し 10 件を足した | 本家と一致 (Python は `None` と「作業フォルダを読めない」の文) |
+
+- 記録を作り直した差分: `visibility.json` で変わったのは `reference-definition-end` と `fixture/paths` の 2 case と関数の件数の表だけ (ほかの 902 case の digest は同じ。ほかの記録 (patterns・pyre・unicode・json・pystr・smoke) は触れていない)。
+- 新しいテストをわざと壊して確かめた (`bin/mutate-verify-list` の 4 本、全部 `TestVisibilityMatchesPythonRecording` が落ちた): 範囲の検査を外す・例外を握りつぶして `nil` を返す・例外の型を `ValueError` にする・`SameFile` の検査を外す。最初に当てた 2 本は構文エラー (未使用の変数) だったので当て直した。
+- 採らなかったもの: 無し。レビューが等価と判断した 3 件 (`analyze.go` の `>= 0`・`> end`・`<= len(rows)`) は、結果が変わらない書き換えで、本家と並べても不一致 0 だったので手を入れない。

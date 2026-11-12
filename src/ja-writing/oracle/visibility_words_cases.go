@@ -429,6 +429,12 @@ func pathCases() []VisCase {
 	f.call(vkeep(vcall("current_directory"))).call(vkeep(vcall("input_path_problem", "a.txt"))).call(vkeep(vcall("input_path_problem", "-"))).call(vkeep(vcall("input_path_problem", f.dir("cwd/a.txt")))).
 		call(vkeep(vcall("input_path_problem", "a\x00b"))).call(vkeep(vcall("absolute_path", "a"))).call(vkeep(vcall("absolute_path", "/a/b/../c"))).
 		call(vkeep(vcall("find_words_folder", nil, nil))).call(vkeep(vcall("resolve_words", nil, nil, false)))
+	// 消して同じ名前で作り直したとき (字面は通るが、cwd は消えた実体のまま)
+	f.mkdir("reborn")
+	f.op(Op{Kind: "chdir", Path: f.dir("reborn")}).op(Op{Kind: "remove", Path: f.dir("reborn")}).mkdir("reborn")
+	f.write("reborn/a.txt", "a")
+	f.call(vkeep(vcall("current_directory"))).call(vkeep(vcall("input_path_problem", "a.txt"))).call(vkeep(vcall("input_path_problem", "-"))).
+		call(vkeep(vcall("input_path_problem", f.dir("reborn/a.txt")))).call(vkeep(vcall("find_words_folder", nil, nil)))
 	f.op(Op{Kind: "chdir", Path: RootToken})
 	return []VisCase{f.done()}
 }

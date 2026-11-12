@@ -331,7 +331,11 @@ func (e *env) invoke(t *testing.T, c oracle.Call) (v pyjson.Value, exc *visibili
 			lines[i] = e.argString(t, l)
 		}
 		paragraph := len(a) > 2 && a[2].(bool)
-		if end, ok := visibility.ReferenceDefinitionEnd(lines, argInt(t, a[1]), paragraph); ok {
+		end, ok, err := visibility.ReferenceDefinitionEnd(lines, argInt(t, a[1]), paragraph)
+		if err != nil {
+			return fail(err)
+		}
+		if ok {
 			return int64(end), nil
 		}
 		return nil, nil

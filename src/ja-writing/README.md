@@ -132,9 +132,9 @@ digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=("
 - 空振りを止める検査 (`TestRecordingCoversEveryPublicFunction`): 公開面の関数ごとに記録の件数が 0 でないこと、例外を投げうる関数は、例外になった呼び出しと成功した呼び出しの両方があること、記録に公開面の一覧 (`oracle.VisFunctions`) にない名前がないこと。
 - 保存できなかった `save` (例外で終わった呼び出し) の `Ref` は `KeyError` になる。case の名前を付けた名前にしてあるので、別の case の同じ名前の値を読むことはない (`scopeRefs`)。
 
-記録の関数の件数 (呼び出し数 / 例外になった数): `analyze_markdown` 5,685 / 4・`line_visible_text` 75,709 / 20・`range_overlaps_protected` 67,848 / 2・`inline_protected_spans` 38,165 / 0・`reference_definition_end` 3,197 / 0・
-`unicode_whitespace` 12,574 / 0・`decode_source` 2,413 / 1,299・`normalize_doc_type` 30 / 8・`normalize_reader` 10 / 4・`context_label` 25 / 16・`find_words_folder` 252 / 79・`load_words` 90 / 41・`resolve_words` 16 / 4・
-`words_context` 6 / 0・`words_label` 6 / 0・`check_pattern` 33,328 / 27,764・`input_path_problem` 86 / 0・`absolute_path` 40 / 1・`current_directory` 4 / 0・定数 17 個 (各 1)。
+記録の関数の件数 (呼び出し数 / 例外になった数): `analyze_markdown` 5,685 / 4・`line_visible_text` 75,709 / 20・`range_overlaps_protected` 67,848 / 2・`inline_protected_spans` 38,165 / 0・`reference_definition_end` 3,241 / 6・
+`unicode_whitespace` 12,574 / 0・`decode_source` 2,413 / 1,299・`normalize_doc_type` 30 / 8・`normalize_reader` 10 / 4・`context_label` 25 / 16・`find_words_folder` 253 / 79・`load_words` 90 / 41・`resolve_words` 16 / 4・
+`words_context` 6 / 0・`words_label` 6 / 0・`check_pattern` 33,328 / 27,764・`input_path_problem` 89 / 0・`absolute_path` 40 / 1・`current_directory` 5 / 0・定数 17 個 (各 1)。
 (`line_visible_text` と `range_overlaps_protected` の例外には、解析が例外で終わった後の `Ref` の `KeyError` が混ざる。)
 
 ### 揃わない範囲
@@ -146,7 +146,8 @@ digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=("
 - `check_pattern` の「Python が警告を出す書き方」の分岐は、Go にない: 走査が `[ ]` の中の入れ子と `--` `&&` `~~` `||` を先に断るので、走査を通った書き方で 3.15.0 の `re.compile` が警告を出す形は見つかっていない
   (26 字の 3 字までの並びと手書きの警告の形を本家に通して確かめた)。
 - `*Analysis` の `LineVisibleText` と `RangeOverlapsProtected` は、結果の覚え (本家の dict の `_line_visible_cache` と `_kind_mask_cache`) を書くので、複数の goroutine から同時に呼ばない。
-- `getcwd` は `syscall.Getwd` に、消えたフォルダを検出する `os.Stat` を足している (macOS の `syscall.Getwd` は消えたフォルダの元のパスを返し、libc の `getcwd` (Python の `os.getcwd`) は ENOENT で失敗する。記録の `paths` の case で確かめた)。
+- `getcwd` は `syscall.Getwd` に、字面を `os.Stat` した結果と `.` の `os.Stat` が同じ実体か (`os.SameFile`) の検査を足している (macOS の `syscall.Getwd` は、消えたフォルダ、または消して作り直したフォルダの元のパスを返し、libc の `getcwd` (Python の `os.getcwd`) は ENOENT で失敗する。記録の `paths` の case の `gone` と `reborn` で確かめた)。
+- `ReferenceDefinitionEnd` は、行の中に改行の字がある入力で、本家の `IndexError` を `error` (`*Error`) で返す (本家の `_RowCursor` は最後の行でも `\n` を返し、次の行の添字で落ちる)。`analyze_markdown` が渡す行は改行を持たないのでこの経路には届かない。記録の `reference-definition-end` の case に改行つきの行を足してある。
 - `InputPathProblem` の `os.path.realpath` は、本家と同じ規則 (存在しない部分は字面のまま・リンクの輪は手前で止める) を Go で書き直したもので、Python 3.15.0 の `posixpath.realpath` の移し。macOS の NFC / NFD の同じフォルダは `os.SameFile` (dev と ino) で見る。
 
 ### 試す数の上限 (`PATTERNS_MAX_COST = 512`) の判断

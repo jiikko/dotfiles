@@ -26,7 +26,13 @@ func getcwd() (string, bool) {
 		return "", false
 	}
 	// macOS の syscall.Getwd は、消えたフォルダの元のパスを返す。libc の getcwd (Python の os.getcwd) は ENOENT で失敗する。
-	if _, err := os.Stat(cwd); err != nil {
+	// 消して同じ名前で作り直したフォルダは、字面を Stat すると通る。今の cwd (".") と同じ実体かで見分ける。
+	byName, err := os.Stat(cwd)
+	if err != nil {
+		return "", false
+	}
+	here, err := os.Stat(".")
+	if err != nil || !os.SameFile(byName, here) {
 		return "", false
 	}
 	return cwd, true

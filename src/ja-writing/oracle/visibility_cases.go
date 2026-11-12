@@ -160,6 +160,17 @@ func snippetCase(name, text string) VisCase {
 
 // refDefInputs は reference_definition_end に渡す行の並び。
 var refDefInputs = [][]string{
+	// 行の中に改行の字がある (最後の行でも char が '\n' を返し、本家は IndexError)
+	{"[a]: b \"t", "\n"},
+	{"[a]: b \"t\n"},
+	{"[a]: b \"t\n", ""},
+	{"[a]: b (t\n"},
+	{"[a\n"},
+	{"[a\n", "b]: /u"},
+	{"[a\n]: /u"},
+	{"[a]: /u\n"},
+	{"[a]: /u \"t\" \n"},
+	{"[a]: /u", "\"t\n"},
 	{"[a]: /url"},
 	{"[a]: /url", "[b]: /u2"},
 	{"[a]:", "/url"},
