@@ -177,6 +177,9 @@
 - `src/yomiyasu/cmdenv` (`yomiyasu/cmdenv`) — Package cmdenv は yomiyasu の各 subcommand の Main が受け取る実行環境 (引数・標準入出力・cwd・環境変数) を持つ。
 - `src/yomiyasu/diff` (`yomiyasu/diff`) — Package diff は yomiyasu diff (元の文と書き直した文の差分の検査) の Main を持つ。
 - `src/yomiyasu/hook` (`yomiyasu/hook`) — Package hook は yomiyasu hook (エージェントの hook から check へつなぐ入口) の Main を持つ。
+- `src/yomiyasu/internal/pyjson` (`yomiyasu/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
+- `src/yomiyasu/internal/pystr` (`yomiyasu/internal/pystr`) — Package pystr は Python の str の振る舞い (splitlines・strip・isspace などの分類・len) を Go で再現する。 (internal)
+- `src/yomiyasu/internal/pyunicode` (`yomiyasu/internal/pyunicode`) — Package pyunicode は Python 3.15.0 (unicodedata 17.0.0) の文字の性質を Go で再現する。 (internal)
 - `src/yomiyasu/lint` (`yomiyasu/lint`) — Package lint は yomiyasu lint (表現と書式の検査) の Main を持つ。
 - `src/yomiyasu/lists` (`yomiyasu/lists`) — Package lists は本家 yomiyasu の語の一覧 (references/lists/*.txt の 8 本) を埋め込んで持つ。
 - `src/yomiyasu/oracle` (`yomiyasu/oracle`) — Package oracle は本家 yomiyasu (Python) を正解 (oracle) として動かし、出力を記録して Go の実装と突き合わせる仕組み。

@@ -40,6 +40,10 @@ Go のテストは記録と突き合わせるだけで、**CI でも Python を�
    - **関数** (`py/call_function.py`、`Runner.CallFunctions`): 本家の module を import して関数に JSON の引数を渡し、戻り値か例外を JSON で返す。1 つの Python プロセスの中で順に呼ぶ。
    - **CLI** (`Runner.RunCLI`): 本家の `yomiyasu_*.py` を使い捨ての cwd (入力のファイルを置く) で動かし、stdout・stderr・rc を返す。
    関数と CLI の記録は `smoke.json` に最小の見本 (`--version`・使えない値の例外など) を置いてある。1074 以降は `oracle.Call` / `oracle.CLISpec` の一覧を足して `RecordSmoke` と同じ形で記録する。
+   - **標準ライブラリの記録** (`internal/pyunicode`・`internal/pyjson`・`internal/pystr` の正解。`unicode.json`・`json.json`・`pystr.json`): 入力は driver が決まった算法 (乱数を使わない) で作る。
+     `py/gen_unicode.py` は全コードポイントの一般カテゴリ・`str` の分類・結合クラス・分解・主合成を読み、文字列どうしの正規化の例を取る。
+     `py/record_json.py` は `json.dumps` (本家が使う組み合わせ全部)・`json.loads`・`round` を、`py/record_pystr.py` は `str` のメソッドを、決まった入力に通す。
+     `unicode.json` からは `oracle/tablegen.go` が `internal/pyunicode/tables_gen.go` (生成した Go の表。手で編集しない) を作り、`TestGeneratedTablesMatchGolden` が古さを見る。
 4. **作り直し**: `make golden` (手で打つ。`make test` には含めない)。各記録に本家の commit・Python と `unicodedata` のバージョンを入れ、
    今の環境と違えば止まる (`UPDATE=1` を付けたときだけ上書き)。記録は 2 回作って同じバイト列になったときだけ書く (所要は約 2 分)。作り直した記録の差分は commit の前に読む。
    - 入力の集まりを足しただけで、環境が同じなら `UPDATE=1` は要らない。
@@ -72,9 +76,29 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
 
 - パターン (本家が使った (パターン, フラグ) の組): **839**。うち入力に 1 回でも当たったのが 765、1 回も当たらなかったのが 74
 - 当たった (パターン, 単位) の組: 1,624,214。一致の総数: 21,495,234 (digest に畳んでいて、記録には残らない)
-- 記録の大きさ: `patterns.json` 約 633 KB・`smoke.json` 約 3 KB。**合計 約 0.6 MB** (目安 5 MB 以下)
+- 記録の大きさ: `patterns.json` 約 633 KB・`smoke.json` 約 3 KB・`unicode.json` 約 805 KB・`json.json` 約 1.1 MB・`pystr.json` 約 657 KB。**合計 約 3.2 MB** (目安 5 MB 以下)。
+  生成した表 `internal/pyunicode/tables_gen.go` は約 363 KB
 - 実行の件数は `go test ./oracle/` の `TestPatternGolden*` が見る。入力の集まりが 0 件・記録が無い・入力のファイル (SHA-256・行数) が記録と合わない・
   どのパターンも当たっていない・道具の run が 1 つも rc=0 で終わっていない、のどれでも落ちる
+
+## 標準ライブラリを写す package (`internal/`)
+
+| package | 写すもの | 記録 | 件数 |
+|---|---|---|---|
+| `pyunicode` | `unicodedata` (17.0.0) の一般カテゴリ・結合クラス・NFC / NFD / NFKC / NFKD、`str` の `isspace` `isalpha` `isdecimal` `isdigit` `isnumeric` と `splitlines` の区切り、WTF-8 (単独のサロゲート) の読み書き | `unicode.json` | カテゴリの区間 4,144・NFD 2,081・NFKD 5,914・主合成 961・正規化の文字列 7,383 |
+| `pystr` | `str` の `splitlines` `strip` `lstrip` `rstrip` (引数あり・なし)・`isspace` などの分類・`len` | `pystr.json` | 1,622 文字列 |
+| `pyjson` | `json.dumps` (`ensure_ascii=True`・`indent`・`sort_keys`・`separators`)・`json.loads(bytes.decode("utf-8"))`・`round(x, n)`・`round(x)`・`repr(float)` | `json.json` | dumps 4,140・loads 1,819・round 7,643・round(x) 503 |
+
+- 表は Python の `unicodedata` を読んで作り、Go の `unicode` と `golang.org/x/text/unicode/norm` (Unicode 15.0.0) は使わない。Unicode 16 / 17 で増えた字の分類・合成が違うため。
+  正規化は 1 字の結果だけでなく、並べ替えと合成を止める並びを含む 7,383 の文字列で Python と比べる。全コードポイントの 4 形式の結果は SHA-256 で比べる。
+- 単独のサロゲートは WTF-8 (3 バイトの形) で持つ。`json.loads("\"\\ud800\"")` のような入力は Python の str が持てるので、Go の `string` にもその形で入れる。
+- `pyjson` が揃わないことがわかっている範囲 (表の外):
+  - 入れ子の深さの境界。Python は C のスタックの使用量で `RecursionError` にし、手元の 3.15.0 では深さ 130744 だった。`MaxDepth` はその値で、境界の近くは揃うと主張しない
+    (記録は 100,000 の入れ子が読めることと、1,000,000 が `RecursionError` になることを見る)
+  - `UnicodeDecodeError` と `RecursionError` のメッセージ (バイトの位置・スタックの使用量が入る)。種類だけを比べる
+  - 文字列でない鍵・`int` `float` 以外の数の型・`default=` を持つ `dumps` は持たない (本家は使っていない)
+- `pystr` `pyunicode` が持たないもの: `str.lower()` / `upper()` / `casefold()`・`isidentifier()`・`isprintable()`・`re` の `re.I` が使う大文字小文字の対応表。
+  本家の `re.I` の 1 字の照合は `internal/pyre` で別に決める
 
 ## 開発
 
@@ -88,5 +112,5 @@ make -C src/yomiyasu pin-upstream # 固定する commit を変えるときだけ
 
 ## 今後 (別の issue)
 
-`internal/pyre` (Python の `re` を regexp2 で写す)・`internal/pyunicode`・`internal/pyjson`・`internal/pystr` は 1074 以降で作る。
+`internal/pyre` (Python の `re` を regexp2 で写す) は 1074 で作る。
 このディレクトリの記録と `oracle.Digest` が、それらの突き合わせの基準になる。

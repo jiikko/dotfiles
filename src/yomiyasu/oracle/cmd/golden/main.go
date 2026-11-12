@@ -24,14 +24,14 @@ import (
 
 const runTimeout = 20 * time.Minute
 
-type paths struct{ corpus, words, golden, manifest string }
+type paths struct{ corpus, words, golden, manifest, tables string }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	pin := flag.Bool("pin", false, "本家のファイルを取り直して oracle/upstream.sha256 を書く")
 	flag.Parse()
-	p := paths{corpus: "testdata/corpus", words: "testdata/words", golden: "testdata/golden", manifest: "oracle/upstream.sha256"}
+	p := paths{corpus: "testdata/corpus", words: "testdata/words", golden: "testdata/golden", manifest: "oracle/upstream.sha256", tables: oracle.PyunicodeTablesPath}
 	var err error
 	if *pin {
 		err = runPin(ctx, p)
@@ -91,11 +91,32 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 	if err != nil {
 		return fmt.Errorf("関数と CLI の記録: %w", err)
 	}
-	for name, body := range map[string][]byte{oracle.PatternsFile: patterns, oracle.SmokeFile: smoke} {
-		if err := atomicfile.Write(filepath.Join(p.golden, name), body, 0o644); err != nil {
-			return fmt.Errorf("%s へ書けません: %w", name, err)
+	std := header.WithoutCorpus()
+	unicode, err := twice(func() ([]byte, error) { return buildUnicode(ctx, runner, std) })
+	if err != nil {
+		return fmt.Errorf("全コードポイントの記録 (unicode): %w", err)
+	}
+	jsonRec, err := twice(func() ([]byte, error) { return buildJSON(ctx, runner, std) })
+	if err != nil {
+		return fmt.Errorf("json の記録: %w", err)
+	}
+	pystr, err := twice(func() ([]byte, error) { return buildPystr(ctx, runner, std) })
+	if err != nil {
+		return fmt.Errorf("str の記録: %w", err)
+	}
+	tables, err := buildTables(unicode)
+	if err != nil {
+		return err
+	}
+	for path, body := range map[string][]byte{
+		filepath.Join(p.golden, oracle.PatternsFile): patterns, filepath.Join(p.golden, oracle.SmokeFile): smoke,
+		filepath.Join(p.golden, oracle.UnicodeFile): unicode, filepath.Join(p.golden, oracle.JSONFile): jsonRec,
+		filepath.Join(p.golden, oracle.PystrFile): pystr, p.tables: tables,
+	} {
+		if err := atomicfile.Write(path, body, 0o644); err != nil {
+			return fmt.Errorf("%s へ書けません: %w", path, err)
 		}
-		fmt.Printf("%s: %d バイト\n", name, len(body))
+		fmt.Printf("%s: %d バイト\n", path, len(body))
 	}
 	fmt.Printf("Python %s / unicodedata %s / 入力 %d ファイル・%d 単位。git diff を読んでから commit する\n",
 		info.PythonVersion, info.UnicodedataVersion, len(corpus.Files), corpus.Units())
@@ -104,7 +125,7 @@ func runGolden(ctx context.Context, p paths, update bool) error {
 
 // checkEnv は記録の環境が今と違うときに止める。記録がまだ無いときと update のときは通す。
 func checkEnv(p paths, now oracle.Header, update bool) error {
-	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile} {
+	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile} {
 		var old struct {
 			Header oracle.Header `json:"header"`
 		}
@@ -152,4 +173,37 @@ func buildSmoke(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, 
 		return nil, err
 	}
 	return oracle.MarshalSmoke(g)
+}
+
+func buildUnicode(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, error) {
+	g, err := r.RecordUnicode(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalUnicode(g)
+}
+
+func buildJSON(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, error) {
+	g, err := r.RecordJSON(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalJSONGolden(g)
+}
+
+func buildPystr(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, error) {
+	g, err := r.RecordPystr(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalPystr(g)
+}
+
+// buildTables は書き出す unicode.json のバイト列を読み直して Go の表にする (ファイルと表が同じ記録から作られることを保つ)。
+func buildTables(unicode []byte) ([]byte, error) {
+	g, err := oracle.ParseUnicode(unicode)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.GenerateUnicodeTables(g)
 }
