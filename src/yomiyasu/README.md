@@ -88,6 +88,7 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
 | `pyunicode` | `unicodedata` (17.0.0) の一般カテゴリ・結合クラス・NFC / NFD / NFKC / NFKD、`str` の `isspace` `isalpha` `isdecimal` `isdigit` `isnumeric` と `splitlines` の区切り、WTF-8 (単独のサロゲート) の読み書き | `unicode.json` | カテゴリの区間 4,144・NFD 2,081・NFKD 5,914・主合成 961・正規化の文字列 7,383 |
 | `pystr` | `str` の `splitlines` `strip` `lstrip` `rstrip` (引数あり・なし)・`isspace` などの分類・`len` | `pystr.json` | 1,622 文字列 |
 | `pyjson` | `json.dumps` (`ensure_ascii=True`・`indent`・`sort_keys`・`separators`)・`json.loads(bytes.decode("utf-8"))`・`round(x, n)`・`round(x)`・`repr(float)` | `json.json` | dumps 4,140・loads 1,819・round 7,643・round(x) 503 |
+| `pyre` | `re` (str のパターン): `compile` `search` `match` `fullmatch` (`pos` / `endpos`)・`finditer` `findall` `sub` `subn` `split` `escape`・`Match` の `group` `span` `lastindex` `lastgroup` `groupdict`・`Pattern` の `flags` `groups` `groupindex`。regexp2 v2 の上に載せる | `pyre.json` と `patterns.json` | 本家が使った 839 パターン × 33,571 単位・全コードポイントの `\w` `\s` `\d` `\b` と `re.I` の 1 字・関数の入力 782 |
 
 - 表は Python の `unicodedata` を読んで作り、Go の `unicode` と `golang.org/x/text/unicode/norm` (Unicode 15.0.0) は使わない。Unicode 16 / 17 で増えた字の分類・合成が違うため。
   正規化は 1 字の結果だけでなく、並べ替えと合成を止める並びを含む 7,383 の文字列で Python と比べる。全コードポイントの 4 形式の結果は SHA-256 で比べる。
@@ -97,8 +98,18 @@ diff を本家の `raw_ai` と `yomiyasu_rewritten` / `blacklist_ai` の組に (
     (記録は 100,000 の入れ子が読めることと、1,000,000 が `RecursionError` になることを見る)
   - `UnicodeDecodeError` と `RecursionError` のメッセージ (バイトの位置・スタックの使用量が入る)。種類だけを比べる
   - 文字列でない鍵・`int` `float` 以外の数の型・`default=` を持つ `dumps` は持たない (本家は使っていない)
-- `pystr` `pyunicode` が持たないもの: `str.lower()` / `upper()` / `casefold()`・`isidentifier()`・`isprintable()`・`re` の `re.I` が使う大文字小文字の対応表。
-  本家の `re.I` の 1 字の照合は `internal/pyre` で別に決める
+- `pystr` `pyunicode` が持たないもの: `str.lower()` / `upper()` / `casefold()`・`isidentifier()`・`isprintable()`。`re.I` の大文字小文字の対応は `internal/pyre` が `pyre.json` から作る表 (`casetables_gen.go`) で持つ。
+- `pyre` の作りと揃わない範囲:
+  - Python のパターンを自前の構文木 (CPython の `re._parser` の写し) に読み、regexp2 の構文に直す。`\s` `\w` `\d` `\b` と文字の集合は Python の字の集合の範囲の列に開き、`re.I` は `_sre.unicode_tolower` と `re._casefix` の規則で字の集合に開く。名前付きグループは名前の無いグループにして名前を自分で持つ。
+    空の一致の規則は、次の探索を `(?:パターン)(?!\G)` で書いて再現する。後読みが固定幅でないパターンは `PatternError`。
+  - regexp2 の癖: 先頭が `(?:\A|x)` のような「幅のない選択肢」のあとに「1 字以外」の集合が来ると、regexp2 は後戻りを間違えて当たりを落とす (`(?:^|;)[^a]` が `;ab` に当たらない)。
+    補集合の形の集合は 0xFFFF で 2 つのクラスの選択肢に割って渡す (`emitSet`。`TestZeroWidthAlternativeBeforeComplementSet`)。regexp2 を上げるときはこの迂回を外して試す。
+  - パターンの記録との突き合わせ (`patterns_test.go`、2,800 万回の照合) は `-race` で時間の上限を超えるので build tag で race から外し、`make test` が race なしで別に回す。
+  - 照合に時間の上限は付けない (本家に無い)。入れ子の量指定子による破局的な後戻り (`(a+)+b` など) は本家と同じく戻らない。regexp2 の後戻りの深さの上限は外してある。
+  - 揃わない範囲: `\N{名前}` (字の名前の表を持たない。`PatternError` で断る)・`isidentifier` の近似 (グループ名の検査。一般カテゴリで XID を置き換える)・
+    `lastindex` (先読みの中のグループが後のグループより遠くまで進むときはずれうる)・IGNORECASE の後方参照 (regexp2 の大文字小文字の規則)・
+    0xFFFF を超える字の範囲の `re.I` (大文字にする表が無いので、小文字化の逆写像で近似する)・DEBUG フラグは出力しない。
+  - 本家の `flag-patterns.txt` の検査器が受けるパターンの部分集合は、本家のテストの例で確かめる (検査器そのものは 1074 で作る)。
 
 ## 開発
 

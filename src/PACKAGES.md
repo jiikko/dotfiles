@@ -178,6 +178,7 @@
 - `src/yomiyasu/diff` (`yomiyasu/diff`) — Package diff は yomiyasu diff (元の文と書き直した文の差分の検査) の Main を持つ。
 - `src/yomiyasu/hook` (`yomiyasu/hook`) — Package hook は yomiyasu hook (エージェントの hook から check へつなぐ入口) の Main を持つ。
 - `src/yomiyasu/internal/pyjson` (`yomiyasu/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
+- `src/yomiyasu/internal/pyre` (`yomiyasu/internal/pyre`) — Package pyre は Python 3.15.0 の re (str のパターン) を regexp2 の上に写す。 (internal)
 - `src/yomiyasu/internal/pystr` (`yomiyasu/internal/pystr`) — Package pystr は Python の str の振る舞い (splitlines・strip・isspace などの分類・len) を Go で再現する。 (internal)
 - `src/yomiyasu/internal/pyunicode` (`yomiyasu/internal/pyunicode`) — Package pyunicode は Python 3.15.0 (unicodedata 17.0.0) の文字の性質を Go で再現する。 (internal)
 - `src/yomiyasu/lint` (`yomiyasu/lint`) — Package lint は yomiyasu lint (表現と書式の検査) の Main を持つ。
