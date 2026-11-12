@@ -21,6 +21,7 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/jiikko/dotfiles/src/ctxwait v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
@@ -31,6 +32,8 @@ require (
 )
 
 replace atomicfile => ../atomicfile
+
+replace github.com/jiikko/dotfiles/src/ctxwait => ../ctxwait
 
 replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 

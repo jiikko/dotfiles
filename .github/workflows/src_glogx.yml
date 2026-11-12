@@ -11,6 +11,7 @@ on:
     branches: [master]
     paths:
       - 'src/glogx/**'
+      - 'src/ctxwait/**'  # replace で取り込む共有 module (取り消しで抜けられる待ち)
       - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
@@ -43,6 +44,7 @@ on:
   pull_request:
     paths:
       - 'src/glogx/**'
+      - 'src/ctxwait/**'  # replace で取り込む共有 module (取り消しで抜けられる待ち)
       - 'src/testwait/**'  # replace で取り込む共有 module (テストの待ちの helper)
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)

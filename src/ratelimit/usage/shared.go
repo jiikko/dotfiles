@@ -14,6 +14,8 @@ import (
 	"doctor/cachedir"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
+
+	"github.com/jiikko/dotfiles/src/ctxwait"
 )
 
 // Claude の利用枠の取得は、`claude -p /usage` を起こす全ての呼び出し元 (glogx の U / R・bin/ratelimit・
@@ -143,21 +145,16 @@ func lockShared(ctx context.Context, path string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("利用枠の共有ロックを開けない: %w", err)
 	}
-	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return func() { _ = f.Close() }, nil // close で flock も外れる
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			_ = f.Close()
-			return nil, fmt.Errorf("利用枠の共有ロックを取れない: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			_ = f.Close()
-			return nil, fmt.Errorf("他のプロセスが利用枠を取得中で、待ちきれなかった: %w", ctx.Err())
-		case <-time.After(50 * time.Millisecond):
-		}
+	err = ctxwait.Flock(int(f.Fd()), syscall.LOCK_EX, 50*time.Millisecond, func(d time.Duration) error { return ctxwait.Sleep(ctx, d) })
+	switch {
+	case err == nil:
+		return func() { _ = f.Close() }, nil // close で flock も外れる
+	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
+		_ = f.Close()
+		return nil, fmt.Errorf("他のプロセスが利用枠を取得中で、待ちきれなかった: %w", ctx.Err())
+	default:
+		_ = f.Close()
+		return nil, fmt.Errorf("利用枠の共有ロックを取れない: %w", err)
 	}
 }
 

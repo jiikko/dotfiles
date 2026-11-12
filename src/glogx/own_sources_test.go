@@ -53,6 +53,7 @@ var ownSourceExcluded = map[string]string{
 	"../atomicfile": "ファイルの atomic な置き換えだけで、画面に出す文字列を持たない",
 	"../userdirs":   "設定の置き場の解決と引っ越しだけで、画面に出す文字列を持たない",
 	"../testwait":   "テストの待ちの helper だけで、画面に出す文字列を持たない (テストからだけ使う)",
+	"../ctxwait":    "取り消しで抜けられる待ち (sleep と flock) だけで、画面に出す文字列を持たない",
 	"../proctree":   "ps の etime の読み取りとプロセスの停止だけで、画面に出す文字列を持たない (doctor の依存)",
 }
 

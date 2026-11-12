@@ -6,6 +6,7 @@
 - `src/chromecookie` (`github.com/jiikko/dotfiles/src/chromecookie`) — Package chromecookie は macOS の Google Chrome のプロファイルから Cookie を復号して取り出す。
 - `src/chromecookie/chromecookietest` (`github.com/jiikko/dotfiles/src/chromecookie/chromecookietest`) — Package chromecookietest は chromecookie を使う側のテストが、Chrome と同じ形の Cookie DB と 暗号文を作るための道具（本物の Chrome・Keychain には触れない）。
 - `src/codexevents` (`codexevents`) — Command codex-events は、codex exec --json の出力 (events.jsonl) を読み、run が最後まで終わったかを判定して記録する。 (main)
+- `src/ctxwait` (`github.com/jiikko/dotfiles/src/ctxwait`) — Package ctxwait は、取り消しで抜けられる待ち (時間の待ち・他のプロセスが持つ flock の待ち) を 1 か所に持つ。
 - `src/doctor/brewledger` (`doctor/brewledger`) — Package brewledger は Homebrew の台帳 (installed formula の名前・旧名・別名)。
 - `src/doctor/cachedir` (`doctor/cachedir`) — Package cachedir は glogx 系ツールのキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
 - `src/doctor/cmd/diskdoctor` (`doctor/cmd/diskdoctor`) — Command diskdoctor は既知のディスク掃除候補を検出して表示する CLI。 (main)

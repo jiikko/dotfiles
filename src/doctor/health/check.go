@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"doctor/runner"
+
+	"github.com/jiikko/dotfiles/src/ctxwait"
 )
 
 // Status は 1 項目の判定。
@@ -109,25 +111,13 @@ func joinCats(cs []Category) string {
 	return strings.Join(ss, ",")
 }
 
-// SleepCtx は ctx で中断できる待ち (Options.Sleep の既定)。
-func SleepCtx(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
-}
-
 // Scan は選ばれた観点を順に調べる。
 func Scan(ctx context.Context, o Options) Report {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
 	if o.Sleep == nil {
-		o.Sleep = SleepCtx
+		o.Sleep = ctxwait.Sleep
 	}
 	if o.Interval <= 0 {
 		o.Interval = 5 * time.Second

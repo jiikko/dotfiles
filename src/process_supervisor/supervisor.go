@@ -28,6 +28,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/ctxwait"
 )
 
 // Outcome は子が抜けたときの扱い (Spec.Classify が決める)。
@@ -150,7 +152,7 @@ func Run(ctx context.Context, s Spec) Result {
 		case Retry:
 			emit(Event{Kind: EventRetrying, Err: err, Wait: s.RetryWait, Repeat: retrying})
 			retrying = true
-			sleep(ctx, s.RetryWait)
+			_ = ctxwait.Sleep(ctx, s.RetryWait) // 取り消しはループの頭の ctx.Err() で抜ける
 			continue
 		case Crash:
 		}
@@ -162,7 +164,7 @@ func Run(ctx context.Context, s Spec) Result {
 			return Result{Reason: ReasonGaveUp, Err: err}
 		}
 		emit(Event{Kind: EventCrashed, Err: err, Wait: s.RestartWait, Crashes: len(crashes)})
-		sleep(ctx, s.RestartWait)
+		_ = ctxwait.Sleep(ctx, s.RestartWait) // 同上
 	}
 }
 
@@ -243,14 +245,4 @@ func ExitCode(err error) int {
 		return exit.ExitCode()
 	}
 	return -1
-}
-
-// sleep は d だけ待つ (ctx が終われば先に戻る)。
-func sleep(ctx context.Context, d time.Duration) {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-	case <-t.C:
-	}
 }

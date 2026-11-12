@@ -3,7 +3,6 @@ package source
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -16,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/jiikko/dotfiles/src/ctxwait"
 )
 
 // Throttle は slack-cli の呼び出しを 1 列に並べ、呼び出しの間を空ける Runner (Slack のレート制限の作法を守る。ユーザー要望 2026-11-11:
@@ -135,22 +136,8 @@ type paceState struct {
 // notify はレート制限で止めることを知らせる先 (nil なら知らせない)。
 func NewThrottle(r Runner, lockPath string, notify io.Writer) *Throttle {
 	return &Throttle{r: r, notify: notify, g: &gate{
-		tok: make(chan struct{}, 1), lockPath: lockPath, now: time.Now, sleep: sleepCtx, poll: sleepCtx, gap: gapBefore, floor: gapFloor,
+		tok: make(chan struct{}, 1), lockPath: lockPath, now: time.Now, sleep: ctxwait.Sleep, poll: ctxwait.Sleep, gap: gapBefore, floor: gapFloor,
 	}}
-}
-
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return ctx.Err()
-	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
 }
 
 // 呼び出しの間。Slack の Web API のレート制限の段 (https://docs.slack.dev/apis/web-api/rate-limits) に合わせる:
@@ -353,19 +340,9 @@ func (g *gate) lock(ctx context.Context) (st paceState, save func(paceState), un
 	if err != nil {
 		return g.mem, memSave, func() {}, err
 	}
-	for {
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			_ = f.Close()
-			return g.mem, memSave, func() {}, err
-		}
-		if err := g.poll(ctx, lockPoll); err != nil {
-			_ = f.Close()
-			return g.mem, memSave, func() {}, err
-		}
+	if err := ctxwait.Flock(int(f.Fd()), syscall.LOCK_EX, lockPoll, func(d time.Duration) error { return g.poll(ctx, d) }); err != nil {
+		_ = f.Close()
+		return g.mem, memSave, func() {}, err
 	}
 	st = g.mem
 	if b, rerr := os.ReadFile(g.lockPath); rerr == nil && len(b) > 0 {

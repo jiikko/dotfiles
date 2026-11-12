@@ -11,6 +11,7 @@ on:
     branches: [master]
     paths:
       - 'src/slack-bbs/**'
+      - 'src/ctxwait/**'  # replace で取り込む共有 module (取り消しで抜けられる待ち)
       - 'src/termsafe/**'   # replace で取り込む共有 module (端末への無害化)
       - 'src/tuikit/**'     # replace で取り込む共有 module (購読を選ぶ画面の部品)
       - 'src/subproc/**'    # replace で取り込む共有 module (外部プロセスの安全弁)
@@ -28,6 +29,7 @@ on:
   pull_request:
     paths:
       - 'src/slack-bbs/**'
+      - 'src/ctxwait/**'  # replace で取り込む共有 module (取り消しで抜けられる待ち)
       - 'src/termsafe/**'   # replace で取り込む共有 module (端末への無害化)
       - 'src/tuikit/**'     # replace で取り込む共有 module (購読を選ぶ画面の部品)
       - 'src/subproc/**'    # replace で取り込む共有 module (外部プロセスの安全弁)

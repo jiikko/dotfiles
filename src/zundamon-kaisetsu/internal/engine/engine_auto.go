@@ -14,6 +14,8 @@ import (
 
 	"zundamon-kaisetsu/internal/app"
 	"zundamon-kaisetsu/internal/paths"
+
+	"github.com/jiikko/dotfiles/src/ctxwait"
 )
 
 // --- エンジンの自動起動と、使われなくなったら止める見張り ---
@@ -382,19 +384,14 @@ func ReaperCommand(exe string, env *app.Env) *exec.Cmd {
 
 // flockWait はロックが取れるまで待つ。中断 (Ctrl-C) されたら待つのをやめる。
 func flockWait(fd, how int) error {
-	for {
-		err := syscall.Flock(fd, how|syscall.LOCK_NB)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			return app.Fail("ロックを取れない (%v)", err)
-		}
-		app.SleepCtx(200 * time.Millisecond)
-		if e := app.InterruptedErr(); e != nil {
-			return e
-		}
+	err := ctxwait.Flock(fd, how, 200*time.Millisecond, func(d time.Duration) error {
+		app.SleepCtx(d)
+		return app.InterruptedErr()
+	})
+	if errno := syscall.Errno(0); errors.As(err, &errno) {
+		return app.Fail("ロックを取れない (%v)", err)
 	}
+	return err
 }
 
 // clearAutoMarkerForUp は up を明示的に打ったときに (起動用のロックの中で) 印を消す。up で起動したものは自動では止めない

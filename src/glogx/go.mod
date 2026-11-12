@@ -33,6 +33,7 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
+	github.com/jiikko/dotfiles/src/ctxwait v0.0.0 // indirect
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
@@ -72,3 +73,5 @@ replace tmpclean => ../tmpclean
 replace github.com/jiikko/dotfiles/src/testwait => ../testwait
 
 replace proctree => ../proctree
+
+replace github.com/jiikko/dotfiles/src/ctxwait => ../ctxwait
