@@ -61,7 +61,7 @@
   ただし上の依存と、種類で外す・allow・ダッシュの上限は後処理なので、比べるのは後処理の前の検出の並びにする。(2) 本家の検出の生の並びは、`lint_text` が最後に呼ぶ
   `_project_term_findings` を driver が包み、その時点の `analysis["_findings"]` (内部の欄つき) を記録する (本家のファイルに手を入れずに包める。未確認)。(3) str だけを取る関数
   (`_emoji_matches`・`_sentence_end_type`・`_has_negative_parallelism`・`bold_problems` など) は関数の単位の記録で比べる
-- **分担**: T1〜T4 と骨組み (群を呼ぶ順と、群ごとのファイル) は dotfiles-c5 が先に入れる。そのあと群を別のセッションに分けられる (G3 は dotfiles-24 に頼んだ。2026-11-13)
+- **分担**: T1〜T4 と骨組み (群を呼ぶ順と、群ごとのファイル) は dotfiles-c5 が先に入れる。そのあと群を別のセッションに分けられる。G3 は [1083](1083-feat-ja-writing-lint-bold-not-rendered.md) に切り出した (dotfiles-24 が担当。2026-11-13)
 
 ### 答えがずれやすい所 (地図の 3 節の要点)
 
