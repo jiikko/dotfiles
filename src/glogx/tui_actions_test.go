@@ -14,6 +14,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	"glogx/internal/app"
+	"glogx/internal/doctorview"
 	"glogx/internal/extcmd"
 	"glogx/internal/gitdata"
 	"glogx/internal/gitexec"
@@ -511,15 +512,12 @@ func stubDetach(t *testing.T, err error) *[]string {
 	return &calls
 }
 
-// pressAndRun はキーを押し、返った Cmd を実行してその Msg を model に配る (detach の Cmd は 1 本の関数で、Batch ではない)。
-func pressAndRun(m *browseModel, key string) {
-	_, cmd := m.handleKey(key)
-	if cmd == nil {
-		return
+// pressThenExit はキーを順に押し、glogx が抜けた後の main の処理 (detachScratchOnExit) まで走らせる。
+func pressThenExit(m *browseModel, keys ...string) {
+	for _, k := range keys {
+		m.handleKey(k)
 	}
-	if msg, ok := cmd().(scratchDetachFailedMsg); ok {
-		m.Update(msg)
-	}
+	detachScratchOnExit(m)
 }
 
 // scratch の中で開いた glogx では、prefix の次の t / C-t が tmux の bind t / C-t の代わりに scratch を閉じる。
@@ -533,59 +531,68 @@ func TestBrowseTmuxPrefixClosesScratch(t *testing.T) {
 		return m
 	}
 	for _, second := range []string{"t", "ctrl+t"} {
-		t.Run("prefix の次の "+second+" で閉じる", func(t *testing.T) {
+		t.Run("prefix の次の "+second+" で終了してから閉じる", func(t *testing.T) {
 			calls := stubDetach(t, nil)
 			m := scratchModel(t)
-			pressAndRun(m, "ctrl+t")
+			m.handleKey("ctrl+t")
 			if !strings.Contains(m.toast.Text(), "scratch") {
 				t.Errorf("scratch の中の prefix の案内が閉じ方を言わない: %q", m.toast.Text())
 			}
-			pressAndRun(m, second)
+			m.handleKey(second)
+			if !m.done && !m.zoom.closing() {
+				t.Fatal("閉じるキーで glogx の終了の経路に入らない")
+			}
+			if len(*calls) != 0 {
+				t.Fatalf("終了より先に detach した (後始末を素通りする): %v", *calls)
+			}
+			detachScratchOnExit(m)
 			if len(*calls) != 1 || (*calls)[0] != client {
-				t.Fatalf("detach の呼び出し = %v, want [%s]", *calls, client)
+				t.Fatalf("抜けた後の detach の呼び出し = %v, want [%s]", *calls, client)
 			}
 		})
 	}
+	// 終了を止めている間 (doctor の削除) は閉じない。detach は popup ごと glogx を落とし、削除の中断の経路を素通りする
+	t.Run("doctor の削除中は閉じない", func(t *testing.T) {
+		calls := stubDetach(t, nil)
+		m := scratchModel(t)
+		m.doctorOv.Fixture().Show()
+		m.doctorOv.Fixture().Delete(doctorview.DeleteRunning, nil)
+		pressThenExit(m, "ctrl+t", "t")
+		if m.done || len(*calls) != 0 {
+			t.Fatalf("削除中に閉じた: done=%v detach=%v", m.done, *calls)
+		}
+	})
 	t.Run("prefix の無い t では閉じない", func(t *testing.T) {
 		calls := stubDetach(t, nil)
 		m := scratchModel(t)
-		pressAndRun(m, "t")
-		if len(*calls) != 0 {
-			t.Fatalf("prefix 無しで detach した: %v", *calls)
+		pressThenExit(m, "t")
+		if m.done || len(*calls) != 0 {
+			t.Fatalf("prefix 無しで閉じた: done=%v detach=%v", m.done, *calls)
 		}
 	})
 	t.Run("prefix の次が別のキーなら通常操作で、その後の t では閉じない", func(t *testing.T) {
 		calls := stubDetach(t, nil)
 		m := scratchModel(t)
-		pressAndRun(m, "ctrl+t")
-		pressAndRun(m, "j")
+		m.handleKey("ctrl+t")
+		m.handleKey("j")
 		if m.cursor != 1 {
 			t.Fatal("prefix の次の j が通常操作にならない")
 		}
-		pressAndRun(m, "t")
-		if len(*calls) != 0 {
-			t.Fatalf("prefix から 2 つ目のキーで detach した: %v", *calls)
+		pressThenExit(m, "t")
+		if m.done || len(*calls) != 0 {
+			t.Fatalf("prefix から 2 つ目のキーで閉じた: done=%v detach=%v", m.done, *calls)
 		}
 	})
 	t.Run("scratch の外では prefix の次の t でも閉じない", func(t *testing.T) {
 		calls := stubDetach(t, nil)
 		m := newTestBrowseWithPrefix(t, "ctrl+t")
-		pressAndRun(m, "ctrl+t")
+		m.handleKey("ctrl+t")
 		if strings.Contains(m.toast.Text(), "scratch") {
 			t.Errorf("scratch の外で scratch を閉じる案内が出た: %q", m.toast.Text())
 		}
-		pressAndRun(m, "t")
-		if len(*calls) != 0 {
-			t.Fatalf("scratch の外で detach した: %v", *calls)
-		}
-	})
-	t.Run("detach の失敗は警告で出す", func(t *testing.T) {
-		stubDetach(t, errors.New("can't find client"))
-		m := scratchModel(t)
-		pressAndRun(m, "ctrl+t")
-		pressAndRun(m, "t")
-		if m.toast.OK() || !strings.Contains(m.toast.Text(), "can't find client") || !strings.Contains(m.lastWarning, "scratch") {
-			t.Fatalf("detach の失敗が警告にならない: text=%q lastWarning=%q", m.toast.Text(), m.lastWarning)
+		pressThenExit(m, "t")
+		if m.done || len(*calls) != 0 {
+			t.Fatalf("scratch の外で閉じた: done=%v detach=%v", m.done, *calls)
 		}
 	})
 	t.Run("クライアントを読めないときは警告で出す", func(t *testing.T) {
@@ -595,6 +602,28 @@ func TestBrowseTmuxPrefixClosesScratch(t *testing.T) {
 			t.Fatalf("読めないときの状態: client=%q lastWarning=%q", m.scratchClient, m.lastWarning)
 		}
 	})
+}
+
+// クライアントのセッションが scratch のときだけ閉じる対象にする。問い合わせの失敗 (居なくなったクライアント) は対象にしない。
+func TestPickScratchClient(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		session string
+		err     error
+		want    string
+	}{
+		{"scratch", "scratch\n", nil, "/dev/ttys089"},
+		{"別のセッション", "main\n", nil, ""},
+		{"名前が scratch を含むだけ", "scratch2\n", nil, ""},
+		{"問い合わせの失敗", "", errors.New("can't find client"), ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := pickScratchClient("/dev/ttys089", func(string) (string, error) { return c.session, c.err })
+			if got != c.want {
+				t.Errorf("pickScratchClient = %q, want %q", got, c.want)
+			}
+		})
+	}
 }
 
 // scratch のセッション名とクライアントの渡し方は Go の外 (スクリプトと tmux の設定) との写し。片方だけ変えると、

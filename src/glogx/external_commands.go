@@ -393,15 +393,26 @@ const scratchSessionName = "scratch"
 // 字面のまま届く (隔離サーバで実測 2026-11-12)。
 const scratchClientOption = "@glogx_client"
 
+// scratchClientEnv は loadScratchClient が読んだ結果を、再起動 (restartSelf の exec) へ引き継ぐ環境変数。空の値は「scratch の外」。
+// 🚨 再起動でオプションを読み直さない: 再起動は bind を通らないので、オプションには別の端末が後から書いた値が入っている。
+const scratchClientEnv = "GLOGX_SCRATCH_CLIENT"
+
 // loadScratchClient は glogx を開いたクライアントが scratch セッションに居ればその名前を返す ("" = scratch の外 / tmux 外)。
-// err は tmux にオプションを聞けなかったとき (prefix の後の t で scratch を閉じる機能が無効になる)。
+// err は tmux にオプションを読めない・消せないとき (prefix の後の t で scratch を閉じる機能が無効になる)。
 //
 // 🚨 target 無しの `display -p '#{session_name}'` で聞かない: popup の中の TMUX が持つセッション番号は、popup を開いた
 // セッションと一致しない (3.7c を隔離サーバで実測 2026-11-12: main の popup でも scratch を返した)。それで判定すると、
 // 別の端末で開いている scratch を閉じる。クライアントは bind から名指しで受け、そのクライアントのセッションを聞く。
+//
+// オプションは読んだら消す。残すと、popup の外で起動した glogx や後の起動が、もう居ないクライアントの名前
+// (pty の名前なので別の端末の scratch に再利用されうる) を読む。2 つの端末でほぼ同時に bind を押すと、先の glogx が
+// 後の端末の名前を読む窓は残る (起動から読むまでの数十 ms。後の glogx は空を読み、閉じる機能が無いだけになる)。
 var loadScratchClient = func() (string, error) {
 	if os.Getenv("TMUX") == "" {
 		return "", nil
+	}
+	if v, ok := os.LookupEnv(scratchClientEnv); ok {
+		return v, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
 	defer cancel()
@@ -409,21 +420,33 @@ var loadScratchClient = func() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("tmux の %s を読めません: %w", scratchClientOption, err)
 	}
-	client := strings.TrimSpace(opt)
-	if client == "" {
-		return "", nil
+	client := ""
+	if name := strings.TrimSpace(opt); name != "" {
+		if _, err := subproc.Output(ctx, "tmux", "set-option", "-gu", scratchClientOption); err != nil {
+			return "", fmt.Errorf("tmux の %s を消せません: %w", scratchClientOption, err)
+		}
+		client = pickScratchClient(name, func(c string) (string, error) {
+			return subproc.Output(ctx, "tmux", "display-message", "-p", "-c", c, "#{client_session}")
+		})
 	}
-	// 失敗は scratch の外として扱う: オプションは最後に bind を押したクライアントの名前が残り続けるので、popup の外で
-	// 起動した glogx が、もう居ないクライアントの名前を読むのは普通に起きる (その glogx に prefix は届かない)
-	out, err := subproc.Output(ctx, "tmux", "display-message", "-p", "-c", client, "#{client_session}")
-	if err != nil || strings.TrimSpace(out) != scratchSessionName {
-		return "", nil
+	if err := os.Setenv(scratchClientEnv, client); err != nil {
+		return "", err
 	}
 	return client, nil
 }
 
-// runTmuxDetachClient は scratch の入れ子のクライアントを detach する (scratch の popup が閉じ、中の glogx も終わる)。
-// scripts/tmux_scratch_popup.sh の閉じる側と同じ操作。テストが差し替えるので var。
+// pickScratchClient は client のセッションが scratch ならその名前を返す ("" = scratch の外)。
+// 問い合わせの失敗も scratch の外にする: 閉じた後の popup のクライアントは居なくなっているのが普通で、閉じる機能が無いだけで済む。
+func pickScratchClient(client string, sessionOf func(client string) (string, error)) string {
+	out, err := sessionOf(client)
+	if err != nil || strings.TrimSpace(out) != scratchSessionName {
+		return ""
+	}
+	return client
+}
+
+// runTmuxDetachClient は scratch の入れ子のクライアントを detach する (scratch の popup が閉じる)。
+// scripts/tmux_scratch_popup.sh の閉じる側と同じ操作。glogx が後始末を済ませて抜けた後に main が呼ぶ。テストが差し替えるので var。
 var runTmuxDetachClient = func(client string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
 	defer cancel()

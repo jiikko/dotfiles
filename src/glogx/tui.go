@@ -183,6 +183,8 @@ type browseModel struct {
 	// restartRequested は「終了後に新しいバイナリで自分を置き換える」印 (main.go が exec する)。
 	restartPending   bool
 	restartRequested bool
+	// detachOnExit は「終了後に scratch のこのクライアントを detach する」印 (main.go が打つ。prefix の後の t)
+	detachOnExit string
 	// autobuildToastSeq は留めている「ビルド中」トーストの世代 (0 = 留めていない)。解放は releaseAutobuildToast
 	autobuildToastSeq int
 	// lastKey / lastKeyAt はキーリピート (押しっぱなし) の判定用 (swallowKeyRepeat)。
@@ -396,9 +398,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		return m, nil
-	case scratchDetachFailedMsg:
-		m.showWarning("scratch を閉じられません: " + msg.err.Error())
-		return m, m.maybeTick()
+
 	case usageview.UsageMsg:
 		return m, m.usageOv.Handle(msg)
 	case issuesview.IssuesWatchMsg:

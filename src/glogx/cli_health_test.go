@@ -370,6 +370,8 @@ func TestBrowseInitWiresCLIHealth(t *testing.T) {
 	fetchLatestClaudeVersion = func(context.Context) string { return "" }
 	fetchLatestCodexVersion = func(context.Context) string { return "" }
 	loadTmuxPrefix = func() string { return "" }
+	testenv.Restore(t, &loadScratchClient) // 本物は tmux のオプションを読んで消す
+	loadScratchClient = func() (string, error) { return "", nil }
 	m := newTestBrowse(t, 1, nil, nil)
 	// usage と通常 tick はこの配線テストの対象外なので、長時間 Cmd を作らない。
 	m.usageOv.Fixture().SetInFlight(true)
@@ -459,6 +461,8 @@ func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
 	fetchLatestClaudeVersion = func(context.Context) string { return "" }
 	fetchLatestCodexVersion = func(context.Context) string { return "" }
 	loadTmuxPrefix = func() string { return "" }
+	testenv.Restore(t, &loadScratchClient) // 本物は tmux のオプションを読んで消す
+	loadScratchClient = func() (string, error) { return "", nil }
 
 	m := newTestBrowse(t, 3, nil, nil)
 	// usage と通常 tick はこのテストの対象外なので長時間 Cmd を作らせない。
@@ -541,6 +545,8 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 	fetchLatestClaudeVersion = func(context.Context) string { return "" }
 	fetchLatestCodexVersion = func(context.Context) string { return "" }
 	loadTmuxPrefix = func() string { return "" }
+	testenv.Restore(t, &loadScratchClient) // 本物は tmux のオプションを読んで消す
+	loadScratchClient = func() (string, error) { return "", nil }
 	// usage の取得とインストール済みの版は本物の claude / codex を起こす経路なので、PATH を空にして
 	// 見つからない = すぐ失敗して usageMsg を返す形にする (本物を起こさずに「投げたか」を見る)
 	t.Setenv("PATH", t.TempDir())

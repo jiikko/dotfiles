@@ -19,9 +19,6 @@ type prefixMsg struct {
 	scratchErr    error
 }
 
-// scratchDetachFailedMsg は prefix の後の t で scratch を閉じようとして失敗したとき (成功すると glogx ごと終わるので Msg は来ない)。
-type scratchDetachFailedMsg struct{ err error }
-
 // inputEditsWith は、全画面の入力欄に打っている最中で、key がその入力欄の編集キーか (tmux prefix の分岐が使う)。
 // F (treefiler) と L (mac-lan-manager) は入力欄にキャレットを出している間を「打っている最中」とする (CaretPos は入力欄があるときだけ ok)。
 func (m *browseModel) inputEditsWith(key string) bool {
@@ -209,8 +206,15 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	//
 	// scratch の中で開いた glogx だけは、prefix の次の t / C-t を tmux の bind (_tmux.conf の bind t / C-t) の代わりに
 	// 受けて scratch を閉じる。それ以外の次のキーは上のとおり通常の操作になる。scratch の外では t は glogx のキーのまま
+	//
+	// 閉じるのは glogx の終了と同じ扱い: その場で detach すると popup ごと SIGHUP で落ち、終了を止めている間 (doctor の削除・
+	// 自己更新) のガードと後始末を素通りする。終了の経路 (handleQuitKey) に任せ、抜けた後に main が detach する
 	if armed && (key == "t" || key == "ctrl+t") {
-		return m, detachScratchCmd(m.scratchClient)
+		model, cmd := m.handleQuitKey("ctrl+g")
+		if m.done || m.zoom.closing() {
+			m.detachOnExit = m.scratchClient
+		}
+		return model, cmd
 	}
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !m.inputEditsWith(key) {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
@@ -487,13 +491,4 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 窓が伸び続ける。更新しないと keyRepeatGuard ごとに 1 回ずつ通ってしまう。
 	m.lastKey, m.lastKeyAt = key, now
 	return repeat
-}
-
-func detachScratchCmd(client string) tea.Cmd {
-	return func() tea.Msg {
-		if err := runTmuxDetachClient(client); err != nil {
-			return scratchDetachFailedMsg{err: err}
-		}
-		return nil
-	}
 }

@@ -185,6 +185,10 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// この defer が無いと push/pull 中のシグナル終了で git 子プロセスが孤児化する。
 	// waitPullCleanup を先に積む (LIFO): cancelAll が pull を中断した後に、その後始末
 	// (rebase --abort) を看取ってから戻る。看取らないと os.Exit が abort ごと消す
+	//
+	// prefix の後の t で scratch を閉じるなら、最初に積んで最後に走らせる: detach すると popup ごと閉じて glogx は
+	// SIGHUP を受けるので、下の後始末 (子の看取り・IME の復元) を全部済ませてから打つ
+	defer detachScratchOnExit(browse)
 	defer waitPullCleanup()
 	// doctor の走査 (brew / du) も看取る。cancelAll は ctx を切るだけで子の死を
 	// 待たないので、これが無いとシグナル終了で brew の子孫が走り続ける (Setpgid のため
@@ -412,4 +416,15 @@ func fitsTerminal(lineCount, height int) bool {
 		return false
 	}
 	return lineCount+1 <= height
+}
+
+// detachScratchOnExit は終了の前に予約された scratch の detach を打つ (browseModel.detachOnExit)。
+// popup は閉じる途中なので、失敗は stderr にしか出せない (glogx は閉じ、scratch が残るだけで済む)。
+func detachScratchOnExit(m *browseModel) {
+	if m.detachOnExit == "" {
+		return
+	}
+	if err := runTmuxDetachClient(m.detachOnExit); err != nil {
+		fmt.Fprintln(os.Stderr, "glogx: scratch を閉じられません:", err)
+	}
 }
