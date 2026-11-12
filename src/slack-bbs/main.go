@@ -379,7 +379,7 @@ func cmdSub(ctx context.Context, d deps, stdout io.Writer) error {
 	p, at, cached := cachedPicker(d, st)
 	var cmds []tea.Cmd
 	if cached {
-		p.SetNote(at.Format("01/02 15:04") + " に取った一覧・取り直し中")
+		p.SetCachedNote(at)
 		cmds = append(cmds, func() tea.Msg {
 			done, ok := g.start()
 			if !ok {

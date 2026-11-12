@@ -187,6 +187,11 @@ func (p *Picker) Note() string { return p.note }
 // SetNote は見出しに添える一覧の出所を決める (空なら出さない)。
 func (p *Picker) SetNote(note string) { p.note = termsafe.PlainLine(note) }
 
+// SetCachedNote は、前に取った一覧 (at に取った) で開き、裏で取り直している間の注記を出す (読む画面の s と slack-bbs sub で同じ文)。
+func (p *Picker) SetCachedNote(at time.Time) {
+	p.SetNote(at.Format("01/02 15:04") + " に取った一覧・取り直し中")
+}
+
 // Resize は端末の大きさを伝える。
 func (p *Picker) Resize(w, h int) { p.w, p.h = w, h }
 

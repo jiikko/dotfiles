@@ -683,7 +683,7 @@ func (m *Model) openPicker() tea.Cmd {
 	var fetch tea.Cmd
 	if m.subs.Cached != nil {
 		if p, at, ok := m.subs.Cached(); ok {
-			p.SetNote(at.Format("01/02 15:04") + " に取った一覧・取り直し中")
+			p.SetCachedNote(at)
 			m.picker, m.pickCached, cached = p, true, true
 			fetch = m.startFetch()
 		}
