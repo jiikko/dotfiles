@@ -8,7 +8,7 @@
 """
 
 import hashlib
-import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,7 +22,10 @@ def read(p: Path) -> str:
 
 
 def md_files(d: Path) -> list:
-    files = sorted(p for p in d.iterdir() if p.suffix == ".md")
+    """d の直下の、git が追跡している .md (untracked のファイルを混ぜると、同じ commit でも別のバイト列になる)。"""
+    out = subprocess.run(["git", "-C", str(d), "ls-files", "-z", "--", "."], check=True, capture_output=True).stdout
+    names = [n for n in out.decode("utf-8").split("\0") if n and "/" not in n]
+    files = sorted(d / n for n in names if n.endswith(".md"))
     if not files:
         raise SystemExit(f"gen.py: {d} に .md が無い")
     return files

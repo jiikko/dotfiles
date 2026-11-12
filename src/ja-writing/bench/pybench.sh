@@ -3,8 +3,7 @@
 #
 #   bench/pybench.sh [-n <周の数>] <gen.py の出力の dir> <結果を書く dir>
 #
-# 周の数を指定しないときは 5 周。各周で全ケースを 1 回ずつ流し、周ごとにケースの順を 1 つずつずらす
-# (同じケースが毎周同じ時刻の並びに入らないようにし、マシンの状態の揺れを全ケースに散らす)。
+# 周の数を指定しないときは 5 周。各周で全ケースを 1 回ずつ流し、周ごとにケースの順を (周の番号を種に) かき混ぜる。
 # 結果は runs.tsv (1 run 1 行) と summary.tsv (ケースごとの中央値・最小・最大と、起動を引いた処理の時間)。
 #
 # 本家の動かし方は oracle の Runner (oracle/runner.go の env・pythonFlags・newSandbox) に合わせる:
@@ -13,7 +12,7 @@
 #   - 本家のファイルは置き場 (oracle のキャッシュ) から upstream.sha256 と合うものだけを使い捨ての木に写して動かす
 #   - 使い捨ての dir は OS の一時領域に作り、上に .git・.yomiyasu-words・.yomiyasu があれば止まる
 #     (本家は cwd から上へ辿ってこれらを拾う。repo の tmp/ の下に置くと .git を拾うので、ここだけは repo の tmp/ を使わない)
-# 測るのは python3 の起動から終了までの壁時計の時間。使い捨ての cwd・HOME の用意と入力の写しは測る区間の外に置く。
+# 測るのは env -i の起動から python3 の終了までの壁時計の時間。使い捨ての cwd・HOME の用意と入力の写しは測る区間の外に置く。
 # Runner の RunCLI は run ごとに木を写し直すが、ここでは 1 回写した木を全 run で使う (写しは測りたい処理ではないため)。
 set -euo pipefail
 
@@ -45,11 +44,12 @@ work="$(mktemp -d)"
 work="$(cd "$work" && pwd -P)"
 trap 'rm -rf "$work"' EXIT
 d="$work"
-while [ "$d" != / ]; do
-  d="$(dirname "$d")"
+while :; do
   for m in .git .yomiyasu-words .yomiyasu; do
     [ ! -e "$d/$m" ] || { echo "pybench: 使い捨ての dir $work の上に $d/$m がある。TMPDIR を repo の外に向ける" >&2; exit 2; }
   done
+  [ "$d" != / ] || break
+  d="$(dirname "$d")"
 done
 
 # 本家の木を写す (SHA-256 が合うものだけ)
@@ -81,6 +81,13 @@ for p in pair-small pair-064k pair-256k; do
   cases+=("check-$p"$'\t'"yomiyasu_check.py"$'\t'"run --source in/$p-before.md --final in/$p-after.md --no-record --state-dir state")
 done
 
+# ケースが名指しする入力が manifest に在るかを確かめる (名前がずれた run を測らない)
+for c in "${cases[@]}"; do
+  for a in $c; do
+    case "$a" in in/*) cut -f1 "$inputs/manifest.tsv" | grep -qxF "${a#in/}" || { echo "pybench: ケースの入力 ${a#in/} が manifest.tsv に無い" >&2; exit 2; } ;; esac
+  done
+done
+
 # 入力が manifest どおりかを確かめる (別の commit の gen.py の出力を測らない)
 (cd "$inputs" && while IFS=$'\t' read -r name _ sum; do
   [ "$(shasum -a 256 "$name" | cut -d' ' -f1)" = "$sum" ] || { echo "pybench: $name が manifest.tsv と合わない" >&2; exit 2; }
@@ -98,29 +105,37 @@ pyver="$(env -i "$py" -P -s -S -B -X utf8 -c 'import sys; print(sys.version.spli
 } > "$results/env.tsv"
 
 runs="$results/runs.tsv"
-printf 'round\tcase\trc\tseconds\tstdout_bytes\tstderr_bytes\n' > "$runs"
+printf 'round\tcase\trc\tseconds\tstdout_bytes\tstderr_bytes\tloadavg_1m\n' > "$runs"
 total=${#cases[@]}
+pypath="$(dirname "$py"):/usr/bin:/bin"
 for ((r = 1; r <= rounds; r++)); do
-  for ((k = 0; k < total; k++)); do
-    IFS=$'\t' read -r name tool args <<< "${cases[$(((k + r - 1) % total))]}"
+  # 周ごとに、周の番号を種にしてケースの順をかき混ぜる (直前に走るケースを周ごとに変える。種が決まっているので run どうしで同じ順になる)
+  read -ra order <<< "$(python3 -I -c 'import random, sys; o = list(range(int(sys.argv[1]))); random.Random(int(sys.argv[2])).shuffle(o); print(*o)' "$total" "$r")"
+  for k in "${order[@]}"; do
+    IFS=$'\t' read -r name tool args <<< "${cases[$k]}"
     run="$work/run.$r.$k"
     mkdir -p "$run/cwd" "$run/home"
     cp -R "$inputs" "$run/cwd/in"
     # shellcheck disable=SC2086 # args は空白で割る (ケースの表に空白を含む引数は無い)
     if [ "$tool" = - ]; then set -- $args; else set -- "$scripts/$tool" $args; fi
+    load="$(sysctl -n vm.loadavg | awk '{ print $2 }')"
+    cd "$run/cwd"
+    # 測る区間は env の fork・exec と python3 の起動から終わりまで。サブシェル・コマンド置換は区間の外に置く
+    # (env の分は startup-python に入り、どの道具のケースにも同じだけ入る)
     start=$EPOCHREALTIME
     set +e
-    (cd "$run/cwd" && env -i PATH="$(dirname "$py"):/usr/bin:/bin" HOME="$run/home" TZ=UTC PYTHONHASHSEED=0 \
-      "$py" -P -s -S -B -X utf8 "$@" > "$run/out" 2> "$run/err")
+    env -i PATH="$pypath" HOME="$run/home" TZ=UTC PYTHONHASHSEED=0 "$py" -P -s -S -B -X utf8 "$@" < /dev/null > "$run/out" 2> "$run/err"
     rc=$?
     set -e
     end=$EPOCHREALTIME
+    cd "$work"
     secs="$(awk -v a="$start" -v b="$end" 'BEGIN { printf "%.4f", b - a }')"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$r" "$name" "$rc" "$secs" "$(wc -c < "$run/out" | tr -d ' ')" "$(wc -c < "$run/err" | tr -d ' ')" >> "$runs"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$r" "$name" "$rc" "$secs" "$(wc -c < "$run/out" | tr -d ' ')" "$(wc -c < "$run/err" | tr -d ' ')" "$load" >> "$runs"
     printf 'pybench: 周 %s/%s %-22s rc=%s %ss\n' "$r" "$rounds" "$name" "$rc" "$secs" >&2
     rm -rf "$run"
   done
 done
 printf 'finished\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$results/env.tsv"
+# rc が 0 でない run と、周によって出力の大きさが違うケースがあれば、summarize.py が rc 1 で落ちる (失敗の混ざった中央値を出さない)
 python3 -I "$here/summarize.py" "$runs" "$inputs/manifest.tsv" > "$results/summary.tsv"
 cat "$results/summary.tsv"
