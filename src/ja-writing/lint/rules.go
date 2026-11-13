@@ -93,7 +93,7 @@ var implementedRules = map[string]bool{
 
 	"ai_phrase": true,
 
-	"slide_comma": false,
+	"slide_comma": true,
 
 	"say_hedge":       false,
 	"copy_comma_noun": false,

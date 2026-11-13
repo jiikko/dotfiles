@@ -237,3 +237,7 @@
   - 入力を 1 つ足した (同じ型が 1 行に 2 回・太字・判断した人と招く人・見出しと箇条・「について、」)。記録は 2,928 → 2,936 件で既存の行は変わらない。
   - 本家の表の比べ: 定数 `_V220_SENTENCE`・`_AI_PHRASE_HEAD`・`_AI_JUDGE`・`_AI_INVITER`・`_AI_PHRASE_FORMS`・`_AI_PHRASE_MESSAGE` を `lint-base.json` に足し (constants 以外の case は変わらない)、表の 1 項目を書き換える変異が red。
   - わざと壊した 11 本 (判断した人・招く人・「なんよ」の種類と行の種類・「て形」の種類と行の種類と `TENotVerb`・同じ型の重なり・行の種類・message・絞り込み) が red。等価と判断した 1 本: 引用の行を除く条件 (引用の行は見える文字が空)。
+- 2026-11-13 G17 (`slide_comma`) を入れた (`g17_slide_comma.go`・表は `g17_tables.go`)。検出の生の並びの記録と比べた候補は 631 件 (本家と同じ。slides の文脈だけ)。G13 の候補の `Heads`・`Objects` と `pausecomma.TEAttrObject()` を使う。
+  - 入力を 1 つ足した (`g17-slide-forms`: 太字と `__` の記号を外した位置・リストの文字だけを言い方に使う・20 字より長い言い方)。記録は 2,936 → 2,944 件で既存の行は変わらない。
+  - 本家の表の比べ: 定数 `_SLIDE_LINE_MAX`・`_SLIDE_COMMA`・`_SLIDE_ACTOR_AFTER`・`_SLIDE_LIST_AFTER`・`_SLIDE_SAME_NEXT`・`_SLIDE_LEAD`・`_SLIDE_BULLET`・`_SLIDE_MARKER_ZONE`・`_SLIDE_MESSAGE` を `lint-base.json` に足し (constants 以外の case は変わらない)、表の 1 項目を書き換える変異が red。
+  - わざと壊した 17 本 (60 字の上限・pause_comma と重ねない・`Heads`・別の主語・名詞の並び・同じ助詞の並びの 2 通り・`Objects`・言い方の 20 字・言い方の重なり・複数行の段落と箇条・箇条の印の範囲・太字の記号・`__`・掛かり先を決める読点・リンクの文字) が red。

@@ -83,6 +83,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		"_CLEFT_LIST_COMMA": cleftListComma, "_CLEFT_LIST_MIXED": cleftListMixed, "_CLEFT_LIST_JOINER": cleftListJoiner, "_CLEFT_LIST_COMMA_MARK": cleftListCommaMark,
 		"_CLEFT_LIST_MASKED_RUN": cleftListMaskedRun, "_CLEFT_LIST_SPACE": cleftListSpace, "_CLEFT_LIST_STEM": cleftListStem,
 		"_V220_SENTENCE": v220Sentence, "_AI_PHRASE_HEAD": aiPhraseHead, "_AI_JUDGE": aiJudge, "_AI_INVITER": aiInviter,
+		"_SLIDE_ACTOR_AFTER": slideActorAfter, "_SLIDE_LIST_AFTER": slideListAfter, "_SLIDE_LEAD": slideLead, "_SLIDE_BULLET": slideBullet, "_SLIDE_MARKER_ZONE": slideMarkerZone,
 		"_NEGATION_EXTRA": negationExtra, "_NEGATION_JANAI": negationJanai, "_NEGATION_ALSO": negationAlso, "_BOLD_LABEL_ITEM": boldLabelItem,
 	}
 	if p, ok := lazy[name]; ok {
@@ -122,12 +123,15 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 	case "_RENYO_AFTER":
 		return renyoAfter, true
 	case "_AI_PHRASE_FORMS":
-		return mapList(aiPhraseForms, func(f struct {
-			name string
-			re   *lazyPattern
-		}) pyjson.Value {
-			return list(f.name, patternValue(f.re))
-		}), true
+		return mapList(aiPhraseForms, namedPatternValue), true
+	case "_SLIDE_LINE_MAX":
+		return int64(slideLineMax), true
+	case "_SLIDE_COMMA":
+		return mapList(slideComma, namedPatternValue), true
+	case "_SLIDE_SAME_NEXT":
+		return patternMap(slideSameNext), true
+	case "_SLIDE_MESSAGE":
+		return slideMessageHead + "{}" + slideMessageTail, true
 	case "_AI_PHRASE_MESSAGE":
 		return aiPhraseMessageHead + "{}）" + v220MessageTail, true
 	case "_RENYO_MESSAGE":
@@ -156,4 +160,12 @@ func tableFunctionValue(name string) (pyjson.Value, bool) {
 		return list(stringList(parseList(string(data))), "references/lists/renyo-nouns.txt"), true
 	}
 	return nil, false
+}
+
+// namedPatternValue は (名前, 正規表現) の組 (G16 の型の表と G17 の読点の表は同じ形) の JSON。
+func namedPatternValue(f struct {
+	name string
+	re   *lazyPattern
+}) pyjson.Value {
+	return list(f.name, patternValue(f.re))
 }
