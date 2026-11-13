@@ -36,7 +36,7 @@ var (
 	renyoCache renyoTable
 )
 
-// parseList は本家の _v220_parse_list (pattern=False)。空行と「#」で始まる行は読み飛ばし、各行の前後の空白を除く。
+// renyoPatterns は連用中止の判定に使う語の一覧 (renyo-nouns.txt) から作った正規表現と、語ごとの続く語の表 (一度だけ作る)。
 func renyoPatterns() renyoTable {
 	renyoOnce.Do(func() {
 		data, err := lists.Read("renyo-nouns.txt")

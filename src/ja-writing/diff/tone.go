@@ -283,7 +283,7 @@ func floorDiv(a, b int) int {
 // 印のあとの最初の文の終わりで止める (印が「！」「？」なら印で止める)。どちらも空にしない。
 //
 // 印が共通の前の部分をまたぐと、推敲後の側の位置が負になる (割合で対応させた位置の割り算が負の数)。本家は Python の添字なので、負の位置を後ろから数え、
-// 文字列の長さを超える負の位置は IndexError (本家の tone() ごと失敗する。印が「とても」で、元の文が「とても」だけ・推敲後が「ともかく」で始まる長い文、など)。
+// 文字列の長さを超える負の位置は IndexError (本家の tone() ごと失敗する。印が「とても」で、元の文が「とても」だけ・推敲後が「とてつもなく」で始まる長い文、など。「ともかく」で始まる長い文は、位置が負でも長さを超えないので失敗しない)。
 // 負の位置の添字・切り出しを同じ規則で写し、IndexError は error で返す。
 func ToneExcerpt(oldText, newText string, spans [][2]int, width int) (string, string, error) {
 	a, b := pyunicode.Runes(oldText), pyunicode.Runes(newText)

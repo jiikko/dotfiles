@@ -282,7 +282,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 
 本家の `yomiyasu_diff.py` (11,577 行) の Go 実装 (issue 1076)。群の一覧と順は issue 1076 の「群と順」。いま入っているのは群 A (CLI の骨組み・引数と終了コード・`-h`・`--version`)・B (9 キーの下ごしらえ)・C (文末の種類と立場)・E (太字。lint と共有する `internal/bold`)・J (全文差分 `FullDiff`: 行の対応・hunk・文の断片と文字の対応・動かした行)・K (見出しの構造 `HeadingStructure`)・L (文の組と本文 `SentencePairs` `AllBodies`)・F (文の種類の印 `TypeMarks` `TypeChanges`)・G (9 キーの組み立て `RuleCandidatesOf`)・H (許可・能力 `ModalityChanges`)・I (選ぶ範囲・因果 `LogicChanges`)・R (語の一覧の読み `ParsePatternList` `LoadList` `ListSource`)・Z (文体の硬化 `Stiffness` `StiffnessMetrics`)・AA (勢い `Tone`) で、
 `--endings` の出力が本家と同じ。差分と検出の本体 (本家の `diff()` と出力) はまだで、`--endings` でない検査まで進む呼び出し (引数と入力の誤りが無いもの) は `まだ実装していません` を返す。
-公開の関数は本家の公開名に対応する (`Normalize` `HasList` `Sentences` `Paragraphs` `LogicPoints` `BareEnd` `Register` `EndingKind` `EndingUnits` `StanceFlags` `EndingChanges` `FullDiff` `HeadingStructure` `SentencePairs` `AllBodies` `Stiffness` `StiffnessMetrics` `Tone`)。本家の `tone()` は、印が共通の前の部分をまたぐと `_tone_excerpt` が `IndexError` で失敗する (推敲後の位置が負になり、Python の添字で読む)。`Tone` はこれを `*visibility.Error` で返す。本家の `count` (どこからも呼ばれない) と `_bold_short` (`internal/bold` が持つ) は写さない。
+公開の関数は本家の公開名に対応する (`Normalize` `HasList` `Sentences` `Paragraphs` `LogicPoints` `BareEnd` `Register` `EndingKind` `EndingUnits` `StanceFlags` `EndingChanges` `FullDiff` `HeadingStructure` `SentencePairs` `AllBodies` `Stiffness` `StiffnessMetrics` `Tone`)。本家の `tone()` は、印が共通の前の部分をまたいで、推敲後の位置が負になり文字列の長さを超えると、`_tone_excerpt` が `IndexError` で失敗する (Python の添字で読む。またいでも長さを超えなければ失敗しない)。`Tone` はこれを `*visibility.Error` で返す。本家の `count` (どこからも呼ばれない) と `_bold_short` (`internal/bold` が持つ) は写さない。
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
