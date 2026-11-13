@@ -92,7 +92,7 @@
 - [ ] 規則 ID ごとに、当たる入力と当たらない入力が入力の集まりにあり、その件数を記録から数える検査が通る (1073 の空振りを止める検査)
 - [ ] rc が本家と同じ (`--strict`・`--fail-on` の組み合わせを含む)
 - [ ] 語の一覧の読み込みと、`--doc-type` / `--reader` の切り替えが本家と同じ結果になる
-- [ ] 絵文字の数え方の公開の関数が、本家の `_emoji_matches` と同じ値を返す
+- [x] 絵文字の数え方の公開の関数が、本家の `_emoji_matches` と同じ値を返す (`lint.EmojiMatches`。`lint-base.json` の入力の集まりの全行・全コードポイント・旗 676 組と、opus の敵対的レビューの乱数 9 万件で一致)
 - [ ] dotfiles の文書を通した所要を、本家と Go の両方で測った数字がある
 - [ ] 規則を 1 本ずつ外したとき (群ごとに最低 1 本)、記録との突き合わせが落ちることを確かめた (`mutate-verify`)
 - [ ] `make test-dupscan-gate` が通る
@@ -154,3 +154,36 @@
 
 - 実装をわざと壊した 14 本 (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/mut2/) が、どれも名指しの検査だけで red。巻き添えの失敗は各ログに無い。
 - 満たせていないこと: 本家の候補と Go の候補の突き合わせは、群が 0 個なので実行できていない (レビューでも未確認)。`allow-partial|` の比べは群が入るまで。
+
+- 2026-11-13 origin/master (1083・1084 が入ったもの) へ rebase した。記録の登録 (`oracle/cmd/golden`) の衝突は、bold・pause_comma・lint の 4 本を全部残して解いた。
+  - `make golden` を記録の表 (`goldens`) 1 つから回す形にした (commit「make golden を記録の表 1 つから回し…」)。前は記録ごとに 4 か所と一覧 2 つへ手で書いていて、
+    1083 の `bold.json` が同じ環境の検査 (`TestGoldenFilesShareOneEnvironment`) から漏れていた。いまは `testdata/golden/*.json` を全部読み、表とファイルが 1 対 1 かを `TestGoldensMatchGoldenDir` が見る。
+    全部の記録を作り直して 14 本と Go の表 3 つが前と同じバイト列になることを確かめた。
+- 2026-11-13 G3 (`bold_not_rendered`) と G13 (`pause_comma`) を骨組みにつないだ (`g03_bold.go`・`g13_pause.go`。`implementedRules` の 2 規則が true)。
+  検出の生の並びの記録と比べた候補は bold_not_rendered 688 件・pause_comma 3,291 件で、全部本家と同じ。実装をわざと壊した 6 本 (候補を足さない・行をつないだ表を引かない・essay でも目的語を当てる・Heads を常に真・種類の制限を外す・「ほか N か所」の境) が red。
+
+### 土台の codex の敵対的レビュー (gpt-6.1-sol・high、2026-11-13)
+
+対象は rebase 後の 3 commit (土台・T4・opus の指摘の直し) と記録の表の書き換え。T1〜T3 の実装 (乱数の突き合わせを通したもの) は渡していない。codex は道具を使えない環境なので、差分と本家の該当部分 (`_apply_words`〜`lint_text`・`render_report`〜`main`・点数) を依頼文に入れた。
+指摘 12 件 + 未確認リスク 5 件。直した 8 件 (commit「lint の土台の codex の敵対的レビューの指摘を直す」)・採らない 4 件・未確認リスクは 1 件を実測して直し、4 件を記録。
+
+| 指摘 | 扱い | 理由・結果 |
+|---|---|---|
+| 1 群が一部だけ入った間、公開の候補の鍵の順を壊しても全部の比較が緑 (post の比較が sort_keys で並べ直す) | 直した | `lint-post.json` に `--json` の出力 (鍵を並べ直さない `indent=2`) の digest を足し、`TestPostProcessingMatchesPythonRecording` が比べる。鍵の順を line → rule にする変異が red。CLI の記録を規則の組で部分的に比べる案は採らない (post の比較で出力の形は見える。CLI の記録に生の規則の組を持たせると driver の作りが重くなる) |
+| 2 lint-raw の記録の `n` を壊しても検出しない・「比べた件数」の検査が発火しない | 直した | `LintRawRecord.CheckCount` を作る側と読む側の両方で当てる。比べた候補を規則ごとに数え、入った規則で 0 件なら落とす。`n` を +1 する変異が red |
+| 3 「strict と info だけ」のテストの候補 (pause_comma) が種類なしで外れ、候補 0 件のテストになっている | 直した | 種類で外れない `instruction_residue` にし、`--json` の `candidate_count` が注入した数のままかを全 case で見る。pause_comma に戻す変異が red |
+| 4 argparse の「ignored explicit argument」の値の引用が Python の repr と違う | 直した | `pyre` の `pyRepr` を `pystr.Repr` へ移して共有し、使った。CLI の記録に scenario (改行・単引用符・両方の引用符) を足した |
+| 5 負数らしい引数の判定が Unicode の数字で違う | 直した | ローカルの Python 3.15.0 の argparse は `-\.?\d` の前方一致で、Go の写しは古い Python の形 (`^-\d+$|^-\d*\.\d+$`) だった。ASCII の `-1x` でも答えが違った。pyre で 3.15 の形にし、scenario (アラビア数字・全角数字・`-1x`・`-.5`) を足した |
+| 6 `--fail-on` の語末の Σ | 採らない | README の「揃わない範囲」に書いた既知の差。使えない値の文に出る字だけに現れ、Python の文脈つきの小文字化 (cased・case-ignorable の表) を写す費用に見合わない。再提起するなら、ASCII 以外の `--fail-on` の値を実際に使う場面を示す |
+| 7 どの書き込みの誤りも BrokenPipe と扱う | 直した | EPIPE だけを「出力先が閉じられた」にし、ほか (ENOSPC) は内部エラー。`TestWriteFailuresFollowPythonExitPaths` |
+| 8 使い方の誤りの文が書けないとき、本家は rc 3 | 直した (rc は実測に合わせた) | 本家を Python 3.15.0 で実測すると rc 3 ではなく 120 (書き込みが終わり際の flush まで遅れる)。`-h`・`--version` も同じく 120 と「Exception ignored while flushing sys.stdout:」の 2 行。Go をこの形に揃え、閉じたパイプでの rc と標準エラーが本家と同じことを実物で確かめた |
+| 9 lint-post の `natural=0` が、差し替えた project_term の本来の候補を数えていない | 直した | driver が元の `_project_term_findings` の戻りも数える。作り直しても全件 0 のまま |
+| 10 G13 の種類の条件を骨組みのテストが本家と逆の契約で固定している | 採らない | 種類の条件は G13 の口の中 (`g13PauseComma`) に置いた。骨組みは口を呼ぶだけで、trace のテストは「口を呼んだ」を見る。種類なしの文書で pause_comma が出ないことは、検出の生の並びの比較 (種類なしの文脈を含む) が見ている (種類の制限を外す変異が red) |
+| 11 記録の表の書き換えが、`-only` の受ける名前・誤りの順・`checkEnv` の順を変えた | 採らない | 全部の記録の名前を `-only` で受けるのは意図した拡張で、commit message に書いた。知らない名前を本家を取りに行く前に断るのは早く失敗するための変更。誤りが重なったときにどちらを先に出すかに意味は無い (開発の道具で、どの順でも作り直しは止まる) |
+| 12 2 回の生成の間に語の一覧が変わると、前は成功した条件で失敗する | 採らない | 作り直しの最中に testdata を書き換える形で、起きる経路が無い。起きたら 2 回の不一致で止まる (書き換えずに止まるのは安全側) |
+| 未確認: 実プロセスの SIGPIPE | 実測して直した | Go は SIGPIPE で落ちて rc 141 だった (本家は rc 3)。入口で SIGPIPE を `signal.Notify` で受ける (Ignore は exec した子へ無視が引き継がれるので使わない) |
+| 未確認: digest の衝突 (候補 32 bit・CLI と post 64 bit) | 記録 | 衝突の組は作れていない。README の「全件、字まで比べる」は言い過ぎだったので「stdout は SHA-256 の先頭 16 字と長さ・stderr は全文」に直した |
+| 未確認: G18 の依存 | 記録 | G18 を入れる人が、本家の `_v220_shape_findings` が既存の候補の何を読むかを確かめ、読むなら `groupDependencies` に足す |
+| 未確認: 点数の整数の幅 (32 bit) | 採らない | 対象は macOS の arm64 だけ (dotfiles の CLAUDE.md)。int は 64 bit |
+| 未確認: 表の出力先の欄を消した | 記録 | `paths` の欄を使っていたのは `oracle/cmd/golden/main.go` だけ (grep で確かめた) |
+
