@@ -243,7 +243,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 
 2. **行をまたぐ状態を持つ群は、自分の `g<番号>State` に持ち、`lintState` に欄を足す** (いまは G11〜G13。本家の行のループの外の変数と、事前の口が作る表)。持つ状態の無い群は欄を作らない。骨組みが持つのは複数の群が読むものだけ: `previousSentence`・`kikuLines`・`metrics`・`rule9`・`sentences`・`findings`。
    候補は `s.add(newFinding(rule, line, severity, message, snippet))` で、本家が足す順に足す (足す順が `--json` の `findings` の順)。内部の欄 (`Words`・`Objects`・`Heads` など) は `finding` の欄で、持つ欄は nil でない値を入れる (空でも持つなら `[]string{}`)。
-3. **検出を、本家の検出の生の並び (`testdata/golden/lint-raw.json`) と比べる**。`TestRawFindingsMatchPythonRecording` が、40 規則の全部の候補を検出の順のまま比べる (規則の一覧は `lint/rules_test.go` の `ruleGroup`。そこにない規則の候補を Go が出すと落ちる)。
+3. **検出を、本家の検出の生の並び (`testdata/golden/lint-raw.json`) と比べる**。`TestRawFindingsMatchPythonRecording` が、40 規則の全部の候補を検出の順のまま比べる (規則の一覧は `lint/rules_test.go` の `ruleSet`。そこにない規則の候補を Go が出すと落ちる)。
    CLI の記録 (全ファイル × 種類・読者・語の一覧・text と `--json` の出力の全体と rc。8,072 件) は `TestCLIMatchesPythonRecording` が全件比べる (stdout は SHA-256 の先頭 16 字と長さ・stderr は全文・rc)。
    群が別の群の検出を読む組 (G11 が G9 の filler_patterns・G14 が G8 の候補・G17 が G13 の pause_comma の `_heads` と `_objects`) は、読む側のコードが `s.findings` を引く。
 4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにある。
@@ -256,7 +256,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
 | `lint-cli.json` (8,072 件) | 入力の集まり 332 ファイル × (`--json`・`--doc-type` 13 種・`--words`・`--no-words`・text・`--strict`・`--fail-on` の組) と、誤りの呼び出し・標準入力・作業フォルダを変えた語の一覧の探し方の 95 件。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc | `TestCLIMatchesPythonRecording` (40 規則が全部入ったので全 8,072 件を比べる。検出の生の並びが空の入力だけを比べる段は終わった) |
-| `lint-raw.json` (3,232 件) | 全ファイルと足した入力 72 (`rawgap/`) × 8 つの文脈 (種類なし・essay・slides・promo・script・minutes・article・語の一覧) の、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む。「規則:行:digest」の列) と、文書の指標 (`metrics`) の digest | `TestRawFindingsMatchPythonRecording` (指標は全件、候補は入った規則だけ)・`TestEveryRuleHasHitsInRawRecording` (40 規則全部に当たる入力がある)・`TestGapInputsHitInRawRecording` (足した入力が語・型ごとに 1 件当たる) |
+| `lint-raw.json` (3,232 件) | 全ファイルと足した入力 72 (`rawgap/`) × 8 つの文脈 (種類なし・essay・slides・promo・script・minutes・article・語の一覧) の、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む。「規則:行:digest」の列) と、文書の指標 (`metrics`) の digest | `TestRawFindingsMatchPythonRecording` (指標は全件、候補は入った規則だけ)・`TestRawRecordingRuleIDsMatchRuleSet` (記録に出る規則 ID が 40 の表と同じ)・`TestEveryRuleHasHitAndMissInputsInRecording` (規則ごとに当たる入力と当たらない入力がある)・`TestGapInputsHitInRawRecording` (足した入力が語・型ごとに 1 件当たる) |
 | `lint-post.json` (85 件) | 本家の `lint_text` の検出を、作った候補に差し替え (driver が `_project_term_findings` を包む)、種類で外す・allow・ダッシュの上限・点数・件数・context・`--json` の形・`render_report` だけを本家のまま走らせた結果。`--json` は鍵を並べ直さない出力の digest も持つ (鍵の順の違いは正規の JSON の digest では見えない) | `TestPostProcessingMatchesPythonRecording` (検出の群が入る前に、候補のある入力で後処理と出力を確かめる唯一の比較。`allow-partial|` の 8 件は、allow で語の一部だけを外して message を作り直す形で、群が全部入ったので全件比べる) |
 
 - 記録の driver は 3 つ (`oracle/py/record_lint_cli.py`・`record_lint_raw.py`・`record_lint_post.py`)。CLI の driver は 1 つの Python のプロセスの中で `main(argv)` を何度も呼ぶ (stdin・stdout・stderr は 1 回ごとに作り直し、作業フォルダの実パスは `<<ROOT>>` に戻す)。

@@ -61,7 +61,7 @@ func findingToken(t *testing.T, f finding) string {
 func tokenRule(token string) string { return token[:strings.IndexByte(token, ':')] }
 
 // 検出の生の並びの記録 (testdata/golden/lint-raw.json: 入力の集まりの全ファイルを 8 つの文脈で通した、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む)) と、
-// Go の検出 (detect) を、規則の表 (ruleGroup) の 40 規則の全部について、検出の順のまま突き合わせる。
+// Go の検出 (detect) を、規則の表 (ruleSet) の 40 規則の全部について、検出の順のまま突き合わせる。
 // 規則の表にない規則の候補を Go が出したら落とす。
 func TestRawFindingsMatchPythonRecording(t *testing.T) {
 	root := workRoot(t)
@@ -112,8 +112,8 @@ func TestRawFindingsMatchPythonRecording(t *testing.T) {
 		}
 		var got []string
 		for _, f := range s.findings {
-			if _, ok := ruleGroup[f.Rule]; !ok {
-				t.Fatalf("%s: 規則の表 (ruleGroup) にない規則 %s の候補が出た", c.Name, f.Rule)
+			if _, ok := ruleSet[f.Rule]; !ok {
+				t.Fatalf("%s: 規則の表 (ruleSet) にない規則 %s の候補が出た", c.Name, f.Rule)
 			}
 			got = append(got, findingToken(t, f))
 		}
@@ -127,7 +127,7 @@ func TestRawFindingsMatchPythonRecording(t *testing.T) {
 		}
 	}
 	// 規則ごとに、比べた候補が 1 件以上あること (記録にその規則の当たりが無いと、比べる範囲が空のまま緑になる)
-	for rule := range ruleGroup {
+	for rule := range ruleSet {
 		if compared[rule] == 0 && !t.Failed() {
 			t.Errorf("規則 %s の候補を 1 件も比べていない", rule)
 		}
@@ -135,36 +135,31 @@ func TestRawFindingsMatchPythonRecording(t *testing.T) {
 	t.Logf("規則ごとに比べた候補の数: %v", compared)
 }
 
-// 記録に規則 ID ごとに当たる入力が 1 件以上ある (40 規則全部。空振りの規則があれば、その規則を比べる範囲が空のまま緑になる)。
-// 規則の表 (ruleGroup) が本家の規則の全部であること (記録に出る規則 ID の集合と同じ) も見る。
-func TestEveryRuleHasHitsInRawRecording(t *testing.T) {
+// 記録に出る規則 ID の集合が、規則の表 (ruleSet・oracle.LintPostRules) と同じで 40 件であること。
+// 規則ごとに当たる入力が 1 件以上あることは、TestEveryRuleHasHitAndMissInputsInRecording が文脈ごとに見る。
+func TestRawRecordingRuleIDsMatchRuleSet(t *testing.T) {
 	var g oracle.LintRawGolden
 	if err := oracle.ReadGolden(goldenDir, oracle.LintRawFile, &g); err != nil {
 		t.Fatal(err)
 	}
-	hits := map[string]int{}
+	seen := map[string]bool{}
 	for _, rec := range g.Cases {
 		for _, token := range strings.Fields(rec.Findings) {
-			hits[tokenRule(token)]++
+			seen[tokenRule(token)] = true
 		}
 	}
-	for rule := range ruleGroup {
-		if hits[rule] == 0 {
-			t.Errorf("規則 %s に当たる入力が記録にない (入力の集まりに足す。地図 4.3 節)", rule)
+	for rule := range seen {
+		if _, ok := ruleSet[rule]; !ok {
+			t.Errorf("記録に出た規則 %s が規則の表 (ruleSet) にない", rule)
 		}
 	}
-	for rule := range hits {
-		if _, ok := ruleGroup[rule]; !ok {
-			t.Errorf("記録に出た規則 %s が規則の表 (ruleGroup) にない", rule)
+	for rule := range ruleSet {
+		if !seen[rule] {
+			t.Errorf("規則 %s が記録のどの入力にも出ない", rule)
 		}
 	}
-	if len(ruleGroup) != 40 || len(oracle.LintPostRules) != 40 {
-		t.Errorf("規則の表の大きさ: ruleGroup %d・oracle.LintPostRules %d (どちらも 40 のはず)", len(ruleGroup), len(oracle.LintPostRules))
-	}
-	for _, rule := range oracle.LintPostRules {
-		if _, ok := ruleGroup[rule]; !ok {
-			t.Errorf("oracle.LintPostRules の %s が規則の表にない", rule)
-		}
+	if len(ruleSet) != 40 {
+		t.Errorf("規則の表の大きさ %d (40 のはず)", len(ruleSet))
 	}
 }
 

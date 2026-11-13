@@ -87,8 +87,8 @@ func ruleInputProblems(rules []string, counts map[string]map[string]*inputCounts
 }
 
 func sortedRuleIDs() []string {
-	rules := make([]string, 0, len(ruleGroup))
-	for r := range ruleGroup {
+	rules := make([]string, 0, len(ruleSet))
+	for r := range ruleSet {
 		rules = append(rules, r)
 	}
 	sort.Strings(rules)
