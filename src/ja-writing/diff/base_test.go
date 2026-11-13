@@ -50,6 +50,31 @@ func argBool(t *testing.T, a any) bool {
 	return b
 }
 
+func logicPointValue(p LogicPoint) pyjson.Value {
+	o := pyjson.NewObject()
+	o.Set("kind", p.Kind)
+	o.Set("sentence", p.Sentence)
+	return o
+}
+
+func endingChangeValue(c EndingChange) pyjson.Value {
+	o := pyjson.NewObject()
+	o.Set("orig", c.Orig)
+	o.Set("orig_kind", c.OrigKind)
+	o.Set("rewrite", c.Rewrite)
+	o.Set("rewrite_kind", c.RewriteKind)
+	return o
+}
+
+func boldProblemValue(p bold.Problem) pyjson.Value {
+	o := pyjson.NewObject()
+	o.Set("found", p.Found)
+	o.Set("how", p.How)
+	o.Set("line", int64(p.Line))
+	o.Set("suggest", p.Suggest)
+	return o
+}
+
 // invoke は記録の呼び出し 1 つを Go の実装に通した結果。
 func invoke(t *testing.T, c oracle.Call) pyjson.Value {
 	t.Helper()
@@ -64,12 +89,7 @@ func invoke(t *testing.T, c oracle.Call) pyjson.Value {
 	case "paragraphs":
 		return replay.MapList(Paragraphs(argString(t, a[0])), func(s string) pyjson.Value { return s })
 	case "logic_points":
-		return replay.MapList(LogicPoints(argString(t, a[0])), func(p LogicPoint) pyjson.Value {
-			o := pyjson.NewObject()
-			o.Set("kind", p.Kind)
-			o.Set("sentence", p.Sentence)
-			return o
-		})
+		return replay.MapList(LogicPoints(argString(t, a[0])), logicPointValue)
 	case "bare_end":
 		return BareEnd(argString(t, a[0]))
 	case "register":
@@ -86,14 +106,7 @@ func invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		rows, flags := StanceFlags(argString(t, a[0]), stance, argBool(t, a[2]))
 		return replay.List(unitsValue(rows), replay.MapList(flags, func(f StanceFlag) pyjson.Value { return replay.List(f.Note, flagRowsValue(f.Rows)) }))
 	case "ending_changes":
-		return replay.MapList(EndingChanges(argString(t, a[0]), argString(t, a[1])), func(c EndingChange) pyjson.Value {
-			o := pyjson.NewObject()
-			o.Set("orig", c.Orig)
-			o.Set("orig_kind", c.OrigKind)
-			o.Set("rewrite", c.Rewrite)
-			o.Set("rewrite_kind", c.RewriteKind)
-			return o
-		})
+		return replay.MapList(EndingChanges(argString(t, a[0]), argString(t, a[1])), endingChangeValue)
 	case "full_diff":
 		var notes []EncodingNote
 		if len(a) > 2 {
@@ -114,14 +127,7 @@ func invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		if err != nil {
 			t.Fatalf("bold_problems: %v", err)
 		}
-		return replay.MapList(problems, func(p bold.Problem) pyjson.Value {
-			o := pyjson.NewObject()
-			o.Set("found", p.Found)
-			o.Set("how", p.How)
-			o.Set("line", int64(p.Line))
-			o.Set("suggest", p.Suggest)
-			return o
-		})
+		return replay.MapList(problems, boldProblemValue)
 	}
 	t.Fatalf("関数 %s を Go に持っていない", c.Function)
 	return nil
@@ -225,6 +231,8 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 				continue
 			case call.Get:
 				got = typeConstantValue(t, call.Function)
+			case call.Function == "_rule_candidates":
+				got = invokeRuleCandidates(t, call)
 			case call.Function == "_type_changes":
 				got = invokeTypeChanges(t, call, saved)
 			case strings.HasPrefix(call.Function, "_"):

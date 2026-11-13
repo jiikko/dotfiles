@@ -285,7 +285,7 @@ func diffTypeFuzzSimilar() []diffFullCase {
 	heads := []string{"設定画面を開いて", "設定画面を確認して", "資料を読んで", "結果を見て", "手順を確かめて", "画面を閉じて"}
 	middles := []string{"から", "ので", "ことで", "うえで", "後に", "前に"}
 	tails := []string{"確認してください。", "確認する。", "確認すべきです。", "確認します。", "確認するようです。", "確認するはずです。", "確認が必要です。", "確認できます。", "確認すること。", "確認したそうです。", "確認と思います。", "確認を。", "返信する。", "報告してください。"}
-	pick := func(xs []string) string { return xs[r.IntN(len(xs))] }
+	pick := func(xs []string) string { return randPick(r, xs) }
 	mk := func() string {
 		s := pick(heads)
 		if r.IntN(2) == 0 {

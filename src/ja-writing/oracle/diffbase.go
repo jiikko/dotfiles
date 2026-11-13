@@ -24,9 +24,13 @@ var DiffBaseFunctions = []string{
 	"full_diff",
 	"_build_full_diff", "_heading_structure", "_sentence_pairs", "_all_bodies",
 	"type_marks", "_ExactSequenceMatcher", "_type_changes",
+	"_rule_candidates",
 }
 
-func init() { DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...) }
+func init() {
+	DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...)
+	DiffBaseFunctions = append(DiffBaseFunctions, diffRuleConstants...)
+}
 
 // DiffEncodingNote は full_diff に渡す注記の 1 つ (本家の dict と同じ 3 つの鍵)。
 type DiffEncodingNote = map[string]any
@@ -170,6 +174,26 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	}
 	for _, f := range diffTypeCases() {
 		cases = append(cases, VisCase{Name: "type/" + f.name, Calls: diffTypeStageCalls(f.old, f.new)})
+	}
+	// 群 G (9 つのキーの組み立て): 定数と段 _rule_candidates。組は群 F と同じ入れ物に、群 G 専用の手書きの組と固定の種の組を足したもの
+	cases = append(cases, VisCase{Name: "rule/constants", Calls: diffRuleConstantCalls()})
+	for _, p := range pairs {
+		cases = append(cases, VisCase{Name: "rule/pair/" + p[0], Calls: diffRuleCalls(p[1], p[2], false)})
+	}
+	for _, f := range diffFullCases() {
+		cases = append(cases, VisCase{Name: "rule/full/" + f.name, Calls: diffRuleCalls(f.old, f.new, false)})
+	}
+	for _, f := range diffHeadingCases() {
+		cases = append(cases, VisCase{Name: "rule/heading/" + f.name, Calls: diffRuleCalls(f.old, f.new, false)})
+	}
+	for _, f := range diffSentenceCases() {
+		cases = append(cases, VisCase{Name: "rule/sentence/" + f.name, Calls: diffRuleCalls(f.old, f.new, false)})
+	}
+	for _, f := range diffTypeCases() {
+		cases = append(cases, VisCase{Name: "rule/type/" + f.name, Calls: diffRuleCalls(f.old, f.new, false)})
+	}
+	for _, f := range diffRuleCases() {
+		cases = append(cases, VisCase{Name: "rule/" + f.name, Calls: diffRuleCalls(f.old, f.new, true)})
 	}
 	return cases, nil
 }

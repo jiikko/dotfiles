@@ -31,6 +31,9 @@ func diffHeadingStageCalls(old, new string) []Call {
 // diffDoc は行を改行でつないだ文書 (末尾に改行を付ける)。
 func diffDoc(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
 
+// randPick は xs から 1 つ選ぶ (固定の種の乱数 r で)。
+func randPick(r *rand.Rand, xs []string) string { return xs[r.IntN(len(xs))] }
+
 // diffJoinGroups は文の並びの並び (groups) を、内側を inner で、外側を outer でつないだ文書 (末尾に改行を付ける)。
 func diffJoinGroups(groups [][]string, inner, outer string) string {
 	parts := make([]string, len(groups))

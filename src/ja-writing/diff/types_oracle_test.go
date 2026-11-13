@@ -50,6 +50,18 @@ func typeConstantValue(t *testing.T, name string) pyjson.Value {
 		}
 		slices.Sort(chars)
 		return replay.MapList(chars, func(c rune) pyjson.Value { return pyunicode.FromRunes([]rune{c}) })
+	case "MARKERS":
+		o := pyjson.NewObject()
+		for _, k := range markerKinds {
+			o.Set(k.name, k.pattern.Pattern())
+		}
+		return replay.SortKeys(o)
+	case "_MARKER_REGEXES":
+		return replay.MapList(markerKinds, func(k markerKind) pyjson.Value {
+			return replay.List(k.name, replay.Pattern(pyUnicodeFlag|int64(k.pattern.Flags()), k.pattern.Pattern()))
+		})
+	case "CONTENT":
+		return replay.Pattern(pyUnicodeFlag|int64(contentWord.Flags()), contentWord.Pattern())
 	case "_SENTENCE_PIECE":
 		return replay.Pattern(pyUnicodeFlag|int64(sentencePiece.Flags()), sentencePiece.Pattern())
 	}
@@ -103,4 +115,67 @@ func invokeTypeChanges(t *testing.T, c oracle.Call, saved map[string]string) pyj
 	o, r := saved[refName(t, c.Args[0])], saved[refName(t, c.Args[1])]
 	ops := difflib.NewExact(pyunicode.Runes(o), pyunicode.Runes(r)).GetOpcodes()
 	return typeChangesValue(TypeChanges(o, r, ops, nil))
+}
+
+func endingFlagsValue(flags []EndingFlag) pyjson.Value {
+	return replay.MapList(flags, func(f EndingFlag) pyjson.Value {
+		o := pyjson.NewObject()
+		o.Set("note", f.Note)
+		o.Set("sentences", replay.Strings(f.Sentences))
+		return o
+	})
+}
+
+// ruleCandidatesValue は _rule_candidates の結果 (鍵は昇順)。立場が空のときは null。
+func ruleCandidatesValue(t *testing.T, c *RuleCandidates) pyjson.Value {
+	t.Helper()
+	o := pyjson.NewObject()
+	o.Set("bold", replay.MapList(c.Bold, boldProblemValue))
+	e := pyjson.NewObject()
+	e.Set("changes", replay.MapList(c.Endings.Changes, endingChangeValue))
+	e.Set("flags", endingFlagsValue(c.Endings.Flags))
+	e.Set("orig_flags", endingFlagsValue(c.Endings.OrigFlags))
+	if c.Endings.Stance == "" {
+		e.Set("stance", nil)
+	} else {
+		e.Set("stance", c.Endings.Stance)
+	}
+	o.Set("endings", e)
+	o.Set("logic", replay.MapList(c.Logic, logicPointValue))
+	o.Set("lost_words", replay.Strings(c.LostWords))
+	o.Set("markers", replay.MapList(c.Markers, func(m MarkerChange) pyjson.Value {
+		b := pyjson.NewObject()
+		b.Set("kind", m.Kind)
+		b.Set("orig", int64(m.Orig))
+		b.Set("orig_hits", replay.Strings(m.OrigHits))
+		b.Set("rewrite", int64(m.Rewrite))
+		b.Set("rewrite_hits", replay.Strings(m.RewriteHits))
+		return b
+	}))
+	o.Set("new_words", replay.Strings(c.NewWords))
+	o.Set("spans", replay.MapList(c.Spans, func(s SpanChange) pyjson.Value {
+		b := pyjson.NewObject()
+		b.Set("added", s.Added)
+		b.Set("kinds", replay.Strings(s.Kinds))
+		b.Set("new_words", replay.Strings(s.NewWords))
+		b.Set("was", s.Was)
+		b.Set("where", s.Where)
+		return b
+	}))
+	o.Set("structure", replay.Strings(c.Structure))
+	o.Set("type_changes", typeChangesValue(c.TypeChanges))
+	return o
+}
+
+func invokeRuleCandidates(t *testing.T, c oracle.Call) pyjson.Value {
+	t.Helper()
+	stance := ""
+	if c.Args[2] != nil {
+		stance = argString(t, c.Args[2])
+	}
+	got, err := RuleCandidatesOf(argString(t, c.Args[0]), argString(t, c.Args[1]), stance, &typeCache{})
+	if err != nil {
+		t.Fatalf("_rule_candidates: %v", err)
+	}
+	return ruleCandidatesValue(t, got)
 }
