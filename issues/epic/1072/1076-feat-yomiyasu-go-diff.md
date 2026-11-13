@@ -109,12 +109,12 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 ## 受け入れ条件
 
-- [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す
-- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査)
+- [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings` と引数の誤りは済み。検査の本体は、群 AC で `diff()` の組み立てと CLI に配線するまで未)
+- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) は、記録が届く回数を数える検査がある。M 以降は未)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA は済み。M 以降は未)
 - [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
@@ -361,3 +361,54 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 手元の race の所要 (4 本目の木): lint の `TestCLIMatchesPythonRecording` 266 秒・`TestRawFindingsMatchPythonRecording` 96 秒、diff の `TestBaseMatchesPythonRecording` 172 秒。パッケージ全体は lint 387 秒・diff 232 秒。
 - 3 本とも 1 つの goroutine で順に呼ぶだけなので、race で見つけられるものは無い。pyre の全パターンの突き合わせの前例に揃え、`//go:build !race` のファイルへ移し、`make test` が race なしで別に回す (`Makefile` の `NORACE_CHECKS`)。上限を延ばす形は採らない (diff の群が増えるたびに同じことが起きる)。
 - 別の run は各テストの `--- PASS: <名前>` の行を見る。無いテスト名を渡すと rc 1 で落ちることを確かめた。
+
+### 5 本目 (diff-wf5。2026-11-14。worktree で作業し、push していない)
+
+- commit (群 R・Z・AA まで。AB 以降は着手していない。M〜Y・AC・AD も手を付けていない):
+  - aa1c1a3a1 feat(ja-writing): diff の語の一覧の読み (群 R: parse_list・_load_list・_list_info) を作り、lint と行の読みを lists に共有して、本家の記録と突き合わせる (issue 1076)
+  - 0a397b081 feat(ja-writing): diff の文体の硬化 (群 Z: stiffness・stiffness_metrics) を作り、本家の記録と突き合わせる (issue 1076)
+  - 053737731 test(ja-writing): 群 Z の記録に、漢数字で始まる語を含む 3 つの名詞の「の」の連続の組を足す (issue 1076)
+  - 071393ef9 feat(ja-writing): diff の勢い (群 AA: tone) を作り、本家の記録と突き合わせる (issue 1076)
+  - f2faaac5c test(ja-writing): 群 AA の記録に、緑のまま通った壊した形 7 本のうち 6 本の入力を足す (issue 1076)
+  - 501b370d2 test(ja-writing): 群 AA の記録に、見出しの字数で絵文字を最初の 1 つだけ外す判定を分ける文字列を足す (issue 1076)
+  - 各 commit は、commit の前の木で `make -C src/ja-writing lint test` (rc 0)・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した (rc を 1 つずつ確かめた。071393ef9 は unused と dup を、テストの `fmt.Sprint` を `strconv.Itoa` に直す 1 行の前の木で回し、その後の `make lint test` は rc 0)。`make test-lint` は最後の木だけで回した (下の「最終の検査 (5 本目)」)
+- 群 R (`diff/wordlist.go`・`lists/parse.go`): `ParsePatternList` (本家の `parse_list` の pattern が真。書き方の誤りは `*ListError` = ValueError)・`LoadList` (`_load_list` の items)・`ListSource` (`_list_info` の list。list_problem はいつも null)。語だけの一覧の読みは `lists.Words`。
+  BOM・CRLF・空行・「#」の行の読みは lint の `parseList` と `parseThinList` が写していたので、`lists.Lines` に寄せて両方がこれを使う (行末の `\r` は本家の `rstrip("\r")` と同じく全部落とす。lint の一覧は固定で答えは変わらない)。
+  本家の内蔵の一覧 (`BUILTIN_LISTS`)・`_LIST_PROBLEMS`・`_any_of` の「読めなかった」経路は写さない (決めたこと 5)。oracle は `lists` を import しない (`lists` が使う `internal/pystr` の試験が `oracle` を import していて循環する)。`--words` / `--no-words` の経路 (`visibility.ResolveWords`) と `context.words` は触っておらず、diff の CLI の記録 (`--words` の組を含む) は変わらず通った
+- 群 Z (`diff/stiffness.go`): `Stiffness`・`StiffnessMetrics`・`ChangedExcerpt`。文字と数字・長さに数える句読点・漢字・平仮名は本家と同じ正規表現で数える (`_measure` の範囲を字の範囲で書き直すと、定数の記録と結び付かない)。
+  割り算と `round` は Python の float と同じ順 (`100.0 * 漢字 / 字数`・`round(x, 2)`・文書全体の条件は丸めた値どうしの引き算)。名詞化の正規表現の前置き `anyOf` (`_any_of`) と文ごとの覚え (memo) も写した。
+  本家の `_stiffness` が `sides.texts` の同一か hunk の無いときに早く返す所は、texts が同じなら hunk も無いので hunk の有無だけを見る。`no_nouns` の閾値は本家の中でも読まれず、Go に表を持たない (「の」の連続の正規表現の `{2,}` が名詞 3 つ以上を表す)
+- 群 AA (`diff/tone.go`): `Tone`・`PseudoHeading`・`MarkSpans`・`ToneExcerpt`。絵文字は lint の `EmojiMatches` (`_FALLBACK_EMOJI` は写さない)。`masker` に数えない行の種類を渡せるようにした (`newMaskerWith`。勢いは表を除くが見出しは数える)。
+  🚨 **本家の `_tone_excerpt` は、印が共通の前の部分をまたぐと推敲後の側の位置が負になり、Python の添字 (負は後ろから数える) で読む**。長さを超える負の位置は `IndexError` で `tone()` ごと失敗する (元の文が「とても」だけ、推敲後が「とてつもなく」で始まる長い文など。記録に 28 件ある)。
+  負の添字・切り出しを同じ規則で写し、IndexError は `*visibility.Error` で返す。**群 AC で CLI に配線するとき、この error を rc 3 (`yomiyasu_diff.py: 内部エラー: IndexError: string index out of range`) にする**
+- 共有: `pyjson.MapList` を足し、`replay.MapList` と lint の試験の `valuesOf` を寄せた。`replay.ExceptionDigest` (例外の digest) と、テストの `outcomeDigest` (parse_list の ValueError と tone の IndexError を同じ形で突き合わせる)。例外を投げうる関数は `oracle.DiffRaisingFunctions` (記録に例外と成功の両方がなければ落ちる)
+- 記録: `diff-base.json` は 16,474 → 34,077 case・136,718 → 178,780 呼び出し (7.3MB → 9.8MB)。足した呼び出し (関数ごと):
+  - 群 R: `parse_list` 2,580 (うち本家が ValueError を投げる 760)・`_load_list` 5・`_list_info` 4 (`_load_list` は群 Z・AA の覚えるだけの呼び出しを足して計 250)。入力は 8 本の一覧そのもの (両方の読み方)・手書き (BOM・CRLF・空行・コメント・タブの数・3 つ目の欄・誤りの行の表示の 40 字ちょうどと 41 字)・固定の種 (PCG 1076/11) の 1,200 文
+  - 群 Z: `stiffness` 9,048・`stiffness_metrics` 17,546・`_measure` 152・`_ratio` 99・`_nominal_hits` 152・`_no_chains` 152・`_changed_excerpt` 155・定数 14。組は群 F〜I までと同じ入れ物 (入力の集まりと diff の入力の全組・全文差分・見出し・文・種類・許可・規則の手書きの組) に、閾値の分かれ目の格子 (1 文の漢字の割合 +8.0 ポイントの手前と向こう・漢字 +2 字・平仮名 −2 字・文書全体 +3.0 ポイント・名詞化 +2)・本家のコメントの例文・固定の種 (PCG 1076/12) の 900 組
+  - 群 AA: `tone` 9,717 (うち IndexError 28)・`_tone_level` 98・`_pseudo_heading` 215・`_heading_chars` 52・`_mark_spans` 261・`_tone_excerpt` 85 (うち IndexError 5)・`_tone_lines` 976・`_intensifier_pattern` 245 (覚えるだけ)・定数 17。組は群 Z と同じ入れ物に、見出しの字数の 7 割の分かれ目・印の数の増減・本家のコメントの例文・固定の種 (PCG 1076/13) の 900 組・IndexError になる組・緑のまま通った壊した形を分ける組を足した
+  - 既存の case は消えず、既存の case の digest も変わらない (記録の作り直しの前後を python で照合し、missing 0・changed 0。f2faaac5c で足した `tone/found` だけは 501b370d2 で呼び出しを 4 件足したので、digest の先頭は同じまま長くなった)
+  - 記録が届く範囲を数える検査を足した: 群 Z は候補の 5 種類・level の 2 つ・候補なしのどれにも 20 回以上、群 AA も同じ (`checkStiffHits`・`checkToneHits`。記録の組に Go の答え (= 記録と同じ) を通して数える)
+  - 記録の作り直しは約 55 秒 (`TMPDIR=<上に .git の無い dir> go run ./oracle/cmd/golden -only diff-base`)。本家の Python は 3.15.0
+- わざと壊して比べた (`bin/mutate-verify-list`、commit した木で。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/mutlog-r・mutlog-z・mutlog-z2・mutlog-a・mutlog-a2・mutlog-a3):
+  - 群 R (aa1c1a3a1): 11 本のうち 11 本が red (誤りの行の表示の字数 40 と `>` の向き・正規表現の欄の strip・名前の strip・3 つ目の欄の strip・list の出どころの文字列・BOM・行末の `\r` を 1 つだけ落とす形・コメントの `lstrip`・空行の判定・語の strip)
+  - 群 Z (0a397b081): 27 本のうち 24 本が red・3 本が緑のまま。緑の `z-numeral-head` (漢数字で始まる語を漢語に数えない判定を外す) は、名詞が 3 つちょうどで 1 つが漢数字で始まる連続の組 4 つを足して (053737731) red になった。
+    red のもの: 1 文の漢字の割合・漢字・平仮名の 3 つの条件の向き・文書全体の割合・漢字・組の数・名詞化の数と漢字・漢語の数と漢字 2 字・文書全体の例に選ぶ組の同点の取り方 (最初の最大)・重なった当たりの残し方・丸めの桁 (平均の長さ・割合)・1 文の条件で報告した行を名詞化で数え直さない判定・置き換えの塊の組・抜き出しの幅と左へ戻る条件・補足カッコを外した推敲を出さない判定・「の」の連続の数の比べ・長さに数える句読点の集合・平仮名の範囲・「の」の連続の量指定子・`_ratio` の字数 0
+  - 群 Z の緑のまま (等価): `z-hits-sort` (同じ始まりの当たりは長いほうを先に並べる。名詞化の 12 本の正規表現は、先頭の 2 字までで互いに違い、同じ位置から始まる 2 つの当たりは作れない。入力の集まりの 5,605 行を本家で数えても、同じ位置から始まる当たりは 0)・`z-paired-first` (同じ新しい文の位置が 2 回出たら先のものを残す。位置は文ごとに別なので、同じ鍵は出ない。実測はしていない)
+  - 群 AA (071393ef9): 定義 33 本。最初の run (31 本) は 22 本が red・7 本が緑・1 本の目標が合わず (`a-indirect-cond`。直した後の比べの向きを `>=` にする形は、減りが 0 のとき足すのが 0 で等価)・1 本が構文エラー (`a-pseudo-paragraph`。重複した case。`a-pseudo-list-nobold` に替えた)。
+    緑の 7 本のうち 6 本 (`a-excerpt-len-old`・`a-excerpt-len-new`・`a-excerpt-overlap`・`a-excerpt-branch2`・`a-excerpt-strip`・`a-heading-emoji-all`) は、本家のコピーに同じ壊した形を入れて探した入力 (乱数で 600,000 組・手で作った 40 字の境の両側など) を足して red になった (f2faaac5c・501b370d2)。
+    置き換えた `a-pseudo-list-nobold` と足した `a-indirect-or` も red。最終は 33 本のうち red 30 本・緑 2 本 (等価)・構文エラー 1 本 (当て直さず、別の形に替えた)
+  - 群 AA の緑のまま (等価): `a-heading-zero` (元の見出しの字数が 0 のとき `新しい字数 < 0 × 0.7` は新しい字数が 0 以上なので偽。条件を外しても答えは変わらない)・`a-indirect-cond` (上)。red のもの: 見出しの割合 (0.7 と `<` の向き)・数の比べの向き・間接の問いの減りの引き方と判定の `&&`・level の判定 (種類ごとの絵文字と見出しの参考・参考にする文書の種類・節の level の基の値)・promo の番号つき項目と太字だけの行を見出しに数える判定・数えない行の種類 (表)・抜き出しの幅と長さの境 (消えた行だけ・組の行)・印の選び方 (重なる条件・最初の候補)・推敲後の位置 (印が変わった所の直後・負の数の割り算・負の添字の読み方)・文の終わりの判定・文の終わりのあとが空白だけのときの始め方・組になる行の選び方 (最後の行・break・最初の候補・見出しのある行の絞り込み・合計の比べ)・強める語の並び・絵文字の位置の進め方・見出しの字数で絵文字を外す回数
+- 本家と揃わなかった所: 無い (群 R・Z・AA の全記録が最初の記録で一致し、直した所も無い。上の IndexError も本家と同じに写した)
+- 確かめていないこと:
+  - 群 Z・AA の所要 (数十万字・同じ段落を繰り返す文書の `stiffness` の `noChains`・`nominalHits`・`tone` の `toneLinesOf`)。名詞化の前置き (`anyOf`) と memo は写したが、結果が同じなので記録では遅さが見えない
+  - `_stiffness` と `_tone` の「texts が同じなら早く返す」・`texts` が同じときの `_tone_lines` の使い回しは、hunk の有無だけにした (等価と読んだ。texts が同じなら行も同じで hunk が無い)。実測で示してはいない
+  - 絵文字の数え方は lint の `EmojiMatches` で、本家が lint を読めないときの `_FALLBACK_EMOJI` は写していない (読めない経路は無い)。一覧の `list_problem` が非 null になる経路 (一覧が読めない) も写していない
+  - 単独のサロゲートを含む文書・巨大な数の文字列は、群 R・Z・AA の記録に入れていない
+  - `tone()` が IndexError で落ちる経路の CLI (rc 3 と標準エラーの 1 行目) は、群 AC の CLI への配線までは比べていない。`diff()` の全体の流れで `stiffness`・`tone` を呼ぶ形・`--fail-on` との関係も群 AC・AD まで未確認
+  - 本家の `tests/` (本家のテスト) を Go から動かしてはいない
+- 5 本目の敵対的レビューは未 (この係では回していない)
+
+#### 最終の検査 (5 本目)
+
+最後の編集 (この節を書いた docs の commit) の後の木の検査は、下の「最終の検査 (5 本目の docs の commit の後)」に追記する。
+

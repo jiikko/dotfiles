@@ -5,7 +5,7 @@
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
 lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
-`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は引数・終了コード・`--endings` の出力が本家と同じ (issue 1076 の群 A・B・C・E・F・G・H・I・J・K・L。CLI の記録 8,002 件のうち、本家が検査の本体まで進まない 2,390 件を全件比べて通る)。差分と検出の本体はまだで、`--endings` でない検査まで進む呼び出しは `まだ実装していません` と標準エラーに出して rc 2 を返す。check と hook も同じ stub で、1077 で実装する。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は引数・終了コード・`--endings` の出力が本家と同じ (issue 1076 の群 A・B・C・E・F・G・H・I・J・K・L・R・Z・AA。CLI の記録 8,002 件のうち、本家が検査の本体まで進まない 2,390 件を全件比べて通る)。差分と検出の本体はまだで、`--endings` でない検査まで進む呼び出しは `まだ実装していません` と標準エラーに出して rc 2 を返す。check と hook も同じ stub で、1077 で実装する。
 
 ## 構成
 
@@ -13,11 +13,11 @@ lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り�
 |---|---|
 | `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
-| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (check と hook はいまは未実装の stub)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A・B・C・E・F・G・H・I・J・K・L まで。下の「diff」) |
+| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (check と hook はいまは未実装の stub)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A・B・C・E・F・G・H・I・J・K・L・R・Z・AA まで。下の「diff」) |
 | `internal/pycli/` | lint と diff が共有する CLI の部品: argparse の写し (`Spec.Parse`。位置引数とオプションを混ぜてよい形も同じ答え)・使い方の誤りの文・`--fail-on` の値の正規化・出力先が閉じたときの終了コード・入力 (ファイルか標準入力) の読み。本家の lint・diff・check は同じ `_ArgumentParser` と `_read_input` を写しで持つ (ast が同じ) |
 | `lint/pausecomma/` | lint の群 G13 (規則 `pause_comma`: 短い主語・主題・目的語のすぐあとの読点)。本家の `_pause_comma_hits`・`_pause_comma_object_hits`・`_pause_comma_line_hits` の写しで、記録は `testdata/golden/pause_comma.json` (issue 1084)。骨組みは `Fallback` と `LineHits` を呼び、G16 は `TENotVerb`、G17 は `TEAttrObject` を使う |
 | `visibility/` | 本家の `markdown_visibility.py` (Markdown の読み方・語の一覧・入力の扱い) の Go 実装。本家の名前との対応表は package doc (`visibility/doc.go`)。下の「markdown_visibility の Go 実装」 |
-| `lists/` | 語の一覧 (`references/lists/*.txt` の 8 本) を `go:embed` で持つ。本家と同じバイト列で、`.gitattributes` が改行の変換を止める。SHA-256 は `oracle/upstream.sha256` と照合するテストがある |
+| `lists/` | 語の一覧 (`references/lists/*.txt` の 8 本) を `go:embed` で持つ。本家と同じバイト列で、`.gitattributes` が改行の変換を止める。SHA-256 は `oracle/upstream.sha256` と照合するテストがある。一覧の行の読み (BOM・CRLF・空行・「#」の行。`Lines`・`Words`) は lint と diff が共有する |
 | `oracle/replay/` | 関数の記録 (digest) と Go の結果を突き合わせるテストの道具 (`ResultDigest`)。oracle 本体に置くと、oracle を import する `internal/pyjson` などの試験と循環する |
 | `oracle/` | 本家を正解として動かし、出力を記録して突き合わせる仕組み (下)。`oracle/cmd/golden` が記録を作り、`oracle/cmd/worstcase` が試す数の上限の最悪の組の所要を測る |
 | `testdata/corpus/` | 入力の集まり (下) |
@@ -280,14 +280,14 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 
 ## diff (`diff/`)
 
-本家の `yomiyasu_diff.py` (11,577 行) の Go 実装 (issue 1076)。群の一覧と順は issue 1076 の「群と順」。いま入っているのは群 A (CLI の骨組み・引数と終了コード・`-h`・`--version`)・B (9 キーの下ごしらえ)・C (文末の種類と立場)・E (太字。lint と共有する `internal/bold`)・J (全文差分 `FullDiff`: 行の対応・hunk・文の断片と文字の対応・動かした行)・K (見出しの構造 `HeadingStructure`)・L (文の組と本文 `SentencePairs` `AllBodies`)・F (文の種類の印 `TypeMarks` `TypeChanges`)・G (9 キーの組み立て `RuleCandidatesOf`)・H (許可・能力 `ModalityChanges`)・I (選ぶ範囲・因果 `LogicChanges`) で、
+本家の `yomiyasu_diff.py` (11,577 行) の Go 実装 (issue 1076)。群の一覧と順は issue 1076 の「群と順」。いま入っているのは群 A (CLI の骨組み・引数と終了コード・`-h`・`--version`)・B (9 キーの下ごしらえ)・C (文末の種類と立場)・E (太字。lint と共有する `internal/bold`)・J (全文差分 `FullDiff`: 行の対応・hunk・文の断片と文字の対応・動かした行)・K (見出しの構造 `HeadingStructure`)・L (文の組と本文 `SentencePairs` `AllBodies`)・F (文の種類の印 `TypeMarks` `TypeChanges`)・G (9 キーの組み立て `RuleCandidatesOf`)・H (許可・能力 `ModalityChanges`)・I (選ぶ範囲・因果 `LogicChanges`)・R (語の一覧の読み `ParsePatternList` `LoadList` `ListSource`)・Z (文体の硬化 `Stiffness` `StiffnessMetrics`)・AA (勢い `Tone`) で、
 `--endings` の出力が本家と同じ。差分と検出の本体 (本家の `diff()` と出力) はまだで、`--endings` でない検査まで進む呼び出し (引数と入力の誤りが無いもの) は `まだ実装していません` を返す。
-公開の関数は本家の公開名に対応する (`Normalize` `HasList` `Sentences` `Paragraphs` `LogicPoints` `BareEnd` `Register` `EndingKind` `EndingUnits` `StanceFlags` `EndingChanges` `FullDiff` `HeadingStructure` `SentencePairs` `AllBodies`)。本家の `count` (どこからも呼ばれない) と `_bold_short` (`internal/bold` が持つ) は写さない。
+公開の関数は本家の公開名に対応する (`Normalize` `HasList` `Sentences` `Paragraphs` `LogicPoints` `BareEnd` `Register` `EndingKind` `EndingUnits` `StanceFlags` `EndingChanges` `FullDiff` `HeadingStructure` `SentencePairs` `AllBodies` `Stiffness` `StiffnessMetrics` `Tone`)。本家の `tone()` は、印が共通の前の部分をまたぐと `_tone_excerpt` が `IndexError` で失敗する (推敲後の位置が負になり、Python の添字で読む)。`Tone` はこれを `*visibility.Error` で返す。本家の `count` (どこからも呼ばれない) と `_bold_short` (`internal/bold` が持つ) は写さない。
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
 | `diff-cli.json` (8,002 件) | 入力の集まりの直す前と後の組 (upstream の `raw_ai` と書き直した文・`blacklist_ai`・`_bl` の付いた書き直し 72 組) と手で作った入力 117 組を、text・`--json`・`--fail-on meaning-risk` (text と `--json`) で。オプションを通す組 (upstream の先頭 6 組と手で作った入力のうち重くないもの) は文書の種類 13 通り・読者・立場 3 通り・語の一覧・資料も。`--endings` は入力の集まりの全ファイルと手で作った入力の全ファイルを立場なしと 3 つで。誤りの呼び出し・`-h`・`--version`・標準入力・作業フォルダを変えた語の一覧の探し方も。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc。`--json` の出力は何が出たか (`kinds`) も持つ | `TestCLIMatchesPythonRecording` (検査の本体が入るまで、本家が本体まで進んだ呼び出しは「比べていない」と数えてログに出す。それ以外は全件比べ、`bodyImplemented` が真になったら比べていない件数が 0 でなければ落ちる)・`TestDiffRecordingHasHitAndMissForEveryKind` (検出の種類 71 種ごとに、出る入力と出ない入力が記録にある) |
-| `diff-base.json` (16,474 case・136,718 呼び出し) | 群 B・C・E・J の公開の関数 (`normalize` `has_list` `sentences` `paragraphs` `logic_points` `bare_end` `register` `ending_kind` `ending_units` `stance_flags` `ending_changes` と、diff 側の `bold_problems`・全文差分の `full_diff` (496 呼び出し。手書きの組には、定数と比べの分かれ目 (空白の判定・近さの窓 8・間の積 400・塊 500 字・断片 2,000 字・似かた 0.45・前後の同じ字の重なり) にちょうど当たる組を含む)) を、入力の集まりの全ファイル・手で作った入力・組ごと・手書きの文に通した結果の digest。群 K・L は「段」(全文差分の `_Sides` と hunks を引数に取る関数) で、`heading/` と `sentence/` の case (862 組。入力の集まりと手で作った入力の全組・全文差分の手書きの組・見出しと文の手書きの組・固定の種 PCG 1076/5 と 1076/6) が `_build_full_diff` を覚えてから `_heading_structure` (shapes あり・なし)・`_sentence_pairs`・`_all_bodies` (元・後) を呼ぶ。driver の `{"$ref", "path"}` と `args_out_only` が口。群 F〜I の段 (`type/` 31,085 呼び出し・`rule/` 4,602・`modal/` 29,370) は `normalize` の結果と `_ExactSequenceMatcher` の `get_opcodes` を `method` で覚えてから `_type_changes` (3,251)・`_rule_candidates` (4,599。立場 4 通り)・`_modality_changes` と `_logic_changes` (各 7,339) を呼び、`type_marks` (18,071) と各群の定数 (正規表現の文字列・語の並び) の記録と一緒に比べる | `TestBaseMatchesPythonRecording` (全呼び出しを比べる)・`TestBaseRecordingCoversEveryFunction`・`TestRequestMatchesPythonRecording` (検査の本体へ渡す値を、`diff-cli.json` の `req` が付いた 5,612 件と比べる) |
+| `diff-base.json` (34,077 case・178,780 呼び出し) | 群 B・C・E・J の公開の関数 (`normalize` `has_list` `sentences` `paragraphs` `logic_points` `bare_end` `register` `ending_kind` `ending_units` `stance_flags` `ending_changes` と、diff 側の `bold_problems`・全文差分の `full_diff` (496 呼び出し。手書きの組には、定数と比べの分かれ目 (空白の判定・近さの窓 8・間の積 400・塊 500 字・断片 2,000 字・似かた 0.45・前後の同じ字の重なり) にちょうど当たる組を含む)) を、入力の集まりの全ファイル・手で作った入力・組ごと・手書きの文に通した結果の digest。群 K・L は「段」(全文差分の `_Sides` と hunks を引数に取る関数) で、`heading/` と `sentence/` の case (862 組。入力の集まりと手で作った入力の全組・全文差分の手書きの組・見出しと文の手書きの組・固定の種 PCG 1076/5 と 1076/6) が `_build_full_diff` を覚えてから `_heading_structure` (shapes あり・なし)・`_sentence_pairs`・`_all_bodies` (元・後) を呼ぶ。driver の `{"$ref", "path"}` と `args_out_only` が口。群 F〜I の段 (`type/` 31,085 呼び出し・`rule/` 4,602・`modal/` 29,370) は `normalize` の結果と `_ExactSequenceMatcher` の `get_opcodes` を `method` で覚えてから `_type_changes` (3,251)・`_rule_candidates` (4,599。立場 4 通り)・`_modality_changes` と `_logic_changes` (各 7,339) を呼び、`type_marks` (18,071) と各群の定数 (正規表現の文字列・語の並び) の記録と一緒に比べる。群 R は `parse_list` (2,580 呼び出し。書き方の誤りの ValueError 760 の型と文面も比べる)・`_load_list`・`_list_info`、群 Z は `stiffness` (9,048。種類 6 通りを手書きの組に)・`stiffness_metrics` (17,546)・`_measure` `_ratio` `_nominal_hits` `_no_chains` `_changed_excerpt`・定数 14、群 AA は `tone` (9,717。種類 14 通りを手書きの組に。IndexError 28 の型と文面も比べる)・`_tone_lines` (976)・`_tone_excerpt` (85。IndexError 5)・`_mark_spans` `_pseudo_heading` `_heading_chars` `_tone_level`・定数 17。群 Z・AA の組は群 F〜I と同じ入れ物に、閾値の分かれ目の格子・固定の種 PCG 1076/12 と 1076/13 の各 900 組・壊した形を分ける組を足したもの。記録が届く範囲 (候補の種類・level・候補なし) を数える検査もある | `TestBaseMatchesPythonRecording` (全呼び出しを比べる)・`TestBaseRecordingCoversEveryFunction`・`TestRequestMatchesPythonRecording` (検査の本体へ渡す値を、`diff-cli.json` の `req` が付いた 5,612 件と比べる) |
 
 - 記録の driver は `oracle/py/record_diff_cli.py` (lint の CLI の driver と同じ作り)。作り直しは `go run ./oracle/cmd/golden -only diff-cli|diff-base` (約 70 秒・約 12 秒)。
 - 手で作った入力は `testdata/diff/<名前>/` (`old.md`・`new.md`・資料は `material.md` か `material1.md` から)。長い行・大きい文書の入力 (`full-budget` など) は 1 回の実行が重いので、オプションを通す組から外してある。
@@ -297,7 +297,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 - 本家の rc 3 のうち、トレースバックの文面は写さない (1 行目 `yomiyasu_diff.py: 内部エラー: <型>: <文>` のうち、`<型>` は `visibility` の誤りのときだけ本家の型の名前を出す。ほかの内部エラーは型の名前が無く、<文> も Go の文)。
 - 標準エラーの案内の文のコマンド名は本家の `yomiyasu_diff.py` のまま (1078 で lint とまとめて決める)。
 - `--fail-on` の値の小文字化は lint と同じ (`strings.ToLower` に İ の分解を足したもの。語末の Σ と Python の Unicode のバージョンとの差は写さない)。
-- 語の一覧は埋め込みを使うので、JSON の `list` はいつも `references/lists/<名前>.txt`、`list_problem` は `null`。本家が隣のファイルを読めないときの内蔵の一覧と、一覧の注意の節は写さない。
+- 語の一覧は埋め込みを使うので、JSON の `list` はいつも `references/lists/<名前>.txt`、`list_problem` は `null`。本家が隣のファイルを読めないときの内蔵の一覧 (`BUILTIN_LISTS`) と、一覧の注意の節は写さない。絵文字の数え方は lint の `EmojiMatches` で、本家が lint を読めないときの簡単な数え方 (`_FALLBACK_EMOJI`) も写さない。
 
 ## 標準ライブラリを写す package (`internal/`)
 
