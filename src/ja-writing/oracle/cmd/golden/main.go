@@ -32,7 +32,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	pin := flag.Bool("pin", false, "本家のファイルを取り直して oracle/upstream.sha256 を書く")
-	only := flag.String("only", "", "visibility だけを作り直す (markdown_visibility の関数の記録。ほかは作り直さない)")
+	only := flag.String("only", "", "visibility か bold の記録だけを作り直す (markdown_visibility の関数の記録・太字の bold_problems の記録。ほかは作り直さない)")
 	flag.Parse()
 	p := paths{corpus: "testdata/corpus", words: "testdata/words", golden: "testdata/golden", manifest: "oracle/upstream.sha256", tables: oracle.PyunicodeTablesPath, pyreTables: oracle.PyreTablesPath}
 	var err error
@@ -86,6 +86,18 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 	if err := checkEnv(p, header, update); err != nil {
 		return err
 	}
+	boldRec, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildBold(ctx, runner, header, corpus) })
+	if err != nil {
+		return fmt.Errorf("太字 (bold_problems) の記録: %w", err)
+	}
+	if only == "bold" {
+		path := filepath.Join(p.golden, oracle.BoldFile)
+		if err := atomicfile.Write(path, boldRec, 0o644); err != nil {
+			return fmt.Errorf("%s へ書けません: %w", path, err)
+		}
+		fmt.Printf("%s: %d バイト\n", path, len(boldRec))
+		return nil
+	}
 	visCases, err := oracle.VisibilityCases(corpus)
 	if err != nil {
 		return err
@@ -103,7 +115,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 		return nil
 	}
 	if only != "" {
-		return fmt.Errorf("-only は visibility だけを受けます: %q", only)
+		return fmt.Errorf("-only は visibility か bold を受けます: %q", only)
 	}
 	patterns, err := twiceSame(runner, func(runner oracle.Runner) ([]byte, error) { return buildPatterns(ctx, runner, corpus, p.words, header) }, samePatternsIgnoringText)
 	if err != nil {
@@ -148,6 +160,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 		filepath.Join(p.golden, oracle.PystrFile): pystr, filepath.Join(p.golden, oracle.PyreFile): pyre, p.tables: tables, p.pyreTables: pyreTables,
 		filepath.Join(p.golden, oracle.DifflibFile):    difflibRec,
 		filepath.Join(p.golden, oracle.VisibilityFile): vis,
+		filepath.Join(p.golden, oracle.BoldFile):       boldRec,
 	} {
 		if err := atomicfile.Write(path, body, 0o644); err != nil {
 			return fmt.Errorf("%s へ書けません: %w", path, err)
@@ -161,7 +174,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 
 // checkEnv は記録の環境が今と違うときに止める。記録がまだ無いときと update のときは通す。
 func checkEnv(p paths, now oracle.Header, update bool) error {
-	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile, oracle.VisibilityFile} {
+	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile, oracle.VisibilityFile, oracle.BoldFile} {
 		var old struct {
 			Header oracle.Header `json:"header"`
 		}
@@ -266,6 +279,14 @@ func buildPyre(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, e
 		return nil, err
 	}
 	return oracle.MarshalPyre(g)
+}
+
+func buildBold(ctx context.Context, r oracle.Runner, h oracle.Header, c oracle.Corpus) ([]byte, error) {
+	g, err := r.RecordBold(ctx, h, c)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalBold(g)
 }
 
 func buildDifflib(ctx context.Context, r oracle.Runner, h oracle.Header, corpusDir string) ([]byte, error) {

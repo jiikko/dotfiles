@@ -16,6 +16,9 @@ func runesOf(s string) []rune { return pyunicode.Runes(s) }
 
 func str(r []rune) string { return pyunicode.FromRunes(r) }
 
+// HasPrefixAt は hasPrefixAt を公開したもの (internal/bold が同じ判定を使う)。
+func HasPrefixAt(text []rune, token string, pos int) bool { return hasPrefixAt(text, token, pos) }
+
 // hasPrefixAt は text.startswith(token, pos)。token は ASCII だけ。
 func hasPrefixAt(text []rune, token string, pos int) bool {
 	if pos < 0 || pos+len(token) > len(text) {

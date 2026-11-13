@@ -77,6 +77,9 @@ func unicodeWhitespaceRune(c rune) bool {
 	return c == '\t' || c == '\n' || c == '\r' || c == '\f' || pyunicode.Category(c) == "Zs"
 }
 
+// Escaped は escaped を公開したもの (internal/bold の _direct_escape が同じ判定を使う)。
+func Escaped(text []rune, position int) bool { return escaped(text, position) }
+
 // escaped は _escaped (position の字が奇数個の \ で escape されているか)。
 func escaped(text []rune, position int) bool {
 	start := position
