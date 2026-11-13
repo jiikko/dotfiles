@@ -722,5 +722,10 @@ func (s *lintState) g14WordFindings() {
 			f.WordTypes = wordTypes
 			s.add(f)
 		}
+		if katakana := mustFindall0(tables.katakana, scan); len(katakana) > 0 {
+			f := newFinding("katakana_term", lineNo, "info", "意味の薄くなりやすいカタカナ語"+v220MessageTail, snippet)
+			f.Words = uniqueInOrder(katakana)
+			s.add(f)
+		}
 	}
 }
