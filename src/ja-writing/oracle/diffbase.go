@@ -29,6 +29,7 @@ var DiffBaseFunctions = []string{
 }
 
 func init() {
+	DiffBaseFunctions = append(DiffBaseFunctions, DiffListFunctions...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffRuleConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffModalConstants...)
@@ -217,7 +218,12 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	for _, f := range diffModalCases() {
 		cases = append(cases, VisCase{Name: "modal/" + f.name, Calls: diffModalStageCalls(f.old, f.new)})
 	}
-	return cases, nil
+	// 群 R (語の一覧)
+	listCases, err := diffListCases(diffDir)
+	if err != nil {
+		return nil, err
+	}
+	return append(cases, listCases...), nil
 }
 
 // diffEndingStrings は文末の関数に通す手書きの文 (1 つが 1 つの枝を狙う)。

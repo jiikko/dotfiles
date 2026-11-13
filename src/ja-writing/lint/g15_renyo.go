@@ -37,19 +37,6 @@ var (
 )
 
 // parseList は本家の _v220_parse_list (pattern=False)。空行と「#」で始まる行は読み飛ばし、各行の前後の空白を除く。
-func parseList(text string) []string {
-	text = strings.TrimPrefix(text, "\ufeff")
-	var out []string
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		if pystr.Strip(line) == "" || strings.HasPrefix(pystr.LStrip(line), "#") {
-			continue
-		}
-		out = append(out, pystr.Strip(line))
-	}
-	return out
-}
-
 func renyoPatterns() renyoTable {
 	renyoOnce.Do(func() {
 		data, err := lists.Read("renyo-nouns.txt")
@@ -58,7 +45,7 @@ func renyoPatterns() renyoTable {
 		}
 		skip := map[string][]string{}
 		var words []string
-		for _, item := range parseList(string(data)) {
+		for _, item := range lists.Words(string(data)) {
 			word, after, _ := strings.Cut(item, "\t")
 			word = pystr.Strip(word)
 			if word == "" {

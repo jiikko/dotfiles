@@ -211,8 +211,10 @@ func TestBaseRecordingCoversEveryFunction(t *testing.T) {
 		if !slices.Contains(oracle.DiffBaseFunctions, f.Name) {
 			t.Errorf("記録に、一覧 (oracle.DiffBaseFunctions) にない名前 %s がある", f.Name)
 		}
-		if f.Raised != 0 {
+		if raises := slices.Contains(oracle.DiffListRaises, f.Name); !raises && f.Raised != 0 {
 			t.Errorf("%s が例外になる呼び出しを %d 件持つ", f.Name, f.Raised)
+		} else if raises && (f.Raised == 0 || f.Raised == f.Calls) {
+			t.Errorf("%s は例外になる呼び出しと成功する呼び出しの両方が要る: 呼び出し %d 件のうち例外 %d 件", f.Name, f.Calls, f.Raised)
 		}
 	}
 	kinds := map[string]bool{}

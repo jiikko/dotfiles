@@ -38,6 +38,23 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 			calls[call.Function]++
 			var got pyjson.Value
 			switch {
+			case slices.Contains(oracle.DiffListFunctions, call.Function):
+				canon, digest, raised := listDigest(t, call)
+				if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; digest != want {
+					failed++
+					if failed <= 15 {
+						msg := fmt.Sprintf("case %s の %d 番目 (%s %.60q): digest %s、記録 %s\n  Go: %s", c.Name, j, call.Function, fmt.Sprint(call.Args), digest, want, clip(canon, 400))
+						if k, ok := kept[j]; ok {
+							msg += "\n  記録: " + clip(string(k.Result), 400) + fmt.Sprint(k.Exception)
+						}
+						t.Error(msg)
+					}
+				}
+				if raised != slices.Contains(rec.Raised, j) {
+					failed++
+					t.Errorf("case %s の %d 番目 (%s): Go の例外 %v、記録の例外 %v", c.Name, j, call.Function, raised, !raised)
+				}
+				continue
 			case call.Quiet:
 				// 覚えるだけの呼び出し (結果の digest は 8 つの 0)。段の呼び出しが同じ引数から作り直す
 				switch call.Function {

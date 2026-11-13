@@ -18,6 +18,20 @@ import (
 func ResultDigest(v pyjson.Value) (canon, digest string, err error) {
 	rec := pyjson.NewObject()
 	rec.Set("result", v)
+	return recordDigest(rec)
+}
+
+// ExceptionDigest は関数が例外を投げた呼び出しの digest ({"exception": {"message", "type"}} の正規の JSON の SHA-256 の先頭)。
+func ExceptionDigest(typ, message string) (canon, digest string, err error) {
+	inner := pyjson.NewObject()
+	inner.Set("message", message)
+	inner.Set("type", typ)
+	rec := pyjson.NewObject()
+	rec.Set("exception", inner)
+	return recordDigest(rec)
+}
+
+func recordDigest(rec *pyjson.Object) (canon, digest string, err error) {
 	s, err := pyjson.Dumps(rec, pyjson.Options{Separators: &pyjson.Separators{Item: ",", Key: ":"}})
 	if err != nil {
 		return "", "", fmt.Errorf("正規の JSON にできません: %w", err)

@@ -219,7 +219,7 @@ func tableFunctionValue(name string, args []any) (pyjson.Value, bool) {
 		if listName == "thin-evaluation" {
 			return replay.List(replay.MapList(parseThinList(string(data)), thinPairValue), source), true
 		}
-		return replay.List(replay.Strings(parseList(string(data))), source), true
+		return replay.List(replay.Strings(lists.Words(string(data))), source), true
 	}
 	return nil, false
 }

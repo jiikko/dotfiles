@@ -24,13 +24,8 @@ type thinPair struct{ noun, predicate string }
 
 // parseThinList は本家の _v220_parse_list (pattern=True)。「名詞<TAB>述語の正規表現」でない行は panic する (埋め込みの一覧は固定で、記録と比べる)。
 func parseThinList(text string) []thinPair {
-	text = strings.TrimPrefix(text, "\ufeff")
 	var out []thinPair
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		if pystr.Strip(line) == "" || strings.HasPrefix(pystr.LStrip(line), "#") {
-			continue
-		}
+	for _, line := range lists.Lines(text) {
 		name, regex, _ := strings.Cut(line, "\t")
 		name, regex = pystr.Strip(name), pystr.Strip(regex)
 		if name == "" || regex == "" || strings.Contains(regex, "\t") {
@@ -124,7 +119,7 @@ func v220Patterns() *v220Tables {
 		if err != nil {
 			panic(err)
 		}
-		katakana := parseList(string(kdata))
+		katakana := lists.Words(string(kdata))
 		thin := parseThinList(string(tdata))
 		t := &v220Cache
 		// 番号や記号を付けた項目の名前 (マイルストーン1、マイルストーン B) は、何を指すかが決まっているので外す。

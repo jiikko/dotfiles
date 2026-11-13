@@ -250,8 +250,8 @@ func v220BuiltinLists() pyjson.Value {
 		return string(data)
 	}
 	o := pyjson.NewObject()
-	o.Set("katakana-terms", replay.Strings(parseList(read("katakana-terms.txt"))))
-	o.Set("renyo-nouns", replay.Strings(parseList(read("renyo-nouns.txt"))))
+	o.Set("katakana-terms", replay.Strings(lists.Words(read("katakana-terms.txt"))))
+	o.Set("renyo-nouns", replay.Strings(lists.Words(read("renyo-nouns.txt"))))
 	o.Set("thin-evaluation", replay.MapList(parseThinList(read("thin-evaluation.txt")), thinPairValue))
 	return o
 }
