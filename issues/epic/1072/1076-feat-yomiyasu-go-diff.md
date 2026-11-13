@@ -447,5 +447,5 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 #### 最終の検査 (5 本目の敵対的レビューの後)
 
-最後のコードの編集 (78b1e3cdd) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-dupscan-gate` を回し、rc は全部 0
-(ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/wf6/fin-lt.log・fin-un.log・fin-dup.log と fin-rc.txt)。この節の docs の commit の後に `make test-lint` を回した。cadd1aaf4・7d32241f8 は単独では lint test を回していない (コメントとテストの引数の確認だけの変更で、78b1e3cdd の木で全部通した)。
+最後のコードの編集 (8edca7083。78b1e3cdd のコメントを `make test-lint` の `test-comment-provenance` が止めたので直した) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0
+(ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/wf6/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin-rc.txt)。この節の docs の commit の後に `make test-lint` をもう一度回した。cadd1aaf4・7d32241f8 は単独では lint test を回していない (コメントとテストの引数の確認だけの変更で、78b1e3cdd の木で全部通した)。
