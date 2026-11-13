@@ -40,6 +40,63 @@
 - 所要: 同じ段落を繰り返す長い文書 (本家の `tests/test_v202_diff_bold_performance.py` などの入力) を本家と Go で測る。
   起動の時間と処理の時間を分け、同じ入力を交互に複数回測る。テストの合否には時間を使わない
 
+### 群と順 (2026-11-13 に本家 db78b9bc を数え直した地図の要点)
+
+本家の `yomiyasu_diff.py` は 409 個のトップレベルの def / class・module の読み込みでできる正規表現 402 個・後読み 265・先読み 256。`main` から辿れるのは 373 個。
+「単独で通る」は、その群だけを commit して build と go test を通せること。「記録」の関数は `oracle.Call` で呼べるもの、「段」は `_Sides` などを引数に取る検出で、段ごとの driver (`oracle/py/record_diff_stages.py`。これから足す) で本家の戻り値を取る。
+
+| 群 | 本家の行 | 中身 (主な関数) | 依存 | 記録の取り方 |
+|---|---|---|---|---|
+| A | 11188〜11577 | CLI の骨組み (`_build_parser` `_run` `main` `_fail_on` `_fail_on_line` `_read_input` `_path_problem`) | 1074 (visibility) | CLI。`--version`・rc 2 の経路は diff 本体なしで通る |
+| B | 1066〜1126・2683〜2694 | 9 キーの下ごしらえ (`normalize` `has_list` `sentences` `paragraphs` `logic_points` `count` `context` `_bold_short`) | なし | 関数 |
+| C | 1129〜1303・1833〜1915 | 文末の種類と立場 (`bare_end` `register` `ending_kind` `ending_units` `stance_flags` `_ending_changes_from_units`) | B・difflib | 関数 (`ending_units` `stance_flags` `ending_changes`)。E と合わせて `--endings` の CLI が通る |
+| D | 1306〜1832 | 照合 | 1081 の `internal/difflib` | 別の係 (済) |
+| E | 1918〜2680 | 太字 (`bold_problems`)。lint と同じ中身 | 1074・1083 の `internal/bold` | 関数。写さず `internal/bold` を呼ぶ |
+| F | 166〜638 | 文の種類の印 (`type_marks` `_type_changes` `_pair_gone_sentences` `_widen_to_sentences`) | difflib (opcodes) | 関数 `type_marks`・段 |
+| G | 2697〜2765 | 9 キーの組み立て (`_rule_candidates`) | B・C・E・F | 段 |
+| H | 641〜808 | 許可・能力 (`_modality_changes`。`_shared_ranges` が F の `_LAST_TYPE_RANGES` を使い回す) | F | 段 |
+| I | 811〜1063 | 選ぶ範囲・因果 (`_logic_changes`) | F・H | 段 |
+| J | 2768〜3294 | 全文差分 (`_align` `_fill_gap` `_pair_similar` `_char_segments` `_Sides` `_build_full_diff` `_encoding_notes`) | difflib・1074 | 関数 `full_diff(orig, rw)` |
+| K | 3296〜3651 | 見出しの構造 (`_heading_structure`) | J・difflib | 段 |
+| L | 3654〜3836・5128〜5157・6268〜6343 | 文の組と本文 (`_risk` `_sentence_pairs` `_hunk_group` `_Body` `_Masker`) | J | 段 (groups) |
+| M | 3839〜5125 | 数値 (`extract_numbers` `_number_risks`。正規表現 40) | L・difflib | 関数 `extract_numbers`・段 |
+| N | 5160〜5348 | 否定 | L・difflib | 段 |
+| O | 5351〜5416 | 主語と目的語の入れ替え | L | 段 |
+| P | 5419〜5632 | 問い・変えない箇所・印の候補 | L・M・F・H・I | 段 |
+| Q | 5635〜5953 | 概数と範囲の語 | M・L | 段 |
+| R | 6040〜6265 | 語の一覧 (`parse_list` `_list_info`) | `lists/` | 関数 `parse_list` |
+| S | 6346〜6874 | 否定対比の逆転 (正規表現 34) | L | 段 |
+| T | 6877〜6933 | 気持ちの語 | L・R | 段 |
+| U | 7960〜8354 | 確度 (正規表現 50) | L・F・N | 段 |
+| V | 8357〜9140 | 状態の語・約束・因果の書き足し (正規表現 100。いちばん多い) | L・U・X・difflib | 段 |
+| W | 9143〜9367 | かぎかっこ・文体の切り替え | L・C・difflib | 段 |
+| X | 9480〜9819 | 慎重表現・動かしてはいけない値・敬語 | L・R・C・M | 段 |
+| Y | 5956〜6037 | 意味が変わる恐れの組み立て (`_meaning_risks`) | M〜X の全部 | 関数 `meaning_risks` |
+| Z | 6936〜7212 | 文体の硬化 | L・R | 関数 `stiffness` `stiffness_metrics` |
+| AA | 7215〜7552 | 勢い | L・R・lint の `EmojiMatches` | 関数 `tone` |
+| AB | 9822〜10243 | 足した人や担当 | L・difflib | 段 |
+| AC | 10246〜10528 | 読点・見出しの形・`diff()` の組み立て (Fraction はここ 1 か所) | 全部 | CLI の記録が全部揃う |
+| AD | 10531〜11180 | 人が読む出力 (`report`。JSON の dict だけを読む) | JSON の形 | 関数 `report(d)` に本家の `--json` の出力を渡す |
+| AE | 7555〜7957・9370〜9475 | check が呼ぶもの (`ground` `fact_gaps` `detector_summary`) | M・L・R | diff の CLI からは届かない。1077 で作る |
+
+commit の順: ① A → B → C → E (`--endings` の CLI が端から端まで通る) ② J → K → L ③ AD (本家の `--json` を入力にして `report` と突き合わせ、全部の節の文面を先に固める) ④ F → G → H → I
+⑤ R → Z → AA ⑥ M → Q → N → O → P → S → T → U → W → X → V → Y ⑦ AB → AC ⑧ AE は 1077 と一緒に。M〜X は検出どうしが打ち消し合う (確度と印・状態と確度・引用と数値) ので、CLI の `meaning_risks` が全部揃うのは Y まで待つ。段ごとの記録が無いと、その間は本家と比べられない。
+
+### Python 特有のずれ (後の群の係が読む要点)
+
+- 位置と長さは全部 code point (rune)。`strip()` 引数なしは `str.isspace` の字 (`pystr`)。スライスは範囲の外を詰めて返す (`s[max(0,i-3):j+3]`)。`lower()` は 1 か所 (`--fail-on`)
+- 負の数の切り捨て割り算 (7405 の `head + (start - head) * (new_end - head) // max(1, old_end - head)`)。Go の `/` は 0 の方向なので `floorDiv` を書く
+- dict の挿入の順が出力の順になる所が多い (`MARKERS.items()` `before.items()` `Counter.most_common()`。JSON のキーの順も)。Go の map を回さず、順を持つ値 (`pyjson` の値) で組む
+- `sorted` / `sort` の key は安定。`max` は最初の最大、`min` は最初の最小。`sorted(set(...), key=len, reverse=True)` で同じ長さの語の並びは set の順 (7293・9505)。Go は一覧の順を保つ安定な並びに決める。`patterns.json` の文字列は seed 0 のもので、文字列でなく当たりで比べる
+- float: `round(x, 2)` は `pyjson` の round と repr。7153 は丸めた値どうしの引き算、10434 の `{:.1%}` は double のまま 100 倍、10981 は `{:.0f}` で整数にした値を比べる。割ってから比べる順を保つ
+- `id()` と `is` で同じものかを見る所 (532〜598・5997〜6021・1287 `r is not rows[-1]`)。値の比較に直すと答えが変わる。Go はポインタか番号
+- `Fraction` は `_comma_increase` の 1 か所 (`new_rate - old_rate < 3/10`)。整数の比較 (`new_commas*old_sentences*10 - old_commas*new_sentences*10 < 3*old_sentences*new_sentences`) か `math/big.Rat`
+- `_LAST_TYPE_RANGES` (355) は `_type_changes` が置き `_shared_ranges` が使い回すグローバル。Go は引数で渡す
+- 正規表現: 後読みが多い長い選択肢を文章全体に当てる所 (`TYPE_MARKERS[推量]` 780 字・`_ADD_STATE_ANY` 1,825 字) は、本家の「必ず含む文字列が無ければ当てない」の前置きの検査 (`_TYPE_LITERALS` `_MODALITY_LITERALS` `_LOGIC_LITERALS`) も写す。同じ文を何度も調べないキャッシュ (`_metrics_of` `_AdditionDocument` `_ActorSource`) も写さないと、同じ段落を繰り返す文書で遅くなる
+- 照合の呼び出しは 15 か所 (`internal/difflib` の API: `New` `NewExact`)。`_pair_similar` は 2,000 字を超える組に `ratio()` をかけない、`_ending_changes_from_units` は字数の積が 160,000 を超える組だけ Exact を使う
+- 絵文字は lint の `EmojiMatches` (`_FALLBACK_EMOJI` の経路は写さない)。`context.words.path` は cwd に依るので、記録の cwd の実パスは `<<ROOT>>` に置き換える
+- `CLI から届かない 36 個` (`type_marks` `ending_changes` `full_diff` `meaning_risks` `stiffness` `tone` ほか): 関数の記録の入口として残す。どこからも呼ばれないもの (`_addition_old_future_count` ほか 4 個と太字の後方互換 9 個) は写さない (写すと `unused` が落とす)
+
 ## 受け入れ条件
 
 - [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す
