@@ -67,10 +67,10 @@ var implementedRules = map[string]bool{
 	"metaphor_verb":   true,
 	"translated_term": true,
 
-	"meta_filler":         false,
-	"summary_restatement": false,
-	"meta_intro":          false,
-	"count_declaration":   false,
+	"meta_filler":         true,
+	"summary_restatement": true,
+	"meta_intro":          true,
+	"count_declaration":   true,
 
 	"instruction_residue": false,
 
