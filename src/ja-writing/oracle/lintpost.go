@@ -198,6 +198,7 @@ func allowPartialFindings() map[string][]LintPostFinding {
 	return map[string][]LintPostFinding{
 		"calque|2-types":          {calque([]string{"サーバ", "別の語"}, [][]any{{"サーバ", 1}, {"別の語", 2}})},
 		"calque|same-type":        {calque([]string{"サーバ", "別の語", "さらに別"}, [][]any{{"サーバ", 1}, {"別の語", 1}, {"さらに別", 3}})},
+		"calque|same-type-rest":   {calque([]string{"サーバ", "別の語", "さらに別", "四つ目"}, [][]any{{"サーバ", 1}, {"別の語", 1}, {"さらに別", 1}, {"四つ目", 2}})},
 		"ai_phrase":               {f("ai_phrase", "AI の言い回し", []string{"サーバ", "別の語", "もう一つ"})},
 		"renyo_noun":              {f("renyo_noun", "連用形", []string{"確かめ", "比べ"})},
 		"project_term|flag":       {project([]string{"サーバ", "キャッシュ"}, []string{"サーバ", "キャッシュ"}, nil, map[string]string{"サーバ": "サーバー", "キャッシュ": "保存"})},

@@ -54,6 +54,7 @@
   {"name":"allow-partial|ai_phrase","natural":0,"result":"b27cfa76eb517416","report":"861b5b23afdfc751","json":"11245f914c19b07f","score":100},
   {"name":"allow-partial|calque|2-types","natural":0,"result":"cad25b85e0fece6b","report":"952605d5b25a407b","json":"1288cfe66773c0ee","score":100},
   {"name":"allow-partial|calque|same-type","natural":0,"result":"10af72bd1fb69d04","report":"fe68ad0ced2cfc72","json":"ec2c8f7ec57c3fe5","score":100},
+  {"name":"allow-partial|calque|same-type-rest","natural":0,"result":"b1e6b337c8d9fcfe","report":"97961898f0594472","json":"048c19b9cbdad067","score":100},
   {"name":"allow-partial|project_term|both","natural":0,"result":"a421cb9cb2c271ce","report":"88de6137d93d8379","json":"852ddda5453f0265","score":100},
   {"name":"allow-partial|project_term|flag","natural":0,"result":"d9dc851b229a6ed6","report":"e9b63fabac7bc09c","json":"a7ffd9f58645bf39","score":100},
   {"name":"allow-partial|project_term|name-allow","natural":0,"result":"d9dc851b229a6ed6","report":"e9b63fabac7bc09c","json":"a7ffd9f58645bf39","score":100},
