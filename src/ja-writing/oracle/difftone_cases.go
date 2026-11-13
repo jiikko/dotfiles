@@ -252,7 +252,7 @@ func diffToneCases(pairs [][3]string) []VisCase {
 	pattern := dcall("_intensifier_pattern", map[string]any{"$ref": "words", "path": []any{0}})
 	pattern.Save, pattern.Quiet = "ip", true
 	calls := []Call{load, pattern}
-	for _, s := range diffToneStrings() {
+	stringCalls := func(s string) {
 		h := dcall("_heading_chars", s)
 		h.Keep = true
 		calls = append(calls, h)
@@ -267,6 +267,9 @@ func diffToneCases(pairs [][3]string) []VisCase {
 			calls = append(calls, c)
 		}
 	}
+	for _, s := range diffToneStrings() {
+		stringCalls(s)
+	}
 	for _, s := range []string{"x", "！", "?"} {
 		calls = append(calls, dcall("_mark_spans", s, "intensifier", nil))
 	}
@@ -276,6 +279,10 @@ func diffToneCases(pairs [][3]string) []VisCase {
 			c.Keep = true
 			calls = append(calls, c)
 		}
+	}
+	// 強める語を外す語 (絶対値・絶対パス・絶対的) の後ろに強める語が続く文。置き換えた長さがずれると、後ろの語の位置が変わる。既存の呼び出しの後ろに足す
+	for _, s := range []string{"絶対値とても", "絶対パスとても", "絶対的にとても本当に"} {
+		stringCalls(s)
 	}
 	cases = append(cases, VisCase{Name: "tone/strings", Calls: calls})
 	var excerpts []Call
@@ -304,6 +311,9 @@ func diffToneCases(pairs [][3]string) []VisCase {
 		found = append(found, c)
 	}
 	cases = append(cases, VisCase{Name: "tone/found", Calls: found})
+	for _, f := range diffToneBrokenCases() {
+		cases = append(cases, VisCase{Name: "tone/broken/" + f.name, Calls: diffToneStageCalls(f.old, f.new, []any{f.docType}, true, true)})
+	}
 	return cases
 }
 

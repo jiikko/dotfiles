@@ -390,6 +390,18 @@ func diffStiffCases(pairs [][3]string) []VisCase {
 		}
 		calls = append(calls, dcall("_changed_excerpt", p[0], p[1]))
 	}
+	// 節の端の読点と「，」の組み合わせ (strip の字が「、」だけだと、端の「，」が残る)。既存の呼び出しの後ろに足す
+	for _, p := range [][2]string{{"，，あ", "，、い"}, {"あ，", "い，，"}, {"，，あ，，", "，，い，，"}, {"、、あ", "、，い"}} {
+		for _, width := range []int{40, 1, 5, 12} {
+			c := dcall("_changed_excerpt", p[0], p[1], width)
+			c.Keep = true
+			calls = append(calls, c)
+		}
+		calls = append(calls, dcall("_changed_excerpt", p[0], p[1]))
+	}
 	cases = append(cases, VisCase{Name: "stiff/sentences", Calls: calls})
+	for _, f := range diffStiffBrokenCases() {
+		cases = append(cases, VisCase{Name: "stiff/broken/" + f.name, Calls: diffStiffStageCalls(f.old, f.new, []any{f.docType}, true)})
+	}
 	return cases
 }
