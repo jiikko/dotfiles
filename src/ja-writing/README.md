@@ -275,6 +275,19 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
   - `run` は検査の本体を引数で受ける (`lintFunc`)。rc と「終了コード1」の行の配線は、候補を注入した `TestRunExitCodeAndExitLine` が見る (CLI の記録は全件を比べる)。
   - 結果の text は `result` の構造体から作る (`renderReport`)。check (1077) が子の JSON を読んで `render_report` を呼ぶ形が要るときは、JSON の値から作る入口をそのとき足す。
 
+## diff (`diff/`)
+
+本家の `yomiyasu_diff.py` (11,577 行) の Go 実装 (issue 1076)。群の一覧と順は issue 1076 の「群と順」。`--endings` までが動く群から入れていて、入っていない検出は本家の記録と比べる範囲に入れない
+(CLI の記録の比べのテストは、比べた件数と比べていない件数をログに出し、全部の群が入った最後は全件を比べる)。
+
+揃わない範囲 (lint の「揃わない範囲」と同じ扱いのもの。表の外の差は不一致として落とす):
+
+- `-h` の文面は本家が出したもの (端末の幅が 80 桁のとき) を `diff/help.txt` に持つ。`COLUMNS` で幅を変えても Go は変わらない。
+- 本家の rc 3 のうち、トレースバックの文面は写さない (1 行目 `yomiyasu_diff.py: 内部エラー: <型>: <文>` までは揃える)。
+- 標準エラーの案内の文のコマンド名は本家の `yomiyasu_diff.py` のまま (1078 で lint とまとめて決める)。
+- `--fail-on` の値の小文字化は lint と同じ (`strings.ToLower` に İ の分解を足したもの。語末の Σ と Python の Unicode のバージョンとの差は写さない)。
+- 語の一覧は埋め込みを使うので、JSON の `list` はいつも `references/lists/<名前>.txt`、`list_problem` は `null`。本家が隣のファイルを読めないときの内蔵の一覧と、一覧の注意の節は写さない。
+
 ## 標準ライブラリを写す package (`internal/`)
 
 | package | 写すもの | 記録 | 件数 |
