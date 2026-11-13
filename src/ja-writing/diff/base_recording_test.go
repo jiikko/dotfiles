@@ -38,7 +38,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 			calls[call.Function]++
 			var got pyjson.Value
 			switch {
-			case slices.Contains(oracle.DiffListFunctions, call.Function):
+			case !call.Quiet && slices.Contains(oracle.DiffListFunctions, call.Function):
 				canon, digest, raised := listDigest(t, call)
 				if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; digest != want {
 					failed++
@@ -67,6 +67,10 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Get && slices.Contains(oracle.DiffStiffConstantNames(), call.Function):
+				got = stiffConstantValue(t, call.Function)
+			case slices.Contains(oracle.DiffStiffFunctions, call.Function):
+				got = invokeStiff(t, call)
 			case call.Get && slices.Contains(oracle.DiffModalConstantNames(), call.Function):
 				got = modalConstantValue(t, call.Function)
 			case call.Get:
@@ -106,6 +110,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 			t.Errorf("%s の呼び出し数が記録と違う: Go %d、記録 %d", f.Name, calls[f.Name], f.Calls)
 		}
 	}
+	checkStiffHits(t)
 	total := 0
 	for _, n := range calls {
 		total += n

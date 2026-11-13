@@ -30,6 +30,8 @@ var DiffBaseFunctions = []string{
 
 func init() {
 	DiffBaseFunctions = append(DiffBaseFunctions, DiffListFunctions...)
+	DiffBaseFunctions = append(DiffBaseFunctions, DiffStiffFunctions...)
+	DiffBaseFunctions = append(DiffBaseFunctions, diffStiffConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffRuleConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffModalConstants...)
@@ -223,7 +225,9 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	if err != nil {
 		return nil, err
 	}
-	return append(cases, listCases...), nil
+	cases = append(cases, listCases...)
+	// 群 Z (文体の硬化)
+	return append(cases, diffStiffCases(pairs)...), nil
 }
 
 // diffEndingStrings は文末の関数に通す手書きの文 (1 つが 1 つの枝を狙う)。

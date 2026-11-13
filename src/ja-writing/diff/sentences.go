@@ -305,8 +305,10 @@ func (m *masker) body(sn sentence) (body, bool) {
 }
 
 // allBodies は本家の _all_bodies: 文書全体の数える文 (コード、表、見出しなどを除き、伏せる範囲を除いたもの)。
-func (s *sides) allBodies(side int) []body {
-	m := s.newMasker(side)
+func (s *sides) allBodies(side int) []body { return s.allBodiesWith(side, s.newMasker(side)) }
+
+// allBodiesWith は allBodies に、作ってある masker を渡す形 (本家の _all_bodies の masker 引数)。
+func (s *sides) allBodiesWith(side int, m *masker) []body {
 	var out []body
 	for _, sn := range s.lineSentences(side, 0, len(s.lines[side])) {
 		if b, ok := m.body(sn); ok && pystr.Strip(b.text) != "" {
