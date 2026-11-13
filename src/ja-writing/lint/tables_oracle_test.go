@@ -88,6 +88,8 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		"_SAY_HEDGE": sayHedge, "_SAY_HEDGE_NOUN_END": sayHedgeNounEnd, "_SAY_HEDGE_NA_ADJECTIVE": sayHedgeNaAdjective, "_SAY_HEDGE_JUDGE": sayHedgeJudge,
 		"_COPY_COMMA_NOUN": copyCommaNoun, "_COPY_MODIFIER_PARTICLE": copyModifierParticle, "_COPY_NOUN_NOT": copyNounNot,
 		"_BARE_VERB_PART": bareVerbPart, "_BARE_VERB_LAST": bareVerbLast, "_BARE_VERB_POLITE": bareVerbPolite, "_BARE_VERB_NOT_VERB": bareVerbNotVerb, "_BARE_VERB_PARTICLE": bareVerbParticle,
+		"_SPEAKER_LINE": speakerLine, "_NOT_SPEAKER": notSpeaker, "_EDGE_STAGE_NOTE": edgeStageNote, "_FIRST_PERSON": firstPerson,
+		"_NARRATIVE_NUMBER": narrativeNumber, "_ASCII_IDENTIFIER": asciiIdentifier,
 		"_NEGATION_EXTRA": negationExtra, "_NEGATION_JANAI": negationJanai, "_NEGATION_ALSO": negationAlso, "_BOLD_LABEL_ITEM": boldLabelItem,
 	}
 	if p, ok := lazy[name]; ok {
@@ -140,6 +142,30 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		return aiPhraseMessageHead + "{}）" + v220MessageTail, true
 	case "_RENYO_MESSAGE":
 		return renyoMessageHead + "{}）" + v220MessageTail, true
+	case "DIALOGUE_MIN":
+		return int64(dialogueMin), true
+	case "DIALOGUE_RATIO":
+		return float64(dialogueRatio), true
+	case "FIRST_PERSON_MAX":
+		return float64(firstPersonMax), true
+	case "DENSITY_MIN":
+		return int64(densityMin), true
+	case "NARRATIVE_MIN_CHARS":
+		return int64(narrativeMinChars), true
+	case "_DOCUMENT_SKIP_KINDS":
+		return stringList(slices.Sorted(slices.Values(documentSkipKinds))), true
+	case "_QUOTE_PAIRS":
+		pairs := map[string]string{}
+		for open, closer := range quotePairs {
+			pairs[string(open)] = string(closer)
+		}
+		return stringMap(pairs, func(s string) pyjson.Value { return s }), true
+	case "_QUOTE_CLOSERS":
+		var closers []string
+		for _, closer := range quotePairs {
+			closers = append(closers, string(closer))
+		}
+		return stringList(slices.Sorted(slices.Values(closers))), true
 	case "_SHAPE_RULE_MESSAGES":
 		messages := map[string]string{}
 		for _, r := range shapeRules {

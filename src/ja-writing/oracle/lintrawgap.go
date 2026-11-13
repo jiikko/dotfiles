@@ -72,6 +72,22 @@ var lintRawGapInputs = map[string]string{
 	"g17-slide-forms": "- **全体**を、見る\n- __全体__を、見る\n- [リンク](http://example.com)を、見る\n- 長い文字列の確認が終わるまでの間に、これまでの経緯を\n# **要点**は、速さです\n",
 	// G18 の表のうち corpus の判定を変えない項目: say_hedge の形容動詞の語幹 19 語・copy_comma_noun の感動詞などの 5 語 (表の残りの 13 語は、正規表現の「ない」で終わる条件に合わず、どの入力でも判定に使われない)・名詞の 17 語。
 	"g18-shape-tables": g18ShapeTablesDoc(),
+	// G19 の境目 (dialogue_period: 台詞 9 個は出ず 10 個で出る・「。」で終わる割合 0.5 ちょうどは出て 0.4 は出ない・割合の丸め (87.5 → 88・62.5 → 62)・「名前：台詞」の行。
+	// narrative_density: 地の文 999 字は出ず 1,000 字で出る・数字 7 個は出ず 8 個で出る・一人称が千字あたり 1.0 ちょうどは出ず 0.999 で出る・7.99 は出ない・箇条書きも数える)。
+	"g19-dialogue-9":         g19DialogueDoc(9, 9, "「あ。」", "「あ」"),
+	"g19-dialogue-half":      g19DialogueDoc(10, 5, "「あ。」", "「あ」"),
+	"g19-dialogue-below":     g19DialogueDoc(10, 4, "「あ。」", "「あ」"),
+	"g19-dialogue-round-up":  g19DialogueDoc(16, 14, "「あ。」", "「あ」"),
+	"g19-dialogue-round-ev":  g19DialogueDoc(16, 10, "「あ。」", "「あ」"),
+	"g19-dialogue-speaker":   g19DialogueDoc(10, 10, "ハル：台詞。", "ハル：台詞"),
+	"g19-dialogue-halfwidth": g19DialogueDoc(10, 10, "「あ\uff61」", "「あ」"),
+	"g19-narrative-1000-8":   g19NarrativeDoc(1000, 8, 0, ""),
+	"g19-narrative-999-8":    g19NarrativeDoc(999, 8, 0, ""),
+	"g19-narrative-1000-7":   g19NarrativeDoc(1000, 7, 0, ""),
+	"g19-narrative-1001-8":   g19NarrativeDoc(1001, 8, 0, ""),
+	"g19-narrative-person1":  g19NarrativeDoc(1000, 8, 0, "私"),
+	"g19-narrative-person2":  g19NarrativeDoc(1001, 9, 0, "私"),
+	"g19-narrative-bullets":  g19NarrativeDoc(1000, 4, 4, ""),
 	// 行頭が空白のバッジの行 (imageBreakRow・imageOnlyRow が先頭の空白を飛ばして見る)。
 	"badge-indented": "  [![b](x)](y)\n\n前の文です。\n  [![c](x)](y)\n次の文です。\n",
 }
@@ -103,6 +119,39 @@ func g18ShapeTablesDoc() string {
 	}
 	for _, w := range []string{"思い", "想い", "願い", "違い", "匂い", "出会い", "味わい", "祝い", "誓い", "迷い", "笑い", "住まい", "佇まい", "問い", "扱い", "装い", "幸い"} {
 		b.WriteString("美しい、" + w + "。\n\n")
+	}
+	return b.String()
+}
+
+// g19DialogueDoc は台詞の行を total 行並べ、先頭から ended 行を withPeriod、残りを without にした文書 (script の dialogue_period 用)。
+func g19DialogueDoc(total, ended int, withPeriod, without string) string {
+	var b strings.Builder
+	for i := range total {
+		if i < ended {
+			b.WriteString(withPeriod + "\n\n")
+		} else {
+			b.WriteString(without + "\n\n")
+		}
+	}
+	return b.String()
+}
+
+// g19NarrativeDoc は地の文が total 字 (空白を除く) になる文書。数字 1 を 1 行ずつ ones 行・箇条書き bullets 行・extra の行を足し、残りを「あ」で埋める (essay の narrative_density 用)。
+func g19NarrativeDoc(total, ones, bullets int, extra string) string {
+	filler := total - ones - bullets - len([]rune(extra))
+	var b strings.Builder
+	b.WriteString(strings.Repeat("あ", filler) + "\n\n")
+	for range ones {
+		b.WriteString("1\n\n")
+	}
+	for range bullets {
+		b.WriteString("- あ\n")
+	}
+	if bullets > 0 {
+		b.WriteString("\n")
+	}
+	if extra != "" {
+		b.WriteString(extra + "\n")
 	}
 	return b.String()
 }

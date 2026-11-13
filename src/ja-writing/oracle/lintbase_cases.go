@@ -324,6 +324,11 @@ func LintBaseCases(c Corpus) ([]VisCase, error) {
 	for _, s := range lintExtraDocs {
 		cases = append(cases, lintSnippetCase("lint-"+s.name, s.text))
 	}
+	shapeDocs, err := lintShapeDocCases(c)
+	if err != nil {
+		return nil, err
+	}
+	cases = append(cases, shapeDocs...)
 	for i := range cases {
 		scopeRefs(&cases[i])
 	}

@@ -276,6 +276,22 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		result = copyCommaNounSentence(argString(t, a[0]))
 	case "_bare_verb_chain_sentence":
 		result = bareVerbChainSentence(argString(t, a[0]))
+	case "_top_quote_contents":
+		result = stringList(topQuoteContents(argString(t, a[0])))
+	case "_dialogue_lines":
+		lines := (&lintState{doc: r.document(t, a[0]), an: r.document(t, a[0]).an}).dialogueLines()
+		out := make([]pyjson.Value, len(lines))
+		for i, d := range lines {
+			out[i] = list(int64(d.Line), d.Content)
+		}
+		result = out
+	case "_narrative_counts":
+		n := (&lintState{doc: r.document(t, a[0]), an: r.document(t, a[0]).an}).narrativeCounts()
+		var first pyjson.Value
+		if n.firstLine != 0 {
+			first = int64(n.firstLine)
+		}
+		result = list(int64(n.chars), int64(n.firstPerson), int64(n.numbers), int64(n.bullets), first)
 	case "_v220_scan_text":
 		result = r.document(t, a[0]).v220ScanText(argInt(t, a[1]))
 	default:

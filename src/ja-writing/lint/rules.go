@@ -99,8 +99,8 @@ var implementedRules = map[string]bool{
 	"copy_comma_noun": true,
 	"bare_verb_chain": true,
 
-	"dialogue_period":   false,
-	"narrative_density": false,
+	"dialogue_period":   true,
+	"narrative_density": true,
 
 	"project_term": false,
 }

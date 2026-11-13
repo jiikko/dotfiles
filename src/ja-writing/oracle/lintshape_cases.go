@@ -1,6 +1,11 @@
 package oracle
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 // G18 (文の形) と G19 (文書の型) の文の関数の記録。表 (語の集合・正規表現) は定数の記録で比べ、ここは表を通した判定の結果を比べる
 // (frozenset の語を 1 つずつ通すので、表から語を落としたり足したりすると結果が変わる)。
@@ -53,5 +58,41 @@ func lintShapeStringCases() []VisCase {
 	for _, s := range lintShapeSentences() {
 		calls = append(calls, lintShapeSentenceCalls(s)...)
 	}
-	return []VisCase{{Name: "shape/sentences", Calls: calls}}
+	rec := recorder{true}
+	var quotes []Call
+	for _, s := range lintTopQuoteStrings {
+		quotes = append(quotes, rec.call("_top_quote_contents", s))
+	}
+	return []VisCase{{Name: "shape/sentences", Calls: calls}, {Name: "shape/top-quotes", Calls: quotes}}
+}
+
+// lintTopQuoteStrings は _top_quote_contents に通す手書きの文 (入れ子・閉じない括弧・種類の違う閉じ・空の中身)。
+var lintTopQuoteStrings = []string{
+	"", "あ", "「a」", "「a」「b」", "「a「b」c」", "『a』", "『a「b」c』d「e』f」", "「a』", "『a」", "「「a」", "「a」」", "」「", "「", "」", "「」", "『』「」", "「a『b』c」d『e』",
+	"x「a」y『b』z「c", "「a\nb」", "「" + strings.Repeat("あ", 300) + "」",
+}
+
+// lintG19FormsDoc は G19 の台詞の見つけ方と地の文の数え方の枝を 1 行ずつ当てる文書。
+const lintG19FormsDoc = "「こんにちは。」と言った。\n『二重』と「一重」と言う。\n「外「内」外。」\n「閉じない\n名前「台詞。」\nハル：屁理屈（笑う）\n- ハル：リストの台詞。\n1. ナレ：番号の台詞｡\n" +
+	"SE：ドアの音\nse：小文字\n場所：駅前\nＢＧＭ：静かな曲\n10:00：時間\n3コマ目：コマ\n（ハル：括弧）\nハル：（笑う）台詞（泣く）\nハル：\nハル：\u3000\n# ハル：見出し\n" +
+	"ナレーション：地の文です。\nはるはるはるはるはるはるはるはる：長い名前。\n*ハル*：太字の名前。\n\n> ハル：引用\n\n| ハル：表 |\n| - |\n\n" +
+	"私は走る。\n公私の区別。\n私立の学校。\n私鉄に乗る。\nわたしは見る。\nわたしてする。\nわたした。\nわたしたちは。\nわたします。\nぼくは行く。\nぼくじ。\nおれは言う。\nおれいを言う。\nおれる。\n" +
+	"僕と俺と自分と筆者。\n手わたしする。\nあおれは。\n1,000円と1.5倍と１２３と1,2,3。\nv2.0.1 と a_b と x/y/1 と file_2.go と camelCase2。\n「私は1000」と書く。\n**太字の私**と__下線の僕__。\n" +
+	"- 箇条書き1\n* 箇条書き2\n1. 番号付き\n[![badge](x)](y)\n  [![badge](x)](y)\n![img](a.png)\n`code 私 1`と書く。\n\n```\n私 1\n```\n\n<div>私 1</div>\n"
+
+// lintShapeDocCases は文書ごとに _dialogue_lines と _narrative_counts を通す (入力の集まりの全ファイルと、枝を当てる文書。結果は digest だけを記録する)。
+func lintShapeDocCases(c Corpus) ([]VisCase, error) {
+	docCase := func(name, text string, keep bool) VisCase {
+		rec := recorder{keep}
+		return VisCase{Name: name, Calls: []Call{lanalyze(text, "a"), rec.call("_dialogue_lines", Ref("a")), rec.call("_narrative_counts", Ref("a"))}}
+	}
+	cases := []VisCase{docCase("shape/forms", lintG19FormsDoc, true)}
+	for _, f := range c.Files {
+		raw, err := os.ReadFile(filepath.Join(c.Root, filepath.FromSlash(f.Path)))
+		if err != nil {
+			return nil, fmt.Errorf("入力 %s を読めません: %w", f.Path, err)
+		}
+		cases = append(cases, docCase("shape/corpus/"+f.Path, string(raw), false))
+	}
+	return cases, nil
 }
