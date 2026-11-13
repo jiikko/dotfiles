@@ -371,7 +371,9 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - 071393ef9 feat(ja-writing): diff の勢い (群 AA: tone) を作り、本家の記録と突き合わせる (issue 1076)
   - f2faaac5c test(ja-writing): 群 AA の記録に、緑のまま通った壊した形 7 本のうち 6 本の入力を足す (issue 1076)
   - 501b370d2 test(ja-writing): 群 AA の記録に、見出しの字数で絵文字を最初の 1 つだけ外す判定を分ける文字列を足す (issue 1076)
-  - 各 commit は、commit の前の木で `make -C src/ja-writing lint test` (rc 0)・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した (rc を 1 つずつ確かめた。071393ef9 は unused と dup を、テストの `fmt.Sprint` を `strconv.Itoa` に直す 1 行の前の木で回し、その後の `make lint test` は rc 0)。`make test-lint` は最後の木だけで回した (下の「最終の検査 (5 本目)」)
+  - c7f85f1f3 docs(issues): 1076 に 5 本目 (群 R・Z・AA) の進捗と、わざと壊した形の結果・確かめていないことを書き、README と epic の状態を今に合わせる (issue 1076)
+  - 666b9cfbe fix(ja-writing): 群 R の冒頭のコメントから issue の番号の参照を外す (make test-lint の test-comment-provenance が止めた)
+  - 各 commit は、commit の前の木で `make -C src/ja-writing lint test` (rc 0)・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した (rc を 1 つずつ確かめた。071393ef9 は unused と dup を、テストの `fmt.Sprint` を `strconv.Itoa` に直す 1 行の前の木で回し、その後の `make lint test` は rc 0)。`make test-lint` は最後の木だけで回した (下の「最終の検査 (5 本目)」)。🚨 そのため aa1c1a3a1 から c7f85f1f3 までの各 commit は、`diff/wordlist.go` の冒頭のコメントに issue の番号があり `make test-lint` の `test-comment-provenance` が落ちる (666b9cfbe が直した。ほかの 3 本の検査は上のとおり commit ごとに通っている)
 - 群 R (`diff/wordlist.go`・`lists/parse.go`): `ParsePatternList` (本家の `parse_list` の pattern が真。書き方の誤りは `*ListError` = ValueError)・`LoadList` (`_load_list` の items)・`ListSource` (`_list_info` の list。list_problem はいつも null)。語だけの一覧の読みは `lists.Words`。
   BOM・CRLF・空行・「#」の行の読みは lint の `parseList` と `parseThinList` が写していたので、`lists.Lines` に寄せて両方がこれを使う (行末の `\r` は本家の `rstrip("\r")` と同じく全部落とす。lint の一覧は固定で答えは変わらない)。
   本家の内蔵の一覧 (`BUILTIN_LISTS`)・`_LIST_PROBLEMS`・`_any_of` の「読めなかった」経路は写さない (決めたこと 5)。oracle は `lists` を import しない (`lists` が使う `internal/pystr` の試験が `oracle` を import していて循環する)。`--words` / `--no-words` の経路 (`visibility.ResolveWords`) と `context.words` は触っておらず、diff の CLI の記録 (`--words` の組を含む) は変わらず通った
@@ -410,5 +412,5 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 #### 最終の検査 (5 本目)
 
-最後の編集 (この節を書いた docs の commit) の後の木の検査は、下の「最終の検査 (5 本目の docs の commit の後)」に追記する。
-
+最後のコードの編集 (666b9cfbe) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0
+(ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/fin-ltest.log・fin-un.log・fin-tl.log・fin-dup.log と、同じ名前の .rc)。この節を足す docs の commit の後は、`make test-lint` と上の 3 本をもう一度回した (rc は fin2-*.rc)。
