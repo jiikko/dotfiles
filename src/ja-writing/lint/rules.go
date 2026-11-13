@@ -63,9 +63,9 @@ var implementedRules = map[string]bool{
 
 	"trailing_colon": true,
 
-	"slop_vocabulary": false,
-	"metaphor_verb":   false,
-	"translated_term": false,
+	"slop_vocabulary": true,
+	"metaphor_verb":   true,
+	"translated_term": true,
 
 	"meta_filler":         false,
 	"summary_restatement": false,
