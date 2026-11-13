@@ -37,14 +37,16 @@ func (c LintCLICase) MarshalJSON() ([]byte, error) {
 // LintCLIRecord は 1 回の実行の記録。Out は stdout (作業フォルダの実パスを RootToken にしたもの) の SHA-256 の先頭 16 字、Len はそのバイト数。
 // N は出力に出た見直し候補の数 (出さない実行は nil)、Raw は検出の生の並び (種類・allow・ダッシュの上限で外す前) の件数 (検査まで進まなかった実行は nil)。
 type LintCLIRecord struct {
-	Name   string `json:"name"`
-	RC     int    `json:"rc"`
-	Out    string `json:"out"`
-	Len    int    `json:"len"`
-	Err    string `json:"err"`
-	N      *int   `json:"n"`
-	Raw    *int   `json:"raw,omitempty"`
-	Stdout string `json:"stdout,omitempty"`
+	Name string `json:"name"`
+	RC   int    `json:"rc"`
+	Out  string `json:"out"`
+	Len  int    `json:"len"`
+	Err  string `json:"err"`
+	N    *int   `json:"n"`
+	Raw  *int   `json:"raw,omitempty"`
+	// Kinds は diff の --json の出力で何が出たか (検出の種類の並び。昇順)。lint の記録には無い。
+	Kinds  []string `json:"kinds,omitempty"`
+	Stdout string   `json:"stdout,omitempty"`
 }
 
 // LintCLIGolden は lint-cli.json の中身。
@@ -62,6 +64,11 @@ func MarshalLintCLI(g LintCLIGolden) ([]byte, error) { return marshalHeaderCases
 // RecordLintCLI は cases を、files を置いた作業フォルダで本家の CLI に通して記録にする。1 つの Python のプロセスで順に走らせる。
 // 終了コード 3 (内部の誤り) の実行があれば止める (本家が壊れた入力は記録にしない)。
 func (r Runner) RecordLintCLI(ctx context.Context, header Header, cases []LintCLICase, files map[string]string) (LintCLIGolden, error) {
+	return r.recordCLI(ctx, "record_lint_cli.py", header, cases, files)
+}
+
+// recordCLI は driver (record_lint_cli.py か record_diff_cli.py) に cases を通す。
+func (r Runner) recordCLI(ctx context.Context, driver string, header Header, cases []LintCLICase, files map[string]string) (LintCLIGolden, error) {
 	sb, err := r.newStagedSandbox()
 	if err != nil {
 		return LintCLIGolden{}, err
@@ -75,7 +82,7 @@ func (r Runner) RecordLintCLI(ctx context.Context, header Header, cases []LintCL
 		Cases      []LintCLICase `json:"cases"`
 	}{sb.tree.Path(ScriptsDir), cases}
 	var out []LintCLIRecord
-	if err := r.runDriver(ctx, sb, "record_lint_cli.py", in, &out); err != nil {
+	if err := r.runDriver(ctx, sb, driver, in, &out); err != nil {
 		return LintCLIGolden{}, err
 	}
 	if len(out) != len(cases) {
@@ -141,9 +148,7 @@ const lintCLITextInput = "# まとめ\n\n本記事では設定を扱います�
 // LintCLICases は CLI の記録の case の一覧 (入力の集まりの全ファイルと、条件・誤り・標準入力・作業フォルダの実例)。名前は記録と突き合わせる鍵。
 func LintCLICases(c Corpus, docTypes, readers []string) []LintCLICase {
 	var cases []LintCLICase
-	add := func(name string, keep bool, args ...string) {
-		cases = append(cases, LintCLICase{Name: name, Args: args, Keep: keep})
-	}
+	add := caseAdder(&cases)
 	for i, f := range c.Files {
 		file := "corpus/" + f.Path
 		add(f.Path+"|json", false, "--json", file)
@@ -292,4 +297,11 @@ func SortedLintCLINames(cases []LintCLICase) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// caseAdder は cases に case を足す関数 (引数だけの case。標準入力と作業フォルダが要るものは構造体で足す)。
+func caseAdder(cases *[]LintCLICase) func(name string, keep bool, args ...string) {
+	return func(name string, keep bool, args ...string) {
+		*cases = append(*cases, LintCLICase{Name: name, Args: args, Keep: keep})
+	}
 }

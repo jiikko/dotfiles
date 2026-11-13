@@ -29,7 +29,7 @@ import (
 
 const runTimeout = 20 * time.Minute
 
-type paths struct{ corpus, words, golden, manifest string }
+type paths struct{ corpus, words, diff, golden, manifest string }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -37,7 +37,7 @@ func main() {
 	pin := flag.Bool("pin", false, "本家のファイルを取り直して oracle/upstream.sha256 を書く")
 	only := flag.String("only", "", "記録を 1 本だけ作り直す ("+strings.Join(goldenNames(), "・")+" のどれか。ほかは作り直さない)")
 	flag.Parse()
-	p := paths{corpus: "testdata/corpus", words: "testdata/words", golden: "testdata/golden", manifest: "oracle/upstream.sha256"}
+	p := paths{corpus: "testdata/corpus", words: "testdata/words", diff: "testdata/diff", golden: "testdata/golden", manifest: "oracle/upstream.sha256"}
 	var err error
 	if *pin {
 		err = runPin(ctx, p)
@@ -174,6 +174,36 @@ var goldens = []golden{
 			return nil, err
 		}
 		return oracle.MarshalLintCLI(g)
+	}},
+	{name: "diff-cli", file: oracle.DiffCLIFile, what: "diff の CLI の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+		files, err := oracle.DiffCLIFiles(e.corpus, e.p.words, e.p.diff)
+		if err != nil {
+			return nil, err
+		}
+		inputs, err := oracle.LoadDiffInputs(e.p.diff)
+		if err != nil {
+			return nil, err
+		}
+		g, err := r.RecordDiffCLI(e.ctx, e.header, oracle.DiffCLICases(e.corpus, inputs, visibility.DocTypeValues(), visibility.ReaderValues()), files)
+		if err != nil {
+			return nil, err
+		}
+		return oracle.MarshalLintCLI(g)
+	}},
+	{name: "diff-base", file: oracle.DiffBaseFile, what: "diff の関数の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+		inputs, err := oracle.LoadDiffInputs(e.p.diff)
+		if err != nil {
+			return nil, err
+		}
+		cases, err := oracle.DiffBaseCases(e.corpus, e.p.diff, inputs)
+		if err != nil {
+			return nil, err
+		}
+		g, err := r.RecordVisibility(e.ctx, e.header, cases)
+		if err != nil {
+			return nil, err
+		}
+		return oracle.MarshalVisibility(g)
 	}},
 	{name: "lint-raw", file: oracle.LintRawFile, what: "lint の検出の生の並びの記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		files, err := oracle.LintCLIFiles(e.corpus, e.p.words)
