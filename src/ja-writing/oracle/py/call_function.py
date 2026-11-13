@@ -65,6 +65,9 @@ def unroot(value):
 
 
 def encode_default(value):
+    # 集合は並びが決まらないので昇順の配列にする (要素は str のものだけが対象。要素の比べは Go 側が同じ昇順で作る)
+    if isinstance(value, (set, frozenset)):
+        return sorted(value)
     if isinstance(value, re.Pattern):
         return {"pattern": value.pattern, "flags": value.flags}
     # 本家の _LazyPattern (初めて使うときに組む正規表現。pattern は組まずに読め、flags を読むと組む)

@@ -70,6 +70,8 @@ var lintRawGapInputs = map[string]string{
 	"g16-ai-phrase-forms": "リスクが潜む。問題が潜む。\n\n見直して、速度を改善。\n\n見直して、速度を**改善**。\n\n医師の見立てです。\n\n見立てです。\n\n社長が招く失敗です。\n\n油断が招く失敗です。\n\nこれは便利なんよ。\n\n# 今や欠かせない存在です\n\n今や欠かせない存在です。\n\n- 見直して、速度を改善。\n\nについて、速度を改善。\n",
 	// G17 の枝: 太字と __ の記号を外した位置・リンクの文字だけを言い方に使う・20 字より長い言い方 (slides だけ)。
 	"g17-slide-forms": "- **全体**を、見る\n- __全体__を、見る\n- [リンク](http://example.com)を、見る\n- 長い文字列の確認が終わるまでの間に、これまでの経緯を\n# **要点**は、速さです\n",
+	// G18 の表のうち corpus の判定を変えない項目: say_hedge の形容動詞の語幹 19 語・copy_comma_noun の感動詞などの 5 語 (表の残りの 13 語は、正規表現の「ない」で終わる条件に合わず、どの入力でも判定に使われない)・名詞の 17 語。
+	"g18-shape-tables": g18ShapeTablesDoc(),
 	// 行頭が空白のバッジの行 (imageBreakRow・imageOnlyRow が先頭の空白を飛ばして見る)。
 	"badge-indented": "  [![b](x)](y)\n\n前の文です。\n  [![c](x)](y)\n次の文です。\n",
 }
@@ -88,4 +90,19 @@ func lintRawGapNames() []string {
 func g1DetailsDoc(firstProse int) string {
 	return "<details>\n\n- " + strings.Repeat("い", 100) + "\n\n</details>\n\n- " + strings.Repeat("い", 75) + "\n\n- " + strings.Repeat("い", 75) + "\n\n" +
 		strings.Repeat("い", firstProse) + "\n\n" + strings.Repeat("い", 74) + "\n"
+}
+
+// g18ShapeTablesDoc は G18 の表の項目ごとに、その項目があるときだけ結果が変わる文を 1 行ずつ並べた文書。
+func g18ShapeTablesDoc() string {
+	var b strings.Builder
+	for _, w := range []string{"必要", "適切", "十分", "妥当", "有用", "大切", "確実", "可能", "重大", "有益", "顕著", "明確", "不可欠", "理想", "最適", "容易", "困難", "安全", "安心"} {
+		b.WriteString(w + "と言えるでしょう。\n\n")
+	}
+	for _, w := range []string{"いい", "あの", "この", "その", "どの"} {
+		b.WriteString(w + "、出力。\n\n")
+	}
+	for _, w := range []string{"思い", "想い", "願い", "違い", "匂い", "出会い", "味わい", "祝い", "誓い", "迷い", "笑い", "住まい", "佇まい", "問い", "扱い", "装い", "幸い"} {
+		b.WriteString("美しい、" + w + "。\n\n")
+	}
+	return b.String()
 }

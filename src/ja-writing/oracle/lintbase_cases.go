@@ -307,6 +307,7 @@ func LintBaseCases(c Corpus) ([]VisCase, error) {
 	cases = append(cases, lintEmojiCases()...)
 	cases = append(cases, lintStringCases()...)
 	cases = append(cases, lintTableFunctionCases()...)
+	cases = append(cases, lintShapeStringCases()...)
 	for _, f := range c.Files {
 		raw, err := os.ReadFile(filepath.Join(c.Root, filepath.FromSlash(f.Path)))
 		if err != nil {

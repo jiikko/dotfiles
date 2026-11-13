@@ -270,6 +270,12 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 			}
 			return out
 		})
+	case "_say_hedge_sentence":
+		result = sayHedgeSentence(argString(t, a[0]))
+	case "_copy_comma_noun_sentence":
+		result = copyCommaNounSentence(argString(t, a[0]))
+	case "_bare_verb_chain_sentence":
+		result = bareVerbChainSentence(argString(t, a[0]))
 	case "_v220_scan_text":
 		result = r.document(t, a[0]).v220ScanText(argInt(t, a[1]))
 	default:

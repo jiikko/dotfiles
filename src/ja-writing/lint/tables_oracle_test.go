@@ -84,6 +84,10 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		"_CLEFT_LIST_MASKED_RUN": cleftListMaskedRun, "_CLEFT_LIST_SPACE": cleftListSpace, "_CLEFT_LIST_STEM": cleftListStem,
 		"_V220_SENTENCE": v220Sentence, "_AI_PHRASE_HEAD": aiPhraseHead, "_AI_JUDGE": aiJudge, "_AI_INVITER": aiInviter,
 		"_SLIDE_ACTOR_AFTER": slideActorAfter, "_SLIDE_LIST_AFTER": slideListAfter, "_SLIDE_LEAD": slideLead, "_SLIDE_BULLET": slideBullet, "_SLIDE_MARKER_ZONE": slideMarkerZone,
+		"_SHAPE_COMMA_GATE": shapeCommaGate, "_SHAPE_HEADING_MARK": shapeHeadingMark, "_SHAPE_CURLY_QUOTED": shapeCurlyQuoted, "_SHAPE_SENTENCE": shapeSentence,
+		"_SAY_HEDGE": sayHedge, "_SAY_HEDGE_NOUN_END": sayHedgeNounEnd, "_SAY_HEDGE_NA_ADJECTIVE": sayHedgeNaAdjective, "_SAY_HEDGE_JUDGE": sayHedgeJudge,
+		"_COPY_COMMA_NOUN": copyCommaNoun, "_COPY_MODIFIER_PARTICLE": copyModifierParticle, "_COPY_NOUN_NOT": copyNounNot,
+		"_BARE_VERB_PART": bareVerbPart, "_BARE_VERB_LAST": bareVerbLast, "_BARE_VERB_POLITE": bareVerbPolite, "_BARE_VERB_NOT_VERB": bareVerbNotVerb, "_BARE_VERB_PARTICLE": bareVerbParticle,
 		"_NEGATION_EXTRA": negationExtra, "_NEGATION_JANAI": negationJanai, "_NEGATION_ALSO": negationAlso, "_BOLD_LABEL_ITEM": boldLabelItem,
 	}
 	if p, ok := lazy[name]; ok {
@@ -136,6 +140,20 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		return aiPhraseMessageHead + "{}）" + v220MessageTail, true
 	case "_RENYO_MESSAGE":
 		return renyoMessageHead + "{}）" + v220MessageTail, true
+	case "_SHAPE_RULE_MESSAGES":
+		messages := map[string]string{}
+		for _, r := range shapeRules {
+			messages[r.name] = r.message
+		}
+		return stringMap(messages, func(s string) pyjson.Value { return s }), true
+	case "_SHAPE_GATE_WORDS":
+		return stringList(shapeGateWords), true
+	case "_SHAPE_QUOTE_MARKS":
+		return stringList(shapeQuoteMarks), true
+	case "_COPY_NOT_MODIFIER":
+		return stringList(slices.Sorted(slices.Values(copyNotModifier))), true
+	case "_COPY_I_NOUNS":
+		return stringList(slices.Sorted(slices.Values(copyINouns))), true
 	}
 	return nil, false
 }

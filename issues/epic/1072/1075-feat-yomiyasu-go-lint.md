@@ -241,3 +241,11 @@
   - 入力を 1 つ足した (`g17-slide-forms`: 太字と `__` の記号を外した位置・リストの文字だけを言い方に使う・20 字より長い言い方)。記録は 2,936 → 2,944 件で既存の行は変わらない。
   - 本家の表の比べ: 定数 `_SLIDE_LINE_MAX`・`_SLIDE_COMMA`・`_SLIDE_ACTOR_AFTER`・`_SLIDE_LIST_AFTER`・`_SLIDE_SAME_NEXT`・`_SLIDE_LEAD`・`_SLIDE_BULLET`・`_SLIDE_MARKER_ZONE`・`_SLIDE_MESSAGE` を `lint-base.json` に足し (constants 以外の case は変わらない)、表の 1 項目を書き換える変異が red。
   - わざと壊した 17 本 (60 字の上限・pause_comma と重ねない・`Heads`・別の主語・名詞の並び・同じ助詞の並びの 2 通り・`Objects`・言い方の 20 字・言い方の重なり・複数行の段落と箇条・箇条の印の範囲・太字の記号・`__`・掛かり先を決める読点・リンクの文字) が red。
+
+- 2026-11-13 G18 (say_hedge・copy_comma_noun・bare_verb_chain) を入れた (`lint/g18_shape.go`・`g18_tables.go`)。本家の `_v220_shape_findings` は既存の候補を読まないので、群の依存は無い。
+  - 比べた候補: say_hedge 216・copy_comma_noun 165・bare_verb_chain 144 (lint-raw の 8 文脈。全 case で並びが一致)。表は定数 21 個 (`_SHAPE_*`・`_SAY_HEDGE*`・`_COPY_*`・`_BARE_VERB_*`) を記録と比べ、frozenset 2 つは driver が昇順の配列にして記録する (`call_function.py` の `encode_default` に集合を足した。これまで集合を記録した case は無く、既存の記録は変わらない)。
+    文の判定 3 関数は手書きの 356 文で比べる (`oracle/lintshape_cases.go`。lint-base に 1,068 呼び出しを足した。記録の真偽は 123 対 933 で両方出る)。
+  - 足した入力: `rawgap/g18-shape-tables.md` (say_hedge の形容動詞の語幹 19 語・感動詞などの 5 語・名詞 17 語を 1 行ずつ。corpus で結果を変えなかった項目を、本家で語を 1 つ外して確かめた)。
+    等価で入力を作れないもの: `_COPY_NOT_MODIFIER` の 13 語 (いいえ・まあ・あのね・ええ・いや・おい・なお・ただ・しかし・ちなみ・つまり・さて・では) は、正規表現が修飾語の終わりを「な・い・た・の」に限るので、どの入力でも表に当たらない (記録では表の値として比べる)。
+  - わざと壊した 13 本が想定の検査で red (say 2・copy 2・bare 2・門 3 (「えるでしょう」を外す・読点の門を狭める・promo の分岐)・表 4)。最初の 2 本は緑のまま通った: `say-judge` は「文 + x」で判定が変わらない (悪い壊し方) ので判定を外す形に直して red、`gate-comma` は `{1,14}` を `{1,13}` にしても copy が名詞 7 字以下・bare が別の読点の形で拾われるため境目が働かない (等価) ので `{1,2}` にして red。
+  - 共通の helper: `candidateLines` から `linesAt` (位置から行の番号) を切り出した (G18 が「えるでしょう」の位置も混ぜるため)。

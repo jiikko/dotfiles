@@ -95,9 +95,9 @@ var implementedRules = map[string]bool{
 
 	"slide_comma": true,
 
-	"say_hedge":       false,
-	"copy_comma_noun": false,
-	"bare_verb_chain": false,
+	"say_hedge":       true,
+	"copy_comma_noun": true,
+	"bare_verb_chain": true,
 
 	"dialogue_period":   false,
 	"narrative_density": false,

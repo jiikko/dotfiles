@@ -108,13 +108,22 @@ func (s *lintState) candidateLines(p *pyre.Pattern) []int {
 	if err != nil {
 		panic(err)
 	}
+	positions := make([]int, len(matches))
+	for i, m := range matches {
+		positions[i] = m.Start(0)
+	}
+	return s.linesAt(positions)
+}
+
+// linesAt は文書の文字の位置 (コードポイントの数) を含む行の番号 (重ねず昇順)。
+func (s *lintState) linesAt(positions []int) []int {
 	starts := make([]int, len(s.an.Lines))
 	for i, row := range s.an.Lines {
 		starts[i] = row.Start
 	}
 	set := map[int]bool{}
-	for _, m := range matches {
-		set[sort.Search(len(starts), func(i int) bool { return starts[i] > m.Start(0) })] = true
+	for _, position := range positions {
+		set[sort.Search(len(starts), func(i int) bool { return starts[i] > position })] = true
 	}
 	lines := make([]int, 0, len(set))
 	for n := range set {
