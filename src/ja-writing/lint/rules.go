@@ -49,7 +49,7 @@ var implementedRules = map[string]bool{
 
 	"sentence_end_repetition": false,
 
-	"bold_not_rendered": false,
+	"bold_not_rendered": true,
 
 	"emoji_prohibited": false,
 
@@ -82,7 +82,7 @@ var implementedRules = map[string]bool{
 	"negative_parallelism_density": false,
 	"bold_label_list":              false,
 
-	"pause_comma": false,
+	"pause_comma": true,
 
 	"calque":          false,
 	"metaphor_label":  false,

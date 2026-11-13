@@ -118,7 +118,9 @@ func detectTraced(text string, c lintContext, trace func(string, *rowCtx)) (*lin
 
 	s.g01Document()
 	s.g02SentenceEnd()
-	s.g03Bold()
+	if err := s.g03Bold(); err != nil {
+		return nil, err
+	}
 	s.eachRow()
 	s.g12Document()
 
