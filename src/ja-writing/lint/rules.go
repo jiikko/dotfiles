@@ -51,7 +51,7 @@ var implementedRules = map[string]bool{
 
 	"bold_not_rendered": true,
 
-	"emoji_prohibited": false,
+	"emoji_prohibited": true,
 
 	"dash_decoration":  false,
 	"dash_insertion":   false,
