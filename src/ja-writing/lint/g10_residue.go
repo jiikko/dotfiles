@@ -4,9 +4,6 @@ import "strings"
 
 // G10 指示の残り (instruction_residue。本家 yomiyasu_lint.py の 2940-2965 と 5806-5815)。正規表現は g10_tables.go。
 
-// g10State は G10 が文書の中で持つ状態。行ごとに決まるので、持つものは無い。
-type g10State struct{}
-
 const instructionResidueMessage = "AIへの指示が本文に残る形（書き方や除外の予告）が検出されました。除外や書き方の指示を述べる文を削ってください。ただし、読者のための範囲・対象読者・前提・参照先・用語の定義を示す文は残してください。"
 
 // g10InstructionResidue は引用を伏せた文 (s.rule9[r.lineNo]) の各文と次の文について、そのままの文か、文末の飾りを除いた文で当たれば 1 行 1 件。

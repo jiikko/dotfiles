@@ -243,9 +243,6 @@ func rawCloseTag(name string) *pyre.Pattern {
 	return p
 }
 
-// g01State は G1 が持つ状態 (いまは無い。指標は lintState の metrics)。
-type g01State struct{}
-
 // g01Document は指標から文書単位の候補 (excess_bold・excess_list。どちらも line 1) を作る (本家 5546-5570)。
 // message の数は本家の f-string (charCount > 300 なら字数が 0 でないので bold_per_1000 は float の repr。round(list_ratio*100, 1) は pyjson.Round を通す)。
 func (s *lintState) g01Document() {

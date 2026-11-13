@@ -238,10 +238,10 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
    | G2 | `g02SentenceEnd()` | 同上 (`s.sentences` が段落の文の記録) |
    | G3 | `g03Bold()` | 同上。issue 1083 の `lint.BoldFindings(s.text, s.an)` を呼ぶ |
    | G4・G5・G6 | `g04Emoji(r)`・`g05Dash(r)` (表と引用でなく、文書にダッシュがあるとき)・`g06Heading(r)` (見出しの行。続けて骨組みが `g08Vocabulary`) | 行ごと |
-   | G7〜G13 | `bodySteps` の順 (`g07TrailingColon`・`g08Vocabulary`・`g08Translated`・`g09Filler`・`g09InfoSentences`・`g10InstructionResidue`・`g11ShortSentences`・`g12Negation`・`g13PauseComma`) | 表・見出し・引用でない行ごと。事前の口は `g08Prepare`・`g12Prepare`、事後の口は `g12Document`。`g12RecordBoldLabel(r)` は行の文を切る前 |
+   | G7〜G13 | `bodySteps` の順 (`g07TrailingColon`・`g08Vocabulary`・`g08Translated`・`g09Filler`・`g09InfoSentences`・`g10InstructionResidue`・`g11ShortSentences`・`g12Negation`・`g13PauseComma`) | 表・見出し・引用でない行ごと。事前の口は `g12Prepare`、事後の口は `g12Document`。`g12RecordBoldLabel(r)` は行の文を切る前 |
    | G14〜G20 | `g14WordFindings`・`g15RenyoFindings`・`g16AiPhraseFindings`・`g17SlideCommaFindings`・`g18ShapeFindings`・`g19DocumentFindings`・`g20ProjectTermFindings` | 行のループの後、本家の `analysis["_findings"] = findings` 以降の順 (`s.findings` はそれまでの候補) |
 
-2. **状態は自分の `g<番号>State` に持つ** (`lintState.g01`〜`g20`。本家の行のループの外の変数と、事前の口が作る表)。骨組みが持つのは複数の群が読むものだけ: `previousSentence`・`kikuLines`・`metrics`・`rule9`・`sentences`・`findings`。
+2. **行をまたぐ状態を持つ群は、自分の `g<番号>State` に持ち、`lintState` に欄を足す** (いまは G11〜G13。本家の行のループの外の変数と、事前の口が作る表)。持つ状態の無い群は欄を作らない。骨組みが持つのは複数の群が読むものだけ: `previousSentence`・`kikuLines`・`metrics`・`rule9`・`sentences`・`findings`。
    候補は `s.add(newFinding(rule, line, severity, message, snippet))` で、本家が足す順に足す (足す順が `--json` の `findings` の順)。内部の欄 (`Words`・`Objects`・`Heads` など) は `finding` の欄で、持つ欄は nil でない値を入れる (空でも持つなら `[]string{}`)。
 3. **`rules.go` の `implementedRules` の自分の規則を `true` にする**。検出を、本家の検出の生の並び (`testdata/golden/lint-raw.json`) と規則で絞って突き合わせるテスト (`TestRawFindingsMatchPythonRecording`) が、true の規則だけを比べる (入っていない規則の候補を Go が出すと落ちる)。
    群どうしの依存 (G11 → G9・G14 → G8・G17 → G13) は、依存先の規則が全部 true になるまで依存元を true にできない (`TestImplementedRulesRespectGroupDependencies`)。

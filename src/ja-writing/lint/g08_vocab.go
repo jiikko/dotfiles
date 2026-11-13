@@ -17,12 +17,6 @@ import (
 // kikuWindowLines は比喩の「効く」で、前の行の文字どおりの語 (薬・エアコンなど) を見る窓の行数 (_KIKU_WINDOW_LINES)。
 const kikuWindowLines = 3
 
-// g08State は G8 が文書の中で持つ状態。行ごとに決まるので、持つものは無い (比喩の「効く」の窓は骨組みの kikuLines)。
-type g08State struct{}
-
-// g08Prepare は行のループの前に 1 回。G8 は文書全体の下ごしらえを持たない。
-func (s *lintState) g08Prepare() {}
-
 // g08Window は行のループの 1 行ごとに呼ばれ、比喩の「効く」の窓 (この行より前の、直近 kikuWindowLines 行) を返して、この行を覚える。
 // 本家の `kiku_before = kiku_lines[-3:]; kiku_lines = kiku_before + [plain_text]`。
 func (s *lintState) g08Window(plain string) []string {

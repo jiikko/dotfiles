@@ -14,9 +14,6 @@ import (
 // G19 文書の型 (dialogue_period・narrative_density。本家 yomiyasu_lint.py の 5162-5300)。表は g19_tables.go。
 // 種類を限って当てる規則で、dialogue_period は script、narrative_density は essay のときだけ数える。文書に 1 件。
 
-// g19State は G19 が文書の中で持つ状態。文書ごとに 1 回数えるだけなので、持つものは無い。
-type g19State struct{}
-
 // dialogueLine は台詞 1 つ (行の番号と中身)。
 type dialogueLine struct {
 	Line    int

@@ -1,7 +1,6 @@
 package lint
 
 import (
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -9,24 +8,6 @@ import (
 
 	"ja-writing/visibility"
 )
-
-// 群の状態の欄は 20 個あり、どれも別の型の別の欄 (群を入れる人が自分の欄だけを書き足せる)。
-func TestGroupStatesAreSeparateFields(t *testing.T) {
-	s := &lintState{}
-	states := s.groupStates()
-	seenTypes := map[reflect.Type]bool{}
-	seenPointers := map[any]bool{}
-	for i, st := range states {
-		typ := reflect.TypeOf(st).Elem()
-		if seenTypes[typ] || seenPointers[st] {
-			t.Errorf("G%d の状態が別の群の欄と重なっている", i+1)
-		}
-		seenTypes[typ], seenPointers[st] = true, true
-	}
-	if len(seenTypes) != 20 {
-		t.Errorf("状態の型が %d 種類 (20 のはず)", len(seenTypes))
-	}
-}
 
 func TestAddKeepsDetectionOrderAndFindingsOfFilters(t *testing.T) {
 	s := &lintState{}

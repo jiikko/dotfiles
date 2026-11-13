@@ -15,9 +15,6 @@ import (
 // 文書の元の文字に手掛かり (読点の形か「えるでしょう」) を当て、当たりの始まりの行だけを見える文字で調べる (速さのための絞り込みだが、
 // 元の文字に手掛かりが無い行は調べない形をそのまま写す)。本家の findings の引数 (既存の候補) は使わない。
 
-// g18State は G18 が文書の中で持つ状態。行ごとに決まるので、持つものは無い。
-type g18State struct{}
-
 // shapeVisibleText は本家の _shape_visible_text。形の規則で見る行の文字 (見ない行は空)。引用の中身は空白で伏せる。
 func (s *lintState) shapeVisibleText(row *visibility.Line) string {
 	if (row.Kind != "paragraph" && row.Kind != "list" && row.Kind != "heading") || row.QuoteDepth != 0 {

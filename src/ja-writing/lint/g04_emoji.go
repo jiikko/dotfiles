@@ -6,9 +6,6 @@ import "strings"
 //
 // 依存: T1 (EmojiMatches)
 
-// g04State は G4 が文書の中で持つ状態 (本家の行のループの外の変数など)。骨組みは何も入れない。
-type g04State struct{}
-
 // g04Emoji は行のループの最初 (引用の行と表の行でも出る)。コード・URI・HTML の中の字は scanText に入っていない (見える文字だけを数える)。
 func (s *lintState) g04Emoji(r *rowCtx) {
 	matches := EmojiMatches(r.scanText)

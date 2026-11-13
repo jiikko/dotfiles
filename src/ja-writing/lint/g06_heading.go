@@ -4,9 +4,6 @@ import "strings"
 
 // G6 見出し (heading_colon・short_summary_heading・redundant_bracket。本家 yomiyasu_lint.py の 5699-5724)。
 
-// g06State は G6 が文書の中で持つ状態。見出しの行ごとに決まるので、持つものは無い。
-type g06State struct{}
-
 // summaryHeading は本家の _SUMMARY_HEADING (「まとめ」「おわりに」だけの見出し)。
 var summaryHeading = newLazy(`^#{1,6}\s*(まとめ|おわりに)\s*$`, 0)
 

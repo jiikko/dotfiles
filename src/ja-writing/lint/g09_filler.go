@@ -5,9 +5,6 @@ import "strings"
 // G9 文の型 (meta_filler・summary_restatement・meta_intro・count_declaration。本家 yomiyasu_lint.py の 1350-1395 と 5773-5804)。表は g09_tables.go。
 // G11 (cleft_list_ending) が fillerPatterns を読む。
 
-// g09State は G9 が文書の中で持つ状態。行ごとに決まるので、持つものは無い。
-type g09State struct{}
-
 const fillerMessageHead = "が検出されました。単なる前置きや不要な飾りであれば削り、本題から書いてください。ただし、「何が大事か」という評価や主張そのものを担っている場合は、述語に移すなどして意味を残してください。"
 
 // g09Filler は meta_filler (フィラーの型。文ごとに見て、同じ型は 1 行 1 件)。

@@ -12,9 +12,6 @@ import (
 // G5 ダッシュ (dash_decoration・dash_insertion・dash_list_ending。本家 yomiyasu_lint.py の 1005-1182 と 5694-5698)。
 // 1 文書の件数の上限 (4 件目以降) は post.go の applyDashLimit が持つので、ここでは全部足す。
 
-// g05State は G5 が文書の中で持つ状態。1 行ごとに決まるので、持つものは無い。
-type g05State struct{}
-
 // dashChars は本家の DASH_CHARS (em dash・horizontal bar・罫線)。en dash・長音・波ダッシュは含めない。
 const dashChars = "—―─━"
 

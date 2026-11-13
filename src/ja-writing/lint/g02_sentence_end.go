@@ -9,9 +9,6 @@ import (
 
 // G2 文末の反復 (sentence_end_repetition。本家 yomiyasu_lint.py の 1802-1900 と 5574)。
 
-// g02State は G2 が文書の中で持つ状態。G2 は行のループの外で 1 回だけ当てるので、持つものは無い。
-type g02State struct{}
-
 // g02SentenceEnd は行のループの前に 1 回。段落の文を、絵文字で続けた所で分けてから、3 文以上続く同じ語尾を候補にする。
 func (s *lintState) g02SentenceEnd() {
 	s.findings = append(s.findings, sentenceEndFindings(splitDecorationBreaks(s.sentences))...)

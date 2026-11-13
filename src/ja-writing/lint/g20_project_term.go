@@ -16,9 +16,6 @@ import (
 // 見える文字 (コード・URL・リンク先・HTML・frontmatter を伏せた行) に flag.txt の語か flag-patterns.txt のパターンが出る行に 1 件。
 // 引用とカギ括弧の中は数えない。内部の欄 Words・Replacements・PatternMatches・FlagHits は、post.go の applyWords が allow.txt で外すときに読む。
 
-// g20State は G20 が文書の中で持つ状態。行ごとに決まるので、持つものは無い。
-type g20State struct{}
-
 func isKanjiRune(r rune) bool {
 	return '一' <= r && r <= '龥' || strings.ContainsRune("々〆ヵヶ", r)
 }

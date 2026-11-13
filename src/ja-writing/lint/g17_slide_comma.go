@@ -15,9 +15,6 @@ import (
 // G17 スライドの読点 (slide_comma。本家 yomiyasu_lint.py の 4721-4884)。slides だけ。表は g17_tables.go。
 // 同じ行に pause_comma があれば主題と主語の読点は重ねず、pause_comma が拾った短い目的語の「を、」は重ねない。
 
-// g17State は G17 が文書の中で持つ状態。行ごとに決まるので、持つものは無い。
-type g17State struct{}
-
 var (
 	slideMarkerWords = "、。！？!?：:"
 	slideSameTail    = map[string]*lazyPattern{}

@@ -12,8 +12,7 @@ import (
 //
 // 群ごとの呼び出し口の約束 (README の「lint の群の足し方」):
 //   - 群の検出は gNN_*.go の lintState のメソッド。骨組み (このファイル) は、本家の lint_text と同じ順に呼ぶだけで、群の中身を知らない。
-//   - 群が行をまたいで持つ状態 (本家の行のループの外の変数) は、群の gNNState (自分のファイルで定義する構造体) に持つ。lintState の gNN の欄は最初から全部あるので、
-//     群を入れる人はこのファイルを書き換えずに、自分の gNNState を育てられる。
+//   - 群が行をまたいで持つ状態 (本家の行のループの外の変数) は、群の gNNState (自分のファイルで定義する構造体) に持ち、lintState の gNN の欄に置く。持つ状態の無い群は欄を持たない。
 //   - 骨組みが持つのは、複数の群が読む状態だけ: previousSentence (行のループの途中で消える。short_mochiron が読む) と kikuLines (比喩の「効く」の窓。G8 が読む)・
 //     指標 (metrics・listGateChars・proseChars)・引用を伏せた文 (rule9)・段落の文の記録 (sentences)・findings (これまでの候補。後から足す群が重なりを見るために読む)。
 //   - 候補は s.add で findings の末尾に足す。足す順が出力の順 (JSON の findings の順) なので、本家の順のまま呼ぶ。
@@ -35,29 +34,12 @@ type lintState struct {
 	previousSentence string
 	kikuLines        []string
 
-	// trace は行のループが群の口を呼ぶ直前に、口の名前と行を受け取る (テストだけが使う。群が空の間も、行のループの分岐と順を検査するため)。
+	// trace は行のループが群の口を呼ぶ直前に、口の名前と行を受け取る (テストだけが使う。行のループの分岐と順を検査するため)。
 	trace func(step string, r *rowCtx)
 
-	g01 g01State
-	g02 g02State
-	g03 g03State
-	g04 g04State
-	g05 g05State
-	g06 g06State
-	g07 g07State
-	g08 g08State
-	g09 g09State
-	g10 g10State
 	g11 g11State
 	g12 g12State
 	g13 g13State
-	g14 g14State
-	g15 g15State
-	g16 g16State
-	g17 g17State
-	g18 g18State
-	g19 g19State
-	g20 g20State
 }
 
 func (s *lintState) add(f finding) { s.findings = append(s.findings, f) }
@@ -66,11 +48,6 @@ func (s *lintState) step(name string, r *rowCtx) {
 	if s.trace != nil {
 		s.trace(name, r)
 	}
-}
-
-// groupStates は群ごとの状態の欄 (G1〜G20 の順)。群が自分の欄を書き足しても、別の群の欄と重ならないこと (欄は群ごとに別の型の別の欄) をテストが見る。
-func (s *lintState) groupStates() [20]any {
-	return [20]any{&s.g01, &s.g02, &s.g03, &s.g04, &s.g05, &s.g06, &s.g07, &s.g08, &s.g09, &s.g10, &s.g11, &s.g12, &s.g13, &s.g14, &s.g15, &s.g16, &s.g17, &s.g18, &s.g19, &s.g20}
 }
 
 // rowCtx は行のループの 1 行分 (本家の行のループの局所の変数)。lineSentences は、表と見出しの行を過ぎてから作る。
@@ -113,7 +90,6 @@ func detectTraced(text string, c lintContext, trace func(string, *rowCtx)) (*lin
 		return nil, err
 	}
 	s.sentences = s.doc.plainSentenceRecords()
-	s.g08Prepare()
 	s.dashPossible = strings.ContainsAny(text, "—―─━")
 
 	s.g01Document()

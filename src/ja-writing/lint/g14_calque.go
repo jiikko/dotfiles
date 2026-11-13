@@ -15,9 +15,6 @@ import (
 // 元の文字に手掛かりが無い行は見ない形をそのまま写す)。calque の型 1〜5 は 1 文ずつ当て、1 行に 1 件で当たった言い方を並べる。
 // G8 の metaphor_verb がある行は calque を出さず、translated_term がある行は型 3 を出さない (s.findings を読む)。
 
-// g14State は G14 が文書の中で持つ状態。行ごとに決まるので、持つものは無い。
-type g14State struct{}
-
 // calqueMessage は calque の message (本家の _calque_message(types, word_types))。post.go の withWords が、allow.txt で一部の語を外した候補の message を作り直すときにも呼ぶ。
 func calqueMessage(numbers []int, wordTypes []wordType) string {
 	var hit []string
