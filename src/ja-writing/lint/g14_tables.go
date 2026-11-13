@@ -29,7 +29,7 @@ type calqueTerm struct {
 	pattern, before, context *lazyPattern
 }
 
-var calqueSubjectWord = newLazyFrom(func() string { return "(?<![A-Za-z])(?:" + calqueSubjectAlternation() + ")" }, 0)
+var calqueSubjectWord = calqueSubjectPattern("")
 
 var calquePersonSubject = newLazy(`(?:`+calquePersonEnd[3:len(calquePersonEnd)-1]+`|私|僕|わたし|ぼく|我々|皆さん|みなさん|お客様|彼|彼女|あなた)(?:は|が|も|こそ)`, 0)
 
@@ -57,9 +57,7 @@ var calqueMouthReal = newLazy(`(?:人|彼|彼女|私|僕|子|犬|猫|魚|鳥|瓶
 
 var calqueMouthIdiom = newLazy(`口(?:に合|が(?:堅|固|軽|悪|うま|上手|重|滑|すべ|裂)|を(?:出|挟|はさ|開|ひら|閉|とざ|揃|そろ|つぐ|きく|利|割))`, 0)
 
-var calqueTech = newLazyFrom(func() string {
-	return "(?<![A-Za-z])(?:" + calqueSubjectAlternation() + `|データ|URL|リクエスト|レスポンス|接続|通信|トラフィック|ログイン|認証|ポータル|ページ|画面|サイト|フォーム|アドレス|ポート|エンドポイント|ネットワーク|テーブル|ファイル|ログ|エラー|通知|CSV|JSON|HTTP|送信|受信|集計|決済|リポジトリ|コード|メソッド|クラス|インターフェース|SDK|トークン|パケット|イベント|メッセージ|ドライブ|チャンネル)`
-}, 0)
+var calqueTech = calqueSubjectPattern(`|データ|URL|リクエスト|レスポンス|接続|通信|トラフィック|ログイン|認証|ポータル|ページ|画面|サイト|フォーム|アドレス|ポート|エンドポイント|ネットワーク|テーブル|ファイル|ログ|エラー|通知|CSV|JSON|HTTP|送信|受信|集計|決済|リポジトリ|コード|メソッド|クラス|インターフェース|SDK|トークン|パケット|イベント|メッセージ|ドライブ|チャンネル`)
 
 var calqueEntryFlow = newLazy(`(?:の前|を通|に通|へ通|に集め|へ集め|にまとめ|へまとめ|に届|へ届|で受け|を経由|から入)`, 0)
 
@@ -312,4 +310,9 @@ func calqueSubjectAlternation() string {
 	}
 	slices.SortStableFunc(escaped, byLengthDesc)
 	return strings.Join(escaped, "|")
+}
+
+// calqueSubjectPattern は、機械やシステムの語 (calqueSubjects) の選択肢に tail を続けた正規表現 (本家の _CALQUE_SUBJECT_WORD・_CALQUE_TECH)。
+func calqueSubjectPattern(tail string) *lazyPattern {
+	return newLazyFrom(func() string { return "(?<![A-Za-z])(?:" + calqueSubjectAlternation() + tail + ")" }, 0)
 }
