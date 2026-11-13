@@ -227,3 +227,8 @@
 - 2026-11-13 G8〜G12 の表 (`gNN_tables.go`) を、本家の定数の記録 (`lint-base.json` の constants の case) と比べるようにした。`oracle.LintBaseConstants` に表と正規表現の 35 名を足し (SLOP_WORDS・SLOP_WORD_PATTERNS・METAPHOR_VERB_PATTERNS・TRANSLATED_TERM_PATTERNS・FILLER_PATTERNS・FILLER_NOTES・INFO_SENTENCE_PATTERNS・`_PATTERN_LITERAL_HINTS`・`_KIKU_RE`・各正規表現ほか)、driver (`call_function.py`) は `_LazyPattern` を `{flags, pattern}` にする。
   Go 側は `lint/tables_oracle_test.go` の `tableConstantValue` が値を作り、`TestLintBaseMatchesPythonRecording` が digest を比べる。`-only lint-base` で作り直して、constants 以外の 455 case と header は変わらなかった (emoji の表も同じ)。
   表の 1 項目を書き換える 14 本 (語の表・語の形のパターン・比喩動詞・直訳・「効く」の表・message の末尾・必要な語・フィラー・注記・info・「過言ではない」・G10・G11・G12) が `TestLintBaseMatchesPythonRecording` で red。生成の道具は要らなくなった。
+- 2026-11-13 G15 (`renyo_noun`) を入れた (`g15_renyo.go`)。一覧は埋め込んだ `lists/data/renyo-nouns.txt` (本家の内蔵の一覧と同じ中身を実測で確かめた) を読み、正規表現を組む。検出の生の並びの記録と比べた候補は 1,008 件 (本家と同じ)。`renyoMessage` を実装し、lint-post の `allow-partial|` の比べが 1 件始まった (比べない件数 8 → 7)。
+  - 文書全体に「の[*_]*語」を元の文字に当てて始まりの行だけを調べる絞り込みは、そのまま写した。
+  - 入力を 1 つ足した (`g15-renyo-forms`: 引用・リスト・表・見出し・外す後ろの字 (育て・足し・試し)・語のあとの助詞・太字とカギ括弧・語の重なり)。記録は 2,920 → 2,928 件で既存の行は変わらない。
+  - 本家の表の比べ: `lint-base.json` に定数 `_RENYO_BEFORE`・`_RENYO_AFTER`・`_RENYO_MESSAGE`・`_V220_MESSAGE_TAIL` と、関数 `_v220_load_list("renyo-nouns")` (項目と出どころ。表の case `tables/functions`) を足した。`_renyo_pattern` の組んだ正規表現は、同じ長さの語の並びが `PYTHONHASHSEED` で変わり記録が決まらない (2 回作った記録が違った) ので比べず、Go は (長さの降順, 字の順) で並べる。
+  - わざと壊した 7 本 (外す後ろの字・見出しと表・語の重なりの除去・「の」の前の字・語のあとの助詞・先読みの「も」・message) と、表の比べで red の 3 本 (後ろの助詞・message・「の」) が red。等価と判断した 3 本: 引用の行を除く条件 (引用の行は見える文字が空)・語を長い順に並べる (先読みが後戻りで選ぶ)・元の文字での絞り込み (見える文字で「の」と語が隣り合うなら、元の文字でも `*` `_` を挟んで隣り合う)。

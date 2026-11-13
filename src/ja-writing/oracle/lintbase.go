@@ -30,6 +30,7 @@ var LintBaseFunctions = []string{
 	"_merged_ranges", "_bracket_opens_sentence", "_strip_end_decoration", "_decoration_breaks", "_with_undecorated", "_end_quote_closers", "_end_closers_for",
 	"_mask_quoted_segments", "_mask_quoted_segments_sparse", "_question_content_end", "_last_context_sentence", "_ends_with_question",
 	"_prose_visible_text", "_image_only_row", "_plain_sentence_records", "_rule9_context", "_v220_scan_text",
+	"_v220_load_list",
 }
 
 // LintBaseConstants は記録する定数 (Get で読む)。表のもの (_EMOJI_*) は GenerateLintEmojiTables が Go の表にする。
@@ -46,6 +47,7 @@ var LintBaseConstants = []string{
 	"_FRAGMENT_RUN", "_SHORT_MOCHIRON", "_MOCHIRON_ANSWER", "_QUOTED_SEGMENT", "_CLEFT_LIST_COMMA", "_CLEFT_LIST_MIXED", "_CLEFT_LIST_JOINER", "_CLEFT_LIST_COMMA_MARK",
 	"_CLEFT_LIST_MASKED_RUN", "_CLEFT_LIST_SPACE", "_CLEFT_LIST_STEM",
 	"_NEGATION_EXTRA", "_NEGATION_JANAI", "_NEGATION_ALSO", "_BOLD_LABEL_ITEM",
+	"_V220_MESSAGE_TAIL", "_RENYO_BEFORE", "_RENYO_AFTER", "_RENYO_MESSAGE",
 }
 
 // RecordLintBase は本家の関数に cases を通して記録にする (RecordVisibility と同じ仕組み)。

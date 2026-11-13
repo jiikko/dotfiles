@@ -306,6 +306,7 @@ func LintBaseCases(c Corpus) ([]VisCase, error) {
 	cases := lintConstantCases()
 	cases = append(cases, lintEmojiCases()...)
 	cases = append(cases, lintStringCases()...)
+	cases = append(cases, lintTableFunctionCases()...)
 	for _, f := range c.Files {
 		raw, err := os.ReadFile(filepath.Join(c.Root, filepath.FromSlash(f.Path)))
 		if err != nil {
@@ -326,4 +327,10 @@ func LintBaseCases(c Corpus) ([]VisCase, error) {
 		scopeRefs(&cases[i])
 	}
 	return cases, nil
+}
+
+// lintTableFunctionCases は一覧や表から組んだ値を返す関数の呼び出し (_v220_load_list は項目と出どころ。正規表現は同じ長さの語の並びが PYTHONHASHSEED で変わるので記録しない) (G15 以降の表。定数と同じく、Go の表が本家の値と同じかを比べる)。
+func lintTableFunctionCases() []VisCase {
+	rec := recorder{true}
+	return []VisCase{{Name: "tables/functions", Calls: []Call{rec.call("_v220_load_list", "renyo-nouns")}}}
 }

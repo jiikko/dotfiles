@@ -89,7 +89,7 @@ var implementedRules = map[string]bool{
 	"katakana_term":   false,
 	"thin_evaluation": false,
 
-	"renyo_noun": false,
+	"renyo_noun": true,
 
 	"ai_phrase": false,
 

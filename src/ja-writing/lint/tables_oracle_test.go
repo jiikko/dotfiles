@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"ja-writing/internal/pyjson"
+	"ja-writing/lists"
 	"ja-writing/oracle"
 )
 
@@ -113,6 +114,14 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		return mapList(infoSentencePatterns, func(p infoRow) pyjson.Value { return list(p.re.pattern(), p.rule, p.message) }), true
 	case "_OVERSTATEMENT_PATTERN":
 		return overstatementPattern, true
+	case "_V220_MESSAGE_TAIL":
+		return v220MessageTail, true
+	case "_RENYO_BEFORE":
+		return renyoBefore, true
+	case "_RENYO_AFTER":
+		return renyoAfter, true
+	case "_RENYO_MESSAGE":
+		return renyoMessageHead + "{}）" + v220MessageTail, true
 	}
 	return nil, false
 }
@@ -124,4 +133,17 @@ func TestLintTablesCoverRecordedConstants(t *testing.T) {
 			t.Errorf("定数 %s を Go に持っていない", name)
 		}
 	}
+}
+
+// tableFunctionValue は oracle.lintTableFunctionCases の呼び出しの値。
+func tableFunctionValue(name string) (pyjson.Value, bool) {
+	switch name {
+	case "_v220_load_list":
+		data, err := lists.Read("renyo-nouns.txt")
+		if err != nil {
+			panic(err)
+		}
+		return list(stringList(parseList(string(data))), "references/lists/renyo-nouns.txt"), true
+	}
+	return nil, false
 }

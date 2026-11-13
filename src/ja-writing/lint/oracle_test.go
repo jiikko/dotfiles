@@ -208,6 +208,8 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		}
 		r.reg[c.Save] = newDocument(an)
 		return "quiet"
+	case "_v220_load_list":
+		result, _ = tableFunctionValue(c.Function)
 	case "_emoji_matches":
 		result = stringList(EmojiMatches(argString(t, a[0])))
 	case "_emoji_character_class":
