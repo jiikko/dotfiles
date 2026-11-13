@@ -290,14 +290,15 @@ func diffToneCases(pairs [][3]string) []VisCase {
 		}
 	}
 	cases = append(cases, VisCase{Name: "tone/excerpt", Calls: excerpts})
-	// 壊した形で緑のまま通った所を、直接の呼び出しで通す (_tone_excerpt の印の選び方・推敲後の位置・文の終わりのあとの空白だけの部分と、絵文字を重ねた見出しの字数)
+	// 壊した形で緑のまま通った所を、直接の呼び出しで通す (_tone_excerpt の印の選び方・推敲後の位置・文の終わりのあとの空白だけの部分と、絵文字を重ねた見出しの字数。
+	// 絵文字の字数は、異体字セレクタの付く字と付かない字が並ぶ「❤❤️」の形で、最初の 1 つだけ外すかすべて外すかが分かれる)
 	var found []Call
 	for _, p := range diffToneFoundExcerpts() {
 		c := dcall("_tone_excerpt", p.old, p.new, p.spans)
 		c.Keep = true
 		found = append(found, c)
 	}
-	for _, s := range []string{"👍👍🏽", "👍🏽👍", "👍👍🏽👍", "😀😀", "👍👍🏽 見出し"} {
+	for _, s := range []string{"👍👍🏽", "👍🏽👍", "👍👍🏽👍", "😀😀", "👍👍🏽 見出し", "❤❤\ufe0f", "☺☺\ufe0f", "👍👍\ufe0f", "✌✌\ufe0f 見出し"} {
 		c := dcall("_heading_chars", s)
 		c.Keep = true
 		found = append(found, c)
