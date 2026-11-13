@@ -287,3 +287,45 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 緑のまま通った壊した形のうち、`end < span.End` を `end <= span.End && end != span.End` にした形は、元と同じ式なので等価 (直さない)
 - 壊せなかったもの (敵対的レビューの報告): `_heading_structure` (shapes あり)・`_sentence_pairs` は 4,000 組の fuzz で食い違い 0、DP の max と戻り・bisect・`_blank_between`・counterpart の値の下限・並びの安定性は本家と行ごとに読み比べて差なし
 - 確かめていないこと (レビューの報告から。issue に残す): fuzz が対象の形の入力を作れておらず、等価かどうか分からない壊した形が 4 本ある (引用の中の段落の行・`#` だけの空の見出し・`**a__b**` の太字だけの行・形の変化が 2 件以上で並びが位置の順でない組)。これらは本家と違う答えを返す入力を示せていないので、防御は足さない
+
+### 4 本目 (diff-wf4。2026-11-14。worktree で作業し、push していない)
+
+- commit (群 F・G・H・I まで。AD (人が読む出力)・M 以降は着手していない):
+  - 070385cc5 feat(ja-writing): diff の文の種類の印 (群 F) を作り、本家の type_marks と _type_changes を記録と突き合わせる (issue 1076)
+  - bdd656746 feat(ja-writing): diff の 9 つのキーの組み立て (群 G) を作り、本家の _rule_candidates を記録と突き合わせる (issue 1076)
+  - 26d81ada0 feat(ja-writing): diff の許可・能力 (群 H) と選ぶ範囲・因果 (群 I) を作り、本家の _modality_changes と _logic_changes を記録と突き合わせる (issue 1076)
+  - 群 H と I は段の記録 (`modal/`。`_modality_changes` と `_logic_changes` が同じ呼び出しの組を共有する) が 1 つなので 1 つの commit にした (分けると記録を 2 回作り直し、片方の commit では記録の半分が空になる)
+  - 各 commit は単独で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した (rc 0 を commit の前に確かめた。`make test-lint` は最後の木だけで回した。下の「最終の検査」)
+- 群 F (`diff/types.go` `diff/types_ranges.go`): `type_marks`・`_type_changes` と、`_type_ranges`・`_pair_gone_sentences`・`_widen_to_sentences`・`_slide_to_sentence_edges`。`_LAST_TYPE_RANGES` のグローバルは `typeCache` (`typeShared` を 1 件持つ) にして引数で渡す
+  (`TypeChanges` が置き、`ModalityChanges`・`LogicChanges` が `cache.shared` で使い回す。印がどちらにも無く範囲を作らなかった場合は `haveRanges` が偽で、`shared` が後から作る)。`id()` で見ていた groups と moved の同一性はポインタ (`*rangeItem`) にした。
+  `TYPE_MARKERS` の長い正規表現の前置きの検査 (`literals`) は写した。本家が `_pair_gone_sentences` の入力で使う `opcodes` は使わない引数なので写していない
+- 群 G (`diff/rules.go`): `RuleCandidatesOf` (本家の `_rule_candidates`)。`MARKERS` 11 本・`CONTENT` と、`context` (`pyContext`)。立場 4 通り (指定なし・勧め・決まり・説明) で全件比べる
+- 群 H (`diff/modality.go`)・I (`diff/logic.go`): `ModalityChanges`・`LogicChanges`。`_LOGIC_LITERALS` と問いの「か」の判定・`AもBも` の最初の項の広げ方 (`choiceItemStart`)・範囲のすぐあとに足した文 (`logicTails`) も写した
+- 記録の口: driver に `method` (関数かクラスを呼んだ戻り値のメソッドを引数なしで呼んで覚える。`_ExactSequenceMatcher(None, o, r, autojunk=False).get_opcodes()` の結果を `_type_changes` へ渡す) を足した (`oracle/py/call_function.py`・`Call.Method`)。足さなければ前と一字も同じ出力。
+  段の記録は `normalize` を `Save` して `{"$ref"}` で渡す形 (群 K・L の `_build_full_diff` の口とは別。`Quiet` の呼び出しは結果の digest が 8 つの 0)。定数 (正規表現の文字列・語の並び・種類ごとの必ず含まれる文字列) は `Get` で記録して Go の表と比べる (lint の前例)
+- 記録: `diff-base.json` は 1,960 → 16,434 case・71,661 → 136,591 呼び出し (7.3MB)。足したのは 定数 (群 F 10 本・G 3 本・H と I 14 本)・`type_marks` 18,071・`_type_changes` 3,240・`_rule_candidates` 4,588・`_modality_changes` と `_logic_changes` 各 7,321。
+  組は群 K・L までと同じ入れ物 (入力の集まりと手で作った入力の全組・全文差分の手書きの組・見出しと文の手書きの組) に、各群専用の手書きの組と固定の種の組 (PCG 1076/7・8・9・10。群 F は印の選択肢ごとに当たる文と当たらない文 185 文、範囲づくりの枝を狙う手書きの組 60 組余り、印を混ぜた固定の種の組 400、書き出しを共有する文の言い換え 1,500 組) を足した。
+  既存の case は消えず、既存の case の digest も kept も変わらない (記録の作り直しの前後を python で照合し、missing 0・changed 0。足した case を直すたびに作り直した)。`diff-cli.json` は変えていない
+  - 手で書いた組の出力が空でないこと (空振りを止める検査の代わりの確認。作り直した記録を数えた): `_type_changes` の変化 491 組・`_rule_candidates` の markers・new_words・lost_words・structure・spans・logic・bold・endings の 3 欄・type_changes がどれも 1 組以上・`_modality_changes` の subkind 3 つと `_logic_changes` の subkind 3 つがどれも 30 組以上 (one_to_all 384・all_to_one 376・relation_to_cause 619・permission_lost 132・permission_added 109・ability_lost 39)
+- わざと壊して red を確かめた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf4/mutlog-f・mutlog-f2・mutlog-g・mutlog-g2・mutlog-h・mutlog-h2・mutlog-h3):
+  群 F 78 本のうち 38 本が `TestBaseMatchesPythonRecording` で red・40 本が緑のまま。群 G 23 本のうち 21 本が red・2 本が緑のまま (どちらも等価。下)。群 H・I 44 本のうち 23 本が red・21 本が緑のまま
+  - 最初に当てた群 F の run は、list の JSON のパスが相対で、壊した形が 1 本も当たっていなかった (rc 2 の「使い方の誤り」のまま全 78 本が通り、壊した形を当てる手前で止まっていた)。絶対パスにして当て直した。結果の表の rc を読んでから結論を書く
+  - 手書きの組と固定の種の組だけでは緑が多かった (最初の run で 49 本が緑か構文エラー)。書き出しを共有する文の言い換えの組 1,500 を足して 10 本が red になった。群 H・I の `AもBも` の最初の項の長い連なり・足した文の組を足して 2 本が red になった
+  - 群 F で red にした主なもの: 残った文の下限 (`max(3, ceil(body/4))` の 3 と 4 分の 1)・6 割の下限 (`>=` と 2 割)・置き換えの数え方の割合と上限・Dice の上限 0.5 と 0.7・字面で組にする共通の組の下限 (4 組・半分・外の組)・消えた文の組み合わせの順・範囲の重なりの `<` と `<=`・丸ごと移した文の同じ文の取り方・書き出しの重なり・文の境目へずらす (引き分けの向き以外)・句点の直後の挿入・最初の同じ文を残す・文を分ける規則 (コード・表)・例えの対の止める位置・印の重複の除き方。群 G で red にしたもの: 数の増減・語の部分文字列・並び・構造の 3 つ・足した部分の前後 3 字・context の幅・立場の取り違え・太字の frontmatter。群 H・I で red にしたもの: 許可と能力の取り違え・打ち消しの能力・依頼との重なりの判定・種類の名前・問いの「か」の窓と右の判定・`すべての条件` の昇格・`CかD` の言い換えの除外・因果の足した文・広い因果
+- 等価と判断して直さない (緑のまま): 群 G の `o != r` のときだけ足した部分を作る判定 (`o == r` は insert も replace も無い)・`notInO` の覚え (速さだけ)。群 H・I の `o == r` で早く返す判定 (範囲は変化の無い組を出さない。本家の早い戻りと同じ結果になるが、実測で等価と示してはいない)
+- 緑のまま通った壊した形のうち、**等価かどうか分かっていないもの** (直さず記録。再提起するなら、その向きだけを変えた変更体で、本家と違う答えを返す入力の実測が要る):
+  - 群 F (40 本): `f-owns-whole0` (書き直した文の中身が句読点だけの文で 6 割の判定が動く組を足したが緑のまま)・`f-dice-lt-le`・`f-least-5`・`f-least-7`・`f-shared-lt`・`f-owner-b1`・`f-owner-shrink-end-b1`・`f-owner-shrink-start`・`f-slide-right`・`f-slide-left`・`f-slide-tie`・`f-mapstart-prev-i1`・`f-mapend-bare-off`・`f-whole-delete`・`f-group-merge-max`・`f-found-overlap-lt`・`f-found-overlap2`・`f-found-len-ge`・`f-found-trim-off`・`f-trim-chars-comma`・`f-empty-body-skip`・`f-overlap-reach`・`f-overlap-end`・`f-widen-rends`・`f-widen-rstarts`・`f-widen-ordered-off`・`f-widen-skip-self`・`f-widen-fallback-le`・`f-pair-after-off`・`f-pair-before-off`・`f-pair-after-blank`・`f-pair-sort-off`・`f-notinstops-empty`・`f-spans-code`・`f-spans-strip`・`f-cand-order-gi`・`f-cand-order-ix`・`f-simile-paired-off`・`f-simile-start-len`・`f-simile-stable`。
+    ほとんどは範囲を広げる・文の境目へずらす・消えた文を字面で組にする所の境目 (ちょうど `<` と `<=` の境にあたる入力が必要) で、1,500 組の言い換えと手書きの組のどれも当たっていない。本家と違う答えを返す入力を示せていないので、防御は足さない。本家の値と同じことは、全記録 (`type/` 31,041 呼び出し) で確かめている
+  - 群 H・I (21 本): `h-name-break`・`h-sort-stable`・`h-eq-guard`・`l-ka-left`・`l-head-no-start`・`l-head-okuri-eq`・`l-head-zero`・`l-head-tomo`・`l-head-lt`・`l-tails-two`・`l-tails-owned-ge`・`l-one-all-any`・`l-one-all-fallback`・`l-all-one-before`・`l-all-one-r`・`l-any-change`・`l-tails-cond`・`l-unique-old`・`l-sort-stable`・`l-eq-guard`・`l-tails-newline`。
+    `l-head-tomo` と `l-head-zero` は、入力で届かない (「とも」の前は「はがも」の後読みで名詞の字でない・位置 0 は後読みで当たらない) ので等価の見込みだが、示してはいない
+- 本家と揃わなかった所: 無い (群 F〜I の全記録が一致)。最初の記録で一致し、直した所も無い
+- 確かめていないこと:
+  - 上の緑のままの壊した形 (群 F 40 本・群 H・I 21 本) の入力が本家と違う答えを返すか
+  - 群 F〜I の所要 (数十万字・同じ段落を繰り返す文書の `typeRanges`・`pairGoneSentences`・`logicTails`) は測っていない。本家の `_overlapping`・`_widen_to_sentences`・`passed_by_grams` の覚えは写した (結果が同じなので、記録では遅さが見えない)
+  - `diff()` の全体の流れ (群 AC) で `typeCache` を使い回すとき、`_LAST_TYPE_RANGES` を使い終えたら空に戻す所 (本家の `diff()` と `meaning_risks()`) は、群 AC が入るまで未確認。`TypeChanges` が cache に置き、`shared` が使い回す形だけを記録で見ている (`ModalityChanges`・`LogicChanges` は cache を空で渡す形で比べた)
+  - 単独のサロゲートを含む文書は、群 F〜I の記録に入れていない
+- 最終の検査: 下の「最終の検査 (4 本目)」
+
+#### 最終の検査 (4 本目)
+
+最後の編集 (docs の commit の直前の木。コードは 26d81ada0 と同じ) で `make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf4/fin-*.log)。
