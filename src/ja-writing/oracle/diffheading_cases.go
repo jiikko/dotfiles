@@ -11,7 +11,7 @@ import (
 
 // diffHeadingStageCalls は組 1 つを、本家の _build_full_diff (覚える) と _heading_structure の 2 通りの呼び方 (shapes あり・なし) に通す呼び出し。
 func diffHeadingStageCalls(old, new string) []Call {
-	ref := func(path ...any) map[string]any { return map[string]any{"$ref": "full", "path": path} }
+	ref := diffFullRef
 	build := dcall("_build_full_diff", old, new, nil)
 	build.Save, build.Quiet = "full", true
 	withShapes := dcall("_heading_structure", ref(1), ref(0, "hunks"), []any{})
@@ -30,6 +30,9 @@ func diffHeadingStageCalls(old, new string) []Call {
 
 // diffDoc は行を改行でつないだ文書 (末尾に改行を付ける)。
 func diffDoc(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
+
+// diffFullRef は _build_full_diff の戻り値 (覚えた名前 "full") の一部を渡す印 (path は tuple の添字・dict の鍵)。
+func diffFullRef(path ...any) map[string]any { return map[string]any{"$ref": "full", "path": path} }
 
 // diffRef は覚えた値 (Save) を引数に渡す印。
 func diffRef(name string) map[string]any { return map[string]any{"$ref": name} }

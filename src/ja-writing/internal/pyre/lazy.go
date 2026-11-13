@@ -52,6 +52,15 @@ func (l *Lazy) MustMatchAt0(text string) bool {
 	return m != nil
 }
 
+// MustFullMatch は p.fullmatch(text) が当たるか。
+func (l *Lazy) MustFullMatch(text string) bool {
+	m, err := l.Get().FullMatch(NewText(text), 0, NoEnd)
+	if err != nil {
+		panic(err)
+	}
+	return m != nil
+}
+
 // MustFindall は p.findall(text)。
 func (l *Lazy) MustFindall(text string) [][]string {
 	found, err := l.Get().Findall(NewText(text), 0, NoEnd)

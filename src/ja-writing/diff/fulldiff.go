@@ -59,11 +59,16 @@ type sides struct {
 	lines    [2][]string
 	starts   [2][]int // 各行の文書の中の位置 (コードポイント)
 	analyses [2]*visibility.Analysis
+	texts    [2][]rune // 元の文字列 (コードポイント)
+	numbers  [2]*sideNumbers
+	allKeys  [2]*keySet
+	docTexts [2]pyre.Text
+	docReady [2]bool
 }
 
 // newSides は本家の _Sides。解析は行の分け方を "\n" だけにそろえてかける ("\r" は同じ長さの空白に置き換える。行番号と位置が全文差分の行と 1 対 1 に対応する)。
 func newSides(orig, rw string) (*sides, error) {
-	s := &sides{lines: [2][]string{splitLines(orig), splitLines(rw)}}
+	s := &sides{lines: [2][]string{splitLines(orig), splitLines(rw)}, texts: [2][]rune{pyunicode.Runes(orig), pyunicode.Runes(rw)}}
 	for side := range s.lines {
 		position := 0
 		for _, line := range s.lines[side] {
