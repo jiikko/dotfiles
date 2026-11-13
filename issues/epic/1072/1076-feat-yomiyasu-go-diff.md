@@ -124,4 +124,26 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 ## 進捗
 
-- (未着手)
+- 2026-11-13 (diff-wf1。worktree で作業し、commit は push していない)
+  - commit (本家の群 A・B・C・E まで。issue 1076 の「群と順」の ① が済み、`--endings` の CLI が端から端まで通る):
+    - 287d90533 docs(issues): 1076 に群の表・Python 特有のずれの要点・commit の順を移す
+    - 8671c3566 docs(ja-writing): diff の 7 つの決めること (words.path・-h・rc 3・strerror・list・lower・コマンド名) を lint の前例に揃えて書く
+    - 9eef1dbe9 refactor(ja-writing): lint の遅延 compile と argparse・出力先・入力の読みを internal に出し、diff と共有できる形にする
+    - e9b3bc9a1 refactor(ja-writing): CLI の記録の作業フォルダと関数の記録の突き合わせの道具を oracle に出し、共有できる部品を 1 つにする
+    - 79f086a58 test(ja-writing): diff の入力 (手で作った 117 組) と、本家の CLI と関数の記録 (diff-cli・diff-base) を作る
+    - 20d25d6f2 feat(ja-writing): diff の CLI の骨組みと --endings (群 A・B・C・E) を作り、CLI の記録 2,376 件と関数の記録 65,925 件を本家と同じにする
+    - (9eef1dbe9 は単独では `make lint` の unused と `test-go-packages-index` が赤い。次の e9b3bc9a1 が直す)
+  - 記録: `diff-cli.json` 7,942 件 (うち比べた 2,376 件: 引数の誤り・`-h`・`--version`・`--endings` の全部。本家が検査の本体まで進む 5,566 件は「比べていない」とログに出す。`bodyImplemented` を真にすると、比べていない件数が 0 でなければ落ちる)。
+    `diff-base.json` 787 case・65,925 呼び出しを全件比べた (群 B・C・E の関数と、diff 側の `bold_problems`)。手で作った入力は `testdata/diff/` に 117 組 (corpus に足すと全部の記録が作り直しになるので別の置き場)
+  - 検出の種類 71 種 (`oracle.DiffDetectionKinds`) の全部に、出る入力と出ない入力が記録にある (`TestDiffRecordingHasHitAndMissForEveryKind`)。当たる組を作れなかった種類は無い。ただし M〜X の細かい分岐 (各 subkind の全部) は、段の記録を作るときにそれぞれの群で足す
+  - わざと壊して red を確かめた (`bin/mutate-verify`、全部 rc 0 = 想定のテストが落ちた): A 2 本 (引数の数の条件・`--fail-on` の文)・B 1 本 (`Normalize` の見出しの除去)・C 3 本 (可能の語尾の判定・`stance_flags` の「最後の行そのもの」の同一性・似かたの下限)・E 1 本 (`--endings` の太字の節)
+  - 検査 (最後の編集の後の木): `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` (rc は下の「最終の検査」)
+  - 本家と揃わなかった所: 無い (`--endings` と引数の誤りの全記録が一致)。揃えると決めた 7 点は「決めたこと」の節
+  - 確かめていないこと:
+    - rc 3 の経路 (内部エラー・読む側が閉じたパイプの rc 3 と 120) は diff の記録に無い。lint の `pycli.Finish` と共有で、lint の記録で確かめた形を使っているだけ
+    - `context.words.path` (`--words 相対` の形) は、diff の本体が入るまで比べられない (記録は取ってあり、`<<ROOT>>` に置き換えている)
+    - `count` と `context` と `_bold_short`: `count` は本家のどこからも呼ばれず写さない。`context` は群 G (`_rule_candidates` の spans) で使うので、そのとき足す。`_bold_short` は `internal/bold` が持つ
+    - 群 E の `bold_problems` は、diff 側の関数を直接 Go に写していない (`internal/bold` を呼ぶ)。本家の diff 側と lint 側が全入力で同じ答えなのは `bold.json` と `diff-base.json` の両方が見る
+  - 残り (この係では手を付けていない): 群 J・K・L (全文差分・見出しの構造・文の組と本文)・AD (人が読む出力)・以降の ④〜⑧。量が多く、半端な群を commit しないため、ここで止めた。次の係は ② J → K → L (`full_diff` の関数の記録を `oracle/diffbase.go` に足す)、③ AD (本家の `--json` を入力にして `report` と突き合わせる) から始める。
+    その前に、`diffHeavy` の入力 (`full-budget` など) と `testdata/diff` の hunk の入力 (`full-*`) が J の記録として足りるかを見る
+  - 最終の検査 (commit 20d25d6f2 の木。rc は全部 0): `make -C src/ja-writing lint test` (lint 0 issues・`go test -race ./...` 全部 ok)・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` (新しい重複なし)
