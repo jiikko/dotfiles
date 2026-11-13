@@ -184,7 +184,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - 146fe40e3 feat(ja-writing): diff の全文差分 (群 J) を作り、検査の本体へ渡す値を本家と突き合わせる
 - 群 J: `diff/fulldiff.go` (本家の `_align` `_fill_gap` `_pair_similar` `_char_segments` `_plan_segments` `_make_hunk` `_mark_moved` `_encoding_notes` と `full_diff`)。`_Sides` は行と解析だけ持つ。
   `_analyze` の bare_url の範囲を縮める処理 (`_URL_CHARS`) は全文差分が読まない (`protected_spans` を使うのは群 M 以降) ので写していない。群 M の係が足す
-- 記録: 関数の記録に `full_diff` を足した。`diff-base.json` は 8xx case・全呼び出しを比べて通る (`full_diff` 約 480 呼び出し: 入力の集まりと手で作った入力の全組・手書きの組 54 本・狙いを定めた組 5 本・固定の種 (PCG 1076/4) の行の組 140 と繰り返しの多い組 60 と文の組 40)。
+- 記録: 関数の記録に `full_diff` を足した。`diff-base.json` は 8xx case・全呼び出しを比べて通る (`full_diff` は 485 呼び出し。2 本目の敵対的レビューの後に 496: 入力の集まりと手で作った入力の全組・手書きの組 50 本・狙いを定めた組 5 本・固定の種 (PCG 1076/4) の行の組 140 と繰り返しの多い組 60 と文の組 40)。
   `diff-cli.json` は 8,002 件 (新しい入力 `actor-material-order` の分が 54 件増え、既存の行の中身の変更は 0。`req` の欄が本体まで進む 5,6xx 件に付いた)
 - 本体へ渡す値 (1 本目の敵対的レビュー P2-6 への手当て): `run` を `prepare` (本体を呼ぶ前まで。request を返す) と `compare` に分けた。本家の `_run` が `diff()` に渡す引数 (原文・書き直した文・立場・注記・種類・読者・語の一覧の context・資料) を、
   記録の driver (`oracle/py/record_diff_cli.py`) が `diff` を差し込んで控え、正規の JSON の SHA-256 を `req` に記録する。`TestRequestMatchesPythonRecording` が Go の `prepare` の戻り値と全件突き合わせ、本体まで進む記録と Go が 1 件ずつ一致すること・全部の欄 (立場・種類・読者・語の一覧・資料・注記) に値の入った記録があることも見る。
@@ -202,3 +202,30 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   (`call_function.py` の `save` で `_Sides(orig, rw)` を覚え、`_build_full_diff` の hunks を引数に渡す口を足す設計。K の `_heading_order_pairs` は (件数, 似かたの和) の組の max と、組の等しさの比べ (`best[a][b] == best[a-1][b]`) が float のまま要る)
 
 受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は A B C E J が済み・「`make test-dupscan-gate`」は今の木で通る。
+
+### 2 本目の敵対的レビュー (opus。diff-wf2 の f6614b8d3..6ca4e6615)
+
+全文は tmp に出したレポート (消える) なので、結論と扱いをここに移した。本家と違う答えを返す入力は見つからなかった。主張の誤り 2 件と、記録が分かれ目に当たっていない 8 か所が指摘で、全部直した。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P1-1 README の件数と表が群 J の前のまま | 直した (84cf4fcf5) | README の件数を今の数 (CLI 8,002 件・比べた 2,390 件・関数 1,098 case・66,489 呼び出し) に直し、`full_diff` と `TestRequestMatchesPythonRecording` を表に足した |
+| P1-2 「手書きの組 54 本」は 50 本 | 直した | 実物は `diffFullCases` の手書き 50 本 + `diffFullTargeted` 5 本 + 固定の種 240 で、記録の `full/` の 295 case と合う。この issue の 2 本目の節を 50 本に直した |
+| P2-1 `isBlank` を `strings.TrimSpace` にしても緑 | 直した (7a3f6493c) | U+001C だけの行が両側にある組 `anchor-python-space-only` を足した |
+| P2-2 近さの窓の比べ `<` → `<=` | 直した | 窓の境目の組 `gap-window-eight` を足した。fuzz の hit を 1 行ずつ縮めた入力で、空行を挟んだ形 (読みやすく作り直せていない) |
+| P2-3 間の積の上限 400 → 300 | 直した | 積がちょうど 400 の組 `gap-product-400` (20×20) と 320 の組 `gap-product-320` (20×16) を足した。ちょうど 400 は 399 の変更も落とす |
+| P2-4 見出しの段の注記を 1 行の hunk に限らない | 直した | 2 行の見出しの hunk `heading-level-two-lines` を足した |
+| P2-5 塊の上限 `<=` → `<` | 直した | 片側が 500 字ちょうどの塊 `block-500` (99 字 + 句点の文 5 つを入れ替える) を足した |
+| P2-6 断片の上限 `>` → `>=` | 直した | 句点を含めて 2,000 字ちょうどの断片の組 2 本 `fragment-2000-replaced`・`fragment-2000-added` を足した。`pairSimilar` 側の `>=` も同じ組で落ちる (レビューは等価と見ていたが、ちょうど 2,000 字の組で答えが変わる) |
+| P2-7 似かたの下限 0.45 → 0.46 | 直した | 似かたが 0.4545 の組 `pair-ratio-0.4545` を足した |
+| P2-8 前後の同じ字の重なりを許す | 直した | `ああ` と `あああ` の両向き `affix-shrink`・`affix-grow` を足した |
+
+- 追加は 11 本 (`oracle/diffbase_full_cases.go` の `diffFullBoundaries`)。`diff-base.json` の既存の行は消えず、`full_diff` が 485 → 496 呼び出し (numstat は 12 追加・1 削除で、削除は集計の行)
+- 組を作った方法: レビューの fuzz の hit を本家と Go の変更体で比べながら縮め、重要でない部分を落とした。その後、読める形 (kanji の連なり・語の並び) に作り直せたものは作り直した (`gap-window-eight` だけは縮めた入力のまま)
+- わざと壊して red を確かめた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf2/mutlog/): 10 本、全部 `TestBaseMatchesPythonRecording` で red。直す前は同じ変更の 10 本が緑のまま通っていた (レビューの記録による。重なりの変更体はレビューのものと書き方が違い、`charlimit-ge-pair` はレビューが等価と見たもの)。内訳: isBlank を TrimSpace・窓 `<=`・間の積の上限 300 と 399・見出しの注記の行数 `>=1`・塊の上限 `<`・断片の上限 `>=` (計画の側と組み方の側)・似かたの下限 0.46・同じ字の数え方の重なり
+- 壊せなかったところ (レビューの結果): full_diff の fuzz 15,811 件で本家との食い違い 0。大きい入力 (6 万字の 1 行・段落 900・22 万字の budget / too_large・8,500 行の並べ替え・60〜80 段の入れ子) も一致。`TestRequestMatchesPythonRecording` は空振りしていない (記録 8,002 件のうち `req` 付き 5,612 件、`diff()` はグローバル名で呼ばれ driver の差し込みが効く)。lint と共有した部品 (`WordsContext.Value`・`pyjson.Strings`・`OptionalString`) は答えを変えない
+- 等価と判断して直さない: `markMoved` の空白の行の除外を片方ずつ外す (もう片方の除外があるので等価)・枝刈りの `upper <= bestRatio` を外す (速くするための枝刈りで結果は同じ)・smallGap 399 は 400 ちょうどの組で既に落ちる。再提起するなら、片方の除外だけを外した変更体で、記録にも fuzz にも無い入力が本家と違う答えを返す実測が要る
+- 未確認リスク (直さず記録):
+  - `alignDepth` (64): 4・16・63 に下げても、記録・fuzz・60〜80 段の入れ子のどれでも答えが変わらなかった。上限で答えが変わる入力が在るのか無いのかは示せていない。再提起には、上限の手前と向こうで本家と違う答えを返す入力が要る
+  - `pairSimilar` の `same` を常に偽にする変更: 予算 (budget / too_large) の境目でだけ出力が変わる見込みで、届く入力を作っていない
+  - 全文差分の所要: fuzz の全件 (15,811 件) は 11.6 秒で処理するが、入力ごとの本家との比は測っていない (前の節と同じ未測定)
