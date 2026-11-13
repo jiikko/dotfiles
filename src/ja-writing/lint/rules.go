@@ -74,9 +74,9 @@ var implementedRules = map[string]bool{
 
 	"instruction_residue": true,
 
-	"short_mochiron":    false,
-	"fragment_run":      false,
-	"cleft_list_ending": false,
+	"short_mochiron":    true,
+	"fragment_run":      true,
+	"cleft_list_ending": true,
 
 	"negative_parallelism":         false,
 	"negative_parallelism_density": false,
