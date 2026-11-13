@@ -1,4 +1,5 @@
 // G11 の正規表現 (本家 yomiyasu_lint.py の 1561-1613・5834 の _QUOTED_SEGMENT)。組んだ後の文字列のまま写した (手で写して書き間違えないため)。
+// 本家の値と同じかは TestLintBaseMatchesPythonRecording が lint-base.json の定数と比べる (tables_oracle_test.go の tableConstantValue)。
 
 package lint
 

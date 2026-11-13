@@ -1,4 +1,5 @@
 // G9 の表 (本家 yomiyasu_lint.py の 1350-1395)。組んだ後の文字列のまま写した (手で写して書き間違えないため)。
+// 本家の値と同じかは TestLintBaseMatchesPythonRecording が lint-base.json の定数と比べる (tables_oracle_test.go の tableConstantValue)。
 
 package lint
 

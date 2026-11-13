@@ -1,4 +1,5 @@
 // G8 の表 (本家 yomiyasu_lint.py の 921-996・1188-1348・1397-1440)。組んだ後の文字列のまま写した (手で写して書き間違えないため)。出典の語は本家の変数名。
+// 本家の値と同じかは TestLintBaseMatchesPythonRecording が lint-base.json の定数と比べる (tables_oracle_test.go の tableConstantValue)。
 
 package lint
 

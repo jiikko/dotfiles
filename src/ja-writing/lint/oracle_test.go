@@ -123,7 +123,7 @@ func constantValue(name string) (pyjson.Value, bool) {
 	case "_QUESTION_SUFFIXES":
 		return stringList(questionSuffixes), true
 	}
-	return nil, false
+	return tableConstantValue(name)
 }
 
 func argString(t *testing.T, a any) string {

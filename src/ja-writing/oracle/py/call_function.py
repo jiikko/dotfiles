@@ -67,6 +67,9 @@ def unroot(value):
 def encode_default(value):
     if isinstance(value, re.Pattern):
         return {"pattern": value.pattern, "flags": value.flags}
+    # 本家の _LazyPattern (初めて使うときに組む正規表現。pattern は組まずに読め、flags を読むと組む)
+    if type(value).__name__ == "_LazyPattern":
+        return {"pattern": value.pattern, "flags": value.flags}
     raise TypeError(type(value).__name__)
 
 
