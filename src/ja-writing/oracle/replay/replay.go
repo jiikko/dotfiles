@@ -67,13 +67,7 @@ func SortKeys(v pyjson.Value) pyjson.Value {
 func List(vs ...pyjson.Value) pyjson.Value { return append([]pyjson.Value{}, vs...) }
 
 // MapList は items の各要素を f で値にした配列 (本家の [f(x) for x in items])。
-func MapList[T any](items []T, f func(T) pyjson.Value) pyjson.Value {
-	out := make([]pyjson.Value, 0, len(items))
-	for _, item := range items {
-		out = append(out, f(item))
-	}
-	return out
-}
+func MapList[T any](items []T, f func(T) pyjson.Value) pyjson.Value { return pyjson.MapList(items, f) }
 
 // Strings は文字列の配列 (本家の list[str])。
 func Strings(items []string) pyjson.Value {

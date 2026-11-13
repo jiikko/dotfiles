@@ -34,6 +34,15 @@ func Strings(items []string) Value {
 	return out
 }
 
+// MapList は items の各要素を f で値にした配列 (本家の [f(x) for x in items])。
+func MapList[T any](items []T, f func(T) Value) Value {
+	out := make([]Value, len(items))
+	for i, item := range items {
+		out[i] = f(item)
+	}
+	return out
+}
+
 // OptionalString は nil の *string を None、そうでなければ str にする。
 func OptionalString(s *string) Value {
 	if s == nil {

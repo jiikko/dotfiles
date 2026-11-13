@@ -34,13 +34,7 @@ func (s sentence) value() pyjson.Value {
 	return []pyjson.Value{s.text, int64(s.line), int64(s.start)}
 }
 
-func sentencesValue(list []sentence) pyjson.Value {
-	out := make([]pyjson.Value, len(list))
-	for i, s := range list {
-		out[i] = s.value()
-	}
-	return out
-}
+func sentencesValue(list []sentence) pyjson.Value { return pyjson.MapList(list, sentence.value) }
 
 // lineSentences は行 first から last の手前まで (0 から数える) を文に分ける。行頭の箇条書きの記号、見出しの #、引用の > を外す。
 // コード、先頭の設定、HTML の行は分けない。
@@ -247,12 +241,16 @@ type masker struct {
 	rows  []*visibility.Line
 	spans [][2]int
 	lefts []int
+	skip  map[string]bool
 }
 
-// newMasker は本家の _Masker。
-func (s *sides) newMasker(side int) *masker {
+// newMasker は本家の _Masker (数えない行の種類は本文のもの)。
+func (s *sides) newMasker(side int) *masker { return s.newMaskerWith(side, bodySkipKinds) }
+
+// newMaskerWith は数えない行の種類 (skip) を指定する _Masker (本家の skip_kinds 引数。勢いの検査は表を除くが見出しは数える、など本文と違う種類を使う)。
+func (s *sides) newMaskerWith(side int, skip map[string]bool) *masker {
 	a := s.analyses[side]
-	m := &masker{rows: a.Lines}
+	m := &masker{rows: a.Lines, skip: skip}
 	for _, span := range a.ProtectedSpans {
 		if bodyMaskKinds[span.Kind] {
 			m.spans = append(m.spans, [2]int{span.Start, span.End})
@@ -298,7 +296,7 @@ func (m *masker) mask(text string, start int) string {
 
 func (m *masker) body(sn sentence) (body, bool) {
 	index := sn.line - 1
-	if index < len(m.rows) && bodySkipKinds[m.rows[index].Kind] {
+	if index < len(m.rows) && m.skip[m.rows[index].Kind] {
 		return body{}, false
 	}
 	return body{m.mask(sn.text, sn.start), sn.text, sn.line, sn.start}, true

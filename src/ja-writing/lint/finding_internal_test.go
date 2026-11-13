@@ -55,15 +55,7 @@ func (f finding) internalValue() pyjson.Value {
 }
 
 func stringValues(ss []string) pyjson.Value {
-	return valuesOf(ss, func(s string) pyjson.Value { return s })
-}
-
-func valuesOf[T any](items []T, f func(T) pyjson.Value) pyjson.Value {
-	out := make([]pyjson.Value, len(items))
-	for i, item := range items {
-		out[i] = f(item)
-	}
-	return out
+	return pyjson.MapList(ss, func(s string) pyjson.Value { return s })
 }
 
 func sortedPatternMatches(items []patternMatch) []patternMatch {

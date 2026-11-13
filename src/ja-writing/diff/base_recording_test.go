@@ -13,7 +13,6 @@ import (
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/oracle"
-	"ja-writing/oracle/replay"
 )
 
 func TestBaseMatchesPythonRecording(t *testing.T) {
@@ -37,24 +36,8 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 		for j, call := range c.Calls {
 			calls[call.Function]++
 			var got pyjson.Value
+			var exc error
 			switch {
-			case !call.Quiet && slices.Contains(oracle.DiffListFunctions, call.Function):
-				canon, digest, raised := listDigest(t, call)
-				if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; digest != want {
-					failed++
-					if failed <= 15 {
-						msg := fmt.Sprintf("case %s の %d 番目 (%s %.60q): digest %s、記録 %s\n  Go: %s", c.Name, j, call.Function, fmt.Sprint(call.Args), digest, want, clip(canon, 400))
-						if k, ok := kept[j]; ok {
-							msg += "\n  記録: " + clip(string(k.Result), 400) + fmt.Sprint(k.Exception)
-						}
-						t.Error(msg)
-					}
-				}
-				if raised != slices.Contains(rec.Raised, j) {
-					failed++
-					t.Errorf("case %s の %d 番目 (%s): Go の例外 %v、記録の例外 %v", c.Name, j, call.Function, raised, !raised)
-				}
-				continue
 			case call.Quiet:
 				// 覚えるだけの呼び出し (結果の digest は 8 つの 0)。段の呼び出しが同じ引数から作り直す
 				switch call.Function {
@@ -67,6 +50,12 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case slices.Contains(oracle.DiffListFunctions, call.Function):
+				got, exc = invokeList(t, call)
+			case call.Get && slices.Contains(oracle.DiffToneConstantNames(), call.Function):
+				got = toneConstantValue(t, call.Function)
+			case slices.Contains(oracle.DiffToneFunctions, call.Function):
+				got, exc = invokeTone(t, call, build)
 			case call.Get && slices.Contains(oracle.DiffStiffConstantNames(), call.Function):
 				got = stiffConstantValue(t, call.Function)
 			case slices.Contains(oracle.DiffStiffFunctions, call.Function):
@@ -86,19 +75,23 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 			default:
 				got = invoke(t, call)
 			}
-			canon, digest, err := replay.ResultDigest(got)
-			if err != nil {
-				t.Fatal(err)
-			}
+			canon, digest, raised := outcomeDigest(t, got, exc)
 			if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; digest != want {
 				failed++
 				if failed <= 15 {
 					msg := fmt.Sprintf("case %s の %d 番目 (%s %.60q): digest %s、記録 %s\n  Go: %s", c.Name, j, call.Function, fmt.Sprint(call.Args), digest, want, clip(canon, 400))
 					if k, ok := kept[j]; ok {
 						msg += "\n  記録: " + clip(string(k.Result), 400)
+						if k.Exception != nil {
+							msg += fmt.Sprintf(" 例外 %s: %s", k.Exception.Type, k.Exception.Message)
+						}
 					}
 					t.Error(msg)
 				}
+			}
+			if raised != slices.Contains(rec.Raised, j) {
+				failed++
+				t.Errorf("case %s の %d 番目 (%s): Go が例外を投げた %v、記録の本家が例外を投げた %v", c.Name, j, call.Function, raised, !raised)
 			}
 		}
 	}
@@ -111,6 +104,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 		}
 	}
 	checkStiffHits(t)
+	checkToneHits(t)
 	total := 0
 	for _, n := range calls {
 		total += n

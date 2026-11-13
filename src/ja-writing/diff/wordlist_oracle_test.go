@@ -9,6 +9,7 @@ import (
 	"ja-writing/lists"
 	"ja-writing/oracle"
 	"ja-writing/oracle/replay"
+	"ja-writing/visibility"
 )
 
 // 群 R の Go の関数を、本家の記録と突き合わせる道具。
@@ -36,54 +37,58 @@ func listItemsValue(items []ListItem, compiled bool) pyjson.Value {
 	return replay.MapList(items, func(i ListItem) pyjson.Value { return listItemValue(i, compiled) })
 }
 
-// invokeList は群 R の呼び出し 1 つの結果。本家が例外を投げる呼び出しは、型と文面を返す (ok は偽)。
-func invokeList(t *testing.T, c oracle.Call) (v pyjson.Value, excType, excMessage string, raised bool) {
+// invokeList は群 R の呼び出し 1 つの結果。本家が書き方の誤りで投げる ValueError は *ListError で返す。
+func invokeList(t *testing.T, c oracle.Call) (pyjson.Value, error) {
 	t.Helper()
 	switch c.Function {
 	case "parse_list":
 		text := argString(t, c.Args[0])
 		if !argBool(t, c.Args[1]) {
-			return replay.Strings(lists.Words(text)), "", "", false
+			return replay.Strings(lists.Words(text)), nil
 		}
 		items, err := ParsePatternList(text)
-		var listErr *ListError
-		if errors.As(err, &listErr) {
-			return nil, "ValueError", listErr.Message, true
-		}
 		if err != nil {
-			t.Fatalf("parse_list: %v", err)
+			return nil, err
 		}
-		return listItemsValue(items, false), "", "", false
+		return listItemsValue(items, false), nil
 	case "_load_list":
 		name := argString(t, c.Args[0])
 		l := LoadList(name)
 		if wordLists[name].pattern {
-			return replay.List(listItemsValue(l.Items, true), ListSource(name)), "", "", false
+			return replay.List(listItemsValue(l.Items, true), ListSource(name)), nil
 		}
-		return replay.List(replay.Strings(l.Words), ListSource(name)), "", "", false
+		return replay.List(replay.Strings(l.Words), ListSource(name)), nil
 	case "_list_info":
 		name := argString(t, c.Args[0])
 		o := pyjson.NewObject()
 		o.Set("list", ListSource(name))
 		o.Set("list_problem", nil)
-		return o, "", "", false
+		return o, nil
 	}
 	t.Fatalf("関数 %s を Go に持っていない", c.Function)
-	return nil, "", "", false
+	return nil, nil
 }
 
-// listDigest は invokeList の結果の digest (本家が例外を投げたら例外の digest)。
-func listDigest(t *testing.T, c oracle.Call) (canon, digest string, raised bool) {
+// outcomeDigest は呼び出しの結果か例外の digest。例外は本家の型と文面 (*ListError は ValueError、*visibility.Error は Type と Message)。
+func outcomeDigest(t *testing.T, v pyjson.Value, err error) (canon, digest string, raised bool) {
 	t.Helper()
-	v, typ, msg, raised := invokeList(t, c)
-	var err error
-	if raised {
-		canon, digest, err = replay.ExceptionDigest(typ, msg)
-	} else {
-		canon, digest, err = replay.ResultDigest(v)
+	var listErr *ListError
+	var visErr *visibility.Error
+	var derr error
+	switch {
+	case errors.As(err, &listErr):
+		canon, digest, derr = replay.ExceptionDigest(visibility.TypeValueError, listErr.Message)
+		raised = true
+	case errors.As(err, &visErr):
+		canon, digest, derr = replay.ExceptionDigest(visErr.Type, visErr.Message)
+		raised = true
+	case err != nil:
+		t.Fatalf("本家が投げない種類の誤り: %v", err)
+	default:
+		canon, digest, derr = replay.ResultDigest(v)
 	}
-	if err != nil {
-		t.Fatal(err)
+	if derr != nil {
+		t.Fatal(derr)
 	}
 	return canon, digest, raised
 }

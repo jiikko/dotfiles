@@ -16,9 +16,6 @@ var DiffListNames = []string{"nominalization", "intensifiers", "feelings", "hedg
 // DiffListFunctions は群 R の関数 (Go の突き合わせが、この名前の呼び出しを群 R の関数に回す)。
 var DiffListFunctions = []string{"parse_list", "_load_list", "_list_info"}
 
-// DiffListRaises は記録の中で、例外になる呼び出しを持ってよい (持つはずの) 関数。
-var DiffListRaises = []string{"parse_list"}
-
 // diffListTexts は parse_list に通す手書きの文。BOM・CRLF・空行・コメント・タブの数・3 つ目の欄・誤り (正規表現の欄が空) の表示の長さ (40 字ちょうど・41 字) を狙う。
 var diffListTexts = []string{
 	"", "\n", "\r\n", "\r", "\r\r\n", "あ", "あ\n", "\nあ", "あ\nい", "あ\r\nい\r\n", "あ\rい", "  あ  \n",
