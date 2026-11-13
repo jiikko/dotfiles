@@ -33,6 +33,19 @@ bench/pybench.sh [-n <周の数>] <入力の dir> <結果の dir>   # 周の数�
 - rc が 0 でない run と、周によって出力の大きさが変わるケースのどちらかがあれば、`summarize.py` が rc 1 で落ち、`summary.tsv` を出さない
 - 入力の dir が今の `gen.py` の出力と違うと止まる (別の commit で作った入力を測らない)
 
+## 実際の文書で答えの一致と所要を比べる (`docbench.py`)
+
+`gen.py` の入力は組み立てた文章。repo の Markdown のような実際の文書の集まりを、本家と Go の lint に通すには `docbench.py` を使う。
+一覧のファイルは根の dir からの相対パスを 1 行に 1 つ書く (`git ls-files` の出力など)。根の dir は、tracked の文書を別の場所に写したものにする (`.yomiyasu-words` を探させないため。あれば止まる)。
+
+```sh
+go build -o <dir>/ja-writing .
+python3 -I bench/docbench.py check <本家の scripts の dir> <dir>/ja-writing <根の dir> <一覧>   # --json・text・--strict の stdout・stderr・rc が同じか
+python3 -I bench/docbench.py time  <本家の scripts の dir> <dir>/ja-writing <根の dir> <一覧> -n 7   # 1 ファイルずつ (起動込み) の合計と、全部をつないだ 1 文書の所要
+```
+
+本家の scripts の dir は `make golden` が取る置き場の `~/.cache/yomiyasu-oracle/<commit>/skills/yomiyasu/scripts`。`time` は周ごとに本家と Go の順を入れ替え、`pybench.sh` と同じ固定の環境で動かす。
+
 ## 読むときの注意
 
 - 同じコードを続けて測っても、run ごとに 1〜2 割ずれることがある (issue 1082)。前後の比較は、別の時間帯の run どうしでせず、同じ run の中で交互に流す
