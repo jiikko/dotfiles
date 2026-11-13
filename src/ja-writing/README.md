@@ -5,7 +5,7 @@
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
 lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
-`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は引数・終了コード・`--endings` の出力が本家と同じ (issue 1076 の群 A・B・C・E。CLI の記録 7,928 件のうち、本家が検査の本体まで進まない 2,376 件を全件比べて通る)。差分と検出の本体はまだで、`--endings` でない検査まで進む呼び出しは `まだ実装していません` と標準エラーに出して rc 2 を返す。check と hook も同じ stub で、1077 で実装する。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は引数・終了コード・`--endings` の出力が本家と同じ (issue 1076 の群 A・B・C・E。CLI の記録 7,948 件のうち、本家が検査の本体まで進まない 2,382 件を全件比べて通る)。差分と検出の本体はまだで、`--endings` でない検査まで進む呼び出しは `まだ実装していません` と標準エラーに出して rc 2 を返す。check と hook も同じ stub で、1077 で実装する。
 
 ## 構成
 
@@ -286,8 +286,8 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
-| `diff-cli.json` (7,942 件) | 入力の集まりの直す前と後の組 (upstream の `raw_ai` と書き直した文・`blacklist_ai`・`_bl` の付いた書き直し 72 組) と手で作った入力 117 組を、text・`--json`・`--fail-on meaning-risk` (text と `--json`) で。オプションを通す組 (upstream の先頭 6 組と手で作った入力のうち重くないもの) は文書の種類 13 通り・読者・立場 3 通り・語の一覧・資料も。`--endings` は入力の集まりの全ファイルと手で作った入力の全ファイルを立場なしと 3 つで。誤りの呼び出し・`-h`・`--version`・標準入力・作業フォルダを変えた語の一覧の探し方も。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc。`--json` の出力は何が出たか (`kinds`) も持つ | `TestCLIMatchesPythonRecording` (検査の本体が入るまで、本家が本体まで進んだ呼び出しは「比べていない」と数えてログに出す。それ以外は全件比べ、`bodyImplemented` が真になったら比べていない件数が 0 でなければ落ちる)・`TestDiffRecordingHasHitAndMissForEveryKind` (検出の種類 71 種ごとに、出る入力と出ない入力が記録にある) |
-| `diff-base.json` (787 case・65,925 呼び出し) | 群 B・C・E の公開の関数 (`normalize` `has_list` `sentences` `paragraphs` `logic_points` `bare_end` `register` `ending_kind` `ending_units` `stance_flags` `ending_changes` と、diff 側の `bold_problems`) を、入力の集まりの全ファイル・手で作った入力・組ごと・手書きの文に通した結果の digest | `TestBaseMatchesPythonRecording` (全呼び出しを比べる)・`TestBaseRecordingCoversEveryFunction` |
+| `diff-cli.json` (7,948 件) | 入力の集まりの直す前と後の組 (upstream の `raw_ai` と書き直した文・`blacklist_ai`・`_bl` の付いた書き直し 72 組) と手で作った入力 117 組を、text・`--json`・`--fail-on meaning-risk` (text と `--json`) で。オプションを通す組 (upstream の先頭 6 組と手で作った入力のうち重くないもの) は文書の種類 13 通り・読者・立場 3 通り・語の一覧・資料も。`--endings` は入力の集まりの全ファイルと手で作った入力の全ファイルを立場なしと 3 つで。誤りの呼び出し・`-h`・`--version`・標準入力・作業フォルダを変えた語の一覧の探し方も。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc。`--json` の出力は何が出たか (`kinds`) も持つ | `TestCLIMatchesPythonRecording` (検査の本体が入るまで、本家が本体まで進んだ呼び出しは「比べていない」と数えてログに出す。それ以外は全件比べ、`bodyImplemented` が真になったら比べていない件数が 0 でなければ落ちる)・`TestDiffRecordingHasHitAndMissForEveryKind` (検出の種類 71 種ごとに、出る入力と出ない入力が記録にある) |
+| `diff-base.json` (789 case・65,952 呼び出し) | 群 B・C・E の公開の関数 (`normalize` `has_list` `sentences` `paragraphs` `logic_points` `bare_end` `register` `ending_kind` `ending_units` `stance_flags` `ending_changes` と、diff 側の `bold_problems`) を、入力の集まりの全ファイル・手で作った入力・組ごと・手書きの文に通した結果の digest | `TestBaseMatchesPythonRecording` (全呼び出しを比べる)・`TestBaseRecordingCoversEveryFunction` |
 
 - 記録の driver は `oracle/py/record_diff_cli.py` (lint の CLI の driver と同じ作り)。作り直しは `go run ./oracle/cmd/golden -only diff-cli|diff-base` (約 70 秒・約 12 秒)。
 - 手で作った入力は `testdata/diff/<名前>/` (`old.md`・`new.md`・資料は `material.md` か `material1.md` から)。長い行・大きい文書の入力 (`full-budget` など) は 1 回の実行が重いので、オプションを通す組から外してある。
