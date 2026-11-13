@@ -64,7 +64,7 @@ G13 の外で使われるのは、G16 (ai_phrase) の 4997 行の `_TE_NOT_VERB`
 - [x] G16・G17 が使う値が読める (`lint/pausecomma` の `TENotVerb`・`TEAttrObject`)
 - [x] 新しい試験は実装を壊すと落ちることを `mutate-verify-list` で確かめた
 - [x] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通る
-- [ ] 骨組みにつないだ後、本家の lint の記録を `pause_comma` で絞った検出が一致する (土台が入った後。比べられるのは種類を付けた run (1 種類につき 12 本) だけで、素の run には pause_comma が出ない)
+- [ ] (1075 へ移した) 骨組みにつないだ後、本家の lint の記録を `pause_comma` で絞った検出が一致する (土台が入った後。比べられるのは種類を付けた run (1 種類につき 12 本) だけで、素の run には pause_comma が出ない)
 
 ## 関連ファイル
 
@@ -88,6 +88,7 @@ G13 の外で使われるのは、G16 (ai_phrase) の 4997 行の `_TE_NOT_VERB`
 - 敵対的レビュー (opus 1 体、実装): ランダムな文字列 23 万件 (サロゲート・改行・各種の空白・表の語を混ぜる) と Markdown 2.4 万件で本家との違いは 0 件・panic 0 件。
   指摘は試験の穴 6 件 (全部、入力を足して赤にした) と、骨組みが当て直しの並べ替えを写さずに済む口が無い P3 (`Fallback` を足した)。
   等価として残したもの: `nonlead` による文頭の判定は本家でも `j == 文の始まり` と同じ値になる (レビューが証明と 3 万件で確かめた)・`ObjectHits` の pos つきの match は切り出しと同じ (i+1 が読点なので後読みが前を見ても当たらない。未証明)
-- 残り: 骨組みへのつなぎ (行のループから `Fallback`・`LineHits` を呼ぶ・message・`_objects`・`_heads`・実装済みの規則の表) と、本家の lint の記録を `pause_comma` で絞った突き合わせ。dotfiles-c5 の土台が master に入った知らせを待つ
+- CI (2026-11-13、85089b1c2): src/ja-writing・unused・dupscan gate・Lint が緑
+- 1075 へ移したもの (dotfiles-c5 の判断で、G3 と一緒に骨組みにつなぐ): 骨組みへのつなぎ (行のループから `Fallback`・`LineHits` を呼ぶ・message・`_objects`・`_heads`・実装済みの規則の表) と、本家の lint の記録を `pause_comma` で絞った突き合わせ。口の形は 1075 の「G13 をつなぐ口」に書いてある
 - 反証レビュー (opus 1 体、2026-11-13): P1 0・P2 5・P3 5。全部を本文に入れた (G13 がほかから使うもの・行のループで飛ぶ行・当て直しの経路が実質 0・行をつなぐ関数の分岐・
   r の数え方・条件の数え方の単位・行頭の空の prev・G13 の外で使われる名前・比べられる記録・"" でつなぐ・seed)。反証できなかった主張: 行の範囲・正規表現と表の数・PYTHONHASHSEED で答えが変わらないこと・message と `_objects` `_heads` の作り方
