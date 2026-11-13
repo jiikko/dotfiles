@@ -169,16 +169,16 @@
 
 | 指摘 | 扱い | 理由・結果 |
 |---|---|---|
-| 1 群が一部だけ入った間、公開の候補の鍵の順を壊しても全部の比較が緑 (post の比較が sort_keys で並べ直す) | 直した | `lint-post.json` に `--json` の出力 (鍵を並べ直さない `indent=2`) の digest を足し、`TestPostProcessingMatchesPythonRecording` が比べる。鍵の順を line → rule にする変異が red。CLI の記録を規則の組で部分的に比べる案は採らない (post の比較で出力の形は見える。CLI の記録に生の規則の組を持たせると driver の作りが重くなる) |
-| 2 lint-raw の記録の `n` を壊しても検出しない・「比べた件数」の検査が発火しない | 直した | `LintRawRecord.CheckCount` を作る側と読む側の両方で当てる。比べた候補を規則ごとに数え、入った規則で 0 件なら落とす。`n` を +1 する変異が red |
-| 3 「strict と info だけ」のテストの候補 (pause_comma) が種類なしで外れ、候補 0 件のテストになっている | 直した | 種類で外れない `instruction_residue` にし、`--json` の `candidate_count` が注入した数のままかを全 case で見る。pause_comma に戻す変異が red |
+| 1 群が一部だけ入った間、公開の候補の鍵の順を壊しても全部の比較が緑 (post の比較が sort_keys で並べ直す) | 直した | `lint-post.json` に `--json` の出力 (鍵を並べ直さない `indent=2`) の digest を足し、`TestPostProcessingMatchesPythonRecording` が比べる。鍵の順を line → rule にわざと壊すと red。CLI の記録を規則の組で部分的に比べる案は採らない (post の比較で出力の形は見える。CLI の記録に生の規則の組を持たせると driver の作りが重くなる) |
+| 2 lint-raw の記録の `n` を壊しても検出しない・「比べた件数」の検査が発火しない | 直した | `LintRawRecord.CheckCount` を作る側と読む側の両方で当てる。比べた候補を規則ごとに数え、入った規則で 0 件なら落とす。`n` を +1 にわざと壊すと red |
+| 3 「strict と info だけ」のテストの候補 (pause_comma) が種類なしで外れ、候補 0 件のテストになっている | 直した | 種類で外れない `instruction_residue` にし、`--json` の `candidate_count` が注入した数のままかを全 case で見る。pause_comma に戻すと red |
 | 4 argparse の「ignored explicit argument」の値の引用が Python の repr と違う | 直した | `pyre` の `pyRepr` を `pystr.Repr` へ移して共有し、使った。CLI の記録に scenario (改行・単引用符・両方の引用符) を足した |
 | 5 負数らしい引数の判定が Unicode の数字で違う | 直した | ローカルの Python 3.15.0 の argparse は `-\.?\d` の前方一致で、Go の写しは古い Python の形 (`^-\d+$|^-\d*\.\d+$`) だった。ASCII の `-1x` でも答えが違った。pyre で 3.15 の形にし、scenario (アラビア数字・全角数字・`-1x`・`-.5`) を足した |
 | 6 `--fail-on` の語末の Σ | 採らない | README の「揃わない範囲」に書いた既知の差。使えない値の文に出る字だけに現れ、Python の文脈つきの小文字化 (cased・case-ignorable の表) を写す費用に見合わない。再提起するなら、ASCII 以外の `--fail-on` の値を実際に使う場面を示す |
 | 7 どの書き込みの誤りも BrokenPipe と扱う | 直した | EPIPE だけを「出力先が閉じられた」にし、ほか (ENOSPC) は内部エラー。`TestWriteFailuresFollowPythonExitPaths` |
 | 8 使い方の誤りの文が書けないとき、本家は rc 3 | 直した (rc は実測に合わせた) | 本家を Python 3.15.0 で実測すると rc 3 ではなく 120 (書き込みが終わり際の flush まで遅れる)。`-h`・`--version` も同じく 120 と「Exception ignored while flushing sys.stdout:」の 2 行。Go をこの形に揃え、閉じたパイプでの rc と標準エラーが本家と同じことを実物で確かめた |
 | 9 lint-post の `natural=0` が、差し替えた project_term の本来の候補を数えていない | 直した | driver が元の `_project_term_findings` の戻りも数える。作り直しても全件 0 のまま |
-| 10 G13 の種類の条件を骨組みのテストが本家と逆の契約で固定している | 採らない | 種類の条件は G13 の口の中 (`g13PauseComma`) に置いた。骨組みは口を呼ぶだけで、trace のテストは「口を呼んだ」を見る。種類なしの文書で pause_comma が出ないことは、検出の生の並びの比較 (種類なしの文脈を含む) が見ている (種類の制限を外す変異が red) |
+| 10 G13 の種類の条件を骨組みのテストが本家と逆の契約で固定している | 採らない | 種類の条件は G13 の口の中 (`g13PauseComma`) に置いた。骨組みは口を呼ぶだけで、trace のテストは「口を呼んだ」を見る。種類なしの文書で pause_comma が出ないことは、検出の生の並びの比較 (種類なしの文脈を含む) が見ている (種類の制限をわざと外すと red) |
 | 11 記録の表の書き換えが、`-only` の受ける名前・誤りの順・`checkEnv` の順を変えた | 採らない | 全部の記録の名前を `-only` で受けるのは意図した拡張で、commit message に書いた。知らない名前を本家を取りに行く前に断るのは早く失敗するための変更。誤りが重なったときにどちらを先に出すかに意味は無い (開発の道具で、どの順でも作り直しは止まる) |
 | 12 2 回の生成の間に語の一覧が変わると、前は成功した条件で失敗する | 採らない | 作り直しの最中に testdata を書き換える形で、起きる経路が無い。起きたら 2 回の不一致で止まる (書き換えずに止まるのは安全側) |
 | 未確認: 実プロセスの SIGPIPE | 実測して直した | Go は SIGPIPE で落ちて rc 141 だった (本家は rc 3)。入口で SIGPIPE を `signal.Notify` で受ける (Ignore は exec した子へ無視が引き継がれるので使わない) |
