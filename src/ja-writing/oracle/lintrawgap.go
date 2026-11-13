@@ -23,6 +23,15 @@ var lintRawGapInputs = map[string]string{
 	"count-declaration": "理由は三つです。\n\nコツは３つあります。\n\n方法は3つです。\n\n観点は三つあります。\n\n以下の３つのポイントを見ます。\n\n以下の三つの観点を見ます。\n\nポイントは3つあります。\n",
 	// dialogue_period: 台詞が 10 個以上で、「。」で終わる台詞が半分以上 (script だけ)。
 	"dialogue-period": strings.Repeat("「こんにちは。」\n", 12),
+	// G1 の境目 (excess_bold: 地の文 300 字は出ず 301 字で出る・1,000 字あたり 3.0 個ちょうどは出ず 4 個で出る。
+	// excess_list: 比率 0.25 ちょうどは出ない・<details> の中の箇条書きを除いた字数 300 は出ず 301 で出る)。corpus の指標は、この境目のどちらにも当たらない。
+	"g1-bold-300":     strings.Repeat("**あ**\n\n", 10) + strings.Repeat("い", 250) + "\n",
+	"g1-bold-301":     strings.Repeat("**あ**\n\n", 10) + strings.Repeat("い", 251) + "\n",
+	"g1-bold-3-exact": strings.Repeat("**あ**\n\n", 3) + strings.Repeat("い", 985) + "\n",
+	"g1-bold-4":       strings.Repeat("**あ**\n\n", 4) + strings.Repeat("い", 980) + "\n",
+	"g1-list-quarter": "- " + strings.Repeat("い", 100) + "\n\n" + strings.Repeat(strings.Repeat("い", 100)+"\n\n", 3),
+	"g1-gate-300":     g1DetailsDoc(74),
+	"g1-gate-301":     g1DetailsDoc(75),
 	// 行頭が空白のバッジの行 (imageBreakRow・imageOnlyRow が先頭の空白を飛ばして見る)。
 	"badge-indented": "  [![b](x)](y)\n\n前の文です。\n  [![c](x)](y)\n次の文です。\n",
 }
@@ -35,4 +44,10 @@ func lintRawGapNames() []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// g1DetailsDoc は <details> の中の長い箇条書き 1 行と、外の短い箇条書き 2 行・地の文 2 行の文書。外の字数 (箇条書きの門に使う字数) は 152 + firstProse + 74 (firstProse が 74 で 300)。
+func g1DetailsDoc(firstProse int) string {
+	return "<details>\n\n- " + strings.Repeat("い", 100) + "\n\n</details>\n\n- " + strings.Repeat("い", 75) + "\n\n- " + strings.Repeat("い", 75) + "\n\n" +
+		strings.Repeat("い", firstProse) + "\n\n" + strings.Repeat("い", 74) + "\n"
 }

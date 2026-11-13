@@ -44,8 +44,8 @@ var groupDependencies = map[string][]string{
 // 群の間は 1 行空けてある (別の群を同時に入れる人の変更が、同じ行に重ならないようにするため)。
 // 全部が true になると、CLI の単位の記録 (出力の全体と rc) を字まで比べる段に切り替わる (TestCLIMatchesPythonRecording)。
 var implementedRules = map[string]bool{
-	"excess_bold": false,
-	"excess_list": false,
+	"excess_bold": true,
+	"excess_list": true,
 
 	"sentence_end_repetition": false,
 

@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 
@@ -246,6 +247,25 @@ func rawCloseTag(name string) *pyre.Pattern {
 type g01State struct{}
 
 // g01Document は指標から文書単位の候補 (excess_bold・excess_list。どちらも line 1) を作る (本家 5546-5570)。
-// 入れる群が足すもの: metrics.charCount > 300 のとき boldPer1000 > 3.0 で excess_bold、listGateChars > 300 のとき listRatio > 0.25 で excess_list。
-// message の数は本家の f-string (float は repr、round(list_ratio*100, 1) は pyjson.Round を通す)。
-func (s *lintState) g01Document() {}
+// message の数は本家の f-string (charCount > 300 なら字数が 0 でないので bold_per_1000 は float の repr。round(list_ratio*100, 1) は pyjson.Round を通す)。
+func (s *lintState) g01Document() {
+	m := s.metrics
+	if m.charCount > 300 && m.boldPer1000.f > 3.0 {
+		s.add(newFinding("excess_bold", 1, "warn",
+			"太字の頻度（1,000字あたり "+pyjson.FloatRepr(m.boldPer1000.f)+"個）が設定した目安を超えています（推奨: 2.0以下）。強調の役割を確かめ、不要なものだけ整理してください。",
+			"太字数: "+strconv.Itoa(m.boldCount)+"回 / "+strconv.Itoa(m.charCount)+"文字"))
+	}
+	if s.listGateChars > 300 && m.listRatio.f > 0.25 {
+		percent, err := pyjson.Round(m.listRatio.f*100, 1)
+		if err != nil {
+			panic(err)
+		}
+		snippet := "リスト行: " + strconv.Itoa(m.listLines) + " / 全非空行: " + strconv.Itoa(m.totalLines-m.detailsListLines)
+		if m.detailsListLines > 0 {
+			snippet += "（<details> の中の箇条書き" + strconv.Itoa(m.detailsListLines) + "行は数えていません）"
+		}
+		s.add(newFinding("excess_list", 1, "warn",
+			"箇条書きの比率（"+pyjson.FloatRepr(percent)+"%）が設定した目安を超えています（推奨: 15%以下）。項目の役割を確かめ、不要なものだけ整理してください。",
+			snippet))
+	}
+}

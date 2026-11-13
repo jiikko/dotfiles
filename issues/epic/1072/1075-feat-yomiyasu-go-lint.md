@@ -187,3 +187,7 @@
 | 未確認: 点数の整数の幅 (32 bit) | 採らない | 対象は macOS の arm64 だけ (dotfiles の CLAUDE.md)。int は 64 bit |
 | 未確認: 表の出力先の欄を消した | 記録 | `paths` の欄を使っていたのは `oracle/cmd/golden/main.go` だけ (grep で確かめた) |
 
+
+- 2026-11-13 G1 (`excess_bold`・`excess_list`) を入れた (`g01_metrics.go` の `g01Document`)。検出の生の並びの記録と比べた候補は excess_bold 152 件・excess_list 192 件で、全部本家と同じ。
+  - 入力を 7 つ足した (`oracle/lintrawgap.go`): 地の文 300 字と 301 字・1,000 字あたり 3.0 個ちょうどと 4 個・箇条書きの比率 0.25 ちょうど・`<details>` の中の箇条書きを除いた字数 300 と 301。corpus の指標はこれらの境目に当たっていなかった。記録は 2,704 → 2,760 件で、既存の 2,704 行は変わらない (新しい行は名前順に挟まる)。
+  - 実装をわざと壊した 6 本 (`>= 300`・`>= 3.0`・箇条書きの門を地の文の字数に替える・`>= 0.25`・`<details>` の注記を出さない・比率の `round` を外す) が `TestRawFindingsMatchPythonRecording` で red。
