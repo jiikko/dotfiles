@@ -183,7 +183,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - f21a5fe85 refactor(ja-writing): context.words の JSON の組み立てと、文字列・省略できる文字列の JSON 値の変換を visibility と pyjson に出す
   - 146fe40e3 feat(ja-writing): diff の全文差分 (群 J) を作り、検査の本体へ渡す値を本家と突き合わせる
 - 群 J: `diff/fulldiff.go` (本家の `_align` `_fill_gap` `_pair_similar` `_char_segments` `_plan_segments` `_make_hunk` `_mark_moved` `_encoding_notes` と `full_diff`)。`_Sides` は行と解析だけ持つ。
-  `_analyze` の bare_url の範囲を縮める処理 (`_URL_CHARS`) は全文差分が読まない (`protected_spans` を使うのは群 M 以降) ので写していない。群 M の係が足す
+  `_analyze` の bare_url の範囲を縮める処理 (`_URL_CHARS`) は、全文差分 (群 J) が読まないので 2 本目では写さなかった。3 本目で群 L が使うようになったので、`newSides` の `trimBareURLs` として写した (3 本目の敵対的レビューの P1-1)
 - 記録: 関数の記録に `full_diff` を足した。`diff-base.json` は 8xx case・全呼び出しを比べて通る (`full_diff` は 485 呼び出し。2 本目の敵対的レビューの後に 496: 入力の集まりと手で作った入力の全組・手書きの組 50 本・狙いを定めた組 5 本・固定の種 (PCG 1076/4) の行の組 140 と繰り返しの多い組 60 と文の組 40)。
   `diff-cli.json` は 8,002 件 (新しい入力 `actor-material-order` の分が 54 件増え、既存の行の中身の変更は 0。`req` の欄が本体まで進む 5,6xx 件に付いた)
 - 本体へ渡す値 (1 本目の敵対的レビュー P2-6 への手当て): `run` を `prepare` (本体を呼ぶ前まで。request を返す) と `compare` に分けた。本家の `_run` が `diff()` に渡す引数 (原文・書き直した文・立場・注記・種類・読者・語の一覧の context・資料) を、
@@ -245,7 +245,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   (足すのは加算だけなので融合は起きない)。見出しの本文の 2 文字の組が空のときは、空文字 1 つの集合 (本家の `frozenset((key,))`) で、両側が空の本文どうしは似かた 1.0 になる (写しで残した)
 - 群 L (`diff/sentences.go`): `_line_sentences` `_sentence_pairs` `_hunk_group` `_blank_between` `_run_shifted` `_paragraph_count` と `_Masker` `_Body` `_all_bodies`。`_group_index`・`_sentence_finder`・`_hunk_finder` は、呼ぶ検出 (群 M 以降・risk の並べ替え) が入るときに足す
   (今は production から呼ぶ所が無く、`unused` が落とす。値を取る入口を作ってまで先に記録する価値が無いと見た)。行頭の記号の繰り返しの「空の一致で止める」判定は、どの選択肢も 1 字以上を取るので到達できず写さなかった。`sides` に各行の文書の中の位置 `starts` を足した
-- 記録: `diff-base.json` は 1,098 → 1,947 case・66,489 → 71,583 呼び出し。足したのは `heading/` 671 case と `sentence/` 178 case (計 849 組。入力の集まりと手で作った入力の全組・全文差分の手書きの組・見出しの手書きの組 (組み直す上限 300 の手前と向こう (両側の数が同じ形と違う形)・
+- 記録: `diff-base.json` は 1,098 → 1,947 case・66,489 → 71,583 呼び出し (3 本目の敵対的レビューの後に 1,960 case・71,661 呼び出し。下の節)。足したのは `heading/` 671 case と `sentence/` 178 case (計 849 組。入力の集まりと手で作った入力の全組・全文差分の手書きの組・見出しの手書きの組 (組み直す上限 300 の手前と向こう (両側の数が同じ形と違う形)・
   似かたの下限 0.1 ちょうど (2 文字の組の共通 1 つ・和集合 10)・段が同じの足し 0.2 が効く組と効かない組・節の本文 300 字の上限で重なりがちょうど 0.1 と 0.0997 になる組・見出しだけの hunk の番号と次の行の判定・順に組にする似かた 0.5 ちょうどなど)・
   文の組の手書きの組・固定の種 (PCG 1076/5 の見出し 120 組、1076/6 の文 140 組))。既存の case は消えず、既存の digest は前の値を先頭に持つ (記録の作り直しの前後を python で照合し、崩れ 0)。
   段の呼び出し (`_heading_structure` 1,698・`_sentence_pairs` 849・`_all_bodies` 1,698) は全件 digest を比べて通る。`diff-cli.json` は変えていない
@@ -265,3 +265,25 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - 1 つの文書に lone surrogate を含む入力は K・L の記録に無い (全文差分と同じ)
   - 伏せる範囲の始まりの探し方 (`bisect_right`) は、入れ子の範囲の中で文が始まる合成の組 (`![説明。`b`](c.png)`) で落ちることを確かめたが、実際の文書で届くかは未確認
 - 最終の検査 (docs の commit を含む最後の木。rc は全部 0): `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf3/chk-*.log)
+
+### 3 本目の敵対的レビュー (opus。diff-wf3 の 73a5dbfe5..d2933f724)
+
+本家と違う答えを返す入力を 1 種類 (P1-1)、実装を壊しても記録の検査が緑のまま通る所を 6 か所 (P2) 見つけた。指摘は全部、本家 (python) の答えと Go の答えを並べて再現してから直した。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P1-1 裸の URL の後に続く本文を伏せる (`_all_bodies` の text) | 直した。`newSides` で `_analyze` の bare_url の縮め (`trimBareURLs`・`isURLChar`) を写した | URL の直後が本文・句点・閉じ括弧・URL に使える全部の字の組 7 本を記録に足し、本家と一致。縮めを外す・字の範囲の端 (0 9 a z A Z ~ % [ ] ( )) を 1 つずつ外す・種類の判定を反転する形 11 本で red。足す前は `~` `%` と数字の上限の 3 本が緑のままだった |
+| P2-1 `merged.tag = "replace"` を消す | 直した (最小の入力を `sentence/merged-first-hunk-insert` に) | red |
+| P2-2 `headingText` の strip を外す | 直した (`heading/shape-crlf-heading-text`) | red |
+| P2-3 `headingOrderPairs` の `!usedOld[i]` を外す | 直した (`heading/shape-order-used-old`) | red |
+| P2-4 本文の行を残す条件の `headingKeys` を `allKeys` に | 直した (`heading/shape-bold-line-body-kept`) | red |
+| P2-5 setext の下線の strip を外す | 直した (`heading/shape-setext-underline-space`) | red |
+| P2-6 `headingBody` で行を strip しない | 直した (`heading/shape-body-line-strip`) | red |
+| P3 `invokeStage` が `$ref`・`args_out_only` を照合しない | 採らない。今の記録の形 (「直前の build」と引数の数) では正しく比べており、答えが違う入力を出せていない。再提起するなら、記録の形を変える変更 (別の段を `build` の後に挟む等) で誤った比べになる実測が要る | - |
+| P3 「伏せた文」の数え方が P1-1 の形を区別しない | 採らない。P1-1 は記録の突き合わせで直接守った (上の 11 本) ので、数え方で守る必要が無い | - |
+
+- 記録: `diff-base.json` は 1,947 → 1,960 case・71,583 → 71,661 呼び出し。足したのは `sentence/` 8 case と `heading/` 5 case で、`heading/` 676・`sentence/` 186 (計 862 組)。段の呼び出しは `_heading_structure` 1,724・`_sentence_pairs` 862・`_all_bodies` 1,724。
+  既存の case は消えず、既存の case の digest も変わらない (作り直しの前後を python で照合)。README の件数も記録から数え直して直した。commit は、縮めの写しと URL の組、見出しと文の組の 2 つに分けた
+- 緑のまま通った壊した形のうち、`end < span.End` を `end <= span.End && end != span.End` にした形は、元と同じ式なので等価 (直さない)
+- 壊せなかったもの (敵対的レビューの報告): `_heading_structure` (shapes あり)・`_sentence_pairs` は 4,000 組の fuzz で食い違い 0、DP の max と戻り・bisect・`_blank_between`・counterpart の値の下限・並びの安定性は本家と行ごとに読み比べて差なし
+- 確かめていないこと (レビューの報告から。issue に残す): fuzz が対象の形の入力を作れておらず、等価かどうか分からない壊した形が 4 本ある (引用の中の段落の行・`#` だけの空の見出し・`**a__b**` の太字だけの行・形の変化が 2 件以上で並びが位置の順でない組)。これらは本家と違う答えを返す入力を示せていないので、防御は足さない
