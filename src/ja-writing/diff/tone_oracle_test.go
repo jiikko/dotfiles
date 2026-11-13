@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyre"
 	"ja-writing/oracle"
 	"ja-writing/oracle/replay"
 )
@@ -94,6 +95,19 @@ func toneLinesValue(l *toneLines) pyjson.Value {
 	return o
 }
 
+// recordedIntensifiers は記録の呼び出しが渡した強める語の正規表現の引数 (一覧から作ったものか、渡さない null) を Go の値にする。
+// 記録の呼び出しは、一覧から作った正規表現を覚えた名前 "ip" の参照か null (_mark_spans の直接の呼び出しだけ) を渡す。それ以外の引数が記録に入ったら、黙って一覧から作らず落とす。
+func recordedIntensifiers(t *testing.T, arg any) *pyre.Lazy {
+	t.Helper()
+	if arg == nil {
+		return nil
+	}
+	if ref, ok := arg.(map[string]any); !ok || ref["$ref"] != "ip" {
+		t.Fatalf("強める語の正規表現の引数が、一覧から作ったものの参照 (ip) でも null でもない: %v", arg)
+	}
+	return intensifierPattern(LoadList("intensifiers").Words)
+}
+
 // invokeTone は群 AA の呼び出し 1 つの結果。本家が例外を投げる呼び出しは error を返す。build は、直前の _build_full_diff の呼び出しの引数
 // (_tone_lines が同じ 2 つの文から段を作り直す)。
 func invokeTone(t *testing.T, c oracle.Call, build []any) (pyjson.Value, error) {
@@ -122,10 +136,7 @@ func invokeTone(t *testing.T, c oracle.Call, build []any) (pyjson.Value, error) 
 	case "_heading_chars":
 		return int64(headingChars(argString(t, a[0]))), nil
 	case "_mark_spans":
-		if a[2] == nil {
-			return spansValue(MarkSpans(argString(t, a[0]), argString(t, a[1]), nil)), nil
-		}
-		return spansValue(MarkSpans(argString(t, a[0]), argString(t, a[1]), intensifierPattern(LoadList("intensifiers").Words))), nil
+		return spansValue(MarkSpans(argString(t, a[0]), argString(t, a[1]), recordedIntensifiers(t, a[2]))), nil
 	case "_tone_excerpt":
 		var spans [][2]int
 		for _, s := range a[2].([][]int) {
@@ -145,7 +156,7 @@ func invokeTone(t *testing.T, c oracle.Call, build []any) (pyjson.Value, error) 
 		if err != nil {
 			t.Fatalf("_tone_lines: %v", err)
 		}
-		return toneLinesValue(s.toneLinesOf(a[1].(int), intensifierPattern(LoadList("intensifiers").Words), argBool(t, a[3]))), nil
+		return toneLinesValue(s.toneLinesOf(a[1].(int), recordedIntensifiers(t, a[2]), argBool(t, a[3]))), nil
 	}
 	t.Fatalf("関数 %s を Go に持っていない", c.Function)
 	return nil, nil
