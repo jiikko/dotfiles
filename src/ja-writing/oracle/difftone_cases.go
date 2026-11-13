@@ -157,7 +157,22 @@ func diffToneHandCases() []diffFullCase {
 		{name: "tone-thematic", old: doc("---", "本文！"), new: doc("---", "本文。")},
 		{name: "tone-list-bullet", old: doc("- すごい！", "- 最強！"), new: doc("- すごい", "- 最強")},
 		{name: "tone-moved", old: doc("すごい！", "", "ふつうです。"), new: doc("ふつうです。", "", "すごい。")},
+		// 壊した形で緑のまま通った所 (4 本目の次の run): 抜き出しにかける長さの境 (消えた行だけ・組の行の長い方)・印が変わった所の直後から始まるときの選び方・
+		// 変わった所が印の直前の挿入だけのときの推敲後の位置
+		{name: "tone-found-len-old-39", old: doc(toneLine40(39), "本文です。"), new: doc("本文です。")},
+		{name: "tone-found-len-old-40", old: doc(toneLine40(40), "本文です。"), new: doc("本文です。")},
+		{name: "tone-found-len-old-41", old: doc(toneLine40(41), "本文です。"), new: doc("本文です。")},
+		{name: "tone-found-len-new-39", old: doc("すごい！"), new: doc("すごい。" + strings.Repeat("あ", 35))},
+		{name: "tone-found-len-new-40", old: doc("すごい！"), new: doc("すごい。" + strings.Repeat("あ", 36))},
+		{name: "tone-found-len-new-41", old: doc("すごい！"), new: doc("すごい。" + strings.Repeat("あ", 37))},
+		{name: "tone-found-overlap-boundary", old: doc("前！"+strings.Repeat("あ", 30)+"x！"+strings.Repeat("い", 30), "別の行！"), new: doc("前！" + strings.Repeat("あ", 30) + "y！" + strings.Repeat("い", 30))},
+		{name: "tone-found-branch2-insert", old: doc(strings.Repeat("あ", 30)+"！"+strings.Repeat("い", 30), "別の行！"), new: doc(strings.Repeat("あ", 30) + "追加！" + strings.Repeat("い", 30))},
 	}
+}
+
+// toneLine40 は「！」を 1 つ持つ n 字の行 (先頭の 15 字・「。」・「すごい！」・い)。
+func toneLine40(n int) string {
+	return strings.Repeat("あ", 15) + "。" + "すごい！" + strings.Repeat("い", n-20)
 }
 
 // diffToneFuzz は固定の種 (PCG 1076/13) から作った、印を足す・消す・文を入れ替える組。
@@ -275,6 +290,19 @@ func diffToneCases(pairs [][3]string) []VisCase {
 		}
 	}
 	cases = append(cases, VisCase{Name: "tone/excerpt", Calls: excerpts})
+	// 壊した形で緑のまま通った所を、直接の呼び出しで通す (_tone_excerpt の印の選び方・推敲後の位置・文の終わりのあとの空白だけの部分と、絵文字を重ねた見出しの字数)
+	var found []Call
+	for _, p := range diffToneFoundExcerpts() {
+		c := dcall("_tone_excerpt", p.old, p.new, p.spans)
+		c.Keep = true
+		found = append(found, c)
+	}
+	for _, s := range []string{"👍👍🏽", "👍🏽👍", "👍👍🏽👍", "😀😀", "👍👍🏽 見出し"} {
+		c := dcall("_heading_chars", s)
+		c.Keep = true
+		found = append(found, c)
+	}
+	cases = append(cases, VisCase{Name: "tone/found", Calls: found})
 	return cases
 }
 
@@ -307,4 +335,29 @@ func diffToneExcerptCases() []diffToneExcerpt {
 		{"とても" + a, "とてつもなく" + a, [][]int{{0, 3}}, 0}, {"とても" + a, "とて", [][]int{{0, 3}}, 0}, {"とても", "とて", [][]int{{0, 3}}, 0}, {"🇯🇵", "🇯" + strings.Repeat("あ", 60), [][]int{{0, 2}}, 0}, {"1\ufe0f\u20e3", "1" + strings.Repeat("あ", 60), [][]int{{0, 3}}, 0},
 	}
 	return out
+}
+
+// diffToneFoundExcerpts は _tone_excerpt の、印の選び方 (変わった所の直後から始まる印)・推敲後の位置 (印の直後が変わった所の始まり)・
+// 文の終わりのあとが空白だけのときの始め方で、本家のコピーに壊した形を入れると答えが変わる組 (乱数で探した小さいもの)。
+func diffToneFoundExcerpts() []diffToneExcerpt {
+	return []diffToneExcerpt{
+		{"。!てあ!？", "。!!？", [][]int{{1, 2}, {4, 5}, {5, 6}}, 0},
+		{"い\u3000？とえあ", "い\u3000？ととあ", [][]int{{0, 2}, {5, 7}}, 0},
+		{"？え。\u3000！", "？え！!うう！", [][]int{{0, 1}, {4, 5}}, 0},
+		{"!？！\u3000", "!と も?う！\u3000", [][]int{{0, 1}, {2, 4}}, 0},
+		{" !あ？!?", " !!あ？!?", [][]int{{1, 2}, {3, 4}, {4, 5}, {5, 6}}, 0},
+		{"えおおうう も", "えおおううも", [][]int{{0, 3}, {6, 8}}, 0},
+		{"?", "。?", [][]int{{0, 1}}, 0},
+		{"?", "!も?", [][]int{{0, 1}}, 0},
+		{"?", "!\u3000！?", [][]int{{0, 1}}, 0},
+		{"て", "。！！あて", [][]int{{0, 1}}, 0},
+		{"！?", "！！とと?", [][]int{{0, 1}, {1, 2}}, 0},
+		{"!", " もう?と！!", [][]int{{0, 1}}, 0},
+		{"\u3000", "!う？?\u3000て。！ !。？!もと\u3000おて?!？！\u3000\u3000", [][]int{{0, 1}}, 0},
+		{"\u3000", " \u3000あ？あも?\u3000いあい!う?\u3000あい。うとい!も。\u3000", [][]int{{0, 1}}, 0},
+		{"\u3000", "お!あと？?も あ。もえ！あう?え?  \u3000とうう？\u3000\u3000", [][]int{{0, 1}}, 0},
+		{"!おう?\u3000", "!おう?？\u3000おえ!\u3000?!も?!い\u3000も!えててあお!\u3000", [][]int{{0, 2}, {1, 4}, {2, 3}, {3, 4}, {4, 5}}, 0},
+		{"？!。 てえと?\u3000", "？!。 てえと?と?い！!あ? も？ ！あいも?\u3000?\u3000", [][]int{{0, 1}, {8, 9}}, 0},
+		{"う。おと ? ", "う。おと ?？！\u3000いう うい。い\u3000ててい   も。?\u3000ああ\u3000！? ", [][]int{{0, 3}, {2, 5}, {4, 6}, {6, 7}}, 0},
+	}
 }
