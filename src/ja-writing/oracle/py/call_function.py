@@ -9,6 +9,8 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 - "digest": true の呼び出しは、結果 (か例外) を正規の JSON (sort_keys・ensure_ascii・separators=(",", ":")・re.Pattern は {"flags", "pattern"}) にして
   SHA-256 の先頭 8 字を "digest" に入れ、例外だったときは "raised": true も足す。"keep": true も付けたときだけ、普通の result / exception も添える (大きな結果を記録に入れない)。
   fixture の操作 ("op") が例外になったときは keep が無くても exception を添える (呼び出し側が、どの操作がなぜ失敗したかを出して止まるため)。
+- "args_out_only": [添字...] の呼び出しは、結果を [戻り値, 呼んだ後の args のうち、その添字のもの] にする (args に解析の結果のような JSON にできない値があるときに、書き足される引数だけを記録する)。
+  args の中の {"$ref": "名前", "path": [...]} は、覚えた値の添字・鍵を辿った一部 (_build_full_diff の戻り値の tuple から _Sides や hunks を取る)。
 - "args_out": true の呼び出しは、結果を [戻り値, 呼んだ後の args] にする (引数の list に書き足す関数 (calque の型の判定が語を足す) の足した中身を記録する。付けなければ前と一字も同じ出力)。
 - "get": true の呼び出しは関数を呼ばずに、module の属性 (定数) そのものを返す。
 - "save": "名前" の呼び出しは、戻り値の Python の値を覚える。args の中の {"$ref": "名前"} が、その値になる (JSON を経由しない)。
@@ -38,6 +40,12 @@ saved_env = {}
 def resolve(value):
     """args の中の印と <<ROOT>> を実際の値にする。"""
     if isinstance(value, dict):
+        if set(value) == {"$ref", "path"}:
+            # 覚えた値の一部 (tuple・list の添字、dict の鍵を辿る)
+            picked = registry[value["$ref"]]
+            for step in value["path"]:
+                picked = picked[step]
+            return picked
         if len(value) == 1:
             (key, inner), = value.items()
             if key == "$ref":
@@ -149,10 +157,13 @@ for call in plan["calls"]:
                 value = getattr(module, call["function"])(*args, **resolve(call.get("kwargs", {})))
                 if call.get("args_out"):
                     value = [value, args]
+                elif call.get("args_out_only") is not None:
+                    value = [value, [args[i] for i in call["args_out_only"]]]
         if call.get("save"):
             registry[call["save"]] = value
         try:
-            json.dumps(value, ensure_ascii=True, default=encode_default)
+            if not call.get("quiet"):
+                json.dumps(value, ensure_ascii=True, default=encode_default)
         except (TypeError, ValueError) as exc:
             record = {"exception": {"type": "Unserializable", "message": type(value).__name__ + ": " + str(exc)}}
         else:

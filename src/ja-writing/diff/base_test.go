@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"ja-writing/internal/bold"
@@ -124,6 +125,27 @@ func invoke(t *testing.T, c oracle.Call) pyjson.Value {
 	return nil
 }
 
+// invokeStage は段 (全文差分の _Sides と hunks を引数に取る関数) の呼び出し。段の呼び出しの前の _build_full_diff の引数 (build) の 2 つの文から、同じ段を Go の入口で作り直す。
+func invokeStage(t *testing.T, c oracle.Call, build []any) pyjson.Value {
+	t.Helper()
+	orig, rw := argString(t, build[0]), argString(t, build[1])
+	switch c.Function {
+	case "_heading_structure":
+		withShapes := len(c.Args) > 2
+		out, shapes, err := HeadingStructure(orig, rw, withShapes)
+		if err != nil {
+			t.Fatalf("_heading_structure: %v", err)
+		}
+		list := replay.MapList(out, func(s string) pyjson.Value { return s })
+		if !withShapes {
+			return list
+		}
+		return replay.SortKeys(replay.List(list, replay.List(replay.MapList(shapes, HeadingShape.Value))))
+	}
+	t.Fatalf("段 %s を Go に持っていない", c.Function)
+	return nil
+}
+
 func loadBase(t *testing.T) (oracle.DiffBaseGolden, []oracle.VisCase) {
 	t.Helper()
 	var g oracle.DiffBaseGolden
@@ -169,9 +191,24 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 		for _, k := range rec.Kept {
 			kept[k.Index] = k
 		}
+		var build []any
 		for j, call := range c.Calls {
 			calls[call.Function]++
-			canon, digest, err := replay.ResultDigest(invoke(t, call))
+			var got pyjson.Value
+			switch {
+			case call.Function == "_build_full_diff":
+				// 覚えるだけの呼び出し (結果の digest は 8 つの 0)。段の呼び出しが同じ引数から作り直す
+				build = call.Args
+				if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; want != "00000000" {
+					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
+				}
+				continue
+			case strings.HasPrefix(call.Function, "_"):
+				got = invokeStage(t, call, build)
+			default:
+				got = invoke(t, call)
+			}
+			canon, digest, err := replay.ResultDigest(got)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -238,6 +275,68 @@ func TestBaseRecordingCoversEveryFunction(t *testing.T) {
 	for _, want := range []string{"依頼", "勧め", "推量・考え", "義務", "評価", "過去", "説明（〜ています）", "説明（〜ます）", "動作（〜します）", "断定（〜です）", "常体", "体言止めなど", "敬体", ""} {
 		if !kinds[want] {
 			t.Errorf("手書きの文に、結果が %q になるものが無い (その枝が記録に当たらない)", want)
+		}
+	}
+}
+
+// 群 K の段は、見出しの文の種類ごとに、出る組と出ない組が記録にある (記録の中の結果 Kept に、その文が現れる)。
+func TestHeadingStageRecordingHitsEveryOutput(t *testing.T) {
+	g, _ := loadBase(t)
+	seen := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case string:
+			seen[x] = true
+		case []any:
+			for _, e := range x {
+				walk(e)
+			}
+		case map[string]any:
+			for _, e := range x {
+				walk(e)
+			}
+		}
+	}
+	empty, shapes := 0, 0
+	for _, c := range g.Cases {
+		if !strings.HasPrefix(c.Name, "heading/") {
+			continue
+		}
+		for _, k := range c.Kept {
+			var v any
+			if err := json.Unmarshal(k.Result, &v); err != nil {
+				t.Fatal(err)
+			}
+			walk(v)
+			if pair, ok := v.([]any); ok && len(pair) == 2 {
+				if out, ok := pair[0].([]any); ok && len(out) == 0 {
+					empty++
+				}
+				if list, ok := pair[1].([]any); ok && len(list) == 1 {
+					if inner, ok := list[0].([]any); ok && len(inner) > 0 {
+						shapes++
+					}
+				}
+			}
+		}
+	}
+	if empty == 0 || shapes == 0 {
+		t.Errorf("見出しの段の記録に、候補が出ない組 (%d) と見出しの形が出る組 (%d) の両方が要る", empty, shapes)
+	}
+	for _, part := range []string{
+		"見出しの数が変わった（", "（消えた見出し: ", "ほか1件）", "太字の行を見出しにした（", "本文の行を見出しにした（", "見出しを本文の行にした（",
+		"見出しのレベルを変えた（", "ほか2か所", "…", "行目「", "と2行目「",
+	} {
+		hit := false
+		for s := range seen {
+			if strings.Contains(s, part) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			t.Errorf("見出しの段の記録に、%q を含む文が無い (その枝が記録に当たらない)", part)
 		}
 	}
 }

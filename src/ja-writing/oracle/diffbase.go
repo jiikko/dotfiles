@@ -22,6 +22,7 @@ var DiffBaseFunctions = []string{
 	"bare_end", "register", "ending_kind", "ending_units", "stance_flags", "ending_changes",
 	"bold_problems",
 	"full_diff",
+	"_build_full_diff", "_heading_structure",
 }
 
 // DiffEncodingNote は full_diff に渡す注記の 1 つ (本家の dict と同じ 3 つの鍵)。
@@ -121,6 +122,16 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	cases = append(cases, VisCase{Name: "snippet/endings", Calls: calls})
 	for _, d := range diffEndingDocs {
 		cases = append(cases, VisCase{Name: "snippet/doc/" + d.name, Calls: diffTextCalls(d.text, true)})
+	}
+	// 群 K 以降の段は、全文差分の (_Sides, hunks) を渡す。pairs は入力の集まりと diff の入力の組、あとは手書きと固定の種の組
+	for _, p := range pairs {
+		cases = append(cases, VisCase{Name: "heading/pair/" + p[0], Calls: diffHeadingStageCalls(p[1], p[2])})
+	}
+	for _, f := range diffFullCases() {
+		cases = append(cases, VisCase{Name: "heading/full/" + f.name, Calls: diffHeadingStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffHeadingCases() {
+		cases = append(cases, VisCase{Name: "heading/" + f.name, Calls: diffHeadingStageCalls(f.old, f.new)})
 	}
 	return cases, nil
 }

@@ -414,7 +414,7 @@ func runeCounts(rs []rune) map[rune]int {
 	return counts
 }
 
-func sortedKeys(m map[int]int) []int {
+func sortedKeys[V any](m map[int]V) []int {
 	keys := make([]int, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -305,7 +305,9 @@ type Call struct {
 	Keep     bool           `json:"keep,omitempty"`
 	Quiet    bool           `json:"quiet,omitempty"`
 	ArgsOut  bool           `json:"args_out,omitempty"`
-	Op       *Op            `json:"op,omitempty"`
+	// ArgsOutOnly は結果を [戻り値, 呼んだ後の args のうち、この添字のもの] にする (nil は付けない。args に JSON にできない値があるとき用)。
+	ArgsOutOnly []int `json:"args_out_only,omitempty"`
+	Op          *Op   `json:"op,omitempty"`
 }
 
 // PyException は本家の関数が投げた例外。Type が "Unserializable" のときは戻り値が JSON にできなかった。
