@@ -79,9 +79,39 @@ func newSides(orig, rw string) (*sides, error) {
 		if err != nil {
 			return nil, err
 		}
+		trimBareURLs(a, text)
 		s.analyses[side] = a
 	}
 	return s, nil
+}
+
+// trimBareURLs は本家の _analyze の bare_url の縮め。解析は空白で区切らない URL を次の空白までの範囲で返す
+// (「https://example.com/guideにあり、保存期間は3日です。」の全体)。そのまま伏せると URL のあとの本文の数値と変化まで伏せてしまうので、
+// 頭から URL に使える ASCII の字が続くところまでに縮める。
+func trimBareURLs(a *visibility.Analysis, text string) {
+	runes := pyunicode.Runes(text)
+	var spans []visibility.Span
+	changed := false
+	for _, span := range a.ProtectedSpans {
+		if span.Kind == "bare_url" {
+			end := span.Start
+			for end < len(runes) && isURLChar(runes[end]) {
+				end++
+			}
+			if span.Start < end && end < span.End {
+				span.End, changed = end, true
+			}
+		}
+		spans = append(spans, span)
+	}
+	if changed {
+		a.ProtectedSpans = spans
+	}
+}
+
+// isURLChar は URL に使える ASCII の字 (RFC 3986 の unreserved、reserved と %)。
+func isURLChar(r rune) bool {
+	return r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || strings.ContainsRune("-._~:/?#[]@!$&'()*+,;=%", r)
 }
 
 // align は 2 つの並び (行か文の断片) を対応させる。difflib を並び全体にかけると、空行やコードの囲みのように同じ要素が何度も出る文書で時間が 2 乗から 3 乗で伸びるので、
