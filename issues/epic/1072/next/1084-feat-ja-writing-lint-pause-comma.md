@@ -1,1 +1,0 @@
-../1084-feat-ja-writing-lint-pause-comma.md
