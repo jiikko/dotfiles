@@ -71,6 +71,7 @@
 - `src/ja-writing/cmdenv` (`ja-writing/cmdenv`) — Package cmdenv は ja-writing の各 subcommand の Main が受け取る実行環境 (引数・標準入出力・cwd・環境変数) を持つ。
 - `src/ja-writing/diff` (`ja-writing/diff`) — Package diff は ja-writing diff (元の文と書き直した文の差分の検査) の Main を持つ。
 - `src/ja-writing/hook` (`ja-writing/hook`) — Package hook は ja-writing hook (エージェントの hook から check へつなぐ入口) の Main を持つ。
+- `src/ja-writing/internal/bold` (`ja-writing/internal/bold`) — Package bold は yomiyasu v3.1.0 の yomiyasu_lint.py の「太字が表示されるか」(2076-2836 行) を Go で作り直したもの。 (internal)
 - `src/ja-writing/internal/difflib` (`ja-writing/internal/difflib`) — Package difflib は Python 3.15.0 の difflib.SequenceMatcher と、本家 yomiyasu の速い照合 (yomiyasu_diff.py の _ExactSequenceMatcher) を Go で再現する。 (internal)
 - `src/ja-writing/internal/pyjson` (`ja-writing/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
 - `src/ja-writing/internal/pyre` (`ja-writing/internal/pyre`) — Package pyre は Python 3.15.0 の re (str のパターン) を regexp2 の上に写す。 (internal)
