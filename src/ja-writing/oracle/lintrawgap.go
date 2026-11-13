@@ -12,7 +12,7 @@ const lintRawGapDir = "rawgap/"
 // lintRawGapInputs は入力の集まり (testdata/corpus/) では 1 回も当たらない語・型と、当たりが少ない規則の形を 1 行ずつ当てる入力。
 // 群を入れる人が表から語・型を落としたり書き間違えたりしても、規則単位の「当たる入力がある」では気づけないので、
 // 語と型ごとに 1 件は本家の候補が出る入力にしてある (lint-raw の記録で、候補の行ごとに比べる)。本家を走らせて、1 行が 1 件になることを確かめて作った。
-var lintRawGapInputs = map[string]string{
+var lintRawGapInputs = withG14(map[string]string{
 	// SLOP_WORDS のうち corpus に出ない 5 語。
 	"slop-words": "泥臭さを残したまま設計します。\n\n営みの記録を残します。\n\n羅針盤として使います。\n\n起爆剤になります。\n\n触媒の役割を持ちます。\n",
 	// METAPHOR_VERB_PATTERNS のうち corpus に出ない 5 型 (踏み込む・収斂する・文化が醸成される・プロセスが定着する・事例が残した)。
@@ -93,6 +93,14 @@ var lintRawGapInputs = map[string]string{
 		"「サーバ」の引用。\n\n> サーバ引用\n\n`サーバ` コード。\n\n# サーバの見出し\n\n- サーバの箇条\n\n| サーバ | 値 |\n| - | - |\n\nキャッシュと鍵と...。\n\n指紋とサーバとキャッシュ。\n",
 	// 行頭が空白のバッジの行 (imageBreakRow・imageOnlyRow が先頭の空白を飛ばして見る)。
 	"badge-indented": "  [![b](x)](y)\n\n前の文です。\n  [![c](x)](y)\n次の文です。\n",
+})
+
+// withG14 は G14 の入力を足した写し (G14 の入力は lintrawgap_g14.go)。
+func withG14(m map[string]string) map[string]string {
+	for name, text := range lintG14RawGapInputs() {
+		m[name] = text
+	}
+	return m
 }
 
 // lintRawGapNames は lintRawGapInputs の名前の昇順。

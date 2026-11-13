@@ -304,6 +304,7 @@ type Call struct {
 	Digest   bool           `json:"digest,omitempty"`
 	Keep     bool           `json:"keep,omitempty"`
 	Quiet    bool           `json:"quiet,omitempty"`
+	ArgsOut  bool           `json:"args_out,omitempty"`
 	Op       *Op            `json:"op,omitempty"`
 }
 

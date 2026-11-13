@@ -196,7 +196,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 	case "_COPY_I_NOUNS":
 		return stringList(slices.Sorted(slices.Values(copyINouns))), true
 	}
-	return nil, false
+	return g14ConstantValue(name)
 }
 
 // 表の定数を Go が全部持っていること (constantValue が名前を知らないと、記録との比べが落ちる前にここで分かる)。
@@ -209,14 +209,19 @@ func TestLintTablesCoverRecordedConstants(t *testing.T) {
 }
 
 // tableFunctionValue は oracle.lintTableFunctionCases の呼び出しの値。
-func tableFunctionValue(name string) (pyjson.Value, bool) {
+func tableFunctionValue(name string, args []any) (pyjson.Value, bool) {
 	switch name {
 	case "_v220_load_list":
-		data, err := lists.Read("renyo-nouns.txt")
+		listName := args[0].(string)
+		data, err := lists.Read(listName + ".txt")
 		if err != nil {
 			panic(err)
 		}
-		return list(stringList(parseList(string(data))), "references/lists/renyo-nouns.txt"), true
+		source := "references/lists/" + listName + ".txt"
+		if listName == "thin-evaluation" {
+			return list(mapList(parseThinList(string(data)), thinPairValue), source), true
+		}
+		return list(stringList(parseList(string(data))), source), true
 	}
 	return nil, false
 }

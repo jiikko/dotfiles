@@ -309,6 +309,7 @@ func LintBaseCases(c Corpus) ([]VisCase, error) {
 	cases = append(cases, lintTableFunctionCases()...)
 	cases = append(cases, lintShapeStringCases()...)
 	cases = append(cases, lintProjectCases()...)
+	cases = append(cases, lintCalqueCases()...)
 	for _, f := range c.Files {
 		raw, err := os.ReadFile(filepath.Join(c.Root, filepath.FromSlash(f.Path)))
 		if err != nil {
@@ -339,5 +340,5 @@ func LintBaseCases(c Corpus) ([]VisCase, error) {
 // lintTableFunctionCases は一覧や表から組んだ値を返す関数の呼び出し (_v220_load_list は項目と出どころ。正規表現は同じ長さの語の並びが PYTHONHASHSEED で変わるので記録しない) (G15 以降の表。定数と同じく、Go の表が本家の値と同じかを比べる)。
 func lintTableFunctionCases() []VisCase {
 	rec := recorder{true}
-	return []VisCase{{Name: "tables/functions", Calls: []Call{rec.call("_v220_load_list", "renyo-nouns")}}}
+	return []VisCase{{Name: "tables/functions", Calls: []Call{rec.call("_v220_load_list", "renyo-nouns"), rec.call("_v220_load_list", "katakana-terms"), rec.call("_v220_load_list", "thin-evaluation")}}}
 }

@@ -210,7 +210,7 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		r.reg[c.Save] = newDocument(an)
 		return "quiet"
 	case "_v220_load_list":
-		result, _ = tableFunctionValue(c.Function)
+		result, _ = tableFunctionValue(c.Function, a)
 	case "_emoji_matches":
 		result = stringList(EmojiMatches(argString(t, a[0])))
 	case "_emoji_character_class":
@@ -293,6 +293,29 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 			first = int64(n.firstLine)
 		}
 		result = list(int64(n.chars), int64(n.firstPerson), int64(n.numbers), int64(n.bullets), first)
+	case "_calque_type1", "_calque_type2", "_calque_type3", "_calque_type4", "_calque_type5":
+		result = calqueTypeValue(t, c.Function, a)
+	case "_calque_saki_spans":
+		result = mapList(calqueSakiSpans(newSent(argString(t, a[0]))), func(span [2]int) pyjson.Value { return list(int64(span[0]), int64(span[1])) })
+	case "_calque_has_org":
+		result = calqueHasOrg(newSent(argString(t, a[0])))
+	case "_calque_subject_end":
+		result = int64(calqueSubjectEnd(newSent(argString(t, a[0])), argInt(t, a[1])))
+	case "_v220_doc_tech":
+		result = docTech(argString(t, a[0]))
+	case "_calque_message":
+		numbers := argAs[[]int](t, a[0])
+		var wordTypes []wordType
+		for _, wt := range argAs[[][]any](t, a[1]) {
+			wordTypes = append(wordTypes, wordType{wt[0].(string), wt[1].(int)})
+		}
+		result = calqueMessage(numbers, wordTypes)
+	case "_label_is_phrase":
+		result = labelIsPhrase(argString(t, a[0]))
+	case "_label_shape":
+		result = labelShape(argString(t, a[0]))
+	case "_label_kanji_runs":
+		result = mapList(labelKanjiRuns(argString(t, a[0])), func(run labelRun) pyjson.Value { return list(run.kind, run.text) })
 	case "_flag_pattern":
 		if p := flagPattern(stringsFromArg(t, a[0])); p != nil {
 			o := pyjson.NewObject()
@@ -470,4 +493,26 @@ func TestLintBaseRecordingCoversEveryFunction(t *testing.T) {
 			t.Errorf("定数 %s を Go に持っていない", name)
 		}
 	}
+}
+
+// calqueTypeValue は型の判定を 1 つの文に通した結果 ([戻り値, 呼んだ後の引数]。本家は引数の語の list に書き足す)。
+func calqueTypeValue(t *testing.T, name string, a []any) pyjson.Value {
+	x := newSent(argString(t, a[0]))
+	var words []string
+	var ok bool
+	switch name {
+	case "_calque_type1":
+		ok = calqueType1(x, &words)
+	case "_calque_type2":
+		ok = calqueType2(x, &words, a[2].(bool))
+	case "_calque_type3":
+		ok = calqueType3(x, &words, a[2].(bool))
+	case "_calque_type4":
+		ok = calqueType4(x, &words, a[2].(bool))
+	case "_calque_type5":
+		ok = calqueType5(x, &words)
+	}
+	args := []pyjson.Value{a[0], stringList(words)}
+	args = append(args, a[2:]...)
+	return list(ok, args)
 }
