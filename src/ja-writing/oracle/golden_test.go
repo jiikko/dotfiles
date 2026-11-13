@@ -3,6 +3,7 @@ package oracle
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -227,9 +228,21 @@ func TestPlanRunsCoversTools(t *testing.T) {
 }
 
 // 記録は 1 回の make golden で同じ環境から作る。1 つでも本家の commit・Python・unicodedata のバージョンが違えば、混ざった環境の記録になる。
+// 一覧を手で持たず testdata/golden/ の全部を読む (手の一覧は記録を足したときに漏れる)。
 func TestGoldenFilesShareOneEnvironment(t *testing.T) {
+	names, err := filepath.Glob(filepath.Join(goldenDir, "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) == 0 {
+		t.Fatalf("%s に記録が 1 本も無い", goldenDir)
+	}
 	var first Header
-	for i, name := range []string{PatternsFile, PyreFile, UnicodeFile, JSONFile, PystrFile, SmokeFile, DifflibFile, VisibilityFile, PauseCommaFile, LintBaseFile, LintCLIFile, LintRawFile, LintPostFile} {
+	if err := ReadGoldenHeader(goldenDir, PatternsFile, &struct{ Header *Header }{&first}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range names {
+		name := filepath.Base(path)
 		var file struct{ Header Header }
 		if err := ReadGoldenHeader(goldenDir, name, &file); err != nil {
 			t.Fatal(err)
@@ -237,10 +250,6 @@ func TestGoldenFilesShareOneEnvironment(t *testing.T) {
 		h := file.Header
 		if h.UpstreamCommit != Commit || h.PythonVersion == "" || h.UnicodedataVersion == "" {
 			t.Errorf("%s の header が想定と違う: %+v", name, h)
-		}
-		if i == 0 {
-			first = h
-			continue
 		}
 		if diff := first.EnvMismatch(h); diff != "" {
 			t.Errorf("%s の環境が %s と違う (%s)", name, PatternsFile, diff)

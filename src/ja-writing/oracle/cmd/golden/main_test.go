@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -61,5 +62,34 @@ func TestSamePatternsIgnoringTextOnlyForgivesPatternText(t *testing.T) {
 	}
 	if samePatternsIgnoringText(mk("a", "d"), []byte("{")) {
 		t.Error("壊れた記録を同じとした")
+	}
+}
+
+// make golden が作る記録の表と testdata/golden/ のファイルは 1 対 1。表に無い記録は作り直されず古いまま残り、
+// 表にあってファイルが無い記録は突き合わせのテストが読まない。
+func TestGoldensMatchGoldenDir(t *testing.T) {
+	paths, err := filepath.Glob("../../../testdata/golden/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDisk []string
+	for _, p := range paths {
+		onDisk = append(onDisk, filepath.Base(p))
+	}
+	var names, files []string
+	for _, g := range goldens {
+		names = append(names, g.name)
+		files = append(files, g.file)
+		if g.build == nil || g.what == "" || (g.table == nil) != (g.tablePath == "") {
+			t.Errorf("%s: build・what が無いか、table と tablePath の片方だけがある", g.name)
+		}
+	}
+	slices.Sort(onDisk)
+	slices.Sort(files)
+	if len(onDisk) == 0 || !slices.Equal(onDisk, files) {
+		t.Errorf("testdata/golden/ のファイル %q と記録の表 %q が違う", onDisk, files)
+	}
+	if len(slices.Compact(slices.Sorted(slices.Values(names)))) != len(names) {
+		t.Errorf("-only の名前が重なっている: %q", names)
 	}
 }
