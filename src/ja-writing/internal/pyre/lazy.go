@@ -60,3 +60,25 @@ func (l *Lazy) MustFindall(text string) [][]string {
 	}
 	return found
 }
+
+// MustSub は p.sub(repl, text) (repl は Python のテンプレート)。
+func (l *Lazy) MustSub(repl, text string) string {
+	out, err := l.Get().Sub(repl, NewText(text), 0)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
+
+// MustSplit は p.split(text) (グループの無いパターンの断片。空の一致でも割る)。
+func (l *Lazy) MustSplit(text string) []string {
+	parts, err := l.Get().Split(NewText(text), 0)
+	if err != nil {
+		panic(err)
+	}
+	out := make([]string, len(parts))
+	for i, p := range parts {
+		out[i] = p.Value
+	}
+	return out
+}
