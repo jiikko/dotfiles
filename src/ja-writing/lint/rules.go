@@ -2,7 +2,7 @@ package lint
 
 import "slices"
 
-// 規則 ID と群。本家の規則は 40 (`"rule": "…"` の字面 31 + dash 3 + 形の規則 3 + 文の型 3)。群 G1〜G20 は issue 1075 の「群と順」の番号。
+// 規則 ID と群。本家の規則は 40 (`"rule": "…"` の字面 31 + dash 3 + 形の規則 3 + 文の型 3)。群 G1〜G20 は README の「lint の骨組みと群の足し方」の表の番号。
 
 // ruleGroup は規則 ID → 群の名前。出力の鍵の順や処理の順には使わない (検出の順は lintText の骨組みが決める)。
 var ruleGroup = map[string]string{

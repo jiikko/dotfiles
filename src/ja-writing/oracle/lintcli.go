@@ -115,6 +115,9 @@ func LintCLIFiles(c Corpus, wordsDir string) (map[string]string, error) {
 	for path, body := range lintCLIExtraFiles {
 		files[path] = body
 	}
+	for name, body := range lintRawGapInputs {
+		files[lintRawGapDir+name+".md"] = body
+	}
 	return files, nil
 }
 

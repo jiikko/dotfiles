@@ -31,7 +31,7 @@ const (
 
 // Main は subcommand の入口 (本家の main)。
 func Main(_ context.Context, env cmdenv.Env) int {
-	code, err := run(env)
+	code, err := run(env, lintText)
 	if err == nil {
 		return code
 	}
@@ -60,8 +60,11 @@ func printTo(env cmdenv.Env, text string) error {
 	return nil
 }
 
+// lintFunc は検査の本体 (lintText)。run に引数で渡すのは、候補を出す群が入るまでの間も、rc と終了コードの行の配線を注入した候補で確かめるため。
+type lintFunc func(text string, c lintContext) (*result, error)
+
 // run は本家の _run。確かめる順は「--version → 条件 → 種類と読者 → words の同時指定 → 語の一覧 → 入力のパス → 入力を読む」で、誤りが重なったときにどの文が出るかを決める。
-func run(env cmdenv.Env) (int, error) {
+func run(env cmdenv.Env, lint lintFunc) (int, error) {
 	o, err := parseArgs(env.Args)
 	var perr parseError
 	if errors.As(err, &perr) {
@@ -118,7 +121,7 @@ func run(env cmdenv.Env) (int, error) {
 		return cmdenv.ExitUsage, nil
 	}
 
-	res, err := lintText(content, lintContext{docType: docType, reader: reader, words: words})
+	res, err := lint(content, lintContext{docType: docType, reader: reader, words: words})
 	if err != nil {
 		return 0, err
 	}

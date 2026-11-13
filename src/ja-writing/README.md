@@ -247,15 +247,17 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
    群どうしの依存 (G11 → G9・G14 → G8・G17 → G13) は、依存先の規則が全部 true になるまで依存元を true にできない (`TestImplementedRulesRespectGroupDependencies`)。
    40 規則が全部 true になると、`TestCLIMatchesPythonRecording` が CLI の記録 (全ファイル × 種類・読者・語の一覧・text と `--json` の出力の全体と rc。8,065 件) を全件、字まで比べる段に切り替わる。
 4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにあり、いまは呼ばれたら panic する。群を入れるとき、本家の message の組み立てをそこに書く。
-5. 記録に足りない入力の形 (地図 4.3 節) は、入力の集まり (`testdata/corpus/`) に足すと全部の記録を作り直すことになる。足すときは `go run ./oracle/cmd/golden` で全部を作り直し、差分を読む。
+5. 記録に足りない入力の形 (地図 4.3 節) は、`oracle/lintrawgap.go` の `lintRawGapInputs` に足す (検出の生の並びの記録 `lint-raw.json` にだけ入る。`rawgap/` の下に置かれ、全部の文脈で通る)。
+   入力の集まり (`testdata/corpus/`) に足すと、lint-base・visibility・lint-cli・lint-raw の記録が全部変わる。足したら `go run ./oracle/cmd/golden -only lint-raw` で作り直し、既存の行が変わっていないことを差分で読む。
+   いま足してある入力: `SLOP_WORDS` のうち入力の集まりに 1 回も出ない 5 語・`METAPHOR_VERB_PATTERNS` の同じ 5 型・`heading_colon`・`redundant_bracket` の 5 つの補足・`count_declaration` の 2 型 × 数字の書き方・`dialogue_period`。群を入れる人は、自分の群の表に入力の集まりで当たらない項目が残っていないかを、本家の表と入力の集まりの全文で数えて確かめる (`ai_phrase`・`calque`・`katakana_term`・`shape`・スライドの表の当たらない項目は未測定)。
 
 ### 本家との突き合わせ (T4)
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
 | `lint-cli.json` (8,065 件) | 入力の集まり 332 ファイル × (`--json`・`--doc-type` 13 種・`--words`・`--no-words`・text・`--strict`・`--fail-on` の組) と、誤りの呼び出し・標準入力・作業フォルダを変えた語の一覧の探し方の 88 件。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc | `TestCLIMatchesPythonRecording` (検出の生の並びが空の入力 3,777 件と、検査まで進まない呼び出し。40 規則が入るまで) |
-| `lint-raw.json` (2,656 件) | 全ファイル × 8 つの文脈 (種類なし・essay・slides・promo・script・minutes・article・語の一覧) の、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む。「規則:行:digest」の列) と、文書の指標 (`metrics`) の digest | `TestRawFindingsMatchPythonRecording` (指標は全件、候補は入った規則だけ)・`TestEveryRuleHasHitsInRawRecording` (40 規則全部に当たる入力がある) |
-| `lint-post.json` (77 件) | 本家の `lint_text` の検出を、作った候補に差し替え (driver が `_project_term_findings` を包む)、種類で外す・allow・ダッシュの上限・点数・件数・context・`--json` の形・`render_report` だけを本家のまま走らせた結果 | `TestPostProcessingMatchesPythonRecording` (検出の群が入る前に、候補のある入力で後処理と出力を確かめる唯一の比較) |
+| `lint-raw.json` (2,704 件) | 全ファイルと足した入力 6 つ (`rawgap/`) × 8 つの文脈 (種類なし・essay・slides・promo・script・minutes・article・語の一覧) の、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む。「規則:行:digest」の列) と、文書の指標 (`metrics`) の digest | `TestRawFindingsMatchPythonRecording` (指標は全件、候補は入った規則だけ)・`TestEveryRuleHasHitsInRawRecording` (40 規則全部に当たる入力がある)・`TestGapInputsHitInRawRecording` (足した入力が語・型ごとに 1 件当たる) |
+| `lint-post.json` (85 件) | 本家の `lint_text` の検出を、作った候補に差し替え (driver が `_project_term_findings` を包む)、種類で外す・allow・ダッシュの上限・点数・件数・context・`--json` の形・`render_report` だけを本家のまま走らせた結果 | `TestPostProcessingMatchesPythonRecording` (検出の群が入る前に、候補のある入力で後処理と出力を確かめる唯一の比較。`allow-partial|` の 8 件は、allow で語の一部だけを外して message を作り直す形で、その規則の群が入るまで Go の側は比べない) |
 
 - 記録の driver は 3 つ (`oracle/py/record_lint_cli.py`・`record_lint_raw.py`・`record_lint_post.py`)。CLI の driver は 1 つの Python のプロセスの中で `main(argv)` を何度も呼ぶ (stdin・stdout・stderr は 1 回ごとに作り直し、作業フォルダの実パスは `<<ROOT>>` に戻す)。
   `go run ./oracle/cmd/golden -only lint-cli|lint-raw|lint-post` で 1 つずつ作り直せる (それぞれ約 40 秒・10 秒・数秒)。
@@ -266,6 +268,8 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
   - `--fail-on` の値の小文字化は `strings.ToLower` に İ の分解を足したもの。語末の Σ を ς にする規則と、Python の Unicode のバージョンとの差は写さない (使えない値の文に出る字だけに現れる)。
   - 本家の rc 3 のうち、トレースバックの文面と、Windows の閉じたパイプ (`EINVAL`) は写さない。書き出せなかったときの rc 3 は同じ。
   - 入力のパスの検査 (`visibility.InputPathProblem`) とファイルを開く処理は、プロセスの cwd を見る。語の一覧の探し方だけが `Env.Cwd` を見る。`Main` を cwd の違う `Env` で呼ぶテストは、プロセスの cwd も移す。
+  - allow で語の一部だけを外すときの message の作り直し (`calqueMessage`・`aiPhraseMessage`・`projectTermMessage`・`renyoMessage`) は、本家に作り直させた記録 (`lint-post.json` の `allow-partial|`) を置いてあるが、群が入るまで比べない (`implementedRules` が true になると比べ始める)。
+  - `run` は検査の本体を引数で受ける (`lintFunc`)。rc と「終了コード1」の行の配線は、候補を注入した `TestRunExitCodeAndExitLine` が見る (CLI の記録は候補のある入力を 40 規則が入るまで比べない)。
   - 結果の text は `result` の構造体から作る (`renderReport`)。check (1077) が子の JSON を読んで `render_report` を呼ぶ形が要るときは、JSON の値から作る入口をそのとき足す。
 
 ## 標準ライブラリを写す package (`internal/`)

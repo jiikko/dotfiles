@@ -3,6 +3,7 @@ package lint
 import (
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -126,6 +127,124 @@ func TestIsDetailsName(t *testing.T) {
 	for name, want := range map[string]bool{"details": true, "DETAILS": true, "Details": true, "script": false, "deta" + string(rune(0x131)) + "ls": false, "detail" + string(rune(0x17f)): false} {
 		if got := isDetailsName(name); got != want {
 			t.Errorf("isDetailsName(%q) = %v", name, got)
+		}
+	}
+}
+
+// 行のループの分岐 (本家の 5655-5736): 引用と表の行は前の文を消して語の検査を当てず、見出しは見出しの口だけを呼び、表にはダッシュの口を呼ばない。
+// 口の中身が空の間も、どの行でどの口がどの前の文で呼ばれるかを、口を呼ぶ直前の記録 (trace) で見る。
+func TestEachRowBranchesAndSentenceSplit(t *testing.T) {
+	trace := func(t *testing.T, text string) []string {
+		t.Helper()
+		var got []string
+		_, err := detectTraced(text, lintContext{}, func(step string, r *rowCtx) {
+			got = append(got, strings.Join([]string{step, itoa(r.lineNo), "前=" + r.sentenceBefore, "文=" + strings.Join(r.lineSentences, "|")}, " "))
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	text := "# 見出し━\n\n前の文です。\n\n> 引用の文です。\n\n引用の次です。何ですか?はい。\n\n| a | b |\n|---|---|\n| ━ | c |\n\n表の次です。\n"
+	want := []string{
+		"g04Emoji 1 前= 文=",
+		"g05Dash 1 前= 文=",
+		"g06Heading 1 前= 文=",
+		"g08VocabularyHeading 1 前= 文=",
+		"g04Emoji 3 前=# 見出し━ 文=",
+		"g05Dash 3 前=# 見出し━ 文=",
+		"g12RecordBoldLabel 3 前=# 見出し━ 文=",
+		"g07TrailingColon 3 前=# 見出し━ 文=前の文です。",
+		"g08Vocabulary 3 前=# 見出し━ 文=前の文です。",
+		"g08Translated 3 前=# 見出し━ 文=前の文です。",
+		"g09Filler 3 前=# 見出し━ 文=前の文です。",
+		"g09InfoSentences 3 前=# 見出し━ 文=前の文です。",
+		"g10InstructionResidue 3 前=# 見出し━ 文=前の文です。",
+		"g11ShortSentences 3 前=# 見出し━ 文=前の文です。",
+		"g12Negation 3 前=# 見出し━ 文=前の文です。",
+		"g13PauseComma 3 前=# 見出し━ 文=前の文です。",
+		"g04Emoji 5 前= 文=",
+	}
+	// 引用の次の行は、前の文が消えている (引用の中の文を、地の文の前の文にしない)。
+	got := trace(t, text)
+	if !slices.Equal(got[:len(want)], want) {
+		t.Fatalf("先頭の呼び出しが違う:\n got  %q\n want %q", got[:len(want)], want)
+	}
+	rest := got[len(want):]
+	var afterQuote, table []string
+	for _, line := range rest {
+		switch {
+		case strings.Contains(line, " 7 前="):
+			afterQuote = append(afterQuote, line)
+		case strings.Contains(line, " 9 ") || strings.Contains(line, " 10 ") || strings.Contains(line, " 11 "):
+			table = append(table, line)
+		}
+	}
+	if len(afterQuote) == 0 || !strings.Contains(afterQuote[0], "g04Emoji 7 前= ") {
+		t.Errorf("引用の次の行の前の文が消えていない: %q", afterQuote)
+	}
+	for _, line := range afterQuote {
+		if strings.HasPrefix(line, "g07TrailingColon") && !strings.HasSuffix(line, "文=引用の次です。|何ですか?|はい。") {
+			t.Errorf("「。！？!?」で文を切れていない: %q", line)
+		}
+	}
+	// 表の行は絵文字の口だけを呼び、ダッシュ・語の口は呼ばない。表の次の行の前の文も消えている。
+	for _, line := range table {
+		if !strings.HasPrefix(line, "g04Emoji") {
+			t.Errorf("表の行で絵文字より後の口を呼んだ: %q", line)
+		}
+	}
+	last := got[len(got)-1]
+	if !strings.Contains(strings.Join(got, "\n"), "g04Emoji 13 前= 文=") || !strings.HasPrefix(last, "g13PauseComma 13") {
+		t.Errorf("表の次の行の前の文が消えていない: %q", got[len(want):])
+	}
+}
+
+// ダッシュの口は、文書に長いダッシュの字 (—―─━) のどれかがあるときだけ呼ぶ (━ も)。
+func TestDashStepRunsOnlyWithADashCharacter(t *testing.T) {
+	dashLines := func(text string) int {
+		n := 0
+		if _, err := detectTraced(text, lintContext{}, func(step string, _ *rowCtx) {
+			if step == "g05Dash" {
+				n++
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for _, ch := range []string{"—", "―", "─", "━"} {
+		if n := dashLines("ただ" + ch + "です。\n"); n != 1 {
+			t.Errorf("%s の文書でダッシュの口を %d 回呼んだ (1 回のはず)", ch, n)
+		}
+	}
+	if n := dashLines("ただーです。\n"); n != 0 {
+		t.Errorf("ダッシュの字が無い文書でダッシュの口を %d 回呼んだ", n)
+	}
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+// バッジだけの行は、行頭が空白で始まっても文の区切りになる (前の文を消す)。本家は raw.lstrip() で見る。バッジに文が続く行は区切りにならない。
+func TestIndentedBadgeRowBreaksThePreviousSentence(t *testing.T) {
+	before := func(text string) string {
+		got := "(行がない)"
+		if _, err := detectTraced(text, lintContext{}, func(step string, r *rowCtx) {
+			if step == "g04Emoji" && r.lineNo == 2 {
+				got = r.sentenceBefore
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for name, c := range map[string]struct{ text, want string }{
+		"行頭の空白つきのバッジ":   {"前の文です。\n  [![c](x)](y)\n次の文です。\n", ""},
+		"空白なしのバッジ":      {"前の文です。\n[![c](x)](y)\n次の文です。\n", ""},
+		"空白つきのバッジと文の続き": {"前の文です。\n  [![c](x)](y) 説明\n次の文です。\n", "前の文です。"},
+	} {
+		if got := before(c.text); got != c.want {
+			t.Errorf("%s: 前の文 %q (期待 %q)", name, got, c.want)
 		}
 	}
 }

@@ -137,3 +137,20 @@
   - 満たせていないこと: 受け入れ条件のうち、40 規則の一致・規則ごとの当たる入力と当たらない入力の件数・dotfiles の文書を通した所要・群ごとに実装をわざと壊す確かめは、群が入ってから。
     地図 4.3 節の入力 (比喩動詞の残りの 7 型など) は足していない (入力の集まりを足すと全部の記録を作り直すので、群を入れる人が必要な形を足す)。
     `-h` の文面は本家の出力の写し、argparse は記録にある形だけを確かめた (README の「揃わない範囲」)。check (1077) が子の JSON から `render_report` を呼ぶ入口は足していない。
+
+### 土台の敵対的レビュー (opus、2026-11-13)
+
+対象は 8767e39ee と 86b38a17a。本家 (Python 3.15.0・v3.1.0) と並べて走らせた結果、本家と違う答えを緑のまま通す指摘 (P1) は 0 件、P2 が 3 件、P3 が 3 件。6 件とも再現できたので直した (採らない指摘は無い)。
+壊せなかったもの: 文字列の関数 9 つ (乱数 9 万件)・解析を取る関数 (マークダウンの乱数 2.9 万件と断片 4,000 件)・後処理と出力 (乱数の候補 1,864 件)・CLI の引数 181 通り・検出の生の並びの digest (本家の候補 774 件)・12 本の記録の作り直し (バイト列が同じ)・長い入力の所要 (2 乗の形なし)。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P2-1 `run` の rc 1 と「終了コード1」の行の配線を検査するテストがない | 直した | `run` が検査の本体を引数 (`lintFunc`) で受ける形にし、検出を注入した `TestRunExitCodeAndExitLine` (条件 3 種 × 重さ 3 種・`--json` 付きの対も) を足した。実装をわざと壊した 3 本 (rc 1 を 0 にする・末尾の行を外す・当たった条件を空にする) が red |
+| P2-2 行のループの分岐が群が入るまで検査されない | 直した | 口を呼ぶ直前の記録 (`lintState.trace`。テストだけが使う) を足し、`TestEachRowBranchesAndSentenceSplit` (引用・表・見出しの分岐と前の文・文の切り方 `!?`)・`TestDashStepRunsOnlyWithADashCharacter` (4 つのダッシュの字) を足した。実装をわざと壊した 6 本 (引用と表の前の文を消さない・表でダッシュを呼ぶ・見出しの `continue` を外す・`!?` で切らない・`━` を外す) が red。本家の 5655-5750 行と並べて、期待の列 (見出しは前の文に残る・引用の行は前の文が空・`g12RecordBoldLabel` は文を切る前) を確かめた |
+| P2-3 入力の集まりに出ない語・型がある (`SLOP_WORDS` 5 語・`METAPHOR_VERB_PATTERNS` 5 型・当たりの少ない規則) | 直した (一部は未測定) | `oracle/lintrawgap.go` に入力 6 つ (語 5・型 5・`heading_colon`・`redundant_bracket` 5 種・`count_declaration` 7 形・`dialogue_period`・先頭が空白のバッジ) を足し、`lint-raw.json` を作り直した (2,656 → 2,704 件)。既存の 2,656 行は 1 バイトも変わらず、lint-cli.json は作り直してもバイト列が同じ。本家で 1 行が 1 件になることを確かめ、`TestGapInputsHitInRawRecording` が件数を見る。入力の語を 1 行消すと `TestRawFindingsMatchPythonRecording` が red。他の表 (ai_phrase・calque・katakana・shape・スライド) の当たらない項目は未測定で、README に、群を入れる人が数えると書いた |
+| P3-1 allow で語の一部だけを外すときの message の作り直しに本家の記録がない | 直した (比べるのは群が入ってから) | `LintPostFinding` に `_word_types`・`_flag_hits`・`_replacements` を足し、calque 2 形・ai_phrase・renyo_noun・project_term 4 形の 8 件 (`allow-partial\|`) を `lint-post.json` に足した (77 → 85 件)。Go の message の関数は stub なので、その規則が `implementedRules` で true になるまで比べない (比べない件数をテストが出す) |
+| P3-2 先頭が空白のバッジの行を検査する入力がない | 直した | `TestIndentedBadgeRowBreaksThePreviousSentence` (空白つき・空白なし・文が続く形)。`imageBreakRow` の `LStrip` を外す・`imageOnlyRow` の `start` を行頭にする 2 本が red。入力 `rawgap/badge-indented.md` も指標の比較に入る |
+| P3-3 `groupDependencies` の G14→G8・G17→G13 は表から外しても緑 | 直した | `TestDependencyCheckDetectsAViolation` が、表の組ごとに依存先の規則を外して違反が出ることを見て、表の中身を本家の読み (4588・4845・4846 行) と照合した値と比べる。G14・G17 の組を外す 2 本が red |
+
+- 実装をわざと壊した 14 本 (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/mut2/) が、どれも名指しの検査だけで red。巻き添えの失敗は各ログに無い。
+- 満たせていないこと: 本家の候補と Go の候補の突き合わせは、群が 0 個なので実行できていない (レビューでも未確認)。`allow-partial|` の比べは群が入るまで。

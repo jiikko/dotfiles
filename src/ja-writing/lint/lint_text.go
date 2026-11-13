@@ -35,6 +35,9 @@ type lintState struct {
 	previousSentence string
 	kikuLines        []string
 
+	// trace は行のループが群の口を呼ぶ直前に、口の名前と行を受け取る (テストだけが使う。群が空の間も、行のループの分岐と順を検査するため)。
+	trace func(step string, r *rowCtx)
+
 	g01 g01State
 	g02 g02State
 	g03 g03State
@@ -58,6 +61,12 @@ type lintState struct {
 }
 
 func (s *lintState) add(f finding) { s.findings = append(s.findings, f) }
+
+func (s *lintState) step(name string, r *rowCtx) {
+	if s.trace != nil {
+		s.trace(name, r)
+	}
+}
 
 // groupStates は群ごとの状態の欄 (G1〜G20 の順)。群が自分の欄を書き足しても、別の群の欄と重ならないこと (欄は群ごとに別の型の別の欄) をテストが見る。
 func (s *lintState) groupStates() [20]any {
@@ -90,12 +99,14 @@ func lintText(text string, c lintContext) (*result, error) {
 }
 
 // detect は lint_text の検出の部分 (5512-5932)。s.findings が、種類・allow・ダッシュの上限で外す前の候補 (検出の生の並び。本家の analysis["_findings"] に project_term を足したもの)。
-func detect(text string, c lintContext) (*lintState, error) {
+func detect(text string, c lintContext) (*lintState, error) { return detectTraced(text, c, nil) }
+
+func detectTraced(text string, c lintContext, trace func(string, *rowCtx)) (*lintState, error) {
 	an, err := visibility.AnalyzeMarkdown(text, true)
 	if err != nil {
 		return nil, err
 	}
-	s := &lintState{lintContext: c, text: text, an: an, doc: newDocument(an)}
+	s := &lintState{lintContext: c, text: text, an: an, doc: newDocument(an), trace: trace}
 	s.rule9 = s.doc.rule9Context()
 	s.g12Prepare()
 	if s.metrics, s.listGateChars, s.proseChars, err = s.doc.metricsAndListGate(); err != nil {
@@ -128,6 +139,7 @@ func (s *lintState) eachRow() {
 		if r == nil {
 			continue
 		}
+		s.step("g04Emoji", r)
 		s.g04Emoji(r)
 		// 引用は、見える絵文字を除いて、語の検査を当てない (リストや見出しが引用の中にあっても)。
 		if row.QuoteDepth != 0 || row.Kind == "quote" {
@@ -136,10 +148,13 @@ func (s *lintState) eachRow() {
 		}
 		// 表のセルのダッシュは「該当なし」を表すことが多いので、表は見ない。
 		if row.Kind != "table" && s.dashPossible {
+			s.step("g05Dash", r)
 			s.g05Dash(r)
 		}
 		if row.Kind == "heading" {
+			s.step("g06Heading", r)
 			s.g06Heading(r)
+			s.step("g08VocabularyHeading", r)
 			s.g08Vocabulary(r, r.stripped)
 			continue
 		}
@@ -147,6 +162,7 @@ func (s *lintState) eachRow() {
 			s.previousSentence = ""
 			continue
 		}
+		s.step("g12RecordBoldLabel", r)
 		s.g12RecordBoldLabel(r)
 		for _, part := range splitAfterMarks(r.plainText, "。！？!?") {
 			if clean := pystr.Strip(part); clean != "" {
@@ -154,6 +170,7 @@ func (s *lintState) eachRow() {
 			}
 		}
 		for _, step := range bodySteps {
+			s.step(step.name, r)
 			step.run(s, r)
 		}
 	}

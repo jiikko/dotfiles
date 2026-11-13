@@ -5,7 +5,7 @@ package lint
 // 骨組み (lint_text.go) が本家の順に呼ぶ口を、この群のメソッドとして持つ。いまは中身が空 (候補を出さない)。
 // 入れる人は、このファイルだけを書く (implementedRules の表の true への変更を除く)。
 //
-// 依存: issue 1084 (dotfiles-bb) が str を受ける関数を先に作る。G17 が候補の _heads と _objects を読む
+// 依存: G13 を受け持つ段が str を受ける関数を先に作る。G17 が候補の _heads と _objects を読む
 
 // g13State は G13 が文書の中で持つ状態 (本家の行のループの外の変数など)。骨組みは何も入れない。
 type g13State struct{}

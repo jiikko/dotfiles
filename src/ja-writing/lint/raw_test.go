@@ -176,15 +176,32 @@ func TestImplementedRulesRespectGroupDependencies(t *testing.T) {
 	}
 }
 
-// 依存の検査は、実際に違反を見つける (G9 の規則を全部外して cleft_list_ending だけを入れた表を作り、同じ判定を通す)。
+// 依存の検査は、表の依存の組ごとに実際に違反を見つける (依存先の群の規則を 1 つ外し、依存元の群の規則を全部入れた表を作り、同じ判定を通す)。
+// 表の中身は、本家が他の群の候補を読む 3 か所 (cleft_list_ending が G9 の filler_patterns・calque が G8 の候補・slide_comma が G13 の pause_comma の _heads と _objects。
+// 本家の _findings の読み: 4588・4845・4846 行) と照合してあり、組を表から外すと落ちる。
 func TestDependencyCheckDetectsAViolation(t *testing.T) {
+	want := map[string][]string{"G11": {"G9"}, "G14": {"G8"}, "G17": {"G13"}}
+	if !maps.EqualFunc(groupDependencies, want, slices.Equal) {
+		t.Fatalf("群の依存の表が本家の読みと違う: %v", groupDependencies)
+	}
 	saved := maps.Clone(implementedRules)
 	defer func() { implementedRules = saved }()
-	for rule, group := range ruleGroup {
-		implementedRules[rule] = rule == "cleft_list_ending" && group == "G11"
-	}
-	if violations := dependencyViolations(); !slices.Equal(violations, []string{"cleft_list_ending"}) {
-		t.Errorf("違反は cleft_list_ending だけのはず: %v", violations)
+	for group, deps := range groupDependencies {
+		for _, dep := range deps {
+			for rule, g := range ruleGroup {
+				implementedRules[rule] = g != dep
+			}
+			var dependents []string
+			for rule, g := range ruleGroup {
+				if g == group {
+					dependents = append(dependents, rule)
+				}
+			}
+			slices.Sort(dependents)
+			if violations := dependencyViolations(); !slices.Equal(violations, dependents) {
+				t.Errorf("%s が %s に依存するのに、%s の規則を外しても違反として出ない: 違反 %v、期待 %v", group, dep, dep, violations, dependents)
+			}
+		}
 	}
 }
 
@@ -204,4 +221,38 @@ func dependencyViolations() []string {
 		}
 	}
 	return out
+}
+
+// 入力の集まりに当たらない語・型 (SLOP_WORDS の 5 語・METAPHOR_VERB_PATTERNS の 5 型) と、当たりが少ない規則の形を、足した入力 (rawgap/) が 1 行 1 件で当てる。
+// 本家の表と入力の数が合わなくなったら (表が変わった・入力を書き換えた)、その入力を作り直す。
+func TestGapInputsHitInRawRecording(t *testing.T) {
+	var g oracle.LintRawGolden
+	if err := oracle.ReadGolden(goldenDir, oracle.LintRawFile, &g); err != nil {
+		t.Fatal(err)
+	}
+	counts := func(name string) map[string]int {
+		for _, rec := range g.Cases {
+			if rec.Name == name {
+				out := map[string]int{}
+				for _, token := range strings.Fields(rec.Findings) {
+					out[tokenRule(token)]++
+				}
+				return out
+			}
+		}
+		t.Fatalf("記録に %s がない", name)
+		return nil
+	}
+	for name, want := range map[string]map[string]int{
+		"rawgap/slop-words.md|none":        {"slop_vocabulary": 5},
+		"rawgap/metaphor-verbs.md|none":    {"metaphor_verb": 5},
+		"rawgap/heading-forms.md|none":     {"heading_colon": 1, "redundant_bracket": 5},
+		"rawgap/count-declaration.md|none": {"count_declaration": 7},
+		"rawgap/dialogue-period.md|script": {"dialogue_period": 1},
+		"rawgap/dialogue-period.md|none":   {},
+	} {
+		if got := counts(name); !maps.Equal(got, want) {
+			t.Errorf("%s: 規則ごとの件数 %v、期待 %v", name, got, want)
+		}
+	}
 }

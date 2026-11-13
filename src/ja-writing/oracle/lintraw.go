@@ -53,17 +53,23 @@ type LintRawGolden struct {
 // MarshalLintRaw は LintRawGolden を決まったバイト列にする。
 func MarshalLintRaw(g LintRawGolden) ([]byte, error) { return marshalHeaderCases(g.Header, g.Cases) }
 
-// LintRawCases は入力の集まりの全ファイルを、LintRawContexts の全部の文脈で通す case の一覧。名前は「パス|文脈の名前」。
+// LintRawCases は入力の集まりの全ファイルと、入力の集まりに足りない形の入力 (lintRawGapInputs。rawgap/ の下) を、LintRawContexts の全部の文脈で通す case の一覧。名前は「パス|文脈の名前」。
 func LintRawCases(c Corpus) []LintRawCase {
 	var cases []LintRawCase
-	for _, f := range c.Files {
+	add := func(name, path string) {
 		for _, ctx := range LintRawContexts() {
-			rc := LintRawCase{Name: f.Path + "|" + ctx.Name, Path: "corpus/" + f.Path, DocType: ctx.DocType}
+			rc := LintRawCase{Name: name + "|" + ctx.Name, Path: path, DocType: ctx.DocType}
 			if ctx.Words {
 				rc.Words = "words"
 			}
 			cases = append(cases, rc)
 		}
+	}
+	for _, f := range c.Files {
+		add(f.Path, "corpus/"+f.Path)
+	}
+	for _, name := range lintRawGapNames() {
+		add(lintRawGapDir+name+".md", lintRawGapDir+name+".md")
 	}
 	return cases
 }

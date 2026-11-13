@@ -3,6 +3,7 @@ package oracle
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -20,6 +21,10 @@ type LintPostFinding struct {
 	Snippet        string              `json:"snippet"`
 	Words          []string            `json:"_words,omitempty"`
 	PatternMatches map[string][]string `json:"_pattern_matches,omitempty"`
+	// WordTypes (calque の [語, 型の番号])・FlagHits・Replacements は、allow で語の一部だけを外すとき message の作り直しが読む欄。
+	WordTypes    [][]any           `json:"_word_types,omitempty"`
+	FlagHits     []string          `json:"_flag_hits,omitempty"`
+	Replacements map[string]string `json:"_replacements,omitempty"`
 }
 
 // LintPostCase は 1 件。Text は本家が検出で何も出さない短い文書 (natural が 0 であることを記録が確かめる)。Words は語の一覧のフォルダ (作業フォルダからの相対。空なら使わない)。
@@ -168,6 +173,38 @@ func wordsFindings() []LintPostFinding {
 	}
 }
 
+// AllowPartialPrefix は、allow.txt で語の一部だけを外して message を作り直す case の名前の頭。作り直す message は群 (G14・G15・G16・G20) の関数なので、
+// その規則が Go に入る (implementedRules) までは Go の側が比べない。
+const AllowPartialPrefix = "allow-partial|"
+
+// allowPartialFindings は語の一覧 (allow は「確かめ」と「サーバ」) で、1 行の語の一部だけが外れ、message を作り直す候補。入力の集まりでは renyo_noun しか作り直しが走らない
+// (calque・ai_phrase・project_term は 0 件) ので、本家に作り直させた結果を記録に置く。
+func allowPartialFindings() map[string][]LintPostFinding {
+	f := func(rule, msg string, words []string) LintPostFinding {
+		return postFinding(rule, 1, "info", msg, "行", words...)
+	}
+	calque := func(words []string, types [][]any) LintPostFinding {
+		c := f("calque", "直訳語", words)
+		c.WordTypes = types
+		return c
+	}
+	project := func(words []string, flagHits []string, patterns map[string][]string, replacements map[string]string) LintPostFinding {
+		p := f("project_term", "語の一覧", words)
+		p.FlagHits, p.PatternMatches, p.Replacements = flagHits, patterns, replacements
+		return p
+	}
+	return map[string][]LintPostFinding{
+		"calque|2-types":          {calque([]string{"サーバ", "別の語"}, [][]any{{"サーバ", 1}, {"別の語", 2}})},
+		"calque|same-type":        {calque([]string{"サーバ", "別の語", "さらに別"}, [][]any{{"サーバ", 1}, {"別の語", 1}, {"さらに別", 3}})},
+		"ai_phrase":               {f("ai_phrase", "AI の言い回し", []string{"サーバ", "別の語", "もう一つ"})},
+		"renyo_noun":              {f("renyo_noun", "連用形", []string{"確かめ", "比べ"})},
+		"project_term|flag":       {project([]string{"サーバ", "キャッシュ"}, []string{"サーバ", "キャッシュ"}, nil, map[string]string{"サーバ": "サーバー", "キャッシュ": "保存"})},
+		"project_term|pattern":    {project([]string{"サーバ", "三点リーダ"}, []string{"サーバ"}, map[string][]string{"三点リーダ": {"..."}}, nil)},
+		"project_term|both":       {project([]string{"サーバ", "三点リーダ", "キャッシュ"}, []string{"サーバ", "キャッシュ"}, map[string][]string{"三点リーダ": {"..."}}, map[string]string{"キャッシュ": "保存"})},
+		"project_term|name-allow": {project([]string{"三点リーダ", "キャッシュ"}, []string{"キャッシュ"}, map[string][]string{"三点リーダ": {"サーバ"}}, map[string]string{"キャッシュ": "保存"})},
+	}
+}
+
 func repeatText(unit string, n int) string { return strings.Repeat(unit, n) + "\n" }
 
 // LintPostCases は検出より後の処理と出力の記録の case の一覧。docTypes は種類の全部 (visibility の表)。
@@ -195,6 +232,10 @@ func LintPostCases(docTypes, readers []string) []LintPostCase {
 	add("none|words-empty", short, nil, nil, "words", []LintPostFinding{})
 	add("mail|words", short, ptr("mail"), ptr("general"), "words", append(slices.Clone(words), all...))
 	add("emptywords|words", short, nil, nil, "emptywords", words)
+	partial := allowPartialFindings()
+	for _, name := range slices.Sorted(maps.Keys(partial)) {
+		add(AllowPartialPrefix+name, short, nil, nil, "words", partial[name])
+	}
 	// 点数: 地の文の字数の下限 (1000) の前後、重さの組み合わせ、文書単位の規則、数えない規則。
 	for _, n := range []int{0, 5, 999, 1000, 1001, 5000} {
 		text := repeatText("あ", n)
