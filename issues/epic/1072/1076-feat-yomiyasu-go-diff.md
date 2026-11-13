@@ -354,3 +354,10 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 本家と揃わなかった所: 無い
 - 確かめていないこと (レビューの報告から): 単独のサロゲートを含む文書 (Go の `encoding/json` が U+FFFD に置き換えるので、記録の道具では渡せない)・群 AC の cache の後始末 (未実装)・上の緑のまま通った 43 本が等価か
 - 再提起に要る実測: 緑のまま通った 43 本について、本家と違う答えを返す入力 (o・r の 2 つの文書と、本家・壊した形の答え) を python と Go の両方で示す。レビューの 10,000 組の fuzz では作れなかった
+
+### CI の時間切れ (2026-11-14)
+
+- 1916a1ef9 の CI (`src/ja-writing`) が 2 回とも赤。lint のパッケージの `go test -race` が上限 10 分を超えた (600.1 秒)。lint のコードは変えていない。同じ runner で並ぶ diff のテストが記録の増加で 230 → 248 → 335 秒と伸び、緑だった run でも lint は 552・569 秒で上限すれすれだった。
+- 手元の race の所要 (4 本目の木): lint の `TestCLIMatchesPythonRecording` 266 秒・`TestRawFindingsMatchPythonRecording` 96 秒、diff の `TestBaseMatchesPythonRecording` 172 秒。パッケージ全体は lint 387 秒・diff 232 秒。
+- 3 本とも 1 つの goroutine で順に呼ぶだけなので、race で見つけられるものは無い。pyre の全パターンの突き合わせの前例に揃え、`//go:build !race` のファイルへ移し、`make test` が race なしで別に回す (`Makefile` の `NORACE_CHECKS`)。上限を延ばす形は採らない (diff の群が増えるたびに同じことが起きる)。
+- 別の run は各テストの `--- PASS: <名前>` の行を見る。無いテスト名を渡すと rc 1 で落ちることを確かめた。
