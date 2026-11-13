@@ -255,3 +255,10 @@
     台詞の見つけ方と地の文の数え方は、`_top_quote_contents` (手書き 20 文)・`_dialogue_lines`・`_narrative_counts` を、入力の集まりの全ファイルと枝を当てる文書 (`shape/forms`。名前：台詞・一人称の例外・識別子・バッジ・コード) に通して中身を比べる (lint-base に 3 関数の呼び出しを足した)。
   - 足した入力 (lint-raw のみ。14 件): 台詞 9 個 (出ない)・10 個で割合 0.5 ちょうど (出る)・0.4 (出ない)・丸め 87.5 → 88 と 62.5 → 62・名前：台詞・半角の「｡」、地の文 999 / 1,000 / 1,001 字・数字 7 / 8 個・一人称 1.0 ちょうど (出ない) と 0.999 (出る)・箇条書き。本家で出る・出ないが想定どおりになることを記録で確かめた。
   - わざと壊した 14 本が全部想定の検査で red (境目の `>=` を `>` にする 5 本・丸め・半角の句点・箇条書きの数え・千の区切り・小数の桁・カギ括弧の伏せ・話し手でない名前・一人称の表・飛ばす行の種類)。
+
+- 2026-11-13 G20 (project_term) を入れた (`lint/g20_project_term.go`・`g20_tables.go`)。`projectTermMessage` も本家どおりに書いた (allow で語の一部だけを外す message の作り直し)。
+  - 比べた候補: project_term 296 (lint-raw の words の文脈。内部の欄 `_words`・`_replacements`・`_pattern_matches`・`_flag_hits` を含む digest で一致)。lint-post の allow で語の一部を外す case のうち、規則が入るまで比べない件数が 6 から 2 に減った (残りは calque・katakana_term)。
+    表は定数 10 個 (message 3・語の境目 7) を記録と比べる。`_flag_pattern` (語の並び 11 通り)・`_replacement_bounded` (26 通り)・`_project_term_message` (13 通り)・`_project_term_findings` (flag と使う語の 5 通りを手書きの文書 1 つに) の中身も本家と比べる (lint-base に 4 関数を足した)。
+  - 足した入力: `rawgap/g20-forms.md` (使う語の中に収まる当たり・語とパターンが同じ行・パターンの名前だけ・引用・コード・表・見出し)。`_pattern_matches` で同じ名前のパターンが 2 つある形は、fixture の語の一覧が持たないので比べていない (未確認。flag-patterns.txt に同じ名前の行を 2 つ書いたときに `_pattern_matches` の値を合わせる分岐)。
+  - わざと壊した 15 本が想定の検査で red (使う語の除外・必須の字の絞り込み・message の 3 形のうち 2・内部の欄 2・引用の伏せ・使う語の添え・当たりの重なりの除去・長い語を先にする並び・漢字の端の境目・使う語の英数字の境目・表 2)。1 本は等価と判断した: `isOpaqueRow` を外す変異 (コード・frontmatter・HTML・参照の定義の行は `proseVisibleText` が全部を空白にするので、飛ばさなくても `Strip == ""` で飛ぶ)。
+  - README の「message を作り直す関数」の節を、G14 の `calqueMessage` だけが panic する状態に直した。

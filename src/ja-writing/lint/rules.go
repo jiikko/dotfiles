@@ -102,7 +102,7 @@ var implementedRules = map[string]bool{
 	"dialogue_period":   true,
 	"narrative_density": true,
 
-	"project_term": false,
+	"project_term": true,
 }
 
 // allRulesImplemented は 40 規則が全部入ったか。

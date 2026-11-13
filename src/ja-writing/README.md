@@ -247,7 +247,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
    群どうしの依存 (G11 → G9・G14 → G8・G17 → G13) は、依存先の規則が全部 true になるまで依存元を true にできない (`TestImplementedRulesRespectGroupDependencies`)。
    40 規則が全部 true になると、`TestCLIMatchesPythonRecording` が CLI の記録 (全ファイル × 種類・読者・語の一覧・text と `--json` の出力の全体と rc。8,072 件) を全件比べる段に切り替わる (stdout は SHA-256 の先頭 16 字と長さ・stderr は全文・rc)。
    入っている群: G3 (`bold_not_rendered`。`g03Bold`)・G13 (`pause_comma`。`g13PauseComma` が `lint/pausecomma` を呼ぶ)。
-4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにあり、いまは呼ばれたら panic する。群を入れるとき、本家の message の組み立てをそこに書く。
+4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにある。G14 の `calqueMessage` だけは、群が入るまで呼ばれたら panic する。群を入れるとき、本家の message の組み立てをそこに書く。
 5. 記録に足りない入力の形 (地図 4.3 節) は、`oracle/lintrawgap.go` の `lintRawGapInputs` に足す (検出の生の並びの記録 `lint-raw.json` にだけ入る。`rawgap/` の下に置かれ、全部の文脈で通る)。
    入力の集まり (`testdata/corpus/`) に足すと、lint-base・visibility・lint-cli・lint-raw の記録が全部変わる。足したら `go run ./oracle/cmd/golden -only lint-raw` で作り直し、既存の行が変わっていないことを差分で読む。
    いま足してある入力: `SLOP_WORDS` のうち入力の集まりに 1 回も出ない 5 語・`METAPHOR_VERB_PATTERNS` の同じ 5 型・`heading_colon`・`redundant_bracket` の 5 つの補足・`count_declaration` の 2 型 × 数字の書き方・`dialogue_period`。群を入れる人は、自分の群の表に入力の集まりで当たらない項目が残っていないかを、本家の表と入力の集まりの全文で数えて確かめる (`ai_phrase`・`calque`・`katakana_term`・`shape`・スライドの表の当たらない項目は未測定)。

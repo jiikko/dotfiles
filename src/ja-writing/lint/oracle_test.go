@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyre"
 	"ja-writing/internal/pyunicode"
 	"ja-writing/oracle"
 	"ja-writing/visibility"
@@ -292,6 +293,50 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 			first = int64(n.firstLine)
 		}
 		result = list(int64(n.chars), int64(n.firstPerson), int64(n.numbers), int64(n.bullets), first)
+	case "_flag_pattern":
+		if p := flagPattern(stringsFromArg(t, a[0])); p != nil {
+			o := pyjson.NewObject()
+			o.Set("flags", int64(p.Flags()))
+			o.Set("pattern", p.Pattern())
+			result = o
+		}
+	case "_replacement_bounded":
+		result = replacementBounded(pyre.NewText(argString(t, a[0])), argInt(t, a[1]), argString(t, a[2]))
+	case "_project_term_message":
+		var patterns []patternMatch
+		for _, name := range stringsFromArg(t, a[1]) {
+			patterns = append(patterns, patternMatch{Name: name})
+		}
+		var hits []string
+		if a[2] != nil {
+			hits = append([]string{}, stringsFromArg(t, a[2])...)
+		}
+		var replacements []wordPair
+		if m, ok := a[3].(map[string]any); ok {
+			for _, word := range sortedKeys(m) {
+				replacements = append(replacements, wordPair{word, argString(t, m[word])})
+			}
+		}
+		result = projectTermMessage(stringsFromArg(t, a[0]), patterns, hits, replacements)
+	case "_project_term_findings":
+		d := r.document(t, a[0])
+		spec := argAs[map[string]any](t, a[1])
+		words := &visibility.Words{FlagReplacements: map[string]string{}}
+		if flag, ok := spec["flag"]; ok {
+			words.Flag = stringsFromArg(t, flag)
+		}
+		if m, ok := spec["flag_replacements"].(map[string]any); ok {
+			for word, replacement := range m {
+				words.FlagReplacements[word] = argString(t, replacement)
+			}
+		}
+		s := &lintState{doc: d, an: d.an, lintContext: lintContext{words: words}}
+		s.g20ProjectTermFindings()
+		out := make([]pyjson.Value, len(s.findings))
+		for i, f := range s.findings {
+			out[i] = f.internalValue()
+		}
+		result = out
 	case "_v220_scan_text":
 		result = r.document(t, a[0]).v220ScanText(argInt(t, a[1]))
 	default:

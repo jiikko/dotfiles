@@ -88,6 +88,9 @@ var lintRawGapInputs = map[string]string{
 	"g19-narrative-person1":  g19NarrativeDoc(1000, 8, 0, "私"),
 	"g19-narrative-person2":  g19NarrativeDoc(1001, 9, 0, "私"),
 	"g19-narrative-bullets":  g19NarrativeDoc(1000, 4, 4, ""),
+	// G20 (words の文脈だけが当てる): 使う語の中に収まる当たり (サーバー)・語と使う語が同じ行・パターンの名前だけ・flag の語とパターンが同じ行 (キャッシュ)・引用・コード・表・見出し・複数の当たりの並び。
+	"g20-forms": "サーバーを使う。\n\nサーバを使う。\n\nサーバとサーバーを使う。\n\n指紋を取る。\n\n公開鍵と秘密鍵。\n\n鍵だけ。\n\nとても長い...続く。\n\nキャッシュを使う。\n\nキャッシュ制御を使う。\n\n" +
+		"「サーバ」の引用。\n\n> サーバ引用\n\n`サーバ` コード。\n\n# サーバの見出し\n\n- サーバの箇条\n\n| サーバ | 値 |\n| - | - |\n\nキャッシュと鍵と...。\n\n指紋とサーバとキャッシュ。\n",
 	// 行頭が空白のバッジの行 (imageBreakRow・imageOnlyRow が先頭の空白を飛ばして見る)。
 	"badge-indented": "  [![b](x)](y)\n\n前の文です。\n  [![c](x)](y)\n次の文です。\n",
 }

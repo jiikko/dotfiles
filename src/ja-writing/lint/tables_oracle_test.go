@@ -90,6 +90,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		"_BARE_VERB_PART": bareVerbPart, "_BARE_VERB_LAST": bareVerbLast, "_BARE_VERB_POLITE": bareVerbPolite, "_BARE_VERB_NOT_VERB": bareVerbNotVerb, "_BARE_VERB_PARTICLE": bareVerbParticle,
 		"_SPEAKER_LINE": speakerLine, "_NOT_SPEAKER": notSpeaker, "_EDGE_STAGE_NOTE": edgeStageNote, "_FIRST_PERSON": firstPerson,
 		"_NARRATIVE_NUMBER": narrativeNumber, "_ASCII_IDENTIFIER": asciiIdentifier,
+		"_WORD_ASCII": wordASCII, "_REPLACEMENT_BEFORE": replacementBefore, "_REPLACEMENT_AFTER": replacementAfter,
 		"_NEGATION_EXTRA": negationExtra, "_NEGATION_JANAI": negationJanai, "_NEGATION_ALSO": negationAlso, "_BOLD_LABEL_ITEM": boldLabelItem,
 	}
 	if p, ok := lazy[name]; ok {
@@ -166,6 +167,20 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 			closers = append(closers, string(closer))
 		}
 		return stringList(slices.Sorted(slices.Values(closers))), true
+	case "_PROJECT_TERM_MESSAGE":
+		return projectTermMessageHead + "{}）" + v220MessageTail, true
+	case "_PROJECT_TERM_PATTERN_MESSAGE":
+		return projectTermPatternMessageHead + "{}）" + v220MessageTail, true
+	case "_PROJECT_TERM_BOTH_MESSAGE":
+		return projectTermBothMessageHead + "{}）" + v220MessageTail, true
+	case "_WORD_BEFORE":
+		return wordBeforePattern, true
+	case "_WORD_AFTER":
+		return wordAfterPattern, true
+	case "_WORD_KANJI_BEFORE":
+		return wordKanjiBeforePattern, true
+	case "_WORD_KANJI_AFTER":
+		return wordKanjiAfterPattern, true
 	case "_SHAPE_RULE_MESSAGES":
 		messages := map[string]string{}
 		for _, r := range shapeRules {
