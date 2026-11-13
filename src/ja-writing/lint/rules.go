@@ -72,7 +72,7 @@ var implementedRules = map[string]bool{
 	"meta_intro":          true,
 	"count_declaration":   true,
 
-	"instruction_residue": false,
+	"instruction_residue": true,
 
 	"short_mochiron":    false,
 	"fragment_run":      false,
