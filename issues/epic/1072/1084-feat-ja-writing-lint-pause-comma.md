@@ -58,12 +58,12 @@ G13 の外で使われるのは、G16 (ai_phrase) の 4997 行の `_TE_NOT_VERB`
 
 ## 受け入れ条件
 
-- [ ] str の 2 関数が、記録の全入力で本家と同じ (位置・かたまり・句) の並びを返す
-- [ ] 除外の条件 a〜t と目的語の条件のそれぞれで、当たる入力と外れる入力が記録にある (条件ごとの数を試験で見る)
-- [ ] 行をつなぐ関数が、入力の集まりの全ファイルで本家と同じ表を返す (objects の真と偽)
-- [ ] G16・G17 が使う値が同じ package から読める
-- [ ] 新しい試験は実装を壊すと落ちることを `mutate-verify-list` で確かめた
-- [ ] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通る
+- [x] str の 2 関数が、記録の全入力で本家と同じ (位置・かたまり・句) の並びを返す
+- [x] 除外の条件 a〜t と目的語の条件のそれぞれで、当たる入力と外れる入力が記録にある (条件ごとの数を試験で見る)
+- [x] 行をつなぐ関数が、入力の集まりの全ファイルで本家と同じ表を返す (objects の真と偽)
+- [x] G16・G17 が使う値が読める (`lint/pausecomma` の `TENotVerb`・`TEAttrObject`)
+- [x] 新しい試験は実装を壊すと落ちることを `mutate-verify-list` で確かめた
+- [x] `make -C src/ja-writing lint test`・root の `make test-lint`・`make test-dupscan-gate` が通る
 - [ ] 骨組みにつないだ後、本家の lint の記録を `pause_comma` で絞った検出が一致する (土台が入った後。比べられるのは種類を付けた run (1 種類につき 12 本) だけで、素の run には pause_comma が出ない)
 
 ## 関連ファイル
@@ -74,5 +74,20 @@ G13 の外で使われるのは、G16 (ai_phrase) の 4997 行の `_TE_NOT_VERB`
 
 ## 進捗
 
+- 実装 (2026-11-13、dotfiles-bb): `feat(ja-writing): lint/pausecomma に G13 (pause_comma) を写す (issue 1084)`
+  - `src/ja-writing/lint/pausecomma`: `Hits` (_pause_comma_hits)・`ObjectHits` (_pause_comma_object_hits)・`Fallback` (lint_text が表に無い行で当て直す形と flush の形)・
+    `LineHits` (_pause_comma_line_hits。見える字は引数の関数で受ける)・`TENotVerb` (G16 用)・`TEAttrObject` (G17 用)。骨組みにつなぐまで製品のコードから呼ばれず、
+    同じ package に置くと lint の unused が全部を落とすので、別の package にして入口を公開した
+  - 記録: `oracle/py/record_pause_comma.py`・`oracle/pause_comma.go`・`oracle/pause_comma_texts.go`・`testdata/golden/pause_comma.json` (約 380 KB)。
+    手で作った文 122・Markdown の文書 21・入力の集まりの 332 ファイル (trigger の字を含む 2,768 行と、objects の真偽の行をつなぐ表)。他の記録は作り直しても変わらなかった
+- 試験: `TestMatchesPythonRecording` が記録の全入力で 3 関数の一致を見る。除外の条件 36 個 (本家の a〜t と、同じ字の条件の中の枝・目的語の条件) が全部 1 回以上通ることも見る
+- 実装を壊して落ちることの確認 (`mutate-verify-list`): 22 本中 21 本が想定どおり赤 (行頭の空の prev・r の数え方・かたまりの並び・手紙の挨拶の位置・かっこの中の長さ・空白を除いた長さ・
+  84 字の窓・文の終わりで窓を切る (主題と目的語)・かっこの伏せ字・読点の直後の「は」・目的語の長さ・句点の無い段落・見出しのような行・`*` を外す・bisect_right・`_TE_NOT_VERB` の後読み・
+  「と」で始まる句の前の読点・前の句の記号を外す・`Fallback` の並べ替え)。最初の run で緑だった 8 本のうち 7 本は、記録に境目の入力を足して赤にした。
+  緑のまま通る 1 本 (`gaIsConjunction` の名詞の終わりの否定を外す) は等価: 述語の終わりは全部ひらがなで終わり、名詞の終わりの字の集合はひらがなを含まない (理由はコードのコメント)
+- 敵対的レビュー (opus 1 体、実装): ランダムな文字列 23 万件 (サロゲート・改行・各種の空白・表の語を混ぜる) と Markdown 2.4 万件で本家との違いは 0 件・panic 0 件。
+  指摘は試験の穴 6 件 (全部、入力を足して赤にした) と、骨組みが当て直しの並べ替えを写さずに済む口が無い P3 (`Fallback` を足した)。
+  等価として残したもの: `nonlead` による文頭の判定は本家でも `j == 文の始まり` と同じ値になる (レビューが証明と 3 万件で確かめた)・`ObjectHits` の pos つきの match は切り出しと同じ (i+1 が読点なので後読みが前を見ても当たらない。未証明)
+- 残り: 骨組みへのつなぎ (行のループから `Fallback`・`LineHits` を呼ぶ・message・`_objects`・`_heads`・実装済みの規則の表) と、本家の lint の記録を `pause_comma` で絞った突き合わせ。dotfiles-c5 の土台が master に入った知らせを待つ
 - 反証レビュー (opus 1 体、2026-11-13): P1 0・P2 5・P3 5。全部を本文に入れた (G13 がほかから使うもの・行のループで飛ぶ行・当て直しの経路が実質 0・行をつなぐ関数の分岐・
   r の数え方・条件の数え方の単位・行頭の空の prev・G13 の外で使われる名前・比べられる記録・"" でつなぐ・seed)。反証できなかった主張: 行の範囲・正規表現と表の数・PYTHONHASHSEED で答えが変わらないこと・message と `_objects` `_heads` の作り方
