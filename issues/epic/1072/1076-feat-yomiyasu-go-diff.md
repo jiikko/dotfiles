@@ -102,9 +102,9 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 1. **`context.words.path`**: cwd に依る欄。記録の作業フォルダは使い捨てなので、文字列の中の実パスを `<<ROOT>>` に置き換えてから比べる (lint の CLI の記録と同じ。`--words 相対` と cwd から見つける形の両方を記録に入れ、形が食い違えばそのとき表に足す)。新しい行は README の「揃わない範囲」の表に足さない (置き換えは比べ方であって、揃わない範囲ではない)
 2. **`-h`**: 本家が出した文面 (端末の幅 80 桁) を `diff/help.txt` に持ち、`COLUMNS` で幅を変えても Go は変わらない。文面も rc も記録と比べる。lint の `help.txt` と同じ扱い
 3. **rc 3 の traceback**: 文面は揃えない。rc 3 と、1 行目 (`yomiyasu_diff.py: 内部エラー: <型>: <文>`) までにする。lint と同じ
-4. **`Error opening file ...（<strerror>）`**: lint が使う `visibility.OSErrorReason` を使う (macOS の `strerror(3)` の表。記録で確かめた errno は lint の README の「揃わない範囲」と同じ)。diff の記録の誤りの呼び出しに無いファイル・ディレクトリ・権限なしを入れて確かめる
+4. **`Error opening file ...（<strerror>）`**: lint が使う `visibility.OSErrorReason` を使う (macOS の `strerror(3)` の表。記録で確かめた errno は lint の README の「揃わない範囲」と同じ)。diff の記録の誤りの呼び出しに無いファイル・ディレクトリ・UTF-8 でないものを入れた。権限なしは記録に入れていない (手で `chmod 000` のファイルを渡すと、本家と Go は同じ「ファイルを開けません（Permission denied）」で rc 2。機械では守っていない)
 5. **`list` と `list_problem`**: Go は一覧を埋め込むので、いつも `"references/lists/<名前>.txt"` と `null` を出す (本家が隣のファイルを読めたときの値で、記録の本家も同じ)。内蔵の一覧 (`BUILTIN_LISTS`) と「読めなかった」経路 (`_LIST_NOTE`) は写さない。そのため `report` の「一覧の注意」の節は出ない。JSON の一覧の欄は記録と比べる
-6. **`--fail-on` の `lower()`**: lint の `failOnWord` と同じ (`strings.ToLower` に İ の分解を足す。語末の Σ と Python の Unicode のバージョンとの差は写さない)。実装は lint と共有する `internal/pyargparse` に出す。使えない値の文に出る字だけに現れる
+6. **`--fail-on` の `lower()`**: lint の `failOnWord` と同じ (`strings.ToLower` に İ の分解を足す。語末の Σ と Python の Unicode のバージョンとの差は写さない)。実装は lint と共有する `internal/pycli` に出した。使えない値の文に出る字だけに現れる
 7. **標準エラーの案内の文のコマンド名**: lint と同じく本家の文 (`yomiyasu_diff.py ...`) をそのまま出す。`ja-writing diff` への置き換えは 1078 で lint とまとめて決める (README の表の 2 行目)
 
 ## 受け入れ条件
@@ -147,3 +147,32 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - 残り (この係では手を付けていない): 群 J・K・L (全文差分・見出しの構造・文の組と本文)・AD (人が読む出力)・以降の ④〜⑧。量が多く、半端な群を commit しないため、ここで止めた。次の係は ② J → K → L (`full_diff` の関数の記録を `oracle/diffbase.go` に足す)、③ AD (本家の `--json` を入力にして `report` と突き合わせる) から始める。
     その前に、`diffHeavy` の入力 (`full-budget` など) と `testdata/diff` の hunk の入力 (`full-*`) が J の記録として足りるかを見る
   - 最終の検査 (commit 20d25d6f2 の木。rc は全部 0): `make -C src/ja-writing lint test` (lint 0 issues・`go test -race ./...` 全部 ok)・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` (新しい重複なし)
+
+### 1 本目の敵対的レビュー (opus)
+
+対象は 787f3d6e8..1418b9d18。関数ごとの比較 12,300 件と CLI の比較 1,400 回 (本家 Python 3.15.0 と stdout・stderr・rc) は食い違い 0 件で、壊せなかった。壊せたのは下の 1 件だけ。指摘ごとの扱いと、直した後の状態は次のとおり。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P1-1 `--stance` の空白の判定 (`strings.TrimSpace` は \x1c〜\x1f を空白に数えない) | 直した (`pystr.Strip`)。本家 Python の記録でも「（空）」と出ることを記録の作り直しで確かめた | CLI の記録に `stance-separator-chars`・`stance-ideographic-space`・`stance-separator-endings` を足した。`TrimSpace` に戻すと `TestCLIMatchesPythonRecording` が red |
+| P1-2 README の件数の誤り (7,928 と 7,942) | 直した。今の数は CLI 7,948 件・比べた 2,382 件・関数 789 case・65,952 呼び出し (test の出力で確認) | README の件数を揃えた |
+| P1-2 「決めたこと」6 の `internal/pyargparse` | 直した (実物は `internal/pycli`) | — |
+| P1-2 「決めたこと」4 の権限なし | 主張を直した。記録に権限なしは 0 件で、手で `chmod 000` のファイルを渡すと本家と Go は同じ文で rc 2 | 機械では守っていない (未確認の範囲) |
+| P2-1 `ending_changes` の同点の規則 | 再現した。記録の組 `tie` の似かたは同点でなかった | `tie-equal-score` を足した。`>=` に変えると `TestBaseMatchesPythonRecording` が red |
+| P2-2 `BareEnd` の空白 (`unicode.IsSpace`) | 再現した | `確認してください。 \x1c(例)` など 3 文を足した。`unicode.IsSpace` に変えると red |
+| P2-3 表のセルの `pystr.Strip(cell)` | **採らない** (等価)。`strings.TrimSpace(cell)` に替えても全テストが緑のままで、指摘の「sentence が `\x1c確認します` になる」は再現しない: 続く `s = pystr.Strip(s)` が同じ字を外すので、セルの strip は出力に効かない | 入力 (`table-separator-cell`) は経路の記録として残した。再提起に要るのは、セルの strip の違いが `EndingUnit` の出力の違いになる入力 (実測で本家と Go の答えが変わるもの) |
+| P2-4 入力を読む順 (ファイルを全部読んでから資料) | 再現した | `missing-file-and-bad-material`・`bad-file-and-missing-material` を足した。資料を先に読む形にすると red |
+| P2-5 `--fail-on İ` の分解 | 再現した (記録に İ が 0 件) | `fail-on-dotted-capital-i` を足した。分解を外すと red |
+| P2-6 `bodyImplemented=false` の間は request の組み立てが検査されない | **採らない**。読んで確かめた通りだが、今は本体が無く request は読まれない。本体 (群 J の最初の commit) で `bodyImplemented` を真にすると、比べていない記録 5,566 件が全部比べられ、old と new の入れ替え・SourceInfo・資料の順・語の一覧の解決が記録と突き合わされる | 群 J の最初の commit で `bodyImplemented` を真にすることを必須にする (下の「未確認のリスク」にも書く) |
+| P3 rc 3 の `<型>` | 再現する経路は見つからなかったが、コードでは `visibility` の誤り以外は型の名前を出さない | README を実物に合わせた。rc 3 の経路は記録に無い (未確認のまま) |
+| P3 答えが変わらない書き換え 4 本 (設定部分の位置・不安定な sort・枝刈りの `<=`・-h と --version の順) | 採らない (本家との答えが変わらないので、テストが赤くならなくてよい) | — |
+
+- わざと壊して red を確かめた (`mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf1/mut-a/ と mut-a2/): 6 本。5 本が想定の検査で red (`--stance` の `TrimSpace`・`--fail-on` の İ・資料を先に読む・同点の `>=`・`BareEnd` の `unicode.IsSpace`)、1 本 (表のセルの `TrimSpace`) は上のとおり等価で緑のまま。最初の `--stance` の 1 本は import が余って構文エラーだったので、当て方を直して red にした
+- 記録の作り直しは書き足しだけ: `diff-cli.json` の既存の行の削除 0。`diff-base.json` は集計の行 12 本と `snippet/endings` の 1 行が数え直しで変わるだけで、case は消えていない
+- 壊せなかったもの: 関数 12,300 件・CLI 1,400 回・`internal/bold` の共有 (本家の diff と lint の太字の関数は注釈と変数名を除いて同じ)
+- 未確認のリスク:
+  - 権限なしのファイル (記録に入れられない。手の確認だけ)
+  - rc 3 の `<型>`: `visibility` 以外の内部エラーを起こす経路が見つからず、本家との突き合わせはしていない
+  - request の組み立て (P2-6) は、群 J の最初の commit まで機械で守られていない
+  - `context.words.path` の比べ方は、本体が入るまで確かめられない (最初の進捗と同じ)
+- 最後の編集の後の木 (HEAD 時点) の検査: `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が全部 rc 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf1/chk-*.log)
