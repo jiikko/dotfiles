@@ -201,7 +201,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 残り (この係では手を付けていない): 群 K (見出しの構造) → L (文の組と本文) → AD (人が読む出力)・以降の ④〜⑧。K 以降は `_Sides` を引数に取る段の記録 (`oracle/py/record_diff_stages.py`) が先に要る
   (`call_function.py` の `save` で `_Sides(orig, rw)` を覚え、`_build_full_diff` の hunks を引数に渡す口を足す設計。K の `_heading_order_pairs` は (件数, 似かたの和) の組の max と、組の等しさの比べ (`best[a][b] == best[a-1][b]`) が float のまま要る)
 
-受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は A B C E J が済み・「`make test-dupscan-gate`」は今の木で通る。
+受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は A B C E J K L が済み・「`make test-dupscan-gate`」は今の木で通る。
 
 ### 2 本目の敵対的レビュー (opus。diff-wf2 の f6614b8d3..6ca4e6615)
 
@@ -229,3 +229,39 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - `alignDepth` (64): 4・16・63 に下げても、記録・fuzz・60〜80 段の入れ子のどれでも答えが変わらなかった。上限で答えが変わる入力が在るのか無いのかは示せていない。再提起には、上限の手前と向こうで本家と違う答えを返す入力が要る
   - `pairSimilar` の `same` を常に偽にする変更: 予算 (budget / too_large) の境目でだけ出力が変わる見込みで、届く入力を作っていない
   - 全文差分の所要: fuzz の全件 (15,811 件) は 11.6 秒で処理するが、入力ごとの本家との比は測っていない (前の節と同じ未測定)
+
+### 3 本目 (diff-wf3。2026-11-13。worktree で作業し、push していない)
+
+- commit (群 K・L まで。AD (人が読む出力) は着手していない):
+  - a136ae14f feat(ja-writing): diff の見出しの構造 (群 K) と、全文差分の値を引数に取る段の記録の口を作る (issue 1076)
+  - bc01091ef feat(ja-writing): diff の文の組と本文 (群 L) を作り、本家の _sentence_pairs と _all_bodies と突き合わせる (issue 1076)
+  - 各 commit は単独で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した (L の commit の dupscan は、手書きの組を作る関数の写し 1 件を `diffDoc` に寄せて通した)。`make test-lint` は最後の木だけで回した (下の「最終の検査」)
+- 段の記録の口 (2 本目の進捗の設計案から変えた所): `_Sides(orig, rw)` を別に覚えず、`_build_full_diff(orig, rw, None)` の戻り値 (full, sides) の tuple を `save` で覚え、後の呼び出しの引数を `{"$ref": 名前, "path": [添字・鍵...]}` で
+  tuple の一部 (`[1]` が `_Sides`、`[0, "hunks"]` が hunks、`[0]` が full) にした。`shapes` のように呼んだ後の中身を記録したい引数は `args_out_only: [添字]` (結果が `[戻り値, [その引数]]`)。
+  `quiet` の呼び出しは戻り値が JSON にできるかを確かめない (`_Sides` を含む tuple を覚えるだけ)。どれも付けなければ前と同じ出力 (driver の冒頭に書いた)
+- 段の Go 側の入口: `HeadingStructure(orig, rw, withShapes)`・`SentencePairs(orig, rw)`・`AllBodies(orig, rw, side)`。記録の突き合わせは、直前の `_build_full_diff` の 2 つの文から Go の入口で同じ段を作り直して digest を比べる
+  (入口を production から呼べる形で出したのは、`unused` が「テストからだけ呼ばれる関数」を落とすため。群 M 以降は同じ `sides` と hunks を直接渡す)
+- 群 K (`diff/headings.go`): `_heading_structure` と `_heading_rows` `_heading_key` `_heading_counterpart` `_heading_order_pairs` ほか。`_heading_order_pairs` の (件数, 似かたの和) の組の max と等しさの比べ (`best[a][b] == best[a-1][b]`) は、float のまま `headingScore` の比べ (件数、同じなら和) と `==` で写した
+  (足すのは加算だけなので融合は起きない)。見出しの本文の 2 文字の組が空のときは、空文字 1 つの集合 (本家の `frozenset((key,))`) で、両側が空の本文どうしは似かた 1.0 になる (写しで残した)
+- 群 L (`diff/sentences.go`): `_line_sentences` `_sentence_pairs` `_hunk_group` `_blank_between` `_run_shifted` `_paragraph_count` と `_Masker` `_Body` `_all_bodies`。`_group_index`・`_sentence_finder`・`_hunk_finder` は、呼ぶ検出 (群 M 以降・risk の並べ替え) が入るときに足す
+  (今は production から呼ぶ所が無く、`unused` が落とす。値を取る入口を作ってまで先に記録する価値が無いと見た)。行頭の記号の繰り返しの「空の一致で止める」判定は、どの選択肢も 1 字以上を取るので到達できず写さなかった。`sides` に各行の文書の中の位置 `starts` を足した
+- 記録: `diff-base.json` は 1,098 → 1,947 case・66,489 → 71,583 呼び出し。足したのは `heading/` 671 case と `sentence/` 178 case (計 849 組。入力の集まりと手で作った入力の全組・全文差分の手書きの組・見出しの手書きの組 (組み直す上限 300 の手前と向こう (両側の数が同じ形と違う形)・
+  似かたの下限 0.1 ちょうど (2 文字の組の共通 1 つ・和集合 10)・段が同じの足し 0.2 が効く組と効かない組・節の本文 300 字の上限で重なりがちょうど 0.1 と 0.0997 になる組・見出しだけの hunk の番号と次の行の判定・順に組にする似かた 0.5 ちょうどなど)・
+  文の組の手書きの組・固定の種 (PCG 1076/5 の見出し 120 組、1076/6 の文 140 組))。既存の case は消えず、既存の digest は前の値を先頭に持つ (記録の作り直しの前後を python で照合し、崩れ 0)。
+  段の呼び出し (`_heading_structure` 1,698・`_sentence_pairs` 849・`_all_bodies` 1,698) は全件 digest を比べて通る。`diff-cli.json` は変えていない
+- まだ入っていない群 (F G H I・M〜Y・R Z AA・AB AC) の検出が出す部分を、比べる範囲から外した件数: 段の記録は K・L の関数だけを呼ぶので、外す部分は無い。CLI の記録のうち本体まで進む 5,612 件は 2 本目と同じく「比べていない」とログに出す (本体 AC が入るまで)
+- わざと壊して red を確かめた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf3/mut-k・mut-k2・mut-l・mut-l2): K 19 本・L 15 本、全部 `TestBaseMatchesPythonRecording` で red。最初に当てた K 22 本のうち 9 本と L 18 本のうち 5 本は緑のまま通り (手書きの入力が分かれ目に当たっていなかった)、
+  分かれ目にちょうど当たる組を足して red にした。K: 似かたの下限 `>=`→`>`・段が同じの足し 0.2→0.1 と 0.3・上限 300 の `>`→`>=` と `||`→`&&`・挙げる数・行の幅 30・見出しの形の字数 15・順に組にする似かた 0.5 の `>=`→`>` と 0.51・消えた見出しの数・本文の字数 300・1 字の見出しの扱い・
+  組み直しの戻りの向き・相手の側の行の位置の計算・順の番号の比べ・見出しだけの hunk の次の行の判定。L: 1 行対 1 行の判定の `&&`→`||` 2 本・並びをまとめる置き換えの数と判定・間の行の判定・似かた付きの組み方・文に分けない種類・文の始まりの位置の補正・伏せる範囲 (始まりの探し方・入れ子の終わり・種類)・本文に数えない種類・空の文を除く判定・段落の数え方
+- 等価と判断して直さない (緑のまま):
+  - K: 引き分けの選び方の `choice.less` と `cand.less` の向き (値が同じになるだけ)・本文の打ち切りの `size >= 300` → `>` (打ち切った後に 300 字で切るので同じ)
+  - L: 伏せる範囲の `right <= start` → `<` と `left >= end` → `>` (どちらも、文の始まりで終わる・文の終わりで始まる範囲は、伏せる結果を変えない)
+  - 再提起するなら、その向きだけを変えた変更体で、記録にも手書きにも無い入力が本家と違う答えを返す実測が要る
+- 本家と揃わなかった所: 無い (K・L の段の記録 全件が一致)
+- 確かめていないこと:
+  - 群 AD (人が読む出力 `report`) は着手していない。`report(d)` は本家の `--json` の出力 (`d`) を入力にするので、検出が全部入るまで Go は `d` を作れず、記録に `d` の JSON も持つ必要がある (新しい記録の置き場と、`report` が読む他の群の表 `_CERTAINTY_LEVELS` `_MODALITY_NAMES` `_QUALIFIER_LABELS` `NEW_REVIEW_SECTIONS` の写しが先に要る)。量が多く、半端な群を commit しないため止めた
+  - 全文差分と同じく、K・L の所要 (長い文書・見出しや範囲の多い文書) は測っていない。K の `_heading_order_pairs` は上限 300 × 300 の DP を 1 hunk ごとに回す (記録の `pair-limit` の組が 300 × 299 まで通る。時間は未測定)
+  - `_heading_counterpart` の「行が hunk の中にあるときの式」は、本家の式を写したままで、その行が来る入力を作れていない (呼び出し元が hunk の外の行しか渡さない)
+  - 1 つの文書に lone surrogate を含む入力は K・L の記録に無い (全文差分と同じ)
+  - 伏せる範囲の始まりの探し方 (`bisect_right`) は、入れ子の範囲の中で文が始まる合成の組 (`![説明。`b`](c.png)`) で落ちることを確かめたが、実際の文書で届くかは未確認
+- 最終の検査 (docs の commit を含む最後の木。rc は全部 0): `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf3/chk-*.log)
