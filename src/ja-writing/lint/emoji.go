@@ -2,7 +2,6 @@ package lint
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 
@@ -15,8 +14,8 @@ import (
 //
 //	_emoji_matches          EmojiMatches (公開。diff が同じ数え方を借りる)
 //	_emoji_character_class  emojiCharacterClass
-//	_emoji_flag_pattern     emojiFlagPattern
-//	EMOJI_PATTERN           emojiPatternText (パターンの文字列だけ。照合は正規表現でなく下の表と枝で行う)
+//	_emoji_flag_pattern     emojiFlagPattern (emoji_pattern_test.go。記録との比べにだけ使う)
+//	EMOJI_PATTERN           emojiPatternText (同。パターンの文字列だけ。照合は正規表現でなく下の表と枝で行う)
 //	_EMOJI_START_PATTERN    emojiStartsAt
 //
 // 照合を正規表現にしない理由: EMOJI_PATTERN は 8,514 字で、旗の 259 通りの組と区間 424 個の選択肢を持つ。regexp2 は後戻りする照合器で、
@@ -136,37 +135,4 @@ func emojiCharacterClass(ranges []runeRange) string {
 	}
 	b.WriteByte(']')
 	return b.String()
-}
-
-// emojiFlagPattern は本家の _emoji_flag_pattern。登録された地域の旗の組だけを認める選択肢。
-func emojiFlagPattern() string {
-	seconds := map[byte][]rune{}
-	var firsts []byte
-	for _, code := range emojiFlagRegionCodes {
-		if _, ok := seconds[code[0]]; !ok {
-			firsts = append(firsts, code[0])
-		}
-		seconds[code[0]] = append(seconds[code[0]], regionalIndicatorA+rune(code[1]-'A'))
-	}
-	slices.Sort(firsts)
-	groups := make([]string, 0, len(firsts))
-	for _, first := range firsts {
-		cp := regionalIndicatorA + rune(first-'A')
-		second := uniqueInOrder(slices.Sorted(slices.Values(seconds[first])))
-		classes := make([]runeRange, len(second))
-		for i, r := range second {
-			classes[i] = runeRange{r, r}
-		}
-		groups = append(groups, emojiCharacterClass([]runeRange{{cp, cp}})+emojiCharacterClass(classes))
-	}
-	return "(?:" + strings.Join(groups, "|") + ")"
-}
-
-// emojiPatternText は EMOJI_PATTERN のパターンの文字列。patterns.json (本家が使った全パターンの記録) に同じ文字列があることをテストが見る。
-func emojiPatternText() string {
-	return "(?:" + emojiFlagPattern() +
-		`|[0-9#*]\ufe0f\u20e3` +
-		"|" + emojiCharacterClass(emojiExplicitVariationBases[:]) + `\ufe0f` +
-		"|" + emojiCharacterClass(emojiRegisteredTextBases[:]) + `(?!\ufe0e)` +
-		"|" + emojiCharacterClass(emojiOtherBases[:]) + ")"
 }
