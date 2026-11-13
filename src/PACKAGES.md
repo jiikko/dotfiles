@@ -78,6 +78,7 @@
 - `src/ja-writing/internal/pystr` (`ja-writing/internal/pystr`) — Package pystr は Python の str の振る舞い (splitlines・strip・isspace などの分類・len) を Go で再現する。 (internal)
 - `src/ja-writing/internal/pyunicode` (`ja-writing/internal/pyunicode`) — Package pyunicode は Python 3.15.0 (unicodedata 17.0.0) の文字の性質を Go で再現する。 (internal)
 - `src/ja-writing/lint` (`ja-writing/lint`) — Package lint は ja-writing lint (表現と書式の検査) の Main を持つ。
+- `src/ja-writing/lint/pausecomma` (`ja-writing/lint/pausecomma`) — Package pausecomma は ja-writing lint の群 G13 (規則 pause_comma: 短い主語・主題・目的語のすぐあとの読点) を持つ。
 - `src/ja-writing/lists` (`ja-writing/lists`) — Package lists は本家 yomiyasu の語の一覧 (references/lists/*.txt の 8 本) を埋め込んで持つ。
 - `src/ja-writing/oracle` (`ja-writing/oracle`) — Package oracle は本家 yomiyasu (Python) を正解 (oracle) として動かし、出力を記録して Go の実装と突き合わせる仕組み。
 - `src/ja-writing/oracle/cmd/golden` (`ja-writing/oracle/cmd/golden`) — Command golden は本家 yomiyasu (Python) を環境を固定して動かし、testdata/golden/ の記録を作り直す (make golden)。 (main)

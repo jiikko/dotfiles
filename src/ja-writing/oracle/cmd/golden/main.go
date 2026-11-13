@@ -154,6 +154,10 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 	if err != nil {
 		return err
 	}
+	pauseRec, err := twice(runner, func(runner oracle.Runner) ([]byte, error) { return buildPauseComma(ctx, runner, std, corpus) })
+	if err != nil {
+		return fmt.Errorf("pause_comma の記録: %w", err)
+	}
 	for path, body := range map[string][]byte{
 		filepath.Join(p.golden, oracle.PatternsFile): patterns, filepath.Join(p.golden, oracle.SmokeFile): smoke,
 		filepath.Join(p.golden, oracle.UnicodeFile): unicode, filepath.Join(p.golden, oracle.JSONFile): jsonRec,
@@ -161,6 +165,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 		filepath.Join(p.golden, oracle.DifflibFile):    difflibRec,
 		filepath.Join(p.golden, oracle.VisibilityFile): vis,
 		filepath.Join(p.golden, oracle.BoldFile):       boldRec,
+		filepath.Join(p.golden, oracle.PauseCommaFile): pauseRec,
 	} {
 		if err := atomicfile.Write(path, body, 0o644); err != nil {
 			return fmt.Errorf("%s へ書けません: %w", path, err)
@@ -174,7 +179,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 
 // checkEnv は記録の環境が今と違うときに止める。記録がまだ無いときと update のときは通す。
 func checkEnv(p paths, now oracle.Header, update bool) error {
-	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile, oracle.VisibilityFile, oracle.BoldFile} {
+	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile, oracle.VisibilityFile, oracle.BoldFile, oracle.PauseCommaFile} {
 		var old struct {
 			Header oracle.Header `json:"header"`
 		}
@@ -287,6 +292,14 @@ func buildBold(ctx context.Context, r oracle.Runner, h oracle.Header, c oracle.C
 		return nil, err
 	}
 	return oracle.MarshalBold(g)
+}
+
+func buildPauseComma(ctx context.Context, r oracle.Runner, h oracle.Header, c oracle.Corpus) ([]byte, error) {
+	g, err := r.RecordPauseComma(ctx, h, c)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalPauseComma(g)
 }
 
 func buildDifflib(ctx context.Context, r oracle.Runner, h oracle.Header, corpusDir string) ([]byte, error) {
