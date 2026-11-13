@@ -385,7 +385,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   負の添字・切り出しを同じ規則で写し、IndexError は `*visibility.Error` で返す。**群 AC で CLI に配線するとき、この error を rc 3 (`yomiyasu_diff.py: 内部エラー: IndexError: string index out of range`) にする**
 - 共有: `pyjson.MapList` を足し、`replay.MapList` と lint の試験の `valuesOf` を寄せた。`replay.ExceptionDigest` (例外の digest) と、テストの `outcomeDigest` (parse_list の ValueError と tone の IndexError を同じ形で突き合わせる)。例外を投げうる関数は `oracle.DiffRaisingFunctions` (記録に例外と成功の両方がなければ落ちる)
 - 記録: `diff-base.json` は 16,474 → 34,077 case・136,718 → 178,780 呼び出し (7.3MB → 9.8MB)。足した呼び出し (関数ごと):
-  - 群 R: `parse_list` 2,580 (うち本家が ValueError を投げる 760)・`_load_list` 5・`_list_info` 4 (`_load_list` は群 Z・AA の覚えるだけの呼び出しを足して計 250)。入力は 8 本の一覧そのもの (両方の読み方)・手書き (BOM・CRLF・空行・コメント・タブの数・3 つ目の欄・誤りの行の表示の 40 字ちょうどと 41 字)・固定の種 (PCG 1076/11) の 1,200 文
+  - 群 R: `parse_list` 2,580 (うち本家が ValueError を投げる 760)・`_load_list` 4・`_list_info` 4 (`_load_list` は群 Z の 1・群 AA の 245 の覚えるだけの呼び出しを足して計 250。5 本目の敵対的レビューの後は 254)。入力は 8 本の一覧そのもの (両方の読み方)・手書き (BOM・CRLF・空行・コメント・タブの数・3 つ目の欄・誤りの行の表示の 40 字ちょうどと 41 字)・固定の種 (PCG 1076/11) の 1,200 文
   - 群 Z: `stiffness` 9,048・`stiffness_metrics` 17,546・`_measure` 152・`_ratio` 99・`_nominal_hits` 152・`_no_chains` 152・`_changed_excerpt` 155・定数 14。組は群 F〜I までと同じ入れ物 (入力の集まりと diff の入力の全組・全文差分・見出し・文・種類・許可・規則の手書きの組) に、閾値の分かれ目の格子 (1 文の漢字の割合 +8.0 ポイントの手前と向こう・漢字 +2 字・平仮名 −2 字・文書全体 +3.0 ポイント・名詞化 +2)・本家のコメントの例文・固定の種 (PCG 1076/12) の 900 組
   - 群 AA: `tone` 9,717 (うち IndexError 28)・`_tone_level` 98・`_pseudo_heading` 215・`_heading_chars` 52・`_mark_spans` 261・`_tone_excerpt` 85 (うち IndexError 5)・`_tone_lines` 976・`_intensifier_pattern` 245 (覚えるだけ)・定数 17。組は群 Z と同じ入れ物に、見出しの字数の 7 割の分かれ目・印の数の増減・本家のコメントの例文・固定の種 (PCG 1076/13) の 900 組・IndexError になる組・緑のまま通った壊した形を分ける組を足した
   - 既存の case は消えず、既存の case の digest も変わらない (記録の作り直しの前後を python で照合し、missing 0・changed 0。f2faaac5c で足した `tone/found` だけは 501b370d2 で呼び出しを 4 件足したので、digest の先頭は同じまま長くなった)
@@ -408,9 +408,44 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - 単独のサロゲートを含む文書・巨大な数の文字列は、群 R・Z・AA の記録に入れていない
   - `tone()` が IndexError で落ちる経路の CLI (rc 3 と標準エラーの 1 行目) は、群 AC の CLI への配線までは比べていない。`diff()` の全体の流れで `stiffness`・`tone` を呼ぶ形・`--fail-on` との関係も群 AC・AD まで未確認
   - 本家の `tests/` (本家のテスト) を Go から動かしてはいない
-- 5 本目の敵対的レビューは未 (この係では回していない)
+- 5 本目の敵対的レビューは下の節 (指摘の扱いと結果)
 
 #### 最終の検査 (5 本目)
 
 最後のコードの編集 (666b9cfbe) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0
 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/fin-ltest.log・fin-un.log・fin-tl.log・fin-dup.log と、同じ名前の .rc)。この節を足す docs の commit の後は、`make test-lint` と上の 3 本をもう一度回した (rc は fin2-*.rc)。
+
+### 5 本目の敵対的レビュー (opus。diff-wf5 の 28ef53f40 の木。直したのは diff-wf6)
+
+`stiffness`・`tone`・`stiffness_metrics` で、本家と違う答えを返す入力は 1 件も作れなかった。fuzz は 35,255 組 (一般 20,300・`_tone_excerpt` に寄せた 20,000・変わった文書の種類 255。例外の型と文面も比べた。本家が IndexError を 64 回投げた組でも、Go は型と文面が合った)。指摘は、本家 (python) の答えと壊した形の答えを並べて再現できたものだけ直した。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P1-1 `diff/tone.go` の `ToneExcerpt` のコメントの例 (`tone('とても', 'ともかく'+'あ'*50)` は失敗する、と読める) が誤り | 直した。本家で `tone('とても','ともかく'+'あ'*50)` は candidate_count 1・`'とてつもなく'+'あ'*50` は IndexError を python で確かめた。コメントの例を後者にし、前者は失敗しないと書いた (cadd1aaf4) | 直した |
+| P1-2 この issue の群 R の `_load_list` が 5 (実際は 4。ほかは群 Z の 1 と群 AA の 245 で、合計 250 は正しい) | 直した (上の記録の行) | 直した |
+| P1-3 README の「印が共通の前の部分をまたぐと IndexError で失敗する」が強すぎる | 直した。位置が負になって文字列の長さを超えるときだけ失敗する、と条件を書いた (cadd1aaf4) | 直した |
+| P2 `m-cut-whole`・`m-strip-blank`・`m-best-sorted`・`m-pseudo-text`・`m-question-mask`・`m-excl-len1`・`m-excerpt-strip` (壊しても記録の検査が緑のまま通る 7 本。どれも本家の答えと違う入力がある) | 直した。レビューが示した入力を `oracle/diffbroken_tone_cases.go` (tone 4 組・stiffness 1 組) に置き、`tone/broken/`・`stiff/broken/` の case にした。`m-excl-len1` は「絶対値」「絶対パス」「絶対的」の後ろに強める語が続く文 3 つを `_mark_spans` に、`m-excerpt-strip` は節の端の「，」の組 4 つを `_changed_excerpt` に足した (78b1e3cdd) | 7 本とも red (下の表) |
+| P3 `lint/g15_renyo.go` に消した `parseList` の doc コメントが残っている | 直した。`renyoPatterns` の説明に書き直した (cadd1aaf4) | 直した |
+| P3 `diff/tone_oracle_test.go` の `_tone_lines` の突き合わせが、記録の強める語の引数を読まない | 直した。`recordedIntensifiers` で、記録の引数が一覧から作った正規表現の参照 (`ip`) でも null でもなければ落とす (7d32241f8)。ただし、参照が指す中身 (どの一覧から作ったか) までは見ない。今の記録は 1 種類だけで、答えは変わらない | 直した (中身は未確認。下) |
+| 緑のまま通ったが、本家と違う入力を作れなかった 3 本 (`m-default-kind`・`m-key-runes`・`m-hunks-only`) | 採らない (レビューも等価と見ている)。直さず記録。再提起するなら、その向きだけを変えた変更体で、本家と違う答えを返す入力 (o・r・文書の種類と、本家・壊した形の答え) を python と Go の両方で示す | 未証明 |
+
+- 記録: `diff-base.json` は 34,077 → 34,082 case・178,780 → 178,871 呼び出し (`tone` 9,717 → 9,721・`stiffness` 9,048 → 9,049・`stiffness_metrics` 17,546 → 17,548・`_tone_lines` 976 → 992・`_mark_spans` 261 → 279・`_pseudo_heading` 215 → 230・`_heading_chars` 52 → 55・`_changed_excerpt` 155 → 175・`_load_list` 250 → 254・`_intensifier_pattern` 245 → 249・`_build_full_diff` 1,106 → 1,110)。README の件数は、記録の関数ごとの合計と case ごとの合計の両方 (178,871) から数え直して合わせた。IndexError は `tone` 28・`_tone_excerpt` 5 のまま (足した組に落ちるものは無い)。
+  書き足しだけ: 既存の case は消えず (missing 0)、変わったのは `stiff/sentences` (711 → 731 呼び出し)・`tone/strings` (619 → 655) の 2 つで、どちらも digest と kept が前の値を先頭に持つ (呼び出しを末尾に足した)。足した case は 5 (`stiff/broken/stiff-best-tie`・`tone/broken/` の 4 つ)。python で照合した。
+- わざと壊して red を確かめた (commit した木 78b1e3cdd で `bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/wf6/mutlog と mut.out、一覧は wf6/list.sh、壊し方はレビューの rt.P8Qkcn/mymut.json): 12 本のうち 12 本が `TestBaseMatchesPythonRecording` で red (rc 0)。
+  - 群 Z (5 本): `m-best-sorted` (同点の最大の選び方。`stiff/broken/stiff-best-tie` で落ちた)・`m-excerpt-strip` (節の端の「，」。`stiff/sentences` で落ちた)・`m-hira-swap` (平仮名の比べの向き)・`m-paired-nostart` (組の前置きの条件)・`m-raw-eq` (同じ文の判定)
+  - 群 AA (7 本): `m-cut-whole` (`tone/broken/tone-cut-whole-promo`)・`m-strip-blank` (`tone-strip-blank-mail`)・`m-pseudo-text` (`tone-pseudo-line-promo`)・`m-question-mask` (`tone-question-mask-heading`)・`m-excl-len1` (`tone/strings` と `tone-pseudo-line-promo`)・`m-slice-neg` (負の位置の切り出し)・`m-emoji-bytes` (絵文字の位置)
+  - レビューが緑のまま通ったとした 7 本は、足す前の木では緑・足した後は全部 red で、最初に落ちた case が足した入力 (上の case 名) であることをログで確かめた
+- 壊せなかったもの (敵対的レビューの報告): 上の fuzz 35,255 組で 0 件の食い違い。fuzz の道具が壊した形を見つけることも確かめた (レビューが当てた 21 本のうち 16 本が食い違いを出した)。実装の係が等価とした 4 本 (`z-hits-sort`・`z-paired-first`・`a-heading-zero`・`a-indirect-cond`) は fuzz でも 0 件で、レビューも等価と読んだ。埋め込みの語の一覧 4 本は本家の `references/lists` とバイト単位で同じ。99,000 字の文書 (同じ段落を 3,000 回) で 3 つの関数の合計は Go 0.25 秒・本家 0.26 秒 (0.17 + 0.09)
+- 本家と揃わなかった所: 無い
+- 確かめていないこと (レビューの未確認のリスクと、この係の分):
+  - 単独のサロゲートと不正な UTF-8 (fuzz に無い。`ParsePatternList` の 40 字の打ち切りと `toneCut` の空の代わりの長さは Go の `[]rune` で数えていて、`pyunicode.Runes` ではない。記録の道具は Go の `encoding/json` が U+FFFD に置き換えるので渡せない)
+  - BOM: 本家の `_load_list` は BOM を 2 回落とす (`utf-8-sig` と `parse_list`) が、Go の `LoadList` は 1 回。埋め込みの一覧に BOM は無いので今は届かない。一覧を差し替えられるようになったら食い違いうる
+  - 所要は 1 つの文書の形 (同じ段落の繰り返し) だけ。名詞化の連続・「の」の連続・数万字の 1 行は測っていない
+  - `recordedIntensifiers` は参照の名前 (`ip`) までしか見ず、参照が指す一覧の中身は見ない
+  - 3 本 (`m-default-kind`・`m-key-runes`・`m-hunks-only`) が等価かどうか (上)
+- 再提起に要る実測: 上の 3 本について、本家と違う答えを返す入力 (o・r と、本家・壊した形の答え) を python と Go の両方で示す
+
+#### 最終の検査 (5 本目の敵対的レビューの後)
+
+最後のコードの編集 (78b1e3cdd) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-dupscan-gate` を回し、rc は全部 0
+(ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/wf6/fin-lt.log・fin-un.log・fin-dup.log と fin-rc.txt)。この節の docs の commit の後に `make test-lint` を回した。cadd1aaf4・7d32241f8 は単独では lint test を回していない (コメントとテストの引数の確認だけの変更で、78b1e3cdd の木で全部通した)。
