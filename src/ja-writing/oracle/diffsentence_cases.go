@@ -87,13 +87,7 @@ func diffSentenceFuzz() []diffFullCase {
 			}
 			paragraphs = append(paragraphs, lines)
 		}
-		join := func(ps [][]string) string {
-			parts := make([]string, len(ps))
-			for i, p := range ps {
-				parts[i] = strings.Join(p, "\n")
-			}
-			return strings.Join(parts, "\n\n") + "\n"
-		}
+		join := func(ps [][]string) string { return diffJoinGroups(ps, "\n", "\n\n") }
 		cur := make([][]string, len(paragraphs))
 		for i, p := range paragraphs {
 			cur[i] = append([]string{}, p...)

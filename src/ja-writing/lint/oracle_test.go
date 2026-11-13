@@ -32,10 +32,6 @@ type replayer struct {
 	reg map[string]any
 }
 
-func stringList(ss []string) pyjson.Value {
-	return replay.MapList(ss, func(s string) pyjson.Value { return s })
-}
-
 func rangesValue(rs []runeRange) pyjson.Value {
 	out := make([]pyjson.Value, len(rs))
 	for i, r := range rs {
@@ -78,7 +74,7 @@ func constantValue(name string) (pyjson.Value, bool) {
 	case "_EMOJI_OTHER_BASES":
 		return rangesValue(emojiOtherBases[:]), true
 	case "_EMOJI_FLAG_REGION_CODES":
-		return stringList(emojiFlagRegionCodes[:]), true
+		return replay.Strings(emojiFlagRegionCodes[:]), true
 	case "_END_SYMBOL_RANGES":
 		return rangesValue(endSymbolRanges), true
 	case "_END_JOINER_RANGES":
@@ -111,7 +107,7 @@ func constantValue(name string) (pyjson.Value, bool) {
 	case "_QUESTION_CLOSERS":
 		return questionClosers, true
 	case "_QUESTION_SUFFIXES":
-		return stringList(questionSuffixes), true
+		return replay.Strings(questionSuffixes), true
 	}
 	return tableConstantValue(name)
 }
@@ -201,7 +197,7 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 	case "_v220_load_list":
 		result, _ = tableFunctionValue(c.Function, a)
 	case "_emoji_matches":
-		result = stringList(EmojiMatches(argString(t, a[0])))
+		result = replay.Strings(EmojiMatches(argString(t, a[0])))
 	case "_emoji_character_class":
 		result = emojiCharacterClass(argRanges(t, a[0]))
 	case "_emoji_flag_pattern":
@@ -220,14 +216,14 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		result = core
 	case "_decoration_breaks":
 		if pieces := decorationBreaks(argString(t, a[0])); pieces != nil {
-			result = stringList(pieces)
+			result = replay.Strings(pieces)
 		}
 	case "_with_undecorated":
 		closers := endClosers
 		if len(a) > 1 {
 			closers = argString(t, a[1])
 		}
-		result = stringList(withUndecorated(stringsFromArg(t, a[0]), closers))
+		result = replay.Strings(withUndecorated(stringsFromArg(t, a[0]), closers))
 	case "_end_quote_closers":
 		result = intKeyed(r.document(t, a[0]).endQuoteClosers(), func(s string) pyjson.Value { return s })
 	case "_end_closers_for":
@@ -267,7 +263,7 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 	case "_bare_verb_chain_sentence":
 		result = bareVerbChainSentence(argString(t, a[0]))
 	case "_top_quote_contents":
-		result = stringList(topQuoteContents(argString(t, a[0])))
+		result = replay.Strings(topQuoteContents(argString(t, a[0])))
 	case "_dialogue_lines":
 		lines := (&lintState{doc: r.document(t, a[0]), an: r.document(t, a[0]).an}).dialogueLines()
 		out := make([]pyjson.Value, len(lines))
@@ -498,7 +494,7 @@ func calqueTypeValue(t *testing.T, name string, a []any) pyjson.Value {
 	case "_calque_type5":
 		ok = calqueType5(x, &words)
 	}
-	args := []pyjson.Value{a[0], stringList(words)}
+	args := []pyjson.Value{a[0], replay.Strings(words)}
 	args = append(args, a[2:]...)
 	return replay.List(ok, args)
 }

@@ -23,7 +23,10 @@ var DiffBaseFunctions = []string{
 	"bold_problems",
 	"full_diff",
 	"_build_full_diff", "_heading_structure", "_sentence_pairs", "_all_bodies",
+	"type_marks", "_ExactSequenceMatcher", "_type_changes",
 }
+
+func init() { DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...) }
 
 // DiffEncodingNote は full_diff に渡す注記の 1 つ (本家の dict と同じ 3 つの鍵)。
 type DiffEncodingNote = map[string]any
@@ -135,6 +138,38 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	}
 	for _, f := range diffSentenceCases() {
 		cases = append(cases, VisCase{Name: "sentence/" + f.name, Calls: diffHeadingStageCalls(f.old, f.new)})
+	}
+	// 群 F (文の種類の印): 定数・文ごとの印・段 (_type_changes)。組は heading/ と同じ入れ物 (入力の集まりと diff の入力の組・全文差分の手書きの組・見出しと文の手書きの組) に、
+	// 群 F 専用の手書きの組と固定の種の組を足したもの
+	cases = append(cases, VisCase{Name: "type/constants", Calls: diffTypeConstantCalls()})
+	var marks []Call
+	for _, s := range diffTypeMarkSentences() {
+		c := dcall("type_marks", s)
+		c.Keep = true
+		marks = append(marks, c)
+	}
+	cases = append(cases, VisCase{Name: "type/marks", Calls: marks})
+	for _, f := range c.Files {
+		text, err := c.Read(f.Path)
+		if err != nil {
+			return nil, err
+		}
+		cases = append(cases, VisCase{Name: "type/lines/corpus/" + f.Path, Calls: diffTypeLineCalls(text)})
+	}
+	for _, p := range pairs {
+		cases = append(cases, VisCase{Name: "type/pair/" + p[0], Calls: diffTypeStageCalls(p[1], p[2])})
+	}
+	for _, f := range diffFullCases() {
+		cases = append(cases, VisCase{Name: "type/full/" + f.name, Calls: diffTypeStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffHeadingCases() {
+		cases = append(cases, VisCase{Name: "type/heading/" + f.name, Calls: diffTypeStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffSentenceCases() {
+		cases = append(cases, VisCase{Name: "type/sentence/" + f.name, Calls: diffTypeStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffTypeCases() {
+		cases = append(cases, VisCase{Name: "type/" + f.name, Calls: diffTypeStageCalls(f.old, f.new)})
 	}
 	return cases, nil
 }

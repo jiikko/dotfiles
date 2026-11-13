@@ -11,6 +11,8 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
   fixture の操作 ("op") が例外になったときは keep が無くても exception を添える (呼び出し側が、どの操作がなぜ失敗したかを出して止まるため)。
 - "args_out_only": [添字...] の呼び出しは、結果を [戻り値, 呼んだ後の args のうち、その添字のもの] にする (args に解析の結果のような JSON にできない値があるときに、書き足される引数だけを記録する)。
   args の中の {"$ref": "名前", "path": [...]} は、覚えた値の添字・鍵を辿った一部 (_build_full_diff の戻り値の tuple から _Sides や hunks を取る)。
+- "method": "名前" の呼び出しは、関数 (クラスでもよい) を呼んだ戻り値の、その名前のメソッドを引数なしで呼んだ結果を戻り値にする
+  (difflib のように、組み立てた照合器の get_opcodes の結果を覚えて次の呼び出しへ渡す。付けなければ前と一字も同じ出力)。
 - "args_out": true の呼び出しは、結果を [戻り値, 呼んだ後の args] にする (引数の list に書き足す関数 (calque の型の判定が語を足す) の足した中身を記録する。付けなければ前と一字も同じ出力)。
 - "get": true の呼び出しは関数を呼ばずに、module の属性 (定数) そのものを返す。
 - "save": "名前" の呼び出しは、戻り値の Python の値を覚える。args の中の {"$ref": "名前"} が、その値になる (JSON を経由しない)。
@@ -155,6 +157,8 @@ for call in plan["calls"]:
             else:
                 args = resolve(call.get("args", []))
                 value = getattr(module, call["function"])(*args, **resolve(call.get("kwargs", {})))
+                if call.get("method"):
+                    value = getattr(value, call["method"])()
                 if call.get("args_out"):
                     value = [value, args]
                 elif call.get("args_out_only") is not None:

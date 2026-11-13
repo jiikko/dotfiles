@@ -19,10 +19,7 @@ const pyUnicodeFlag = 32
 
 // patternValue は本家の re.Pattern の JSON ({"flags", "pattern"}。鍵は昇順)。
 func patternValue(p *lazyPattern) pyjson.Value {
-	o := pyjson.NewObject()
-	o.Set("flags", int64(pyUnicodeFlag|p.Flags()))
-	o.Set("pattern", p.Pattern())
-	return o
+	return replay.Pattern(int64(pyUnicodeFlag|p.Flags()), p.Pattern())
 }
 
 // rowPattern は patternRow の本家の文字列 (文末の飾りの並びを埋めたもの)。
@@ -72,7 +69,7 @@ func literalHints() pyjson.Value {
 			hints[p.re.Pattern()] = p.required
 		}
 	}
-	return stringMap(hints, stringList)
+	return stringMap(hints, replay.Strings)
 }
 
 func tableConstantValue(name string) (pyjson.Value, bool) {
@@ -99,7 +96,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 	}
 	switch name {
 	case "SLOP_WORDS":
-		return stringList(slopWords), true
+		return replay.Strings(slopWords), true
 	case "SLOP_WORD_PATTERNS":
 		return pairList(slopPatterns, true), true
 	case "METAPHOR_VERB_PATTERNS":
@@ -155,7 +152,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 	case "NARRATIVE_MIN_CHARS":
 		return int64(narrativeMinChars), true
 	case "_DOCUMENT_SKIP_KINDS":
-		return stringList(slices.Sorted(slices.Values(documentSkipKinds))), true
+		return replay.Strings(slices.Sorted(slices.Values(documentSkipKinds))), true
 	case "_QUOTE_PAIRS":
 		pairs := map[string]string{}
 		for open, closer := range quotePairs {
@@ -167,7 +164,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		for _, closer := range quotePairs {
 			closers = append(closers, string(closer))
 		}
-		return stringList(slices.Sorted(slices.Values(closers))), true
+		return replay.Strings(slices.Sorted(slices.Values(closers))), true
 	case "_PROJECT_TERM_MESSAGE":
 		return projectTermMessageHead + "{}）" + v220MessageTail, true
 	case "_PROJECT_TERM_PATTERN_MESSAGE":
@@ -189,13 +186,13 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		}
 		return stringMap(messages, func(s string) pyjson.Value { return s }), true
 	case "_SHAPE_GATE_WORDS":
-		return stringList(shapeGateWords), true
+		return replay.Strings(shapeGateWords), true
 	case "_SHAPE_QUOTE_MARKS":
-		return stringList(shapeQuoteMarks), true
+		return replay.Strings(shapeQuoteMarks), true
 	case "_COPY_NOT_MODIFIER":
-		return stringList(slices.Sorted(slices.Values(copyNotModifier))), true
+		return replay.Strings(slices.Sorted(slices.Values(copyNotModifier))), true
 	case "_COPY_I_NOUNS":
-		return stringList(slices.Sorted(slices.Values(copyINouns))), true
+		return replay.Strings(slices.Sorted(slices.Values(copyINouns))), true
 	}
 	return g14ConstantValue(name)
 }
@@ -222,7 +219,7 @@ func tableFunctionValue(name string, args []any) (pyjson.Value, bool) {
 		if listName == "thin-evaluation" {
 			return replay.List(replay.MapList(parseThinList(string(data)), thinPairValue), source), true
 		}
-		return replay.List(stringList(parseList(string(data))), source), true
+		return replay.List(replay.Strings(parseList(string(data))), source), true
 	}
 	return nil, false
 }

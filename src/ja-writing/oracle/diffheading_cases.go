@@ -31,6 +31,15 @@ func diffHeadingStageCalls(old, new string) []Call {
 // diffDoc は行を改行でつないだ文書 (末尾に改行を付ける)。
 func diffDoc(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
 
+// diffJoinGroups は文の並びの並び (groups) を、内側を inner で、外側を outer でつないだ文書 (末尾に改行を付ける)。
+func diffJoinGroups(groups [][]string, inner, outer string) string {
+	parts := make([]string, len(groups))
+	for i, g := range groups {
+		parts[i] = strings.Join(g, inner)
+	}
+	return strings.Join(parts, outer) + "\n"
+}
+
 // diffHeadingCases は見出しの段の手書きの組と固定の種の組 (名前は heading/ を付けて case にする)。
 func diffHeadingCases() []diffFullCase {
 	doc := diffDoc

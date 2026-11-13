@@ -300,11 +300,13 @@ type Call struct {
 	Args     []any          `json:"args,omitempty"`
 	Kwargs   map[string]any `json:"kwargs,omitempty"`
 	Get      bool           `json:"get,omitempty"`
-	Save     string         `json:"save,omitempty"`
-	Digest   bool           `json:"digest,omitempty"`
-	Keep     bool           `json:"keep,omitempty"`
-	Quiet    bool           `json:"quiet,omitempty"`
-	ArgsOut  bool           `json:"args_out,omitempty"`
+	// Method は関数 (クラスでもよい) を呼んだ戻り値のメソッドを、引数なしで呼んだ結果を戻り値にする (組み立てた照合器の get_opcodes を覚える用)。
+	Method  string `json:"method,omitempty"`
+	Save    string `json:"save,omitempty"`
+	Digest  bool   `json:"digest,omitempty"`
+	Keep    bool   `json:"keep,omitempty"`
+	Quiet   bool   `json:"quiet,omitempty"`
+	ArgsOut bool   `json:"args_out,omitempty"`
 	// ArgsOutOnly は結果を [戻り値, 呼んだ後の args のうち、この添字のもの] にする (nil は付けない。args に JSON にできない値があるとき用)。
 	ArgsOutOnly []int `json:"args_out_only,omitempty"`
 	Op          *Op   `json:"op,omitempty"`

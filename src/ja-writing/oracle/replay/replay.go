@@ -60,3 +60,16 @@ func MapList[T any](items []T, f func(T) pyjson.Value) pyjson.Value {
 	}
 	return out
 }
+
+// Strings は文字列の配列 (本家の list[str])。
+func Strings(items []string) pyjson.Value {
+	return MapList(items, func(s string) pyjson.Value { return s })
+}
+
+// Pattern は本家の re.Pattern の JSON ({"flags", "pattern"}。鍵は昇順)。flags は re.compile が付ける値 (str のパターンは re.UNICODE の 32 を含む)。
+func Pattern(flags int64, pattern string) pyjson.Value {
+	o := pyjson.NewObject()
+	o.Set("flags", flags)
+	o.Set("pattern", pattern)
+	return o
+}

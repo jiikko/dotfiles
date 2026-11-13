@@ -157,35 +157,35 @@ func g14ConstantValue(name string) (pyjson.Value, bool) {
 	case "_V220_TYPE4_END":
 		return int64(v220Type4End), true
 	case "_CALQUE_SUBJECTS":
-		return stringList(calqueSubjects), true
+		return replay.Strings(calqueSubjects), true
 	case "_CALQUE_SUBJECT_PARTICLES":
-		return stringList(calqueSubjectParticles), true
+		return replay.Strings(calqueSubjectParticles), true
 	case "_CALQUE_COMPOUND_OK":
-		return stringList(calqueCompoundOk), true
+		return replay.Strings(calqueCompoundOk), true
 	case "_CALQUE_REQUEST":
-		return stringList(calqueRequest), true
+		return replay.Strings(calqueRequest), true
 	case "_CALQUE_ATTRIBUTIVE_END":
-		return stringList(calqueAttributiveEnd), true
+		return replay.Strings(calqueAttributiveEnd), true
 	case "_CALQUE_ESTABLISHED_SAKI":
-		return stringList(calqueEstablishedSaki), true
+		return replay.Strings(calqueEstablishedSaki), true
 	case "_CALQUE_SAKI_KANJI":
-		return stringList(calqueSakiKanji), true
+		return replay.Strings(calqueSakiKanji), true
 	case "_CALQUE_ORG_WORDS":
-		return stringList(calqueOrgWords), true
+		return replay.Strings(calqueOrgWords), true
 	case "_CALQUE_DOC_TECH_GENERAL":
-		return stringList(calqueDocTechGeneral), true
+		return replay.Strings(calqueDocTechGeneral), true
 	case "_CALQUE_HIBIKU_COST":
-		return stringList(calqueHibikuCost), true
+		return replay.Strings(calqueHibikuCost), true
 	case "_LABEL_COMMON":
-		return stringList(labelCommon), true
+		return replay.Strings(labelCommon), true
 	case "_LABEL_ENDINGS":
-		return stringList(labelEndings), true
+		return replay.Strings(labelEndings), true
 	case "_LABEL_NOT_ENDINGS":
-		return stringList(labelNotEndings), true
+		return replay.Strings(labelNotEndings), true
 	case "_LABEL_ABSTRACT_ENDINGS":
-		return stringList(labelAbstractEndings), true
+		return replay.Strings(labelAbstractEndings), true
 	case "_V220_TRIGGER_LITERALS":
-		return stringList(v220TriggerLiterals), true
+		return replay.Strings(v220TriggerLiterals), true
 	case "_CALQUE_PHRASE_VERB":
 		return stringMap(calquePhraseVerb, stringValue), true
 	case "_CALQUE_TYPE_NAMES":
@@ -250,8 +250,8 @@ func v220BuiltinLists() pyjson.Value {
 		return string(data)
 	}
 	o := pyjson.NewObject()
-	o.Set("katakana-terms", stringList(parseList(read("katakana-terms.txt"))))
-	o.Set("renyo-nouns", stringList(parseList(read("renyo-nouns.txt"))))
+	o.Set("katakana-terms", replay.Strings(parseList(read("katakana-terms.txt"))))
+	o.Set("renyo-nouns", replay.Strings(parseList(read("renyo-nouns.txt"))))
 	o.Set("thin-evaluation", replay.MapList(parseThinList(read("thin-evaluation.txt")), thinPairValue))
 	return o
 }

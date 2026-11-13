@@ -107,6 +107,8 @@ func invoke(t *testing.T, c oracle.Call) pyjson.Value {
 			t.Fatalf("full_diff: %v", err)
 		}
 		return replay.SortKeys(full)
+	case "type_marks":
+		return kindHitsValue(TypeMarks(argString(t, a[0])))
 	case "bold_problems":
 		problems, err := bold.Problems(argString(t, a[0]), argBool(t, a[1]))
 		if err != nil {
@@ -204,17 +206,27 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 			kept[k.Index] = k
 		}
 		var build []any
+		saved := map[string]string{}
 		for j, call := range c.Calls {
 			calls[call.Function]++
 			var got pyjson.Value
 			switch {
-			case call.Function == "_build_full_diff":
+			case call.Quiet:
 				// 覚えるだけの呼び出し (結果の digest は 8 つの 0)。段の呼び出しが同じ引数から作り直す
-				build = call.Args
+				switch call.Function {
+				case "_build_full_diff":
+					build = call.Args
+				case "normalize":
+					saved[call.Save] = Normalize(argString(t, call.Args[0]))
+				}
 				if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; want != "00000000" {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Get:
+				got = typeConstantValue(t, call.Function)
+			case call.Function == "_type_changes":
+				got = invokeTypeChanges(t, call, saved)
 			case strings.HasPrefix(call.Function, "_"):
 				got = invokeStage(t, call, build)
 			default:
@@ -227,7 +239,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 			if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; digest != want {
 				failed++
 				if failed <= 15 {
-					msg := fmt.Sprintf("case %s の %d 番目 (%s %.60q): digest %s、記録 %s\n  Go: %s", c.Name, j, call.Function, fmt.Sprint(call.Args[0]), digest, want, clip(canon, 400))
+					msg := fmt.Sprintf("case %s の %d 番目 (%s %.60q): digest %s、記録 %s\n  Go: %s", c.Name, j, call.Function, fmt.Sprint(call.Args), digest, want, clip(canon, 400))
 					if k, ok := kept[j]; ok {
 						msg += "\n  記録: " + clip(string(k.Result), 400)
 					}
