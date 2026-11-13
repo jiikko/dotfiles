@@ -652,6 +652,11 @@ func (s *lintState) g14WordFindings() {
 		if labelLines[lineNo] {
 			label = s.metaphorLabel(row, scan)
 		}
+		if label != "" {
+			f := newFinding("metaphor_label", lineNo, "info", "見出しか1行目の比喩のラベル"+v220MessageTail, snippet)
+			f.Words = []string{label}
+			s.add(f)
+		}
 		if !candidates[lineNo] {
 			continue
 		}

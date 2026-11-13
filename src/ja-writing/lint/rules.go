@@ -85,7 +85,7 @@ var implementedRules = map[string]bool{
 	"pause_comma": true,
 
 	"calque":          true,
-	"metaphor_label":  false,
+	"metaphor_label":  true,
 	"katakana_term":   false,
 	"thin_evaluation": false,
 
