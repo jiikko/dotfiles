@@ -25,6 +25,23 @@ type Object struct {
 	vals map[string]Value
 }
 
+// Strings は文字列の並びを list にする。
+func Strings(items []string) Value {
+	out := make([]Value, len(items))
+	for i, s := range items {
+		out[i] = s
+	}
+	return out
+}
+
+// OptionalString は nil の *string を None、そうでなければ str にする。
+func OptionalString(s *string) Value {
+	if s == nil {
+		return nil
+	}
+	return *s
+}
+
 // NewObject は空の Object を作る。
 func NewObject() *Object { return &Object{vals: map[string]Value{}} }
 

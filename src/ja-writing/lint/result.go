@@ -23,8 +23,8 @@ func (r *result) value() pyjson.Value {
 	counts.Set("warn", int64(r.counts[1]))
 	counts.Set("info", int64(r.counts[2]))
 	context := pyjson.NewObject()
-	context.Set("doc_type", optionalString(r.docType))
-	context.Set("reader", optionalString(r.reader))
+	context.Set("doc_type", pyjson.OptionalString(r.docType))
+	context.Set("reader", pyjson.OptionalString(r.reader))
 	context.Set("skipped_by_doc_type", skipValue(r.skipped))
 	if r.words != nil {
 		context.Set("words", r.words.value())
@@ -48,13 +48,6 @@ func (r *result) value() pyjson.Value {
 	return o
 }
 
-func optionalString(s *string) (v pyjson.Value) {
-	if s != nil {
-		v = *s
-	}
-	return v
-}
-
 func skipValue(items []skipCount) pyjson.Value {
 	o := pyjson.NewObject()
 	for _, s := range items {
@@ -65,17 +58,7 @@ func skipValue(items []skipCount) pyjson.Value {
 
 // value は words_context の 5 つか 7 つの鍵 (この順) のあとに allow_removed を足したもの。
 func (w *wordsReport) value() pyjson.Value {
-	c := w.context
-	o := pyjson.NewObject()
-	o.Set("path", c.Path)
-	o.Set("allow_lines", int64(c.AllowLines))
-	o.Set("flag_lines", int64(c.FlagLines))
-	o.Set("allow_sha256", optionalString(c.AllowSHA256))
-	o.Set("flag_sha256", optionalString(c.FlagSHA256))
-	if c.PatternsSHA256 != nil {
-		o.Set("flag_patterns_lines", int64(c.PatternsLines))
-		o.Set("flag_patterns_sha256", *c.PatternsSHA256)
-	}
+	o := w.context.Value()
 	o.Set("allow_removed", skipValue(w.allowRemoved))
 	return o
 }

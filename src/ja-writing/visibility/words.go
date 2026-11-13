@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 )
@@ -493,6 +494,21 @@ func WordsContextOf(w *Words) WordsContext {
 		c.PatternsLines, c.PatternsSHA256 = w.Patterns.Lines, &d
 	}
 	return c
+}
+
+// Value は JSON の context.words (5 つか 7 つの鍵、この順)。lint が allow_removed を後ろに足し、diff はそのまま context に入れる。
+func (c WordsContext) Value() *pyjson.Object {
+	o := pyjson.NewObject()
+	o.Set("path", c.Path)
+	o.Set("allow_lines", int64(c.AllowLines))
+	o.Set("flag_lines", int64(c.FlagLines))
+	o.Set("allow_sha256", pyjson.OptionalString(c.AllowSHA256))
+	o.Set("flag_sha256", pyjson.OptionalString(c.FlagSHA256))
+	if c.PatternsSHA256 != nil {
+		o.Set("flag_patterns_lines", int64(c.PatternsLines))
+		o.Set("flag_patterns_sha256", *c.PatternsSHA256)
+	}
+	return o
 }
 
 // WordsLabel は words_label (人が読む出力の「語の一覧: <パス>（allow N語、flag N語）。」。flag-patterns.txt があれば「、flag-patterns N行」を足す)。

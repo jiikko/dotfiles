@@ -84,18 +84,10 @@ func analysisValue(a *visibility.Analysis) pyjson.Value {
 	return obj("text", a.Text, "lines", lines, "blocks", blocks, "protected_spans", spansValue(a.ProtectedSpans), "mask_spans", masks, "mask_ends", ends)
 }
 
-func stringsValue(ss []string) pyjson.Value {
-	out := make([]pyjson.Value, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
-}
-
 func checkedValue(c *visibility.CheckedPattern) pyjson.Value {
 	req := make([]pyjson.Value, len(c.Required))
 	for i, r := range c.Required {
-		req[i] = stringsValue(r)
+		req[i] = pyjson.Strings(r)
 	}
 	return []pyjson.Value{patternValue(c), req, int64(c.Cost)}
 }
@@ -114,14 +106,14 @@ func wordsValue(w *visibility.Words) pyjson.Value {
 	for _, k := range keys {
 		repl.Set(k, w.FlagReplacements[k])
 	}
-	o := obj("path", w.Path, "flag_replacements", repl, "allow", stringsValue(w.Allow), "allow_lines", int64(w.AllowLines), "allow_sha256", strOrNil(w.AllowSHA256),
-		"flag", stringsValue(w.Flag), "flag_lines", int64(w.FlagLines), "flag_sha256", strOrNil(w.FlagSHA256))
+	o := obj("path", w.Path, "flag_replacements", repl, "allow", pyjson.Strings(w.Allow), "allow_lines", int64(w.AllowLines), "allow_sha256", strOrNil(w.AllowSHA256),
+		"flag", pyjson.Strings(w.Flag), "flag_lines", int64(w.FlagLines), "flag_sha256", strOrNil(w.FlagSHA256))
 	if w.Patterns != nil {
 		entries := make([]pyjson.Value, len(w.Patterns.Entries))
 		for i, e := range w.Patterns.Entries {
 			req := make([]pyjson.Value, len(e.Compiled.Required))
 			for j, r := range e.Compiled.Required {
-				req[j] = stringsValue(r)
+				req[j] = pyjson.Strings(r)
 			}
 			entries[i] = []pyjson.Value{e.Name, e.Pattern, patternValue(e.Compiled), req}
 		}
@@ -146,7 +138,7 @@ func constantValue(name string) (pyjson.Value, bool) {
 	case "DOC_TYPES":
 		out := make([]pyjson.Value, len(visibility.DocTypes))
 		for i, d := range visibility.DocTypes {
-			out[i] = []pyjson.Value{d.Value, d.Name, stringsValue(d.Domains)}
+			out[i] = []pyjson.Value{d.Value, d.Name, pyjson.Strings(d.Domains)}
 		}
 		return out, true
 	case "READER_LEVELS":
