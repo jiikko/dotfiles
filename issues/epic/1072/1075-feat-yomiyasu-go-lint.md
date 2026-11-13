@@ -69,6 +69,14 @@
 - 中身は `internal/bold.ProblemsWithAnalysis`。`internal/bold.Problems(text, skipFrontmatter)` が本家の `bold_problems` に当たり、diff (1076) からはこちらを呼ぶ
 - visibility に公開の入口を 2 つ足した (`Escaped`・`HasPrefixAt`)。記録は `testdata/golden/bold.json` (本家の lint と diff に同じ入力を当てて 1,456 case が一致)。`go run ./oracle/cmd/golden -only bold` で作り直せる
 
+### G13 をつなぐ口 (1084 からの申し送り、dotfiles-bb、2026-11-13)
+
+- G13 は別の package `lint/pausecomma` (lint と同じ package に置くと、骨組みにつなぐまで unused が全部を落とすため)。つなぎ込みは骨組みの側 (dotfiles-c5) が G3 と一緒に行う
+- `pausecomma.LineHits(a *visibility.Analysis, visible func(lineNo int) string, objects bool) map[int][]Hit` が本家の `_pause_comma_line_hits`。`visible` に T3 の `_prose_visible_text` を渡す。表にある行は当たりが無くても空の並びを持つので、`_, ok := m[line]` が本家の `line_no in pause_lines`
+- `pausecomma.Fallback(plainText, objects) []Hit` は表に無い行で当て直す形。`objects` は `doc_type != "essay"`。`Hit` は `{Pos, Chunk, Phrase}`
+- G16 は `pausecomma.TENotVerb`、G17 は `pausecomma.TEAttrObject()` (pyre の Pattern。本家と同じく `match(body, end)` で使う)
+- 本家の `lint_text` は見出しと表の行を pause の節より前で飛ばす (5726・5729)。骨組みでこの順を崩すと Go だけが見出しに当てる。pause_comma は種類の指定なし・promo・script では当てないので、比べられる本家の記録は種類を付けた run だけ
+
 ### 答えがずれやすい所 (地図の 3 節の要点)
 
 - set から選択肢を組む所 (2977・3990・4028・4033・4715 など) は、どれも答えに影響しないと読めた (同じ位置で同じ長さの語が同時に当たらない)。Go は (長さの降順, 字の順) で固定し、map を反復して出力を組まない
