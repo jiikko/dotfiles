@@ -105,16 +105,6 @@ var implementedRules = map[string]bool{
 	"project_term": true,
 }
 
-// allRulesImplemented は 40 規則が全部入ったか。
-func allRulesImplemented() bool {
-	for rule := range ruleGroup {
-		if !implementedRules[rule] {
-			return false
-		}
-	}
-	return true
-}
-
 // sortedRules は規則 ID を昇順に返す。
 func sortedRules() []string {
 	rules := make([]string, 0, len(ruleGroup))

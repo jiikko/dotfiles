@@ -31,8 +31,7 @@ func shortDigest(s string) string {
 }
 
 // CLI の単位の記録 (testdata/golden/lint-cli.json: 入力の集まりの全ファイルを、種類・読者・語の一覧・text と --json・終了コードの条件で通した出力) と、Main の出力を突き合わせる。
-// 40 規則が全部入るまでは、検出の生の並びが空の入力 (本家が候補を 1 件も出さない入力) と、検査まで進まない呼び出し (誤りの呼び出し・--version・-h) だけを比べる。
-// 規則が入ったか入っていないかで比べる範囲を変えず、全部入った後は全件を字まで比べる。
+// 記録の全件を比べる (本家が候補を出す入力も、検査まで進まない呼び出し (誤りの呼び出し・--version・-h) も)。比べた件数が case の数と違えば落とす。
 func TestCLIMatchesPythonRecording(t *testing.T) {
 	root := workRoot(t)
 	var g oracle.LintCLIGolden
@@ -43,16 +42,11 @@ func TestCLIMatchesPythonRecording(t *testing.T) {
 	if len(cases) != len(g.Cases) {
 		t.Fatalf("case が %d 件、記録が %d 件 (make golden で作り直す)", len(cases), len(g.Cases))
 	}
-	everything := allRulesImplemented()
-	compared, skipped, kept := 0, 0, 0
+	compared, kept := 0, 0
 	for i, c := range cases {
 		rec := g.Cases[i]
 		if rec.Name != c.Name {
 			t.Fatalf("%d 番目の case の名前 %q が記録の %q と違う (make golden で作り直す)", i, c.Name, rec.Name)
-		}
-		if !everything && rec.Raw != nil && *rec.Raw > 0 {
-			skipped++
-			continue
 		}
 		stdout, stderr, rc := runLint(t, root, c.Cwd, c.Stdin, c.Args...)
 		compared++
@@ -68,21 +62,11 @@ func TestCLIMatchesPythonRecording(t *testing.T) {
 			}
 		}
 	}
-	// 空振りで緑にしない: 比べた件数が、記録のほぼ全件 (候補が出ない入力) と誤りの呼び出しを含むこと。
-	if compared < 3000 || kept < 10 {
-		t.Errorf("比べた記録が少なすぎる (比べた %d・飛ばした %d・全文まで比べた %d)", compared, skipped, kept)
+	// 空振りで緑にしない: 全件を比べたこと、全文まで比べた記録があること。
+	if compared != len(cases) || kept < 10 {
+		t.Errorf("比べた記録が足りない (比べた %d・case %d・全文まで比べた %d)", compared, len(cases), kept)
 	}
-	t.Logf("CLI の記録 %d 件のうち %d 件を比べた (全文まで %d 件)。残り %d 件は本家が候補を出す入力で、%d 規則が全部入ったら比べる (入った規則 %d)", len(cases), compared, kept, skipped, len(ruleGroup), implementedCount())
-}
-
-func implementedCount() int {
-	n := 0
-	for _, ok := range implementedRules {
-		if ok {
-			n++
-		}
-	}
-	return n
+	t.Logf("CLI の記録 %d 件を全部比べた (全文まで %d 件)", compared, kept)
 }
 
 // ヘルプの文面は、本家の記録 (-h の標準出力の全文) と同じバイト列を embed している。
