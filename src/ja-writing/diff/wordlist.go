@@ -12,7 +12,7 @@ import (
 
 // 群 R: 語の一覧 (本家の parse_list・_load_list・_list_info)。
 // 一覧は lists パッケージが埋め込んで持つので、本家の「隣のファイルを読めなければ内蔵の一覧で動く」経路 (BUILTIN_LISTS・_LIST_PROBLEMS) は写さない。
-// 本家が隣のファイルを読めたときの値 (list は "references/lists/<名前>.txt"、list_problem は null) だけを出す (issue 1076 の決めたこと 5)。
+// 本家が隣のファイルを読めたときの値 (list は "references/lists/<名前>.txt"、list_problem は null) だけを出す。
 
 // ListError は一覧の書き方の誤り (本家の ValueError)。Message は本家の文面と同じ。
 type ListError struct{ Message string }
