@@ -25,11 +25,13 @@ var DiffBaseFunctions = []string{
 	"_build_full_diff", "_heading_structure", "_sentence_pairs", "_all_bodies",
 	"type_marks", "_ExactSequenceMatcher", "_type_changes",
 	"_rule_candidates",
+	"_modality_changes", "_logic_changes",
 }
 
 func init() {
 	DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffRuleConstants...)
+	DiffBaseFunctions = append(DiffBaseFunctions, diffModalConstants...)
 }
 
 // DiffEncodingNote は full_diff に渡す注記の 1 つ (本家の dict と同じ 3 つの鍵)。
@@ -194,6 +196,26 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	}
 	for _, f := range diffRuleCases() {
 		cases = append(cases, VisCase{Name: "rule/" + f.name, Calls: diffRuleCalls(f.old, f.new, true)})
+	}
+	// 群 H (許可・能力)・I (選ぶ範囲・因果): 定数と段 _modality_changes・_logic_changes
+	cases = append(cases, VisCase{Name: "modal/constants", Calls: diffModalConstantCalls()})
+	for _, p := range pairs {
+		cases = append(cases, VisCase{Name: "modal/pair/" + p[0], Calls: diffModalStageCalls(p[1], p[2])})
+	}
+	for _, f := range diffFullCases() {
+		cases = append(cases, VisCase{Name: "modal/full/" + f.name, Calls: diffModalStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffHeadingCases() {
+		cases = append(cases, VisCase{Name: "modal/heading/" + f.name, Calls: diffModalStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffSentenceCases() {
+		cases = append(cases, VisCase{Name: "modal/sentence/" + f.name, Calls: diffModalStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffTypeCases() {
+		cases = append(cases, VisCase{Name: "modal/type/" + f.name, Calls: diffModalStageCalls(f.old, f.new)})
+	}
+	for _, f := range diffModalCases() {
+		cases = append(cases, VisCase{Name: "modal/" + f.name, Calls: diffModalStageCalls(f.old, f.new)})
 	}
 	return cases, nil
 }

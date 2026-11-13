@@ -40,13 +40,7 @@ var typeKinds = []typeKind{
 }
 
 // typeKindNames は typeKinds の名前の並び (marksIn の kinds に渡す。指定しないときの並び)。
-var typeKindNames = func() []string {
-	names := make([]string, len(typeKinds))
-	for i, k := range typeKinds {
-		names[i] = k.name
-	}
-	return names
-}()
+var typeKindNames = kindNames(typeKinds)
 
 var (
 	// 「まるで〜のようだ」の「よう」「みたい」は、推量ではなく例えを表す語として数える。
@@ -98,11 +92,11 @@ func containsAny(text string, literals []string) bool {
 	return false
 }
 
-// markPositions は文章全体に印の正規表現を 1 回ずつ当て、位置の順 (同じ位置は種類の順) の印を返す。
-func markPositions(text string) []typeMark {
+// findMarks は文章全体に kinds の正規表現を 1 回ずつ当て、種類の順・位置の順に印を返す (literals のどれも含まない文章には、その種類を当てない)。
+func findMarks(kinds []typeKind, text string) []typeMark {
 	t := pyre.NewText(text)
 	var found []typeMark
-	for _, k := range typeKinds {
+	for _, k := range kinds {
 		if !containsAny(text, k.literals) {
 			continue
 		}
@@ -111,6 +105,19 @@ func markPositions(text string) []typeMark {
 			found = append(found, typeMark{m.Start(0), k.name, hit})
 		}
 	}
+	return found
+}
+
+// sortMarks は印を開始位置の順に並べる (同じ位置は元の順のまま。本家の sort は安定)。
+func sortMarks(found []typeMark) []typeMark {
+	sort.SliceStable(found, func(i, j int) bool { return found[i].start < found[j].start })
+	return found
+}
+
+// markPositions は文章全体に印の正規表現を 1 回ずつ当て、位置の順 (同じ位置は種類の順) の印を返す。
+func markPositions(text string) []typeMark {
+	t := pyre.NewText(text)
+	found := findMarks(typeKinds, text)
 	type head struct {
 		start int
 		hit   string
@@ -148,8 +155,7 @@ func markPositions(text string) []typeMark {
 			}
 		}
 	}
-	sort.SliceStable(found, func(i, j int) bool { return found[i].start < found[j].start })
-	return found
+	return sortMarks(found)
 }
 
 // KindHits は種類と、その範囲にあった印 (同じ印は 1 回だけ)。
@@ -163,6 +169,15 @@ type kindMarks []KindHits
 
 func (k kindMarks) has(kind string) bool {
 	return slices.ContainsFunc(k, func(e KindHits) bool { return e.Kind == kind })
+}
+
+func (k kindMarks) hits(kind string) []string {
+	for _, e := range k {
+		if e.Kind == kind {
+			return e.Hits
+		}
+	}
+	return nil
 }
 
 // markStarts は印の開始位置の並び (範囲ごとに作り直さないよう、呼ぶ側が 1 回だけ作って渡す)。

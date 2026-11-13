@@ -6,6 +6,7 @@ import (
 
 	"ja-writing/internal/difflib"
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyre"
 	"ja-writing/internal/pyunicode"
 	"ja-writing/oracle"
 	"ja-writing/oracle/replay"
@@ -22,19 +23,11 @@ func typeConstantValue(t *testing.T, name string) pyjson.Value {
 	case "_END":
 		return typeEnd
 	case "_TYPE_PATTERNS":
-		return replay.MapList(typeKinds, func(k typeKind) pyjson.Value { return replay.List(k.name, k.pattern.Pattern()) })
+		return kindPatternsValue(typeKinds)
 	case "TYPE_MARKERS":
-		o := pyjson.NewObject()
-		for _, k := range typeKinds {
-			o.Set(k.name, replay.Pattern(pyUnicodeFlag|int64(k.pattern.Flags()), k.pattern.Pattern()))
-		}
-		return replay.SortKeys(o)
+		return kindMarkersValue(typeKinds)
 	case "_TYPE_LITERALS":
-		o := pyjson.NewObject()
-		for _, k := range typeKinds {
-			o.Set(k.name, replay.Strings(k.literals))
-		}
-		return replay.SortKeys(o)
+		return kindLiteralsValue(typeKinds)
 	case "_SIMILE_HEADS":
 		return replay.Strings(simileHeads)
 	case "_SIMILE_LIKE":
@@ -178,4 +171,109 @@ func invokeRuleCandidates(t *testing.T, c oracle.Call) pyjson.Value {
 		t.Fatalf("_rule_candidates: %v", err)
 	}
 	return ruleCandidatesValue(t, got)
+}
+
+// kindPatternsValue は本家の (種類, 正規表現の文字列) の並び (_TYPE_PATTERNS・_MODALITY_PATTERNS・_LOGIC_PATTERNS)。
+func kindPatternsValue(kinds []typeKind) pyjson.Value {
+	return replay.MapList(kinds, func(k typeKind) pyjson.Value { return replay.List(k.name, k.pattern.Pattern()) })
+}
+
+// kindMarkersValue は本家の {種類: 組んだ正規表現} (TYPE_MARKERS・MODALITY_MARKERS・LOGIC_MARKERS。re.M で組む)。
+func kindMarkersValue(kinds []typeKind) pyjson.Value {
+	o := pyjson.NewObject()
+	for _, k := range kinds {
+		o.Set(k.name, replay.Pattern(pyUnicodeFlag|int64(k.pattern.Flags()), k.pattern.Pattern()))
+	}
+	return replay.SortKeys(o)
+}
+
+// kindLiteralsValue は本家の {種類: 必ず含まれる文字列の並び}。
+func kindLiteralsValue(kinds []typeKind) pyjson.Value {
+	o := pyjson.NewObject()
+	for _, k := range kinds {
+		o.Set(k.name, replay.Strings(k.literals))
+	}
+	return replay.SortKeys(o)
+}
+
+func lazyValue(l *pyre.Lazy) pyjson.Value {
+	return replay.Pattern(pyUnicodeFlag|int64(l.Flags()), l.Pattern())
+}
+
+// modalConstantValue は群 H・I の本家の定数。
+func modalConstantValue(t *testing.T, name string) pyjson.Value {
+	t.Helper()
+	switch name {
+	case "_MODALITY_PATTERNS":
+		return kindPatternsValue(modalityKinds)
+	case "MODALITY_MARKERS":
+		return kindMarkersValue(modalityKinds)
+	case "_MODALITY_LITERALS":
+		return kindLiteralsValue(modalityKinds)
+	case "_ABILITY_NEGATIVE":
+		return lazyValue(abilityNegative)
+	case "_MODALITY_NAMES":
+		return replay.MapList(modalityNames, func(n modalityName) pyjson.Value { return replay.List(n.name, replay.Strings(n.members)) })
+	case "_CHOICE_NOUN":
+		return choiceNoun
+	case "_LOGIC_PATTERNS":
+		return kindPatternsValue(logicKinds)
+	case "LOGIC_MARKERS":
+		return kindMarkersValue(logicKinds)
+	case "_LOGIC_LITERALS":
+		return kindLiteralsValue(logicKinds)
+	case "_LOGIC_CHANGES":
+		return replay.MapList(logicChangeKinds, func(c logicChangeKind) pyjson.Value {
+			return replay.Strings([]string{c.subkind, c.kind, c.source, c.target})
+		})
+	case "_QUESTION_KA_LEFT":
+		return lazyValue(questionKaLeft)
+	case "_QUESTION_KA_RIGHT":
+		return lazyValue(questionKaRight)
+	case "_CHOICE_NOUN_CHAR":
+		return lazyValue(choiceNounChar)
+	case "_CHOICE_HEAD":
+		return lazyValue(choiceHead)
+	}
+	t.Fatalf("定数 %s を Go に持っていない", name)
+	return nil
+}
+
+func modalityChangesValue(changes []ModalityChange) pyjson.Value {
+	return replay.MapList(changes, func(c ModalityChange) pyjson.Value {
+		o := pyjson.NewObject()
+		o.Set("added", typeLostValue(c.Added))
+		o.Set("from", c.From)
+		o.Set("lost", typeLostValue(c.Lost))
+		o.Set("orig", c.Orig)
+		o.Set("rewrite", c.Rewrite)
+		o.Set("subkind", c.Subkind)
+		o.Set("to", c.To)
+		return o
+	})
+}
+
+func logicChangesValue(changes []LogicChange) pyjson.Value {
+	return replay.MapList(changes, func(c LogicChange) pyjson.Value {
+		o := pyjson.NewObject()
+		o.Set("from", c.From)
+		o.Set("kind", c.Kind)
+		o.Set("new_hits", replay.Strings(c.NewHits))
+		o.Set("old_hits", replay.Strings(c.OldHits))
+		o.Set("orig", c.Orig)
+		o.Set("rewrite", c.Rewrite)
+		o.Set("subkind", c.Subkind)
+		o.Set("to", c.To)
+		return o
+	})
+}
+
+// invokeModal は _modality_changes・_logic_changes の呼び出し (記録は normalize した 2 つの文を渡している)。
+func invokeModal(t *testing.T, c oracle.Call, saved map[string]string) pyjson.Value {
+	t.Helper()
+	o, r := saved[refName(t, c.Args[0])], saved[refName(t, c.Args[1])]
+	if c.Function == "_modality_changes" {
+		return modalityChangesValue(ModalityChanges(o, r, &typeCache{}))
+	}
+	return logicChangesValue(LogicChanges(o, r, &typeCache{}))
 }

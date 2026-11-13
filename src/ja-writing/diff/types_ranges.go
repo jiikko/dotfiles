@@ -651,6 +651,22 @@ type typeShared struct {
 // 文章が違えば使わずに作り直す。1 回の比較が終わったら捨てる (比べ終えた文章の全文と範囲を持ち続けないため)。
 type typeCache struct{ last *typeShared }
 
+// shared は o と r の範囲と印の位置を返す。直前に同じ文章で作った範囲があれば使い回し、なければ作って置く。
+func (c *typeCache) shared(o, r string) ([]*rangeItem, []typeMark, []typeMark) {
+	if c == nil {
+		c = &typeCache{}
+	}
+	last := c.last
+	if last == nil || last.o != o || last.r != r {
+		last = &typeShared{o: o, r: r, opcodes: difflib.NewExact(pyunicode.Runes(o), pyunicode.Runes(r)).GetOpcodes(), oMarks: markPositions(o), rMarks: markPositions(r)}
+	}
+	if !last.haveRanges {
+		last.ranges, last.haveRanges = typeRanges(pyunicode.Runes(o), pyunicode.Runes(r), last.opcodes), true
+		c.last = last
+	}
+	return last.ranges, last.oMarks, last.rMarks
+}
+
 // TypeChanges は本家の _type_changes: 元の各文が、文字単位の対応で書き直した文章のどの範囲に当たるかをたどり、範囲ごとに印を比べる。
 // 文を分けても、つないでも、範囲の中で比べるので、移っただけの印は変化として出ない。範囲が重なる元の文はまとめて比べる。
 // 丸ごと消えた文は比べない。丸ごと移した文は同じ文を探し、移したうえで書き換えた文は、字面の近い文を書き直した文章から探して比べる。

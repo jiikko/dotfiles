@@ -31,6 +31,9 @@ func diffHeadingStageCalls(old, new string) []Call {
 // diffDoc は行を改行でつないだ文書 (末尾に改行を付ける)。
 func diffDoc(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
 
+// diffRef は覚えた値 (Save) を引数に渡す印。
+func diffRef(name string) map[string]any { return map[string]any{"$ref": name} }
+
 // randPick は xs から 1 つ選ぶ (固定の種の乱数 r で)。
 func randPick(r *rand.Rand, xs []string) string { return xs[r.IntN(len(xs))] }
 

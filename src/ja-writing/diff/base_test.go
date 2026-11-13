@@ -229,8 +229,12 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Get && slices.Contains(oracle.DiffModalConstantNames(), call.Function):
+				got = modalConstantValue(t, call.Function)
 			case call.Get:
 				got = typeConstantValue(t, call.Function)
+			case call.Function == "_modality_changes" || call.Function == "_logic_changes":
+				got = invokeModal(t, call, saved)
 			case call.Function == "_rule_candidates":
 				got = invokeRuleCandidates(t, call)
 			case call.Function == "_type_changes":

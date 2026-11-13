@@ -24,15 +24,14 @@ func diffTypeConstantCalls() []Call {
 
 // diffTypeStageCalls は書き直す前と後の文書 1 組に、群 F の段を通す呼び出し (結果が大きい組は結果そのものを記録に残さない)。
 func diffTypeStageCalls(old, new string) []Call {
-	ref := func(name string) map[string]any { return map[string]any{"$ref": name} }
 	o := dcall("normalize", old)
 	o.Save, o.Quiet = "o", true
 	r := dcall("normalize", new)
 	r.Save, r.Quiet = "r", true
-	ops := dcall("_ExactSequenceMatcher", nil, ref("o"), ref("r"))
+	ops := dcall("_ExactSequenceMatcher", nil, diffRef("o"), diffRef("r"))
 	ops.Kwargs = map[string]any{"autojunk": false}
 	ops.Method, ops.Save, ops.Quiet = "get_opcodes", "ops", true
-	changes := dcall("_type_changes", ref("o"), ref("r"), ref("ops"))
+	changes := dcall("_type_changes", diffRef("o"), diffRef("r"), diffRef("ops"))
 	changes.Keep = len(old)+len(new) < 700
 	return []Call{o, r, ops, changes}
 }
