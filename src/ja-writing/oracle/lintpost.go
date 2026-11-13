@@ -175,8 +175,7 @@ func wordsFindings() []LintPostFinding {
 	}
 }
 
-// AllowPartialPrefix は、allow.txt で語の一部だけを外して message を作り直す case の名前の頭。作り直す message は群 (G14・G15・G16・G20) の関数なので、
-// その規則が Go に入る (implementedRules) までは Go の側が比べない。
+// AllowPartialPrefix は、allow.txt で語の一部だけを外して message を作り直す case の名前の頭。作り直す message は群 (G14・G15・G16・G20) の関数で、Go の側も全件を本家の message と比べる。
 const AllowPartialPrefix = "allow-partial|"
 
 // allowPartialFindings は語の一覧 (allow は「確かめ」と「サーバ」) で、1 行の語の一部だけが外れ、message を作り直す候補。入力の集まりでは renyo_noun しか作り直しが走らない

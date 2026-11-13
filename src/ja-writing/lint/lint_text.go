@@ -1,7 +1,6 @@
 package lint
 
 import (
-	"slices"
 	"strings"
 
 	"ja-writing/internal/pystr"
@@ -191,9 +190,4 @@ var bodySteps = []struct {
 	{"g11ShortSentences", (*lintState).g11ShortSentences},
 	{"g12Negation", (*lintState).g12Negation},
 	{"g13PauseComma", (*lintState).g13PauseComma},
-}
-
-// findingsOf は規則 ID の候補を検出の順で返す (テストと、重なりを見る群が使う)。
-func (s *lintState) findingsOf(rule string) []finding {
-	return slices.DeleteFunc(slices.Clone(s.findings), func(f finding) bool { return f.Rule != rule })
 }

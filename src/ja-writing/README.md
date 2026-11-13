@@ -218,14 +218,14 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 ## lint の骨組みと群の足し方 (`lint/`。issue 1075 の T4)
 
 `ja-writing lint` は動く (`lint.Main`)。引数と終了コードは本家の argparse と `_run` の確かめる順 (`--version` → 条件 → 種類と読者 → words の同時指定 → 語の一覧 → 入力のパス → 入力を読む) をそのまま写し、text と `--json` (format_version 2・鍵の順・`indent=2`・`ensure_ascii`) の出力も本家と同じ。
-40 規則は群 G1〜G20 が全部入っている (`implementedRules` が全部 true)。文書の指標 (`metrics`) と語の一覧の `context` も本家と同じ値を出す。
+40 規則は群 G1〜G20 が全部入っている。文書の指標 (`metrics`) と語の一覧の `context` も本家と同じ値を出す。
 
 | ファイル | 中身 |
 |---|---|
 | `lint.go` | `Main`・`run` (本家の `_run`)・`--strict` / `--fail-on` の判定 (`failConditions`・`hitConditions`・`exitLine`)・入力の読み方 (`readInput`) |
 | `args.go`・`help.txt` | argparse の写し (`parseArgs`・`usageError`)。`-h` の文面は本家が出したものをそのまま持つ (`help.txt`) |
 | `lint_text.go` | `lintText` (本家の `lint_text` 5512-5988)・`detect` (検出まで)・`eachRow` (行のループ)・`beginRow`・`bodySteps` |
-| `post.go`・`result.go`・`rules.go` | 検出の後 (種類で外す・allow・ダッシュの上限・点数・件数)・出力 (`--json` の値・text の `renderReport`)・規則の表 (規則 → 群・種類ごとの扱い・実装済みの規則) |
+| `post.go`・`result.go`・`rules.go` | 検出の後 (種類で外す・allow・ダッシュの上限・点数・件数)・出力 (`--json` の値・text の `renderReport`)・種類ごとの扱い (`docTypeSkipRules` ほか) |
 | `g01_metrics.go` ほか `g02`〜`g20` | 群ごとの検出 (全部入っている)。G1 の指標 (`metricsAndListGate`) と G8 の窓 (`g08Window`) は骨組みも使う。G14 は `g14_calque.go` (型 1〜5・calque の message・手掛かりの行の絞り込み)・`g14_label.go` (metaphor_label)・`g14_lists.go` (一覧と手掛かりの語の正規表現)・`g14_tables.go` (本家が組み終えた表) |
 
 ### 群を足す人へ
@@ -243,10 +243,9 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 
 2. **行をまたぐ状態を持つ群は、自分の `g<番号>State` に持ち、`lintState` に欄を足す** (いまは G11〜G13。本家の行のループの外の変数と、事前の口が作る表)。持つ状態の無い群は欄を作らない。骨組みが持つのは複数の群が読むものだけ: `previousSentence`・`kikuLines`・`metrics`・`rule9`・`sentences`・`findings`。
    候補は `s.add(newFinding(rule, line, severity, message, snippet))` で、本家が足す順に足す (足す順が `--json` の `findings` の順)。内部の欄 (`Words`・`Objects`・`Heads` など) は `finding` の欄で、持つ欄は nil でない値を入れる (空でも持つなら `[]string{}`)。
-3. **`rules.go` の `implementedRules` の自分の規則を `true` にする**。検出を、本家の検出の生の並び (`testdata/golden/lint-raw.json`) と規則で絞って突き合わせるテスト (`TestRawFindingsMatchPythonRecording`) が、true の規則だけを比べる (入っていない規則の候補を Go が出すと落ちる)。
-   群どうしの依存 (G11 → G9・G14 → G8・G17 → G13) は、依存先の規則が全部 true になるまで依存元を true にできない (`TestImplementedRulesRespectGroupDependencies`)。
-   40 規則が全部 true になると、`TestCLIMatchesPythonRecording` が CLI の記録 (全ファイル × 種類・読者・語の一覧・text と `--json` の出力の全体と rc。8,072 件) を全件比べる段に切り替わる (stdout は SHA-256 の先頭 16 字と長さ・stderr は全文・rc)。
-   入っている群: G1〜G20 の全部 (G3 の `bold_not_rendered` は `g03Bold`、G13 の `pause_comma` は `g13PauseComma` が `lint/pausecomma` を呼ぶ)。
+3. **検出を、本家の検出の生の並び (`testdata/golden/lint-raw.json`) と比べる**。`TestRawFindingsMatchPythonRecording` が、40 規則の全部の候補を検出の順のまま比べる (規則の一覧は `lint/rules_test.go` の `ruleGroup`。そこにない規則の候補を Go が出すと落ちる)。
+   CLI の記録 (全ファイル × 種類・読者・語の一覧・text と `--json` の出力の全体と rc。8,072 件) は `TestCLIMatchesPythonRecording` が全件比べる (stdout は SHA-256 の先頭 16 字と長さ・stderr は全文・rc)。
+   群が別の群の検出を読む組 (G11 が G9 の filler_patterns・G14 が G8 の候補・G17 が G13 の pause_comma の `_heads` と `_objects`) は、読む側のコードが `s.findings` を引く。
 4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにある。
 5. 記録に足りない入力の形 (地図 4.3 節) は、`oracle/lintrawgap.go` の `lintRawGapInputs` に足す (検出の生の並びの記録 `lint-raw.json` にだけ入る。`rawgap/` の下に置かれ、全部の文脈で通る)。
    入力の集まり (`testdata/corpus/`) に足すと、lint-base・visibility・lint-cli・lint-raw の記録が全部変わる。足したら `go run ./oracle/cmd/golden -only lint-raw` で作り直し、既存の行が変わっていないことを差分で読む。
@@ -272,8 +271,8 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
     同じく rc 120 (標準出力なら「Exception ignored while flushing sys.stdout:」の 2 行) にする (Python 3.15.0 で実測)。EPIPE を受けるため、入口 (`main.go`) が SIGPIPE を `signal.Notify` で受ける。
     EPIPE 以外の書き込みの誤り (ENOSPC など) は内部エラーの rc 3。
   - 入力のパスの検査 (`visibility.InputPathProblem`) とファイルを開く処理は、プロセスの cwd を見る。語の一覧の探し方だけが `Env.Cwd` を見る。`Main` を cwd の違う `Env` で呼ぶテストは、プロセスの cwd も移す。
-  - allow で語の一部だけを外すときの message の作り直し (`calqueMessage`・`aiPhraseMessage`・`projectTermMessage`・`renyoMessage`) は、本家に作り直させた記録 (`lint-post.json` の `allow-partial|`) を置いてあるが、群が入るまで比べない (`implementedRules` が true になると比べ始める)。
-  - `run` は検査の本体を引数で受ける (`lintFunc`)。rc と「終了コード1」の行の配線は、候補を注入した `TestRunExitCodeAndExitLine` が見る (CLI の記録は候補のある入力を 40 規則が入るまで比べない)。
+  - allow で語の一部だけを外すときの message の作り直し (`calqueMessage`・`aiPhraseMessage`・`projectTermMessage`・`renyoMessage`) は、本家に作り直させた記録 (`lint-post.json` の `allow-partial|`) を置いてあり、`TestPostProcessingMatchesPythonRecording` が全件比べる。
+  - `run` は検査の本体を引数で受ける (`lintFunc`)。rc と「終了コード1」の行の配線は、候補を注入した `TestRunExitCodeAndExitLine` が見る (CLI の記録は全件を比べる)。
   - 結果の text は `result` の構造体から作る (`renderReport`)。check (1077) が子の JSON を読んで `render_report` を呼ぶ形が要るときは、JSON の値から作る入口をそのとき足す。
 
 ## 標準ライブラリを写す package (`internal/`)

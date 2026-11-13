@@ -53,7 +53,6 @@ func TestPostProcessingMatchesPythonRecording(t *testing.T) {
 		t.Fatalf("case が %d 件、記録が %d 件 (make golden で作り直す)", len(cases), len(g.Cases))
 	}
 	t.Chdir(root)
-	pending := 0
 	for i, c := range cases {
 		rec := g.Cases[i]
 		if rec.Name != c.Name {
@@ -66,11 +65,6 @@ func TestPostProcessingMatchesPythonRecording(t *testing.T) {
 		reader, err := visibility.NormalizeReader(c.Reader)
 		if err != nil {
 			t.Fatal(err)
-		}
-		if strings.HasPrefix(c.Name, oracle.AllowPartialPrefix) && !implementedRules[c.Inject[0].Rule] {
-			// message を作り直す関数は、その規則の群が入るまで panic する stub。入ったら、この case が本家の message と比べる。
-			pending++
-			continue
 		}
 		lc := lintContext{docType: docType, reader: reader}
 		if c.Words != "" {
@@ -112,7 +106,6 @@ func TestPostProcessingMatchesPythonRecording(t *testing.T) {
 	if len(cases) < 70 {
 		t.Errorf("記録の case が少ない: %d", len(cases))
 	}
-	t.Logf("allow で語の一部だけを外す case のうち、規則が入るまで比べない %d 件", pending)
 }
 
 func dumpCanonical(r *result) (string, error) {

@@ -229,3 +229,8 @@ func TestIndentedBadgeRowBreaksThePreviousSentence(t *testing.T) {
 		}
 	}
 }
+
+// findingsOf は規則 ID の候補を検出の順で返す (テストが使う)。
+func (s *lintState) findingsOf(rule string) []finding {
+	return slices.DeleteFunc(slices.Clone(s.findings), func(f finding) bool { return f.Rule != rule })
+}

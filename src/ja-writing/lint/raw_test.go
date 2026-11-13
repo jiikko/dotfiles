@@ -61,8 +61,8 @@ func findingToken(t *testing.T, f finding) string {
 func tokenRule(token string) string { return token[:strings.IndexByte(token, ':')] }
 
 // 検出の生の並びの記録 (testdata/golden/lint-raw.json: 入力の集まりの全ファイルを 8 つの文脈で通した、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む)) と、
-// Go の検出 (detect) を、入った規則ごとに突き合わせる。入った規則 (implementedRules が true) の候補だけを、検出の順のまま比べる。
-// 入っていない規則の候補を Go が出したら、implementedRules を直し忘れているので落とす。
+// Go の検出 (detect) を、規則の表 (ruleGroup) の 40 規則の全部について、検出の順のまま突き合わせる。
+// 規則の表にない規則の候補を Go が出したら落とす。
 func TestRawFindingsMatchPythonRecording(t *testing.T) {
 	root := workRoot(t)
 	var g oracle.LintRawGolden
@@ -112,35 +112,30 @@ func TestRawFindingsMatchPythonRecording(t *testing.T) {
 		}
 		var got []string
 		for _, f := range s.findings {
-			if !implementedRules[f.Rule] {
-				t.Fatalf("%s: 入っていない規則 %s の候補が出た (implementedRules の %s を true にして、検出を記録と比べる)", c.Name, f.Rule, f.Rule)
+			if _, ok := ruleGroup[f.Rule]; !ok {
+				t.Fatalf("%s: 規則の表 (ruleGroup) にない規則 %s の候補が出た", c.Name, f.Rule)
 			}
 			got = append(got, findingToken(t, f))
 		}
-		var want []string
-		for _, token := range strings.Fields(rec.Findings) {
-			if implementedRules[tokenRule(token)] {
-				want = append(want, token)
-			}
-		}
+		want := strings.Fields(rec.Findings)
 		if !slices.Equal(got, want) {
-			t.Errorf("%s: 入った規則の検出が本家と違う\n  Go   %v\n  本家 %v", c.Name, got, want)
+			t.Errorf("%s: 検出が本家と違う\n  Go   %v\n  本家 %v", c.Name, got, want)
 			continue
 		}
 		for _, token := range want {
 			compared[tokenRule(token)]++
 		}
 	}
-	// 入った規則ごとに、比べた候補が 1 件以上あること (記録にその規則の当たりが無いと、比べる範囲が空のまま緑になる)
-	for rule, ok := range implementedRules {
-		if ok && compared[rule] == 0 && !t.Failed() {
-			t.Errorf("入った規則 %s の候補を 1 件も比べていない", rule)
+	// 規則ごとに、比べた候補が 1 件以上あること (記録にその規則の当たりが無いと、比べる範囲が空のまま緑になる)
+	for rule := range ruleGroup {
+		if compared[rule] == 0 && !t.Failed() {
+			t.Errorf("規則 %s の候補を 1 件も比べていない", rule)
 		}
 	}
-	t.Logf("入った規則ごとに比べた候補の数: %v", compared)
+	t.Logf("規則ごとに比べた候補の数: %v", compared)
 }
 
-// 記録に規則 ID ごとに当たる入力が 1 件以上ある (40 規則全部。空振りの規則があれば、規則を入れた群が自分の規則を比べる範囲が空になる)。
+// 記録に規則 ID ごとに当たる入力が 1 件以上ある (40 規則全部。空振りの規則があれば、その規則を比べる範囲が空のまま緑になる)。
 // 規則の表 (ruleGroup) が本家の規則の全部であること (記録に出る規則 ID の集合と同じ) も見る。
 func TestEveryRuleHasHitsInRawRecording(t *testing.T) {
 	var g oracle.LintRawGolden
@@ -163,73 +158,14 @@ func TestEveryRuleHasHitsInRawRecording(t *testing.T) {
 			t.Errorf("記録に出た規則 %s が規則の表 (ruleGroup) にない", rule)
 		}
 	}
-	if len(ruleGroup) != 40 || len(implementedRules) != 40 || len(oracle.LintPostRules) != 40 {
-		t.Errorf("規則の表の大きさ: ruleGroup %d・implementedRules %d・oracle.LintPostRules %d (どれも 40 のはず)", len(ruleGroup), len(implementedRules), len(oracle.LintPostRules))
+	if len(ruleGroup) != 40 || len(oracle.LintPostRules) != 40 {
+		t.Errorf("規則の表の大きさ: ruleGroup %d・oracle.LintPostRules %d (どちらも 40 のはず)", len(ruleGroup), len(oracle.LintPostRules))
 	}
 	for _, rule := range oracle.LintPostRules {
 		if _, ok := ruleGroup[rule]; !ok {
 			t.Errorf("oracle.LintPostRules の %s が規則の表にない", rule)
 		}
 	}
-	for rule := range implementedRules {
-		if _, ok := ruleGroup[rule]; !ok {
-			t.Errorf("implementedRules の %s が規則の表にない", rule)
-		}
-	}
-}
-
-// 群どうしの依存 (G11 → G9・G14 → G8・G17 → G13): 依存先の群の規則が全部入るまで、依存元の群の規則は入れられない。
-func TestImplementedRulesRespectGroupDependencies(t *testing.T) {
-	if violations := dependencyViolations(); len(violations) > 0 {
-		t.Errorf("依存先の群が入っていないのに入れた規則: %v", violations)
-	}
-}
-
-// 依存の検査は、表の依存の組ごとに実際に違反を見つける (依存先の群の規則を 1 つ外し、依存元の群の規則を全部入れた表を作り、同じ判定を通す)。
-// 表の中身は、本家が他の群の候補を読む 3 か所 (cleft_list_ending が G9 の filler_patterns・calque が G8 の候補・slide_comma が G13 の pause_comma の _heads と _objects。
-// 本家の _findings の読み: 4588・4845・4846 行) と照合してあり、組を表から外すと落ちる。
-func TestDependencyCheckDetectsAViolation(t *testing.T) {
-	want := map[string][]string{"G11": {"G9"}, "G14": {"G8"}, "G17": {"G13"}}
-	if !maps.EqualFunc(groupDependencies, want, slices.Equal) {
-		t.Fatalf("群の依存の表が本家の読みと違う: %v", groupDependencies)
-	}
-	saved := maps.Clone(implementedRules)
-	defer func() { implementedRules = saved }()
-	for group, deps := range groupDependencies {
-		for _, dep := range deps {
-			for rule, g := range ruleGroup {
-				implementedRules[rule] = g != dep
-			}
-			var dependents []string
-			for rule, g := range ruleGroup {
-				if g == group {
-					dependents = append(dependents, rule)
-				}
-			}
-			slices.Sort(dependents)
-			if violations := dependencyViolations(); !slices.Equal(violations, dependents) {
-				t.Errorf("%s が %s に依存するのに、%s の規則を外しても違反として出ない: 違反 %v、期待 %v", group, dep, dep, violations, dependents)
-			}
-		}
-	}
-}
-
-func dependencyViolations() []string {
-	var out []string
-	for _, rule := range sortedRules() {
-		if !implementedRules[rule] {
-			continue
-		}
-		for _, dep := range groupDependencies[ruleGroup[rule]] {
-			for other, group := range ruleGroup {
-				if group == dep && !implementedRules[other] {
-					out = append(out, rule)
-					break
-				}
-			}
-		}
-	}
-	return out
 }
 
 // 入力の集まりに当たらない語・型 (SLOP_WORDS の 5 語・METAPHOR_VERB_PATTERNS の 5 型) と、当たりが少ない規則の形を、足した入力 (rawgap/) が 1 行 1 件で当てる。
