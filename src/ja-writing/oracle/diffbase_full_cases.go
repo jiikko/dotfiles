@@ -126,12 +126,49 @@ func diffFullTargeted() []diffFullCase {
 	// 片側だけが 2,000 字を超える断片: difflib の ratio では 0.49 で組になるが、前後の同じ字の数だけで見ると 0 で組にならない。
 	shared := kanjiRun(7, 1000)
 	longOld, longNew := kanjiRun(8, 1000)+shared+kanjiRun(9, 100)+"。\n", kanjiRun(10, 950)+shared+"。\n"
-	return []diffFullCase{
+	cases := []diffFullCase{
 		{name: "tie-two-candidates", old: string(f) + "。", new: string(g1) + "。" + string(g2) + "。"},
 		{name: "budget-second-hunk", old: budgetOld, new: budgetNew},
 		{name: "moved-contested", old: "A行\n区切り1\nB行\n区切り2\n終わり\n", new: "区切り1\n区切り2\n終わり\nA行\nB行\n"},
 		{name: "long-one-side-pairs", old: longOld, new: longNew},
 		{name: "quote-list-changed", old: "> - 項目です\n> 続きです\n", new: "> - 項目でした\n> 続きでした\n"},
+	}
+	return append(cases, diffFullBoundaries()...)
+}
+
+// diffFullBoundaries は全文差分の分かれ目 (定数の比べ・空白の判定・前後の同じ字の数え方) にちょうど当たる組。
+// 分かれ目の 1 つ手前や 1 つ先の入力では同じ答えになる規則を、定数や比べの向きを変えたときに落とすためにある。
+func diffFullBoundaries() []diffFullCase {
+	// 1 行 1 語の行の並び (空白で区切って書く)
+	words := func(s string) string { return strings.ReplaceAll(s, " ", "\n") + "\n" }
+	// 句点を含めて 2,000 字ちょうどになる断片 (1,999 字 + 句点) と、1 字入れ替えたものと 1 字足したもの
+	long := []rune(kanjiRun(5, 1999))
+	replaced := string(long[:700]) + string(long[701:]) + "あ"
+	added := string(long[:700]) + string(long[701:900]) + "い" + string(long[900:])
+	sentence := func(i int) string { return kanjiRun(i, 99) + "。" }
+	blocks := []string{sentence(1), sentence(2), sentence(3), sentence(4), sentence(5)}
+	swapped := []string{blocks[0], blocks[2], blocks[1], blocks[3], blocks[4]}
+	head := kanjiRun(1, 50)
+	return []diffFullCase{
+		// Python の str.strip だけが空白とみなす字 (U+001C) の行は、1 回ずつだけ出る行に数えない
+		{name: "anchor-python-space-only", old: "確認します。\n\x1c", new: "\x1c\n確認します。"},
+		// 見出しの段の注記は、両側とも 1 行の hunk のときだけ付く
+		{name: "heading-level-two-lines", old: "# 見出し\n# 別の見出し\n", new: "## 見出し\n## 別の見出し\n"},
+		// 前の同じ字と後ろの同じ字は重ならない (一方が他方の頭の部分のとき)
+		{name: "affix-shrink", old: "あああ\n", new: "ああ\n"},
+		{name: "affix-grow", old: "ああ\n", new: "あああ\n"},
+		// 組にする似かたの下限 0.45 のすぐ上 (50 字が同じで両側 110 字なので 100/220 = 0.4545)
+		{name: "pair-ratio-0.4545", old: kanjiRun(9, 600) + "。" + head + kanjiRun(2, 60) + "。\n", new: kanjiRun(9, 600) + "。" + head + kanjiRun(3, 60) + "。\n"},
+		// 近さの窓 (8 つ先) にちょうど当たる行 (空行を挟んだ組)
+		{name: "gap-window-eight", old: "\n\n\n\n\n\n\n\ny\nx\n\n\n\n\nz", new: "w\n\n\n\n\n\n\n\n\n\n\n\n\n\nx\n\n\ny\n\n\n\ny\n\n\n\n\nx"},
+		// 間の大きさ (両側の要素の数の積) の上限 400 ちょうどと 320。400 以下なら difflib で対応させる
+		{name: "gap-product-400", old: words("x x w y w y z x z z x z z x w x y w w z"), new: words("w x w x z x z y z y y y x x x y z z w q1")},
+		{name: "gap-product-320", old: words("z w w z y w w z y z z x w z z x y z y w"), new: words("w w w w w z w x w y w y x z w x")},
+		// 塊の上限 500 字ちょうど (2 つの文を入れ替える)
+		{name: "block-500", old: strings.Join(blocks, "") + "\n", new: strings.Join(swapped, "") + "\n"},
+		// 断片の上限 2,000 字ちょうど (前の文と後の文に挟まれた 1 文)
+		{name: "fragment-2000-replaced", old: "前の文です。" + string(long) + "。後の文です。\n", new: "前の文でした。" + replaced + "。後の文でした。\n"},
+		{name: "fragment-2000-added", old: "前の文です。" + string(long) + "。後の文です。\n", new: "前の文でした。" + added + "。後の文でした。\n"},
 	}
 }
 
