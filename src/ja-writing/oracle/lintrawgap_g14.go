@@ -381,8 +381,8 @@ func lintG14RawGapInputs() map[string]string {
 		"g14-label-first-list":  "- 窓のそば\n\n" + lintG14LabelBody + "\n",
 		"g14-label-forms":       lintG14LabelBody + "\n\n# 琥珀の横 foo_bar\n\n# 蝋燭 — 窓のそば\n\n# 1. 硝子のそば\n\n# v1.1.2 砂糖のそば\n\n# 珊瑚のそば（補足）\n\n# 紅茶の「横」\n\n",
 		// thin_evaluation: 前置きが 20 字は出て 21 字は出ない。katakana_term: 番号や記号の付いた名前は出さない。
-		"g14-thin-prefix":    g14Paragraphs([]string{strings.Repeat("あ", 20) + "座り心地が快適です。", strings.Repeat("あ", 21) + "座り心地が快適です。", "座り心地が、快適です。"}),
-		"g14-katakana-forms": g14Paragraphs([]string{"マイルストーン1を決める。", "マイルストーン B を決める。", "マイルストーンを決める。", "マイルストーンＡを決める。", "マイルストーン\u30002を決める。", "マイルストーンの次へ進む。"}),
+		"g14-thin-prefix":    g14Paragraphs([]string{strings.Repeat("あ", 20) + "座り心地が快適です。", strings.Repeat("あ", 21) + "座り心地が快適です。", "座り心地が、快適です。", "座り心地が快適です。座り心地が快適です。", "座り心地が快適です。使い心地が抜群です。"}),
+		"g14-katakana-forms": g14Paragraphs([]string{"マイルストーン1を決める。", "マイルストーン B を決める。", "マイルストーンを決める。", "マイルストーンＡを決める。", "マイルストーン\u30002を決める。", "マイルストーンの次へ進む。", "マイルストーンとシナジーとマイルストーンを決める。"}),
 	}
 	for i, headings := range lintG14GapLabelDocs {
 		m[fmt.Sprintf("g14-gap-labels-%d", i)] = lintG14LabelBody + "\n\n" + "# " + strings.Join(headings, "\n\n# ") + "\n"
