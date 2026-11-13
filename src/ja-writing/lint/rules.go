@@ -91,7 +91,7 @@ var implementedRules = map[string]bool{
 
 	"renyo_noun": true,
 
-	"ai_phrase": false,
+	"ai_phrase": true,
 
 	"slide_comma": false,
 

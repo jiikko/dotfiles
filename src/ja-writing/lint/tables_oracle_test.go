@@ -82,6 +82,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		"_FRAGMENT_RUN": fragmentRun, "_SHORT_MOCHIRON": shortMochiron, "_MOCHIRON_ANSWER": mochironAnswer, "_QUOTED_SEGMENT": quotedSegment,
 		"_CLEFT_LIST_COMMA": cleftListComma, "_CLEFT_LIST_MIXED": cleftListMixed, "_CLEFT_LIST_JOINER": cleftListJoiner, "_CLEFT_LIST_COMMA_MARK": cleftListCommaMark,
 		"_CLEFT_LIST_MASKED_RUN": cleftListMaskedRun, "_CLEFT_LIST_SPACE": cleftListSpace, "_CLEFT_LIST_STEM": cleftListStem,
+		"_V220_SENTENCE": v220Sentence, "_AI_PHRASE_HEAD": aiPhraseHead, "_AI_JUDGE": aiJudge, "_AI_INVITER": aiInviter,
 		"_NEGATION_EXTRA": negationExtra, "_NEGATION_JANAI": negationJanai, "_NEGATION_ALSO": negationAlso, "_BOLD_LABEL_ITEM": boldLabelItem,
 	}
 	if p, ok := lazy[name]; ok {
@@ -120,6 +121,15 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 		return renyoBefore, true
 	case "_RENYO_AFTER":
 		return renyoAfter, true
+	case "_AI_PHRASE_FORMS":
+		return mapList(aiPhraseForms, func(f struct {
+			name string
+			re   *lazyPattern
+		}) pyjson.Value {
+			return list(f.name, patternValue(f.re))
+		}), true
+	case "_AI_PHRASE_MESSAGE":
+		return aiPhraseMessageHead + "{}）" + v220MessageTail, true
 	case "_RENYO_MESSAGE":
 		return renyoMessageHead + "{}）" + v220MessageTail, true
 	}

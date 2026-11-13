@@ -48,6 +48,7 @@ var LintBaseConstants = []string{
 	"_CLEFT_LIST_MASKED_RUN", "_CLEFT_LIST_SPACE", "_CLEFT_LIST_STEM",
 	"_NEGATION_EXTRA", "_NEGATION_JANAI", "_NEGATION_ALSO", "_BOLD_LABEL_ITEM",
 	"_V220_MESSAGE_TAIL", "_RENYO_BEFORE", "_RENYO_AFTER", "_RENYO_MESSAGE",
+	"_V220_SENTENCE", "_AI_PHRASE_HEAD", "_AI_JUDGE", "_AI_INVITER", "_AI_PHRASE_FORMS", "_AI_PHRASE_MESSAGE",
 }
 
 // RecordLintBase は本家の関数に cases を通して記録にする (RecordVisibility と同じ仕組み)。
