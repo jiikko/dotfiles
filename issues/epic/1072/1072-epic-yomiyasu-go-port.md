@@ -17,14 +17,14 @@ dotfiles では skill・src の module・bin のコマンドを同じ名前に�
 
 子 issue 12 本 (1073〜1084) のうち 8 本完了 (1073 の土台・1074 の markdown_visibility・1075 の lint・1080 の ja-writing の規範の文・1081 の diff の照合・1082 のベンチマークの下ごしらえ・1083 の lint の太字・1084 の lint の読点。2026-11-13)。
 1075 では 40 規則が揃い、CLI の記録 8,072 件と dotfiles の文書 1,684 本で、出力と rc が全件本家と同じになった。
-長い 1 文書の所要は本家とほぼ同じで、Go が速いのは起動込みの小さい文書だけ (1079 の before)。1076 (diff) は群 A・B・C・E まで入り、`--endings` と引数の誤りが本家と同じ (CLI の記録 7,942 件のうち 2,376 件と、関数の記録 65,925 件を比べて通る)。残りは全文差分以降の群 (issue 1076 の「進捗」)。依存の順 (1073 → 1074 → 1075 → 1076 → 1077 → 1078 → 1079) に進める。
+長い 1 文書の所要は本家とほぼ同じで、Go が速いのは起動込みの小さい文書だけ (1079 の before)。1076 (diff) は群 A・B・C・E・J (全文差分) まで入り、`--endings` と引数の誤りが本家と同じで、全文差分と検査の本体へ渡す値も本家の記録と同じ (CLI の記録 8,002 件のうち 2,382 件と、本体へ渡す値 5,6xx 件、関数の記録を比べて通る)。残りは見出しの構造 (群 K) 以降 (issue 1076 の「進捗」)。依存の順 (1073 → 1074 → 1075 → 1076 → 1077 → 1078 → 1079) に進める。
 
 | issue | 内容 |
 |---|---|
 | [1073](done/1073-feat-yomiyasu-go-foundation.md) | 土台: module・Python の `re` を写す層・本家の出力を正解として記録する仕組み・CLI と CI の配線 |
 | [1074](done/1074-feat-yomiyasu-go-markdown-visibility.md) | markdown_visibility (Markdown の見える字・保護する範囲・語の一覧) |
 | [1075](done/1075-feat-yomiyasu-go-lint.md) | lint (40 規則) |
-| [1076](1076-feat-yomiyasu-go-diff.md) | diff (推敲の前後を比べて意味のずれを出す。群 A・B・C・E まで) |
+| [1076](1076-feat-yomiyasu-go-diff.md) | diff (推敲の前後を比べて意味のずれを出す。群 A・B・C・E・J まで) |
 | [1077](1077-feat-yomiyasu-go-check.md) | check (検査の記録と最終稿の照合) |
 | [1078](1078-feat-yomiyasu-go-dotfiles-integration.md) | hook と、dotfiles の ja-textlint・ja-textlint-on-edit・ja-writing への組み込み |
 | [1080](done/1080-docs-ja-writing-yomiyasu-norms.md) | ja-writing の skill に yomiyasu の推敲の規範の文を足す (Go の実装と独立。dotfiles-24 が担当) |

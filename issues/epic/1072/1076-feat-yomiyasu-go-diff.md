@@ -176,3 +176,29 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - request の組み立て (P2-6) は、群 J の最初の commit まで機械で守られていない
   - `context.words.path` の比べ方は、本体が入るまで確かめられない (最初の進捗と同じ)
 - 最後の編集の後の木 (HEAD 時点) の検査: `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が全部 rc 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf1/chk-*.log)
+
+### 2 本目 (diff-wf2。2026-11-13。worktree で作業し、push していない)
+
+- commit (群 J まで。群 K・L・AD は着手していない):
+  - f21a5fe85 refactor(ja-writing): context.words の JSON の組み立てと、文字列・省略できる文字列の JSON 値の変換を visibility と pyjson に出す
+  - 146fe40e3 feat(ja-writing): diff の全文差分 (群 J) を作り、検査の本体へ渡す値を本家と突き合わせる
+- 群 J: `diff/fulldiff.go` (本家の `_align` `_fill_gap` `_pair_similar` `_char_segments` `_plan_segments` `_make_hunk` `_mark_moved` `_encoding_notes` と `full_diff`)。`_Sides` は行と解析だけ持つ。
+  `_analyze` の bare_url の範囲を縮める処理 (`_URL_CHARS`) は全文差分が読まない (`protected_spans` を使うのは群 M 以降) ので写していない。群 M の係が足す
+- 記録: 関数の記録に `full_diff` を足した。`diff-base.json` は 8xx case・全呼び出しを比べて通る (`full_diff` 約 480 呼び出し: 入力の集まりと手で作った入力の全組・手書きの組 54 本・狙いを定めた組 5 本・固定の種 (PCG 1076/4) の行の組 140 と繰り返しの多い組 60 と文の組 40)。
+  `diff-cli.json` は 8,002 件 (新しい入力 `actor-material-order` の分が 54 件増え、既存の行の中身の変更は 0。`req` の欄が本体まで進む 5,6xx 件に付いた)
+- 本体へ渡す値 (1 本目の敵対的レビュー P2-6 への手当て): `run` を `prepare` (本体を呼ぶ前まで。request を返す) と `compare` に分けた。本家の `_run` が `diff()` に渡す引数 (原文・書き直した文・立場・注記・種類・読者・語の一覧の context・資料) を、
+  記録の driver (`oracle/py/record_diff_cli.py`) が `diff` を差し込んで控え、正規の JSON の SHA-256 を `req` に記録する。`TestRequestMatchesPythonRecording` が Go の `prepare` の戻り値と全件突き合わせ、本体まで進む記録と Go が 1 件ずつ一致すること・全部の欄 (立場・種類・読者・語の一覧・資料・注記) に値の入った記録があることも見る。
+  これで本体 (群 AC) が入るまでの間も、本体へ渡す値は機械で守られる。`bodyImplemented` は本体 (AC) が入ったときに真にする (今のまま)。**資料の順が実際に使われる所 (added_actors) の出力は、群 AB が入るまで比べられない** (渡す値の順だけは今守っている)
+- 大きい入力 (`full-budget`・`full-long-fragment`) を、オプションを通す組から外したままにする: 外した理由は本家の実行時間で、オプション (種類・読者・立場・語の一覧・資料) の処理は入力の大きさに依らず、本体へ渡す値の突き合わせはこの 2 つも通常の呼び出し (text・`--json`・`--fail-on`) で受けているため、オプション付きで増やしても守るものが増えない。全文差分の上限の経路は関数の記録で通す (`full-budget` は `too_large`、新しい `budget-second-hunk` は `budget`、`full-long-fragment` と `long-one-side-pairs` は長い断片)
+- わざと壊して red を確かめた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf2/mut-j4/): 9 本、全部想定の検査で red。動かした行の取り合いの確認の外し・近さの窓 8 → 2・同点の後の候補を取る形 (`>=` と枝刈りの `<=` → `<` の 2 か所)・引用の中の行の種類・合計の上限の引き算の外し・断片の長さの判定の `||` → `&&`・改行コード none の除外の外し・元と後の入れ替え・資料の順の逆転。
+  最初に当てた 9 本のうち 7 本は緑のまま通った (手書きの入力が分かれ目に当たっていなかった)。固定の種の組と狙いを定めた組を足して 9 本とも red にした。`>=` だけの変異は枝刈りの `<=` のせいで等価 (同点の候補が ratio を求める前に落ちる) で、2 か所を一緒に当てた
+- 本家と揃わなかった所: 無い (関数の記録 全件・本体へ渡す値 全件が一致)
+- 検査 (最後の編集の後の木。commit 146fe40e3 の内容): `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf2/chk-*.log)
+- 確かめていないこと:
+  - 全文差分の所要 (長い入力) は測っていない。関数の記録の入力 (`full-budget` の 11 万字など) を含めて記録の突き合わせのテストは 11 秒で通るが、本家との比は未測定
+  - 1 つの文書に lone surrogate を含む入力は記録に無い (入力の読みは UTF-8 の厳密な解読で、表に出ない)
+  - `_analyze` の AssertionError (`<ſcript>` の行) は `FullDiff` が error を返すが、本家との突き合わせは無い (関数の記録の例外は 0 件のまま)
+- 残り (この係では手を付けていない): 群 K (見出しの構造) → L (文の組と本文) → AD (人が読む出力)・以降の ④〜⑧。K 以降は `_Sides` を引数に取る段の記録 (`oracle/py/record_diff_stages.py`) が先に要る
+  (`call_function.py` の `save` で `_Sides(orig, rw)` を覚え、`_build_full_diff` の hunks を引数に渡す口を足す設計。K の `_heading_order_pairs` は (件数, 似かたの和) の組の max と、組の等しさの比べ (`best[a][b] == best[a-1][b]`) が float のまま要る)
+
+受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は A B C E J が済み・「`make test-dupscan-gate`」は今の木で通る。
