@@ -78,9 +78,9 @@ var implementedRules = map[string]bool{
 	"fragment_run":      true,
 	"cleft_list_ending": true,
 
-	"negative_parallelism":         false,
-	"negative_parallelism_density": false,
-	"bold_label_list":              false,
+	"negative_parallelism":         true,
+	"negative_parallelism_density": true,
+	"bold_label_list":              true,
 
 	"pause_comma": true,
 
