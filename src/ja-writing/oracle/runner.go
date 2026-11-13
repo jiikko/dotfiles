@@ -293,6 +293,7 @@ func placeFiles(dir string, files map[string]string) error {
 // Call は本家の module の関数 1 つの呼び出し。引数は JSON で表せるものだけ (Ref・Bytes・Cps で、前の結果・bytes・単独のサロゲートを含む str も渡せる)。
 // 1074 で足した欄 (どれも空なら前と同じ): Get は関数を呼ばずに module の属性 (定数) を返す・Save は戻り値を覚える (Ref で渡す)・Digest は結果を SHA-256 の先頭 8 字にして返す
 // (Keep も付けると結果も添える)・Op は関数でなく、作業フォルダへの操作 (fixture を作る・環境を変える)。
+// 1075 で足した欄: Quiet は Digest と一緒に付け、結果の digest を 8 つの 0 にする (analysis のように、覚える値を作るだけで結果の記録は要らない呼び出し)。
 type Call struct {
 	Module   string         `json:"module"`
 	Function string         `json:"function"`
@@ -302,6 +303,7 @@ type Call struct {
 	Save     string         `json:"save,omitempty"`
 	Digest   bool           `json:"digest,omitempty"`
 	Keep     bool           `json:"keep,omitempty"`
+	Quiet    bool           `json:"quiet,omitempty"`
 	Op       *Op            `json:"op,omitempty"`
 }
 

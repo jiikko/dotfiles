@@ -4,7 +4,8 @@
 入口は `bin/ja-writing` (1 本の CLI に subcommand `lint` / `diff` / `check` / `hook`)。設計と受け入れ条件は epic 1072 と issue 1073〜1078。
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
-subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す。lint は 1075、diff は 1076、check と hook は 1077 で実装する。
+lint の土台 (issue 1075 の T1〜T3: 絵文字・文末の飾り・文字の下ごしらえ。`lint/`) も入っている。
+subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す (lint の 40 規則は 1075 の続きの群で、diff は 1076、check と hook は 1077 で実装する)。
 
 ## 構成
 
@@ -12,7 +13,7 @@ subcommand は `まだ実装していません` と標準エラーに出して r
 |---|---|
 | `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
-| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (いまは未実装の stub) |
+| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (いまは未実装の stub)。`lint/` は stub の隣に、本家の `yomiyasu_lint.py` の土台 (T1〜T3) を持つ。下の「lint の土台」 |
 | `lint/pausecomma/` | lint の群 G13 (規則 `pause_comma`: 短い主語・主題・目的語のすぐあとの読点)。本家の `_pause_comma_hits`・`_pause_comma_object_hits`・`_pause_comma_line_hits` の写しで、記録は `testdata/golden/pause_comma.json` (issue 1084)。骨組みは `Fallback` と `LineHits` を呼び、G16 は `TENotVerb`、G17 は `TEAttrObject` を使う |
 | `visibility/` | 本家の `markdown_visibility.py` (Markdown の読み方・語の一覧・入力の扱い) の Go 実装。本家の名前との対応表は package doc (`visibility/doc.go`)。下の「markdown_visibility の Go 実装」 |
 | `lists/` | 語の一覧 (`references/lists/*.txt` の 8 本) を `go:embed` で持つ。本家と同じバイト列で、`.gitattributes` が改行の変換を止める。SHA-256 は `oracle/upstream.sha256` と照合するテストがある |
@@ -177,6 +178,43 @@ digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=("
 測ったのは macOS の手元 1 台だけで、CI の macOS runner では測っていない (本家が上限を決めた 1,024 は CI の Linux で 2 秒を超えたという記録があるが、この repo の CI は macOS)。
 lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で行を絞ってから正規表現を当てるなら、最悪の行はさらに限られる (未確認: 1075 の実装次第)。
 
+## lint の土台 (`lint/`。issue 1075 の T1〜T3)
+
+候補を出さない部品。規則の群 (G1〜G20) と後処理・出力 (T4) がこの上に載る。本家の名前と Go の名前の対応は、各ファイルの冒頭のコメントが正本 (本家のファイルを更新したら、そこの表で見直す関数を引く)。
+
+| 群 | ファイル | 本家 (`yomiyasu_lint.py`) | 公開 |
+|---|---|---|---|
+| T1 絵文字 | `emoji.go`・`emoji_tables_gen.go` (生成) | `_emoji_matches`・`_emoji_character_class`・`_emoji_flag_pattern`・`EMOJI_PATTERN`・`_EMOJI_START_PATTERN`・表 (Unicode 18.0) | `lint.EmojiMatches(text) []string` (本家の `_emoji_matches`。diff も同じ数え方を使う) |
+| T2 文末の飾り | `endmark.go` | `_merged_ranges`・`_bracket_opens_sentence`・`_strip_end_decoration`・`_decoration_breaks`・`_with_undecorated`・`_end_quote_closers`・`_end_closers_for` | なし |
+| T3 文字の下ごしらえ | `prose.go` | `_mask_quoted_segments` (と `_sparse`)・`_question_content_end`・`_last_context_sentence`・`_ends_with_question`・`_prose_visible_text`・`_image_only_row`・`_plain_sentence_records`・`_rule9_context`・`_v220_scan_text` | なし |
+| 共通 | `pyregexp.go`・`ordered.go` | `_LazyPattern` (初めて使うときに組む正規表現)・`dict.fromkeys` (重なりを除いて初めて出た順を保つ) | なし |
+
+- **照合を正規表現にしない所**: 絵文字は `EMOJI_PATTERN` (8,514 字) を pyre で組まず、区間の表と 5 つの枝 (旗・キーキャップ・U+FE0F つきの基底・テキスト表現の基底・そのほか。本家の選択肢の順) を手で書く。
+  文の切り出しの `(?<=[。！？])` と `(?<=[。！？!?])` の split は、記号の直後で切る手書きの走査 (空の一致で切るので、末尾が記号なら最後に空の要素が出る)。
+  `$` を使う `_END_BRACKET_AFTER_PREDICATE` と、先読みを持つ `_WH_QUESTION`・`_V220_*`・`_END_BREAK_*` は pyre を通す (使うときに組む `lazyPattern`)。
+- 本家は analysis の dict に `_prose_line_cache` などの覚えを書き足す。Go は `visibility.Analysis` に欄を足さず、lint の文脈 `document` に持つ (1 つの文書の 1 回の実行だけで使う)。
+- 本家の `core is not sentence` (飾りを除いたか) は、`stripEndDecoration` の 2 つ目の戻りの bool にしてある。除いた結果が元と同じ文字列になることは無い (除くと必ず短くなる)。
+
+### 本家との突き合わせ (`lint/oracle_test.go`・`testdata/golden/lint-base.json`)
+
+`oracle.LintBaseCases` が土台の関数への呼び出し (484,515 回。456 case) を作り、`make golden` (`-only lint-base` で約 15 秒) が本家に通して、呼び出しごとの結果の digest を記録する。形は `visibility.json` と同じ。
+`analysis` を取る関数は、`markdown_visibility.analyze_markdown` の結果を `save` し、`Ref` で渡す (結果の記録は要らないので、driver の `quiet` で digest を 8 つの 0 にする)。
+
+| 入力 | 中身 |
+|---|---|
+| 入力の集まり (332 ファイル。うち本家の `analyze_markdown` が `AssertionError` で落ちる 2 件を除く) | 行ごとに `_emoji_matches`・`_strip_end_decoration` (closers なし・あり)・`_decoration_breaks`・`_with_undecorated`・引用の伏せ 2 本・疑問の判定 3 本・`_prose_visible_text`・`_image_only_row`・`_v220_scan_text`・`_end_closers_for`・閉じかっこごとの `_bracket_opens_sentence`。文書ごとに `_plain_sentence_records`・`_rule9_context`・`_end_quote_closers` |
+| 手書きの文書 (visibility の 106 件のうち 104 件と、画像だけの行・引用の閉じ・指示の残りの文脈・飾りの行など 13 件) | 上と同じ呼び出しで、結果そのものを残す |
+| 絵文字 | 手書き 104 (旗・キーキャップ・U+FE0E / U+FE0F・肌色・ZWJ・タグ・サロゲート)・全コードポイントを後ろの字 5 通りと並べた走査・旗の全 676 組・表の関数 (`_emoji_character_class`・`_emoji_flag_pattern`・`_merged_ranges`) |
+| 文末の飾りと疑問の文 | 手書きの文 (飾りの文 89・引用と疑問の文 97・単独のサロゲート 5)・開きかっこを見る 256 字の境目の前後 55 |
+| 定数 21 個 | 絵文字の表 3 本と旗の地域・文末の飾りの区間・かっこと引用符の対・疑問の語尾・表から作る文字クラス |
+
+- 照合: 整数の鍵の dict (`_rule9_context` と `_end_quote_closers`) は、本家の `sort_keys=True` が整数の大小で並べてから文字にするので、Go は鍵を数の順に入れた `pyjson.Object` を並べ替えずに書く。
+- 絵文字の表 (`emoji_tables_gen.go`) は `oracle.GenerateLintEmojiTables` が `lint-base.json` の定数から作る (手で編集しない。`oracle` の `TestLintEmojiTablesMatchGolden` が見る)。
+  Go が組む正規表現の文字列 (`EMOJI_PATTERN` など) は、パターンの記録 (`patterns.json`) に同じ文字列があることを `TestPatternSourcesAppearInPatternRecording` が見る。
+  表と枝で書いた `EmojiMatches` は、`EMOJI_PATTERN` の文字列を pyre で組んだ `findall` とも、入力の集まりの全文で同じ答えを返す (`TestEmojiMatchesAgreesWithPatternFindall`)。
+- 空振りを止める検査 (`TestLintBaseRecordingCoversEveryFunction`): 関数と定数ごとに記録の件数が 0 でなく、例外を使わない (analysis を作れない入力は `lintAnalysisFails` で外す)。
+- 実装をわざと壊して `bin/mutate-verify-list` で確かめた 22 本 (絵文字 4・文末の飾り 7・文字の下ごしらえ 10・重なりの除去 1)。20 本が red (うち 1 本は最初は緑で、入力を足して red にした)、2 本は等価と判断した (理由は issue 1075 の進捗)。
+
 ## 標準ライブラリを写す package (`internal/`)
 
 | package | 写すもの | 記録 | 件数 |
@@ -257,6 +295,7 @@ make -C src/ja-writing lint test    # CI と同じ (Python は動かさない)
 make -C src/ja-writing golden       # 記録を作り直す (Python と ネットワークが要る。UPDATE=1 で環境の違いを許す)
                                     #   TMPDIR は、上に .git・.yomiyasu-words・.yomiyasu が無い場所に向ける (repo の中の tmp/ は使えない)
 go run ./oracle/cmd/golden -only visibility   # markdown_visibility の関数の記録 (visibility.json) だけを作り直す (約 10 秒)
+go run ./oracle/cmd/golden -only lint-base    # lint の土台の関数の記録 (lint-base.json) と絵文字の表 (lint/emoji_tables_gen.go) だけを作り直す (約 15 秒)
 go run ./oracle/cmd/worstcase -rounds 5 -shape single   # 試す数の上限の最悪の組の所要を本家と Go で測る (テストの合否には使わない)
 make -C src/ja-writing pin-upstream # 固定する commit を変えるときだけ
 ```
@@ -266,4 +305,4 @@ make -C src/ja-writing pin-upstream # 固定する commit を変えるときだ�
 ## 今後 (別の issue)
 
 `internal/pyre` (Python の `re` を regexp2 で写す) と、Markdown の構造を読む層 (`visibility/`。`markdown_visibility.py` と `flag-patterns.txt` の検査器) は作った。
-lint (1075)・diff (1076)・check と hook (1077) がこの 2 つの上に載る。このディレクトリの記録と `oracle.Digest` が、それらの突き合わせの基準になる。
+lint (1075。土台の T1〜T3 は入った)・diff (1076)・check と hook (1077) がこの 2 つの上に載る。このディレクトリの記録と `oracle.Digest` が、それらの突き合わせの基準になる。

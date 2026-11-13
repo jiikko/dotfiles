@@ -106,4 +106,17 @@
 
 ## 進捗
 
-- (未着手)
+- 2026-11-13 土台 T1〜T3 を入れた (`src/ja-writing/lint/`。候補はまだ出さない)。T4 (後処理・出力・CLI) と G1〜G20 は続き。
+  - 作ったもの: 絵文字 (`EmojiMatches` が公開。表は `lint-base.json` の定数から `oracle.GenerateLintEmojiTables` が作る `emoji_tables_gen.go`)・文末の飾り (`endmark.go`)・文字の下ごしらえ (`prose.go`。解析と覚えは `document`)・
+    初めて使うときに組む正規表現 (`lazyPattern`)・重なりを除いて順を保つ helper (`uniqueInOrder`。1 つ)。本家の名前との対応は各ファイルの冒頭と README の「lint の土台」。
+  - 本家との突き合わせ: `testdata/golden/lint-base.json` (456 case・484,515 呼び出し・約 4.4 MB)。str を取る関数は入力の集まりの全行と手書きの文・全コードポイントの走査で、analysis を取る関数は driver で `analyze_markdown` を `save` して `Ref` で渡す
+    (driver に `quiet` を足した。結果の記録が要らない呼び出しの digest を 8 つの 0 にする)。定数 21 個も記録して Go の値と比べる。
+  - 本家で `analyze_markdown` が `AssertionError` になる 2 入力 (`html-script-long-s`・`html-style-long-s`) は、analysis を作れないので土台の記録から外した (visibility.json は例外として記録している)。
+  - 実装をわざと壊して `bin/mutate-verify-list` で 22 本を確かめた (絵文字 4・文末の飾り 7・文字の下ごしらえ 10・重なりの除去 1)。20 本が想定の検査 (`TestLintBaseMatchesPythonRecording` か `TestUniqueInOrderKeepsFirstOccurrence`) で red、2 本は等価と判断した。
+    20 本のうち 1 本 (`bracketOpensSentence` の 256 字の境目) は最初は緑のまま通ったので、境目の前後の入力 55 件を足して red にした。
+  - 等価と判断した 2 本: (1) `decorationBreaks` の `!hasText ||`: `hasText` が偽のとき、分けた所から今の並びの始まりまでの字は空白だけなので、あとの `last == start` が必ず真になる (本家の冗長な条件をそのまま写してある)。
+    (2) `imageOnlyRow` の `following == "]("` (リンクの宛先の範囲は `(` から始まり、宛先が `image_end+1` から始まるのは `](` の直後だけ。`[![a](b)](c)` など 6 形で範囲の始まりを確かめた。未確認: 宛先の範囲を作る全経路)。
+  - `_QUOTED_SEGMENT`・`_LIST_MARKER_LINE`・`_SENTENCE_END_POSITION` など、土台の関数が使わない正規表現は、使う群 (G5・G1) が持つ。`_SENTENCE_END_POSITION` と `_LINE_SENTENCE_BREAK` の split は、正規表現でなく記号の直後で切る走査にした (記録で同じ答え)。
+  - 次の係へ: 群は `lint/<群>.go` に 1 ファイルずつ足し、`*document` (解析 `an`・`proseVisibleText`・`endClosersFor`・`rule9Context`・`plainSentenceRecords`・`v220ScanText`) を受け取る。
+    文末の飾りの字を正規表現へ埋め込む群 (G8 の `_MOMENT_PATTERN`・G9・G11・G12 など) は `endDecorationRun()` を使う (表から作る文字列。記録の定数 `_END_DECORATION_RUN` と同じ)。
+    記録を足すときは `oracle/lintbase_cases.go` の形 (`recorder`・`lintDocCalls`) に倣い、`lint/oracle_test.go` の `invoke` に関数を足す。群の str の関数と analysis を取る関数を同じ記録に入れるか、新しい記録のファイルにするかは、1 ファイルの大きさ (いま 4.4 MB) で決める。

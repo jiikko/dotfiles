@@ -13,6 +13,7 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 - "save": "名前" の呼び出しは、戻り値の Python の値を覚える。args の中の {"$ref": "名前"} が、その値になる (JSON を経由しない)。
 - args の中の {"$bytes_b64": "..."} は bytes、{"$str": [コードポイント...]} は str (単独のサロゲートも持てる)。
 - 文字列の中の "<<ROOT>>" は実行の作業フォルダ (cwd の実パス) に置き換える。結果の文字列の中の作業フォルダは "<<ROOT>>" に戻す。
+- "quiet": true の呼び出し ("digest" も付ける) は、結果の digest を 8 つの 0 にする。覚える値 (save) を作るだけで、結果そのもの (大きな解析の結果など) の記録は要らない呼び出し用。例外になったときは普通の digest と raised。
 - "op" の呼び出しは、作業フォルダに fixture を作る・環境を変える: write・mkdir・symlink・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。結果は null。
 """
 import base64
@@ -149,7 +150,10 @@ for call in plan["calls"]:
     except Exception as exc:  # noqa: BLE001 - 例外も記録する (本家が投げる例外は仕様の一部)
         record = {"exception": {"type": type(exc).__name__, "message": unroot(str(exc))}}
     if call.get("digest"):
-        entry = {"digest": hashlib.sha256(canonical(record).encode("ascii")).hexdigest()[:8]}
+        if call.get("quiet") and "exception" not in record:
+            entry = {"digest": "00000000"}
+        else:
+            entry = {"digest": hashlib.sha256(canonical(record).encode("ascii")).hexdigest()[:8]}
         if "exception" in record:
             entry["raised"] = True
         if call.get("keep") or ("op" in call and "exception" in record):
