@@ -57,9 +57,9 @@ var implementedRules = map[string]bool{
 	"dash_insertion":   true,
 	"dash_list_ending": true,
 
-	"heading_colon":         false,
-	"short_summary_heading": false,
-	"redundant_bracket":     false,
+	"heading_colon":         true,
+	"short_summary_heading": true,
+	"redundant_bracket":     true,
 
 	"trailing_colon": false,
 
