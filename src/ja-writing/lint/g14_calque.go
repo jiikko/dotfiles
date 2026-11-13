@@ -727,5 +727,26 @@ func (s *lintState) g14WordFindings() {
 			f.Words = uniqueInOrder(katakana)
 			s.add(f)
 		}
+		if thinPossible {
+			var thinWords []string
+			for _, sentence := range sentences {
+				if m := thinMatch(sentence); m != nil {
+					body, _ := m.Group(2)
+					word := body
+					for _, noun := range tables.nouns {
+						if strings.HasPrefix(body, noun) {
+							word = noun
+							break
+						}
+					}
+					thinWords = append(thinWords, word)
+				}
+			}
+			if len(thinWords) > 0 {
+				f := newFinding("thin_evaluation", lineNo, "info", "中身の薄い評価の文"+v220MessageTail, snippet)
+				f.Words = uniqueInOrder(thinWords)
+				s.add(f)
+			}
+		}
 	}
 }

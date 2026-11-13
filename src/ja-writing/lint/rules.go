@@ -87,7 +87,7 @@ var implementedRules = map[string]bool{
 	"calque":          true,
 	"metaphor_label":  true,
 	"katakana_term":   true,
-	"thin_evaluation": false,
+	"thin_evaluation": true,
 
 	"renyo_noun": true,
 
