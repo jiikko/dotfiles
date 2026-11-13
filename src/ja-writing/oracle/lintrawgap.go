@@ -32,6 +32,10 @@ var lintRawGapInputs = map[string]string{
 	"g1-list-quarter": "- " + strings.Repeat("い", 100) + "\n\n" + strings.Repeat(strings.Repeat("い", 100)+"\n\n", 3),
 	"g1-gate-300":     g1DetailsDoc(74),
 	"g1-gate-301":     g1DetailsDoc(75),
+	// sentence_end_repetition の語尾のうち corpus に出ない 4 つ (だ・である・でした・だろう)。
+	"g2-endings": "これは仕様だ。これは設計だ。これは方針だ。\n\nこれは仕様である。これは設計である。これは方針である。\n\nこれは仕様でした。これは設計でした。これは方針でした。\n\nこれは仕様だろう。これは設計だろう。これは方針だろう。\n",
+	// 絵文字で文を続けた所の分け方 (句点なしで 3 つ・句点と絵文字・先頭のコードが伏せられて見える文字と元の行の幅が違うとき) ・分けた後ろが 3 字のとき (分けない)・閉じかっこで終わる文 (語尾に数えない)。
+	"g2-decoration": "これはAです🚀これはBです🚀これはCです🚀\n\n一つ目の説明です。🚀\n二つ目の説明です。🚀\n三つ目の説明です。🚀\n\n`コード` これはAです🚀これはBです🚀これはCです🚀\n\n一つ目の説明です）\n二つ目の説明です）\n三つ目の説明です）\n\n一つ目の説明だ。二つ目の説明だ。三つ目の説明です🚀OKだ\n",
 	// 行頭が空白のバッジの行 (imageBreakRow・imageOnlyRow が先頭の空白を飛ばして見る)。
 	"badge-indented": "  [![b](x)](y)\n\n前の文です。\n  [![c](x)](y)\n次の文です。\n",
 }

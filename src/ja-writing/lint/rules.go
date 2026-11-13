@@ -47,7 +47,7 @@ var implementedRules = map[string]bool{
 	"excess_bold": true,
 	"excess_list": true,
 
-	"sentence_end_repetition": false,
+	"sentence_end_repetition": true,
 
 	"bold_not_rendered": true,
 
