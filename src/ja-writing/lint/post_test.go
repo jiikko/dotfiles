@@ -98,6 +98,13 @@ func TestPostProcessingMatchesPythonRecording(t *testing.T) {
 		if got := shortDigest(strings.ReplaceAll(renderReport(res), root, oracle.RootToken)); got != rec.Report {
 			t.Errorf("%s: render_report が本家と違う (%s と %s)\n%s", rec.Name, got, rec.Report, renderReport(res))
 		}
+		jsonText, err := dumpResult(res)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := shortDigest(strings.ReplaceAll(jsonText, root, oracle.RootToken)); got != rec.JSON {
+			t.Errorf("%s: --json の出力 (鍵の順を含む) が本家と違う (%s と %s)\n%.1500s", rec.Name, got, rec.JSON, jsonText)
+		}
 		if res.penaltyScore != rec.Score {
 			t.Errorf("%s: 点数が本家と違う: %d と %d", rec.Name, res.penaltyScore, rec.Score)
 		}

@@ -3,6 +3,7 @@ package oracle
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // LintRawFile は本家 lint の検出の生の並び (種類・allow・ダッシュの上限で外す前の候補。内部の欄 _words などを含む) の記録 (testdata/golden/ の中)。
@@ -42,6 +43,14 @@ type LintRawRecord struct {
 	N        int    `json:"n"`
 	Metrics  string `json:"metrics"`
 	Findings string `json:"findings"`
+}
+
+// CheckCount は候補の数 N と Findings の並びの長さが合うか (片方だけ欠けた・壊れた記録を読まない)。
+func (rec LintRawRecord) CheckCount() error {
+	if n := len(strings.Fields(rec.Findings)); n != rec.N {
+		return fmt.Errorf("記録 %s の候補の数 n=%d と並びの長さ %d が違います", rec.Name, rec.N, n)
+	}
+	return nil
 }
 
 // LintRawGolden は lint-raw.json の中身。
@@ -98,6 +107,9 @@ func (r Runner) RecordLintRaw(ctx context.Context, header Header, cases []LintRa
 	for i, rec := range out {
 		if rec.Name != cases[i].Name {
 			return LintRawGolden{}, fmt.Errorf("%d 番目の記録の名前 %q が case の名前 %q と違います", i, rec.Name, cases[i].Name)
+		}
+		if err := rec.CheckCount(); err != nil {
+			return LintRawGolden{}, err
 		}
 	}
 	return LintRawGolden{Header: header, Cases: out}, nil

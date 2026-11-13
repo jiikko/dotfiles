@@ -52,6 +52,9 @@ func Main(ctx context.Context, env cmdenv.Env) int {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// 読む側が閉じたパイプへの書き込みを、SIGPIPE で落ちずに EPIPE の誤りとして受ける (本家の Python は BrokenPipeError を受けて rc 3 にする)。
+	// signal.Ignore にしない: 無視は exec した子プロセス (git など) に引き継がれ、子の SIGPIPE の振る舞いまで変える。
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 	env, err := cmdenv.FromProcess(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ja-writing: %v\n", err)

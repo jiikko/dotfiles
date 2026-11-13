@@ -78,11 +78,14 @@ func TestRawFindingsMatchPythonRecording(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compared := 0
+	compared := map[string]int{}
 	for i, c := range cases {
 		rec := g.Cases[i]
 		if rec.Name != c.Name {
 			t.Fatalf("%d 番目の case の名前 %q が記録の %q と違う (make golden で作り直す)", i, c.Name, rec.Name)
+		}
+		if err := rec.CheckCount(); err != nil {
+			t.Fatal(err)
 		}
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(c.Path)))
 		if err != nil {
@@ -124,11 +127,17 @@ func TestRawFindingsMatchPythonRecording(t *testing.T) {
 			t.Errorf("%s: 入った規則の検出が本家と違う\n  Go   %v\n  本家 %v", c.Name, got, want)
 			continue
 		}
-		compared++
+		for _, token := range want {
+			compared[tokenRule(token)]++
+		}
 	}
-	if compared != len(cases) && !t.Failed() {
-		t.Errorf("比べた記録が %d 件 (全 %d 件)", compared, len(cases))
+	// 入った規則ごとに、比べた候補が 1 件以上あること (記録にその規則の当たりが無いと、比べる範囲が空のまま緑になる)
+	for rule, ok := range implementedRules {
+		if ok && compared[rule] == 0 && !t.Failed() {
+			t.Errorf("入った規則 %s の候補を 1 件も比べていない", rule)
+		}
 	}
+	t.Logf("入った規則ごとに比べた候補の数: %v", compared)
 }
 
 // 記録に規則 ID ごとに当たる入力が 1 件以上ある (40 規則全部。空振りの規則があれば、規則を入れた群が自分の規則を比べる範囲が空になる)。

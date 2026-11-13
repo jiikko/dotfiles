@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 )
 
@@ -127,40 +128,6 @@ func (t *tokenizer) errorAt(msg string, offset int) *Error {
 	return newPatternError(msg, t.src, t.tell()-offset)
 }
 
-// pyRepr は Python の repr(str)。引用符は単引用符で、中に単引用符があって二重引用符が無いときだけ二重引用符にする。
-// バックスラッシュ・引用符・\t \n \r は短い escape、印字できない字 (str.isprintable が偽) は \xNN \uNNNN \UNNNNNNNN にし、印字できる字はそのまま出す。
-func pyRepr(s string) string {
-	q := '\''
-	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		q = '"'
-	}
-	var b strings.Builder
-	b.WriteRune(q)
-	for _, r := range pyunicode.Runes(s) {
-		switch {
-		case r == q || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case pyunicode.IsPrintable(r):
-			b.WriteString(pyunicode.FromRunes([]rune{r}))
-		case r < 0x100:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r < 0x10000:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		default:
-			fmt.Fprintf(&b, `\U%08x`, r)
-		}
-	}
-	b.WriteRune(q)
-	return b.String()
-}
-
 func runeLen(s string) int { return len(pyunicode.Runes(s)) }
 
 // isIdentifier は str.isidentifier。
@@ -174,7 +141,7 @@ func isIdentifier(name string) bool {
 
 func (t *tokenizer) checkGroupName(name string, offset int) {
 	if !isIdentifier(name) {
-		panic(t.errorAt("bad character in group name "+pyRepr(name), runeLen(name)+offset))
+		panic(t.errorAt("bad character in group name "+pystr.Repr(name), runeLen(name)+offset))
 	}
 }
 
@@ -220,7 +187,7 @@ func (st *state) openGroup(name string, hasName bool) (int, *Error) {
 	}
 	if hasName {
 		if ogid, ok := st.groupDict[name]; ok {
-			return 0, newError(ClassError, "redefinition of group name "+pyRepr(name)+" as group "+strconv.Itoa(gid)+"; was group "+strconv.Itoa(ogid))
+			return 0, newError(ClassError, "redefinition of group name "+pystr.Repr(name)+" as group "+strconv.Itoa(gid)+"; was group "+strconv.Itoa(ogid))
 		}
 		st.groupDict[name] = gid
 	}
@@ -297,7 +264,7 @@ func namedEscape(src *tokenizer) rune {
 		panic(src.errorAt("missing {", 0))
 	}
 	name := src.getUntil('}', "character name")
-	panic(src.errorAt("undefined character name "+pyRepr(name)+" (\\N{...} is not supported)", runeLen(name)+len(`\N{}`)))
+	panic(src.errorAt("undefined character name "+pystr.Repr(name)+" (\\N{...} is not supported)", runeLen(name)+len(`\N{}`)))
 }
 
 func octalEscape(src *tokenizer, escape []rune) rune {
@@ -796,7 +763,7 @@ func parseNamedBackref(src *tokenizer, st *state) *node {
 	src.checkGroupName(name, 1)
 	gid, ok := st.groupDict[name]
 	if !ok {
-		panic(src.errorAt("unknown group name "+pyRepr(name), runeLen(name)+1))
+		panic(src.errorAt("unknown group name "+pystr.Repr(name), runeLen(name)+1))
 	}
 	if !st.checkGroup(gid) {
 		panic(src.errorAt("cannot refer to an open group", runeLen(name)+1))
@@ -846,7 +813,7 @@ func parseConditional(src *tokenizer, st *state, verbose bool, nested int, start
 		src.checkGroupName(condName, 1)
 		g, ok := st.groupDict[condName]
 		if !ok {
-			panic(src.errorAt("unknown group name "+pyRepr(condName), runeLen(condName)+1))
+			panic(src.errorAt("unknown group name "+pystr.Repr(condName), runeLen(condName)+1))
 		}
 		condGroup = g
 	} else {

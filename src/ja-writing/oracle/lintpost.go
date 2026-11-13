@@ -38,11 +38,13 @@ type LintPostCase struct {
 }
 
 // LintPostRecord は 1 件の記録。Result は lint_text の戻り値の正規の JSON (sort_keys・ensure_ascii・separators=(",", ":")) の SHA-256 の先頭 16 字、Report は render_report の戻りの同じ。
+// JSON は --json が出す形 (indent=2。鍵は本家の dict の順のまま) の同じ。Result は鍵を並べ直すので、鍵の順の違いは JSON でしか見えない。
 type LintPostRecord struct {
 	Name    string `json:"name"`
 	Natural int    `json:"natural"`
 	Result  string `json:"result"`
 	Report  string `json:"report"`
+	JSON    string `json:"json"`
 	Score   int    `json:"score"`
 }
 

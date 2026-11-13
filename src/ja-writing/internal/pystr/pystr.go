@@ -6,6 +6,7 @@
 package pystr
 
 import (
+	"fmt"
 	"strings"
 
 	"ja-writing/internal/pyunicode"
@@ -124,4 +125,38 @@ func SplitLines(s string, keepEnds bool) []string {
 		lines = append(lines, s[start:])
 	}
 	return lines
+}
+
+// Repr は Python の repr(str)。引用符は単引用符で、中に単引用符があって二重引用符が無いときだけ二重引用符にする。
+// バックスラッシュ・引用符・\t \n \r は短い escape、印字できない字 (str.isprintable が偽) は \xNN \uNNNN \UNNNNNNNN にし、印字できる字はそのまま出す。
+func Repr(s string) string {
+	q := '\''
+	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
+		q = '"'
+	}
+	var b strings.Builder
+	b.WriteRune(q)
+	for _, r := range pyunicode.Runes(s) {
+		switch {
+		case r == q || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case pyunicode.IsPrintable(r):
+			b.WriteString(pyunicode.FromRunes([]rune{r}))
+		case r < 0x100:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case r < 0x10000:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		}
+	}
+	b.WriteRune(q)
+	return b.String()
 }

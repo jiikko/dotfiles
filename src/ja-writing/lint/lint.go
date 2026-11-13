@@ -18,6 +18,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"syscall"
 
 	"ja-writing/cmdenv"
 	"ja-writing/visibility"
@@ -27,13 +28,36 @@ import (
 const (
 	exitHit      = 1
 	exitInternal = 3
+	// exitLateFlush は Python が終わり際に標準出力・標準エラーを書き出せなかったときの終了コード (Py_FinalizeEx の失敗で 120)。
+	exitLateFlush = 120
 )
+
+// lateFlushError は、本家では書き込みが終わり際の flush まで遅れる出力 (-h・--version・使い方の誤り。どれも本家は自分で flush せずに終わる) が、
+// 読む側の閉じたパイプで書けなかったこと。本家はこのとき main の BrokenPipeError を通らず、インタプリタが rc 120 で終わる (stdout なら 2 行の知らせを出す)。
+type lateFlushError struct{ stream string }
+
+func (e lateFlushError) Error() string { return e.stream + " の書き出しの失敗 (終わり際)" }
+
+// atExit は、本家で終わり際の flush まで遅れる書き込みの誤りを lateFlushError にする。EPIPE 以外 (ENOSPC など) はそのまま返す。
+func atExit(stream string, err error) error {
+	if errors.Is(err, errOutputClosed) {
+		return lateFlushError{stream}
+	}
+	return err
+}
 
 // Main は subcommand の入口 (本家の main)。
 func Main(_ context.Context, env cmdenv.Env) int {
 	code, err := run(env, lintText)
 	if err == nil {
 		return code
+	}
+	var late lateFlushError
+	if errors.As(err, &late) {
+		if late.stream == "stdout" {
+			eprintln(env, "Exception ignored while flushing sys.stdout:\nBrokenPipeError: [Errno 32] Broken pipe")
+		}
+		return exitLateFlush
 	}
 	// 本家の BrokenPipeError と、ほかの例外 (rc 3)。文面の細部 (トレースバック) は揃えない。
 	var internal *visibility.Error
@@ -52,10 +76,26 @@ var errOutputClosed = errors.New("output closed")
 // eprintln は標準エラーに 1 行書く (書けなくても何もしない。本家の _error)。
 func eprintln(env cmdenv.Env, message string) { _, _ = io.WriteString(env.Stderr, message+"\n") }
 
-// printTo は標準出力に書く。書けなかったら errOutputClosed (本家は BrokenPipeError を rc 3 にする)。
-func printTo(env cmdenv.Env, text string) error {
-	if _, err := io.WriteString(env.Stdout, text); err != nil {
-		return errOutputClosed
+// printTo は標準出力に書く。書けなかった誤りは writeError で分ける。
+func printTo(env cmdenv.Env, text string) error { return writeTo(env.Stdout, text) }
+
+// usageTo は parser.error の文を標準エラーに書く。書けなかったら、本家と同じく rc 2 でなく終わり際の失敗 (lateFlushError) にする
+// (本家の _error が書けなくても黙って rc 2 を返すのとは別)。
+func usageTo(env cmdenv.Env, message string) (int, error) {
+	if err := writeTo(env.Stderr, usageError(message)); err != nil {
+		return 0, atExit("stderr", err)
+	}
+	return cmdenv.ExitUsage, nil
+}
+
+// writeTo は w に書き、書けなかった誤りを本家の main の分け方で返す: 読む側が閉じた (EPIPE。本家の BrokenPipeError) は errOutputClosed、
+// ほか (ENOSPC など。本家は OSError の内部エラー) はその誤り。EPIPE を受けるには、入口 (main.go) が SIGPIPE を Notify で受けている必要がある。
+func writeTo(w io.Writer, text string) error {
+	if _, err := io.WriteString(w, text); err != nil {
+		if errors.Is(err, syscall.EPIPE) {
+			return errOutputClosed
+		}
+		return err
 	}
 	return nil
 }
@@ -68,14 +108,13 @@ func run(env cmdenv.Env, lint lintFunc) (int, error) {
 	o, err := parseArgs(env.Args)
 	var perr parseError
 	if errors.As(err, &perr) {
-		_, _ = io.WriteString(env.Stderr, usageError(string(perr)))
-		return cmdenv.ExitUsage, nil
+		return usageTo(env, string(perr))
 	}
 	if o.help {
-		return 0, printTo(env, helpText)
+		return 0, atExit("stdout", printTo(env, helpText))
 	}
 	if o.version {
-		return 0, printTo(env, fmt.Sprintf("%s %s (JSON format %d)\n", prog, toolVersion, formatVersion))
+		return 0, atExit("stdout", printTo(env, fmt.Sprintf("%s %s (JSON format %d)\n", prog, toolVersion, formatVersion)))
 	}
 	names, problem := failConditions(o.conditions)
 	if problem != "" {
@@ -93,8 +132,7 @@ func run(env cmdenv.Env, lint lintFunc) (int, error) {
 		return cmdenv.ExitUsage, nil
 	}
 	if o.words != nil && o.noWords {
-		_, _ = io.WriteString(env.Stderr, usageError("--words と --no-words は一緒に使えません"))
-		return cmdenv.ExitUsage, nil
+		return usageTo(env, "--words と --no-words は一緒に使えません")
 	}
 	var cwd *string
 	if env.Cwd != "" {

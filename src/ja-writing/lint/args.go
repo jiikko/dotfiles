@@ -3,7 +3,6 @@ package lint
 import (
 	_ "embed"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"ja-writing/internal/pystr"
@@ -52,7 +51,8 @@ func (e parseError) Error() string { return string(e) }
 var (
 	valueOptions = map[string]bool{"--fail-on": true, "--doc-type": true, "--reader": true, "--words": true}
 	flagOptions  = map[string]bool{"--json": true, "--strict": true, "--no-words": true, "--version": true, "--help": true, "-h": true}
-	negativeNum  = regexp.MustCompile(`^-\d+$|^-\d*\.\d+$`)
+	// negativeNum は argparse の _negative_number_matcher (Python 3.15 の `-\.?\d` を match で当てる。前方一致で、\d は Unicode の十進数字)。
+	negativeNum = newLazy(`-\.?\d`, 0)
 )
 
 // argKind は argparse の _parse_optional の分類。
@@ -79,7 +79,7 @@ func classify(arg string) (kind argKind, name string, explicit *string) {
 			return kindOption, n, &v
 		}
 	}
-	if negativeNum.MatchString(arg) || strings.Contains(arg, " ") {
+	if mustMatchAt0(negativeNum, arg) || strings.Contains(arg, " ") {
 		return kindPositional, "", nil
 	}
 	if strings.HasPrefix(arg, "-h") && !strings.HasPrefix(arg, "--") {
@@ -118,14 +118,14 @@ func parseArgs(args []string) (options, error) {
 		case kindOption:
 			if name == "-h" || name == "--help" {
 				if explicit != nil {
-					return o, parseError(fmt.Sprintf("argument -h/--help: ignored explicit argument '%s'", *explicit))
+					return o, parseError("argument -h/--help: ignored explicit argument " + pystr.Repr(*explicit))
 				}
 				o.help = true
 				return o, nil
 			}
 			if flagOptions[name] {
 				if explicit != nil {
-					return o, parseError(fmt.Sprintf("argument %s: ignored explicit argument '%s'", name, *explicit))
+					return o, parseError("argument " + name + ": ignored explicit argument " + pystr.Repr(*explicit))
 				}
 				switch name {
 				case "--json":

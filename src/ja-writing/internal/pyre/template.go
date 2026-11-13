@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 )
 
@@ -65,7 +66,7 @@ func (p *Pattern) ParseTemplate(src string) (t *Template, err error) {
 				s.checkGroupName(name, 1)
 				i, ok := p.groupIndex[name]
 				if !ok {
-					panic(newError(ClassIndex, "unknown group name "+pyRepr(name)))
+					panic(newError(ClassIndex, "unknown group name "+pystr.Repr(name)))
 				}
 				index = i
 			} else {

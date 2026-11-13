@@ -224,6 +224,15 @@ func LintCLICases(c Corpus, docTypes, readers []string) []LintCLICase {
 		{"json-with-value", []string{"--json=x", first}},
 		{"strict-with-value", []string{"--strict=x", first}},
 		{"help-with-value", []string{"--help=x", first}},
+		// argparse は無視した値を repr で引用する (改行は \n、単引用符を含めば二重引用符)
+		{"json-with-newline-value", []string{"--json=a\nb", first}},
+		{"json-with-quote-value", []string{"--json='", first}},
+		{"help-with-both-quotes", []string{"--help='\"", first}},
+		// argparse 3.15 の負数の判定 (`-\.?\d` の前方一致。\d は Unicode の十進数字)
+		{"fail-on-arabic-digit", []string{"--fail-on", "-\u0661", first}},
+		{"fail-on-fullwidth-digit", []string{"--fail-on", "-\uff11", first}},
+		{"negative-number-with-letters-as-file", []string{"-1x"}},
+		{"negative-decimal-as-file", []string{"-.5"}},
 		{"file-after-options", []string{first, "--json"}},
 		{"double-dash-file", []string{"--", first}},
 		{"double-dash-option-as-file", []string{first, "--", "--json"}},
