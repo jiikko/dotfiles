@@ -61,7 +61,7 @@ var implementedRules = map[string]bool{
 	"short_summary_heading": true,
 	"redundant_bracket":     true,
 
-	"trailing_colon": false,
+	"trailing_colon": true,
 
 	"slop_vocabulary": false,
 	"metaphor_verb":   false,

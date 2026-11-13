@@ -45,6 +45,8 @@ var lintRawGapInputs = map[string]string{
 	"g6-summary-1999":  "# まとめ\n\n" + strings.Repeat("い", 1995) + "\n",
 	"g6-summary-2000":  "# まとめ\n\n" + strings.Repeat("い", 1996) + "\n",
 	"g6-summary-forms": "# おわりに\n\n## まとめ🚀\n\n### おわりに 🎉\n\n#### まとめ  \n\n##### まとめ\n\n###### おわりに\n\n## まとめと感想\n\n## 仕組みとは:何か\n\n本文です。\n",
+	// G7 (trailing_colon): 全角と半角・コロンだけの行 (2 つは出る・3 つ以上は出ない)・http で始まる行・コードを伏せて http で始まる行・箇条書き・行末の空白・URL の後ろのコロン・コードの中のコロン・最後のコロンが保護された範囲に入る行 (閉じない `<https://…`。行末の空白の有無)。
+	"g7-colon": "次の通りです：\n\n次の通りです:\n\n::\n\n:::\n\n::::\n\nhttp://example.com/a:\n\n`x` http://example.com/a:\n\nhttpの話:\n\n- 項目:\n\n  次です：  \n\n見る https://example.com/a:\n\n`コード:` です\n\n`コード:`\n\n見出しの下:\n\n見る <https://a.b/c:\n\n見る <https://a.b/c:  \n",
 	// 行頭が空白のバッジの行 (imageBreakRow・imageOnlyRow が先頭の空白を飛ばして見る)。
 	"badge-indented": "  [![b](x)](y)\n\n前の文です。\n  [![c](x)](y)\n次の文です。\n",
 }
