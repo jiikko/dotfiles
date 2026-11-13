@@ -1,7 +1,5 @@
 # 1083 (feat): ja-writing lint の表示されない太字 (G3 bold_not_rendered) を Go で作る
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-13〜）
-
 起票日: 2026-11-13
 
 ## 概要
