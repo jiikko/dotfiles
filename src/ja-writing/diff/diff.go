@@ -15,6 +15,7 @@ import (
 
 	"ja-writing/cmdenv"
 	"ja-writing/internal/pycli"
+	"ja-writing/internal/pystr"
 	"ja-writing/visibility"
 )
 
@@ -73,7 +74,7 @@ func run(env cmdenv.Env) (int, error) {
 		stance, ok := stances[*o.stance]
 		if !ok {
 			shown := *o.stance
-			if strings.TrimSpace(shown) == "" {
+			if pystr.Strip(shown) == "" {
 				shown = "（空）"
 			}
 			return fail(env, fmt.Sprintf("--stance に使えない値です: %s。使えるのは %s です。", shown, strings.Join(stanceNames, "、")))
