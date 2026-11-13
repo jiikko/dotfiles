@@ -53,9 +53,9 @@ var implementedRules = map[string]bool{
 
 	"emoji_prohibited": true,
 
-	"dash_decoration":  false,
-	"dash_insertion":   false,
-	"dash_list_ending": false,
+	"dash_decoration":  true,
+	"dash_insertion":   true,
+	"dash_list_ending": true,
 
 	"heading_colon":         false,
 	"short_summary_heading": false,
