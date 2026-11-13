@@ -57,6 +57,12 @@ func diffHeadingCases() []diffFullCase {
 		{name: "heading-to-bold", old: doc("## はじめに", "本文"), new: doc("**はじめに**", "本文")},
 		{name: "heading-to-body", old: doc("## はじめに", "本文"), new: doc("はじめに", "本文")},
 		{name: "heading-to-body-colon", old: doc("## はじめに：", "本文"), new: doc("はじめに", "本文")},
+		// 本家と同じ答えの最小の入力 (わざと壊すと記録の検査が緑のまま通った形)。
+		{name: "shape-crlf-heading-text", old: "# 。", new: "# す\r"},
+		{name: "shape-order-used-old", old: "# 境界値検証:edge_waru_32", new: "境界値検証:edge_waru_32\n# 入"},
+		{name: "shape-setext-underline-space", old: "限\n=", new: "限\n ="},
+		{name: "shape-bold-line-body-kept", old: "```\n```\n(1) 導入まとめログ期限。背景API保存！結果テスト。\n**まとめ**", new: "# **まとめ**\n```\n```\n(1)導入まとめログ期限。背景API保存！結果テスト。"},
+		{name: "shape-body-line-strip", old: "# 使い方確認設定結果の背景\n  APIまとめ目的導入.# 境界値検証: edge_kowareru_39次のように責務を分けることを提案します。", new: "# 背景背\n 一覧ssue/ status /doctor) の配線と半ページの移動量 (`linav.Half` は結果概要まとめ背景\u200b画面！\n#"},
 		{name: "bold-two-spans", old: doc("**a** と **b**", "本文"), new: doc("## a と b", "本文")},
 		{name: "quote-heading", old: doc("> ## 引用の見出し", "> 本文"), new: doc("> ### 引用の見出し", "> 本文")},
 		{name: "removed-3", old: doc("# 全体", "## 消す一", "## 消す二", "## 消す三", "本文"), new: doc("# 全体", "本文")},

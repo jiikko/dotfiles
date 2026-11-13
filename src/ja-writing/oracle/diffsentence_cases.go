@@ -40,6 +40,7 @@ func diffSentenceCases() []diffFullCase {
 		{name: "run-one-replace", old: doc("設定を開きます。", "", "保存します。"), new: doc("設定を", "開きます。", "", "保存します。", "", "追加します。")},
 		{name: "mask-inline-code", old: doc("`rm -rf` を実行します。", "実行は `ls` です。"), new: doc("`rm -rf` を実行しました。", "実行は `ls` でした。")},
 		{name: "mask-url", old: doc("https://example.com/a を開きます。", "<https://example.com> を見ます。"), new: doc("https://example.com/b を開きました。", "<https://example.com> を見ました。")},
+		{name: "merged-first-hunk-insert", old: "\n。\n\n。", new: "*\n\n面\n\n）"},
 		// URL のあとに続く本文は、URL の範囲に入れずに数える (本家の _analyze の bare_url の縮め)
 		{name: "bare-url-trailing-text", old: "詳しくは https://example.com/guideにあり、保存期間は3日です。\n", new: "詳しくは https://example.com/guideにあり、保存期間は5日です。\n"},
 		{name: "bare-url-trailing-period", old: "手順は https://example.com/guide。保存期間は3日です。\n", new: "手順は https://example.com/guide。保存期間は5日です。\n"},
