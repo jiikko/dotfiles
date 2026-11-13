@@ -7,6 +7,7 @@ package pystr
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ja-writing/internal/pyunicode"
@@ -159,4 +160,9 @@ func Repr(s string) string {
 	}
 	b.WriteRune(q)
 	return b.String()
+}
+
+// EndsWithAny は s.endswith(suffixes) (str.endswith に tuple を渡す形)。
+func EndsWithAny(s string, suffixes []string) bool {
+	return slices.ContainsFunc(suffixes, func(x string) bool { return strings.HasSuffix(s, x) })
 }

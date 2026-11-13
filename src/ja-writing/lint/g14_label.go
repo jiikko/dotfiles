@@ -115,7 +115,7 @@ func labelShape(label string) bool {
 	if len(rs) < 2 || len(rs) > labelMax || slices.Contains(labelCommon, label) {
 		return false
 	}
-	if slices.ContainsFunc(rs, isAlnumWide) || endsWithAny(label, labelNotEndings) {
+	if slices.ContainsFunc(rs, isAlnumWide) || pystr.EndsWithAny(label, labelNotEndings) {
 		return false
 	}
 	run, longest := 0, 0
@@ -130,10 +130,10 @@ func labelShape(label string) bool {
 	if longest >= 4 || !slices.ContainsFunc(rs, isWordRune) {
 		return false
 	}
-	if endsWithAny(label, labelEndings) {
+	if pystr.EndsWithAny(label, labelEndings) {
 		return true
 	}
-	if endsWithAny(label, labelAbstractEndings) || (strings.HasSuffix(label, "方") && len(rs) > 1 && isHiraganaRune(rs[len(rs)-2])) {
+	if pystr.EndsWithAny(label, labelAbstractEndings) || (strings.HasSuffix(label, "方") && len(rs) > 1 && isHiraganaRune(rs[len(rs)-2])) {
 		return false
 	}
 	return !labelIsPhrase(label)
@@ -155,7 +155,7 @@ func (s *lintState) metaphorLabel(row *visibility.Line, scan string) string {
 	if row.Kind != "heading" && row.Kind != "paragraph" {
 		return "" // 1 行目が表や箇条書きのときは見ない
 	}
-	if row.Kind != "heading" && endsWithAny(pystr.RStrip(scan), []string{"。", "．", "！", "？", "!", "?"}) {
+	if row.Kind != "heading" && pystr.EndsWithAny(pystr.RStrip(scan), []string{"。", "．", "！", "？", "!", "?"}) {
 		return "" // 文として終わる 1 行目はラベルとみなさない
 	}
 	if strings.ContainsAny(row.Raw, labelMarks) {
@@ -199,7 +199,7 @@ func (s *lintState) metaphorLabel(row *visibility.Line, scan string) string {
 	if slices.ContainsFunc(uniqueInOrder(pieces), func(piece string) bool { return strings.Count(text, piece) > strings.Count(raw, piece) }) {
 		return ""
 	}
-	if !endsWithAny(label, labelEndings) {
+	if !pystr.EndsWithAny(label, labelEndings) {
 		// 一語のラベルの漢字が、どれも本文のほかの所に出る (文体の節に「文」と「体」が出る) なら、本文の話題の語とみなす。
 		var kanji []string
 		for _, char := range pyunicode.Runes(label) {

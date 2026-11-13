@@ -1,8 +1,6 @@
 package lint
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"slices"
 	"sort"
@@ -14,6 +12,7 @@ import (
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pyunicode"
 	"ja-writing/oracle"
+	"ja-writing/oracle/replay"
 	"ja-writing/visibility"
 )
 
@@ -33,24 +32,14 @@ type replayer struct {
 	reg map[string]any
 }
 
-func list(vs ...pyjson.Value) pyjson.Value { return append([]pyjson.Value{}, vs...) }
-
 func stringList(ss []string) pyjson.Value {
-	return mapList(ss, func(s string) pyjson.Value { return s })
-}
-
-func mapList[T any](items []T, f func(T) pyjson.Value) pyjson.Value {
-	out := make([]pyjson.Value, 0, len(items))
-	for _, item := range items {
-		out = append(out, f(item))
-	}
-	return out
+	return replay.MapList(ss, func(s string) pyjson.Value { return s })
 }
 
 func rangesValue(rs []runeRange) pyjson.Value {
 	out := make([]pyjson.Value, len(rs))
 	for i, r := range rs {
-		out[i] = list(int64(r.lo), int64(r.hi))
+		out[i] = replay.List(int64(r.lo), int64(r.hi))
 	}
 	return out
 }
@@ -62,7 +51,7 @@ func runePairsValue(ps [][2]rune, swap bool) pyjson.Value {
 		if swap {
 			a, b = b, a
 		}
-		out[i] = list(string(a), string(b))
+		out[i] = replay.List(string(a), string(b))
 	}
 	return out
 }
@@ -260,14 +249,14 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		records := r.document(t, a[0]).plainSentenceRecords()
 		out := make([]pyjson.Value, len(records))
 		for i, rec := range records {
-			out[i] = list(int64(rec.Line), rec.Visible, rec.Source, list(int64(rec.Group[0]), int64(rec.Group[1])))
+			out[i] = replay.List(int64(rec.Line), rec.Visible, rec.Source, replay.List(int64(rec.Group[0]), int64(rec.Group[1])))
 		}
 		result = out
 	case "_rule9_context":
 		result = intKeyed(r.document(t, a[0]).rule9Context(), func(ss []contextSentence) pyjson.Value {
 			out := make([]pyjson.Value, len(ss))
 			for i, s := range ss {
-				out[i] = list(s.Sentence, s.Following)
+				out[i] = replay.List(s.Sentence, s.Following)
 			}
 			return out
 		})
@@ -283,7 +272,7 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		lines := (&lintState{doc: r.document(t, a[0]), an: r.document(t, a[0]).an}).dialogueLines()
 		out := make([]pyjson.Value, len(lines))
 		for i, d := range lines {
-			out[i] = list(int64(d.Line), d.Content)
+			out[i] = replay.List(int64(d.Line), d.Content)
 		}
 		result = out
 	case "_narrative_counts":
@@ -292,11 +281,11 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 		if n.firstLine != 0 {
 			first = int64(n.firstLine)
 		}
-		result = list(int64(n.chars), int64(n.firstPerson), int64(n.numbers), int64(n.bullets), first)
+		result = replay.List(int64(n.chars), int64(n.firstPerson), int64(n.numbers), int64(n.bullets), first)
 	case "_calque_type1", "_calque_type2", "_calque_type3", "_calque_type4", "_calque_type5":
 		result = calqueTypeValue(t, c.Function, a)
 	case "_calque_saki_spans":
-		result = mapList(calqueSakiSpans(newSent(argString(t, a[0]))), func(span [2]int) pyjson.Value { return list(int64(span[0]), int64(span[1])) })
+		result = replay.MapList(calqueSakiSpans(newSent(argString(t, a[0]))), func(span [2]int) pyjson.Value { return replay.List(int64(span[0]), int64(span[1])) })
 	case "_calque_has_org":
 		result = calqueHasOrg(newSent(argString(t, a[0])))
 	case "_calque_subject_end":
@@ -315,7 +304,7 @@ func (r *replayer) invoke(t *testing.T, c oracle.Call) pyjson.Value {
 	case "_label_shape":
 		result = labelShape(argString(t, a[0]))
 	case "_label_kanji_runs":
-		result = mapList(labelKanjiRuns(argString(t, a[0])), func(run labelRun) pyjson.Value { return list(run.kind, run.text) })
+		result = replay.MapList(labelKanjiRuns(argString(t, a[0])), func(run labelRun) pyjson.Value { return replay.List(run.kind, run.text) })
 	case "_flag_pattern":
 		if p := flagPattern(stringsFromArg(t, a[0])); p != nil {
 			o := pyjson.NewObject()
@@ -387,14 +376,11 @@ func intKeyed[V any](m map[int]V, value func(V) pyjson.Value) pyjson.Value {
 
 func digestOf(t *testing.T, v pyjson.Value) (canon, digest string) {
 	t.Helper()
-	rec := pyjson.NewObject()
-	rec.Set("result", v)
-	s, err := pyjson.Dumps(rec, canonical)
+	canon, digest, err := replay.ResultDigest(v)
 	if err != nil {
-		t.Fatalf("正規の JSON にできません: %v", err)
+		t.Fatal(err)
 	}
-	sum := sha256.Sum256([]byte(s))
-	return s, hex.EncodeToString(sum[:])[:oracle.DigestWidth]
+	return canon, digest
 }
 
 func loadGolden(t *testing.T) (oracle.LintBaseGolden, []oracle.VisCase) {
@@ -514,5 +500,5 @@ func calqueTypeValue(t *testing.T, name string, a []any) pyjson.Value {
 	}
 	args := []pyjson.Value{a[0], stringList(words)}
 	args = append(args, a[2:]...)
-	return list(ok, args)
+	return replay.List(ok, args)
 }

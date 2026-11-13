@@ -1,34 +1,20 @@
 package lint
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"ja-writing/cmdenv"
 	"ja-writing/oracle"
 	"ja-writing/visibility"
 )
 
-// runLint は lint.Main を、標準入力・作業フォルダ (記録の root からの相対) を指定して呼び、stdout・stderr・rc を返す (root の実パスは oracle.RootToken に戻す)。
 func runLint(t *testing.T, root, cwd string, stdin []byte, args ...string) (stdout, stderr string, rc int) {
 	t.Helper()
-	dir := filepath.Join(root, filepath.FromSlash(cwd))
-	t.Chdir(dir)
-	var out, errOut bytes.Buffer
-	env := cmdenv.Env{Args: args, Stdin: bytes.NewReader(stdin), Stdout: &out, Stderr: &errOut, Cwd: dir, Getenv: func(string) string { return "" }}
-	rc = Main(t.Context(), env)
-	return strings.ReplaceAll(out.String(), root, oracle.RootToken), strings.ReplaceAll(errOut.String(), root, oracle.RootToken), rc
+	return oracle.RunMain(t, Main, root, cwd, stdin, args...)
 }
 
-func shortDigest(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])[:oracle.LintCLIDigestWidth]
-}
+func shortDigest(s string) string { return oracle.CLIDigest(s) }
 
 // CLI の単位の記録 (testdata/golden/lint-cli.json: 入力の集まりの全ファイルを、種類・読者・語の一覧・text と --json・終了コードの条件で通した出力) と、Main の出力を突き合わせる。
 // 記録の全件を比べる (本家が候補を出す入力も、検査まで進まない呼び出し (誤りの呼び出し・--version・-h) も)。比べた件数が case の数と違えば落とす。

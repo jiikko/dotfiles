@@ -86,6 +86,3 @@ func parseArgs(args []string) (options, error) {
 	}
 	return o, nil
 }
-
-// usageError は parser.error(message) が標準エラーに出す文 (使い方・誤りの 1 行・案内の 1 行)。
-func usageError(message string) string { return pycli.UsageError(usageText, prog, message) }

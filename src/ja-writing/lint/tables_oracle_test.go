@@ -8,6 +8,7 @@ import (
 	"ja-writing/internal/pyjson"
 	"ja-writing/lists"
 	"ja-writing/oracle"
+	"ja-writing/oracle/replay"
 )
 
 // gNN_tables.go (G8〜G12 の表と正規表現) が、本家の値と同じかを比べる。本家の値は lint-base.json の定数の記録 (oracle.LintBaseConstants の後ろ半分) で、
@@ -30,11 +31,11 @@ func rowPattern(p patternRow) string {
 }
 
 func pairList(rows []patternRow, swap bool) pyjson.Value {
-	return mapList(rows, func(p patternRow) pyjson.Value {
+	return replay.MapList(rows, func(p patternRow) pyjson.Value {
 		if swap {
-			return list(p.desc, rowPattern(p))
+			return replay.List(p.desc, rowPattern(p))
 		}
-		return list(rowPattern(p), p.desc)
+		return replay.List(rowPattern(p), p.desc)
 	})
 }
 
@@ -120,7 +121,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 	case "FILLER_NOTES":
 		return stringMap(fillerNotes, func(s string) pyjson.Value { return s }), true
 	case "INFO_SENTENCE_PATTERNS":
-		return mapList(infoSentencePatterns, func(p infoRow) pyjson.Value { return list(p.re.Pattern(), p.rule, p.message) }), true
+		return replay.MapList(infoSentencePatterns, func(p infoRow) pyjson.Value { return replay.List(p.re.Pattern(), p.rule, p.message) }), true
 	case "_OVERSTATEMENT_PATTERN":
 		return overstatementPattern, true
 	case "_V220_MESSAGE_TAIL":
@@ -130,11 +131,11 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 	case "_RENYO_AFTER":
 		return renyoAfter, true
 	case "_AI_PHRASE_FORMS":
-		return mapList(aiPhraseForms, namedPatternValue), true
+		return replay.MapList(aiPhraseForms, namedPatternValue), true
 	case "_SLIDE_LINE_MAX":
 		return int64(slideLineMax), true
 	case "_SLIDE_COMMA":
-		return mapList(slideComma, namedPatternValue), true
+		return replay.MapList(slideComma, namedPatternValue), true
 	case "_SLIDE_SAME_NEXT":
 		return patternMap(slideSameNext), true
 	case "_SLIDE_MESSAGE":
@@ -219,9 +220,9 @@ func tableFunctionValue(name string, args []any) (pyjson.Value, bool) {
 		}
 		source := "references/lists/" + listName + ".txt"
 		if listName == "thin-evaluation" {
-			return list(mapList(parseThinList(string(data)), thinPairValue), source), true
+			return replay.List(replay.MapList(parseThinList(string(data)), thinPairValue), source), true
 		}
-		return list(stringList(parseList(string(data))), source), true
+		return replay.List(stringList(parseList(string(data))), source), true
 	}
 	return nil, false
 }
@@ -231,5 +232,5 @@ func namedPatternValue(f struct {
 	name string
 	re   *lazyPattern
 }) pyjson.Value {
-	return list(f.name, patternValue(f.re))
+	return replay.List(f.name, patternValue(f.re))
 }

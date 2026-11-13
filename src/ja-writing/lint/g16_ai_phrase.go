@@ -74,7 +74,7 @@ func (s *lintState) aiPhraseWords(words []string, sentence, docType, kind string
 			}
 		case "て形の体言止め":
 			if slices.Contains([]string{"slides", "minutes", "promo", "script"}, docType) || kind != "paragraph" ||
-				endsWithAny(text.Slice(0, min(start+2, text.Len())), pausecomma.TENotVerb) {
+				pystr.EndsWithAny(text.Slice(0, min(start+2, text.Len())), pausecomma.TENotVerb) {
 				continue
 			}
 		}
@@ -92,10 +92,6 @@ func runeIndexFrom(sentence, sub string, start int) int {
 		panic("runeIndexFrom: 手掛かりの語が無い")
 	}
 	return start + pyunicode.RuneCount(tail[:i])
-}
-
-func endsWithAny(text string, suffixes []string) bool {
-	return slices.ContainsFunc(suffixes, func(suffix string) bool { return strings.HasSuffix(text, suffix) })
 }
 
 // aiPhraseMessage は ai_phrase の message (本家の _AI_PHRASE_MESSAGE.format("、".join(rest)))。post.go の withWords が呼ぶ。

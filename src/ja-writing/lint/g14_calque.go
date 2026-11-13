@@ -225,7 +225,7 @@ func calqueType1(x *sent, words *[]string) bool {
 			continue
 		}
 		kana := groupText(x.match(calqueKanaRun, h.m.End(0)))
-		if matched := groupText(h.m) + kana; endsWithAny(matched, calqueAttributiveEnd) && x.nounStart(h.m.End(0)+pystr.Len(kana)) {
+		if matched := groupText(h.m) + kana; pystr.EndsWithAny(matched, calqueAttributiveEnd) && x.nounStart(h.m.End(0)+pystr.Len(kana)) {
 			continue // 名詞を修飾する形 (拾った通知、話した内容)
 		}
 		if hasAnyPrefix(kana, calqueRequest) {
@@ -336,7 +336,7 @@ func calqueType2(x *sent, words *[]string, docTech bool) bool {
 		start, end := span[0], span[1]
 		word := x.slice(start, end)
 		before := x.slice(max(0, start-8), end)
-		if mustSearch(calqueSakiTime, word) || endsWithAny(before, calqueEstablishedSaki) {
+		if mustSearch(calqueSakiTime, word) || pystr.EndsWithAny(before, calqueEstablishedSaki) {
 			continue
 		}
 		// 一覧の着地先などのほかは、技術の語のある文の「〜先」だけを見る (旅行の立ち寄り先、父の働き先は見ない)。

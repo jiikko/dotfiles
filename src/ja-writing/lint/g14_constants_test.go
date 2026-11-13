@@ -5,6 +5,7 @@ import (
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/lists"
+	"ja-writing/oracle/replay"
 )
 
 // G14 の表 (g14_tables.go) と、本家が組む一覧の値を、本家の定数の記録と比べる値にする (tableConstantValue の続き)。
@@ -190,16 +191,16 @@ func g14ConstantValue(name string) (pyjson.Value, bool) {
 	case "_CALQUE_TYPE_NAMES":
 		return intKeyedStrings(calqueTypeNames), true
 	case "_CALQUE_PHRASES":
-		return mapList(calquePhrases, namedLazyValue), true
+		return replay.MapList(calquePhrases, namedLazyValue), true
 	case "_CALQUE_PHRASES_V250":
-		return mapList(calquePhrasesV250, namedLazyValue), true
+		return replay.MapList(calquePhrasesV250, namedLazyValue), true
 	case "_CALQUE_VERSION":
-		return mapList(calqueVersion, patternValue), true
+		return replay.MapList(calqueVersion, patternValue), true
 	case "_CALQUE_VERB_EACH":
-		return mapList(calqueVerbEach, func(v calqueVerb) pyjson.Value { return list(v.stem, v.name, patternValue(v.re)) }), true
+		return replay.MapList(calqueVerbEach, func(v calqueVerb) pyjson.Value { return replay.List(v.stem, v.name, patternValue(v.re)) }), true
 	case "_CALQUE_TERMS_V300":
-		return mapList(calqueTermsV300, func(t calqueTerm) pyjson.Value {
-			return list(t.head, patternValue(t.pattern), optPatternValue(t.before), optPatternValue(t.context))
+		return replay.MapList(calqueTermsV300, func(t calqueTerm) pyjson.Value {
+			return replay.List(t.head, patternValue(t.pattern), optPatternValue(t.before), optPatternValue(t.context))
 		}), true
 	case "_CALQUE_PHRASE":
 		return patternValue(calquePhrase), true
@@ -214,13 +215,13 @@ func g14ConstantValue(name string) (pyjson.Value, bool) {
 }
 
 // namedLazyValue は (名前, 正規表現の文字列) の組。
-func namedLazyValue(n namedLazy) pyjson.Value { return list(n.name, n.re.Pattern()) }
+func namedLazyValue(n namedLazy) pyjson.Value { return replay.List(n.name, n.re.Pattern()) }
 
 // stringValue は文字列の値。
 func stringValue(s string) pyjson.Value { return s }
 
 // thinPairValue は thin-evaluation.txt の 1 行 ([名詞, 述語の正規表現])。
-func thinPairValue(p thinPair) pyjson.Value { return list(p.noun, p.predicate) }
+func thinPairValue(p thinPair) pyjson.Value { return replay.List(p.noun, p.predicate) }
 
 // optPatternValue は無いかもしれない正規表現 (本家の None は null)。
 func optPatternValue(p *lazyPattern) pyjson.Value {
@@ -251,6 +252,6 @@ func v220BuiltinLists() pyjson.Value {
 	o := pyjson.NewObject()
 	o.Set("katakana-terms", stringList(parseList(read("katakana-terms.txt"))))
 	o.Set("renyo-nouns", stringList(parseList(read("renyo-nouns.txt"))))
-	o.Set("thin-evaluation", mapList(parseThinList(read("thin-evaluation.txt")), thinPairValue))
+	o.Set("thin-evaluation", replay.MapList(parseThinList(read("thin-evaluation.txt")), thinPairValue))
 	return o
 }

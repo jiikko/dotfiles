@@ -4,6 +4,7 @@ package pycli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ja-writing/internal/pyre"
@@ -49,18 +50,9 @@ const (
 
 func (s Spec) known(name string) bool { return s.isValue(name) || s.isFlag(name) }
 
-func (s Spec) isValue(name string) bool { return contains(s.Values, name) }
+func (s Spec) isValue(name string) bool { return slices.Contains(s.Values, name) }
 
-func (s Spec) isFlag(name string) bool { return contains(s.Flags, name) }
-
-func contains(list []string, name string) bool {
-	for _, v := range list {
-		if v == name {
-			return true
-		}
-	}
-	return false
-}
+func (s Spec) isFlag(name string) bool { return slices.Contains(s.Flags, name) }
 
 // classify は 1 つの引数 (「--」より前のもの) が、位置引数か、知っているオプション (name と、=・短い連結で付いた値) か、知らないオプションか。
 // 短い名前の連結は -h だけを見る (-hx は -h)。
