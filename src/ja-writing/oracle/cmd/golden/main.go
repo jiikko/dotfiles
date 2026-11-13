@@ -22,6 +22,7 @@ import (
 
 	"atomicfile"
 	"ja-writing/oracle"
+	"ja-writing/visibility"
 )
 
 const runTimeout = 20 * time.Minute
@@ -32,7 +33,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	pin := flag.Bool("pin", false, "本家のファイルを取り直して oracle/upstream.sha256 を書く")
-	only := flag.String("only", "", "visibility・bold・lint-base のどれか 1 つだけを作り直す (markdown_visibility の関数の記録・太字の bold_problems の記録・lint の土台の関数の記録。ほかは作り直さない)")
+	only := flag.String("only", "", "visibility・bold・lint-base・lint-cli・lint-raw・lint-post のどれか 1 つだけを作り直す (markdown_visibility の関数の記録・太字の bold_problems の記録・lint の土台の関数の記録・lint の CLI の記録・lint の検出の生の並びの記録・lint の検出より後の処理の記録。ほかは作り直さない)")
 	flag.Parse()
 	p := paths{corpus: "testdata/corpus", words: "testdata/words", golden: "testdata/golden", manifest: "oracle/upstream.sha256", tables: oracle.PyunicodeTablesPath, pyreTables: oracle.PyreTablesPath, lintTables: oracle.LintEmojiTablesPath}
 	var err error
@@ -86,10 +87,10 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 	if err := checkEnv(p, header, update); err != nil {
 		return err
 	}
-	if !slices.Contains([]string{"", "visibility", "bold", "lint-base"}, only) {
-		return fmt.Errorf("-only は visibility・bold・lint-base のどれかを受けます: %q", only)
+	if !slices.Contains([]string{"", "visibility", "bold", "lint-base", "lint-cli", "lint-raw", "lint-post"}, only) {
+		return fmt.Errorf("-only は visibility・bold・lint-base・lint-cli・lint-raw・lint-post のどれかを受けます: %q", only)
 	}
-	var vis, boldRec, lintBase, lintTables []byte
+	var vis, boldRec, lintBase, lintTables, lintCLI, lintRaw, lintPost []byte
 	if only == "" || only == "visibility" {
 		if vis, err = makeVisibility(ctx, runner, corpus, header); err != nil {
 			return err
@@ -105,7 +106,28 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 			return err
 		}
 	}
+	if only == "" || only == "lint-cli" {
+		if lintCLI, err = makeLintCLI(ctx, runner, corpus, header, p.words); err != nil {
+			return err
+		}
+	}
+	if only == "" || only == "lint-raw" {
+		if lintRaw, err = makeLintRaw(ctx, runner, corpus, header, p.words); err != nil {
+			return err
+		}
+	}
+	if only == "" || only == "lint-post" {
+		if lintPost, err = makeLintPost(ctx, runner, corpus, header, p.words); err != nil {
+			return err
+		}
+	}
 	switch only {
+	case "lint-post":
+		return writeAll(map[string][]byte{filepath.Join(p.golden, oracle.LintPostFile): lintPost})
+	case "lint-cli":
+		return writeAll(map[string][]byte{filepath.Join(p.golden, oracle.LintCLIFile): lintCLI})
+	case "lint-raw":
+		return writeAll(map[string][]byte{filepath.Join(p.golden, oracle.LintRawFile): lintRaw})
 	case "visibility":
 		return writeAll(map[string][]byte{filepath.Join(p.golden, oracle.VisibilityFile): vis})
 	case "bold":
@@ -163,6 +185,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 		filepath.Join(p.golden, oracle.BoldFile):       boldRec,
 		filepath.Join(p.golden, oracle.PauseCommaFile): pauseRec,
 		filepath.Join(p.golden, oracle.LintBaseFile):   lintBase, p.lintTables: lintTables,
+		filepath.Join(p.golden, oracle.LintCLIFile): lintCLI, filepath.Join(p.golden, oracle.LintRawFile): lintRaw, filepath.Join(p.golden, oracle.LintPostFile): lintPost,
 	} {
 		if err := atomicfile.Write(path, body, 0o644); err != nil {
 			return fmt.Errorf("%s へ書けません: %w", path, err)
@@ -176,7 +199,7 @@ func runGolden(ctx context.Context, p paths, update bool, only string) error {
 
 // checkEnv は記録の環境が今と違うときに止める。記録がまだ無いときと update のときは通す。
 func checkEnv(p paths, now oracle.Header, update bool) error {
-	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile, oracle.VisibilityFile, oracle.BoldFile, oracle.PauseCommaFile, oracle.LintBaseFile} {
+	for _, name := range []string{oracle.PatternsFile, oracle.SmokeFile, oracle.UnicodeFile, oracle.JSONFile, oracle.PystrFile, oracle.PyreFile, oracle.DifflibFile, oracle.VisibilityFile, oracle.BoldFile, oracle.PauseCommaFile, oracle.LintBaseFile, oracle.LintCLIFile, oracle.LintRawFile, oracle.LintPostFile} {
 		var old struct {
 			Header oracle.Header `json:"header"`
 		}
@@ -275,6 +298,54 @@ func buildLintTables(lintBase []byte) ([]byte, error) {
 		return nil, err
 	}
 	return oracle.GenerateLintEmojiTables(g)
+}
+
+// makeLintCLI は lint の CLI の単位の記録 (入力の集まりの全ファイルを種類・読者・語の一覧・text と --json・条件で通した出力と終了コード) を返す。
+func makeLintCLI(ctx context.Context, runner oracle.Runner, corpus oracle.Corpus, header oracle.Header, words string) ([]byte, error) {
+	files, err := oracle.LintCLIFiles(corpus, words)
+	if err != nil {
+		return nil, err
+	}
+	cases := oracle.LintCLICases(corpus, visibility.DocTypeValues(), visibility.ReaderValues())
+	return twice(runner, func(runner oracle.Runner) ([]byte, error) {
+		g, err := runner.RecordLintCLI(ctx, header, cases, files)
+		if err != nil {
+			return nil, fmt.Errorf("lint の CLI の記録: %w", err)
+		}
+		return oracle.MarshalLintCLI(g)
+	})
+}
+
+// makeLintRaw は lint の検出の生の並びの記録を返す。
+func makeLintRaw(ctx context.Context, runner oracle.Runner, corpus oracle.Corpus, header oracle.Header, words string) ([]byte, error) {
+	files, err := oracle.LintCLIFiles(corpus, words)
+	if err != nil {
+		return nil, err
+	}
+	cases := oracle.LintRawCases(corpus)
+	return twice(runner, func(runner oracle.Runner) ([]byte, error) {
+		g, err := runner.RecordLintRaw(ctx, header, cases, files)
+		if err != nil {
+			return nil, fmt.Errorf("lint の検出の生の並びの記録: %w", err)
+		}
+		return oracle.MarshalLintRaw(g)
+	})
+}
+
+// makeLintPost は lint の検出より後の処理と出力の記録 (作った候補を本家の後の処理に通した結果) を返す。
+func makeLintPost(ctx context.Context, runner oracle.Runner, corpus oracle.Corpus, header oracle.Header, words string) ([]byte, error) {
+	files, err := oracle.LintCLIFiles(corpus, words)
+	if err != nil {
+		return nil, err
+	}
+	cases := oracle.LintPostCases(visibility.DocTypeValues(), visibility.ReaderValues())
+	return twice(runner, func(runner oracle.Runner) ([]byte, error) {
+		g, err := runner.RecordLintPost(ctx, header, cases, files)
+		if err != nil {
+			return nil, fmt.Errorf("lint の検出より後の処理の記録: %w", err)
+		}
+		return oracle.MarshalLintPost(g)
+	})
 }
 
 func writeAll(files map[string][]byte) error {

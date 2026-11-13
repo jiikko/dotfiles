@@ -461,3 +461,15 @@ func splitLast(p string) (head, tail string) {
 	}
 	return head, tail
 }
+
+// OSErrorReason は本家の `getattr(error, "strerror", None) or error` (ファイルを開けなかったときに利用者へ見せる理由の文)。
+// OSError は macOS の strerror(3) の文 (strerror)。パスに NUL を含むときの Python は ValueError で、strerror を持たないので文そのものを理由にする。
+func OSErrorReason(path string, err error) string {
+	if strings.Contains(path, "\x00") {
+		return "embedded null byte"
+	}
+	if errno, ok := errnoOf(err); ok {
+		return strerror(errno)
+	}
+	return err.Error()
+}

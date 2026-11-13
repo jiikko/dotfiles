@@ -32,3 +32,30 @@ func (l *lazyPattern) get() *pyre.Pattern {
 	l.once.Do(func() { l.re = pyre.MustCompile(l.source(), l.flags) })
 	return l.re
 }
+
+// mustSearch は p.search(text) が当たるか。パターンは定数なので、組めない・照合が失敗するのは書き間違いで、panic する。
+func mustSearch(p *lazyPattern, text string) bool {
+	m, err := p.get().Search(pyre.NewText(text), 0, pyre.NoEnd)
+	if err != nil {
+		panic(err)
+	}
+	return m != nil
+}
+
+// mustMatchAt0 は p.match(text) が当たるか (文字列の先頭からの照合)。
+func mustMatchAt0(p *lazyPattern, text string) bool {
+	m, err := p.get().Match(pyre.NewText(text), 0, pyre.NoEnd)
+	if err != nil {
+		panic(err)
+	}
+	return m != nil
+}
+
+// mustFindall は p.findall(text)。
+func mustFindall(p *lazyPattern, text string) [][]string {
+	found, err := p.get().Findall(pyre.NewText(text), 0, pyre.NoEnd)
+	if err != nil {
+		panic(err)
+	}
+	return found
+}

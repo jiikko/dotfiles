@@ -393,14 +393,7 @@ func readWordsFile(path string) (*wordsFile, error) {
 	if isAbsentError(rerr) {
 		return nil, nil
 	}
-	reason := rerr.Error()
-	if errno, ok := errnoOf(rerr); ok {
-		reason = strerror(errno)
-	}
-	if strings.Contains(path, "\x00") {
-		reason = "embedded null byte" // Python は ValueError (strerror を持たないので、文そのものを理由にする)
-	}
-	return nil, wordsError("Error opening file %s: ファイルを開けません（%s）", path, reason)
+	return nil, wordsError("Error opening file %s: ファイルを開けません（%s）", path, OSErrorReason(path, rerr))
 }
 
 // LoadWords は load_words。フォルダの allow.txt と flag.txt (と flag-patterns.txt) を読む。どれも無いときは ok が偽 (一覧なし)。

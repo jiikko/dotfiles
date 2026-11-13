@@ -188,6 +188,12 @@ func (d *document) imageOnlyRow(row *visibility.Line, visible string) bool {
 	return following == "](" && hasDestination && destinationEnd == end
 }
 
+// imageBreakRow は、行が画像だけ (見える文字が無い、またはバッジ) で、文の並びの視覚的な区切りになるか。
+// 本家は `(not visible.strip() or raw.lstrip().startswith("[![")) and _image_only_row(...)` を 5 か所に書く。先に安い条件で絞るので、画像だけの行の判定は手掛かりのある行にしか走らない。
+func (d *document) imageBreakRow(row *visibility.Line, visible string) bool {
+	return (pystr.Strip(visible) == "" || strings.HasPrefix(pystr.LStrip(row.Raw), "[![")) && d.imageOnlyRow(row, visible)
+}
+
 // runeSlice は Python の text[start:end] (範囲の外は切り詰める)。
 func runeSlice(text []rune, start, end int) string {
 	start, end = min(max(start, 0), len(text)), min(max(end, 0), len(text))
@@ -227,7 +233,7 @@ func (d *document) plainSentenceRecords() []plainSentence {
 		section := 0
 		for _, row := range block.Lines {
 			visible := d.proseVisibleText(row.Line)
-			if (pystr.Strip(visible) == "" || strings.HasPrefix(pystr.LStrip(row.Raw), "[![")) && d.imageOnlyRow(row, visible) {
+			if d.imageBreakRow(row, visible) {
 				section++
 				continue
 			}

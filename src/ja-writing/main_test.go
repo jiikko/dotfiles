@@ -29,13 +29,17 @@ func TestMainUnknownSubcommandIsUsageError(t *testing.T) {
 	}
 }
 
-// 各 subcommand は未実装の間 rc=2 を返し、どの subcommand が未実装かを標準エラーに出す (別の subcommand の入口へ迷い込まない)。
+// 各 subcommand は、未実装の間は rc=2 を返し、どの subcommand が未実装かを標準エラーに出す (別の subcommand の入口へ迷い込まない)。lint は実装済みで、入力のファイルを開けない誤りを返す。
 func TestMainRoutesEachSubcommandToItsOwnEntry(t *testing.T) {
-	for _, name := range []string{"lint", "diff", "check", "hook"} {
+	for _, name := range []string{"diff", "check", "hook"} {
 		rc, stdout, stderr := run(t, name, "--json", "x.md")
 		if rc != cmdenv.ExitUsage || stdout != "" || !strings.Contains(stderr, "ja-writing "+name+":") {
 			t.Errorf("%s: rc=%d stdout=%q stderr=%q", name, rc, stdout, stderr)
 		}
+	}
+	rc, stdout, stderr := run(t, "lint", "--json", "x.md")
+	if rc != cmdenv.ExitUsage || stdout != "" || !strings.Contains(stderr, "Error opening file x.md") {
+		t.Errorf("lint: rc=%d stdout=%q stderr=%q", rc, stdout, stderr)
 	}
 	if len(subcommands) != 4 {
 		t.Errorf("subcommand が %d 個 (期待 4)", len(subcommands))

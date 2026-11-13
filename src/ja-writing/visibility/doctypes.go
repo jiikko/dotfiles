@@ -118,3 +118,21 @@ func ContextLabel(docType, reader *string) (string, error) {
 	}
 	return "文書の種類: " + label(dt, kinds) + "、読者: " + label(rd, readers) + "。", nil
 }
+
+// DocTypeValues は DocTypes の値 (--doc-type に使える名前) の並び。
+func DocTypeValues() []string {
+	values := make([]string, len(DocTypes))
+	for i, d := range DocTypes {
+		values[i] = d.Value
+	}
+	return values
+}
+
+// ReaderValues は ReaderLevels の値 (--reader に使える名前) の並び。
+func ReaderValues() []string {
+	values := make([]string, len(ReaderLevels))
+	for i, r := range ReaderLevels {
+		values[i] = r.Value
+	}
+	return values
+}

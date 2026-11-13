@@ -4,8 +4,8 @@
 入口は `bin/ja-writing` (1 本の CLI に subcommand `lint` / `diff` / `check` / `hook`)。設計と受け入れ条件は epic 1072 と issue 1073〜1078。
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
-lint の土台 (issue 1075 の T1〜T3: 絵文字・文末の飾り・文字の下ごしらえ。`lint/`) も入っている。
-subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す (lint の 40 規則は 1075 の続きの群で、diff は 1076、check と hook は 1077 で実装する)。
+lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標は本家と同じ。40 規則は 1075 の続きの群 G1〜G20 で足すので、いまは候補が出ない)。ほかの subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す (diff は 1076、check と hook は 1077 で実装する)。
 
 ## 構成
 
@@ -13,7 +13,7 @@ subcommand は `まだ実装していません` と標準エラーに出して r
 |---|---|
 | `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
-| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (いまは未実装の stub)。`lint/` は stub の隣に、本家の `yomiyasu_lint.py` の土台 (T1〜T3) を持つ。下の「lint の土台」 |
+| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (lint 以外はいまは未実装の stub)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」 |
 | `lint/pausecomma/` | lint の群 G13 (規則 `pause_comma`: 短い主語・主題・目的語のすぐあとの読点)。本家の `_pause_comma_hits`・`_pause_comma_object_hits`・`_pause_comma_line_hits` の写しで、記録は `testdata/golden/pause_comma.json` (issue 1084)。骨組みは `Fallback` と `LineHits` を呼び、G16 は `TENotVerb`、G17 は `TEAttrObject` を使う |
 | `visibility/` | 本家の `markdown_visibility.py` (Markdown の読み方・語の一覧・入力の扱い) の Go 実装。本家の名前との対応表は package doc (`visibility/doc.go`)。下の「markdown_visibility の Go 実装」 |
 | `lists/` | 語の一覧 (`references/lists/*.txt` の 8 本) を `go:embed` で持つ。本家と同じバイト列で、`.gitattributes` が改行の変換を止める。SHA-256 は `oracle/upstream.sha256` と照合するテストがある |
@@ -215,6 +215,59 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 - 空振りを止める検査 (`TestLintBaseRecordingCoversEveryFunction`): 関数と定数ごとに記録の件数が 0 でなく、例外を使わない (analysis を作れない入力は `lintAnalysisFails` で外す)。
 - 実装をわざと壊して `bin/mutate-verify-list` で確かめた 22 本 (絵文字 4・文末の飾り 7・文字の下ごしらえ 10・重なりの除去 1)。20 本が red (うち 1 本は最初は緑で、入力を足して red にした)、2 本は等価と判断した (理由は issue 1075 の進捗)。
 
+## lint の骨組みと群の足し方 (`lint/`。issue 1075 の T4)
+
+`ja-writing lint` は動く (`lint.Main`)。引数と終了コードは本家の argparse と `_run` の確かめる順 (`--version` → 条件 → 種類と読者 → words の同時指定 → 語の一覧 → 入力のパス → 入力を読む) をそのまま写し、text と `--json` (format_version 2・鍵の順・`indent=2`・`ensure_ascii`) の出力も本家と同じ。
+検出する規則は 0 (40 規則は群 G1〜G20 として別のセッションが足す) なので、いまは候補が 1 件も出ない。文書の指標 (`metrics`) と語の一覧の `context` は本家と同じ値を出す。
+
+| ファイル | 中身 |
+|---|---|
+| `lint.go` | `Main`・`run` (本家の `_run`)・`--strict` / `--fail-on` の判定 (`failConditions`・`hitConditions`・`exitLine`)・入力の読み方 (`readInput`) |
+| `args.go`・`help.txt` | argparse の写し (`parseArgs`・`usageError`)。`-h` の文面は本家が出したものをそのまま持つ (`help.txt`) |
+| `lint_text.go` | `lintText` (本家の `lint_text` 5512-5988)・`detect` (検出まで)・`eachRow` (行のループ)・`beginRow`・`bodySteps` |
+| `post.go`・`result.go`・`rules.go` | 検出の後 (種類で外す・allow・ダッシュの上限・点数・件数)・出力 (`--json` の値・text の `renderReport`)・規則の表 (規則 → 群・種類ごとの扱い・実装済みの規則) |
+| `g01_metrics.go` ほか `g02`〜`g20` | 群ごとの検出の口。G1 の指標 (`metricsAndListGate`) と G8 の窓 (`g08Window`) は骨組みが使うので中身がある。ほかは空 |
+
+### 群を足す人へ
+
+1. **自分のファイルだけを書く** (`g<番号>_*.go`)。骨組み (`lint_text.go`・`post.go`・`result.go`) は書き換えない。群の口は、本家の `lint_text` と同じ順に骨組みが呼ぶ lintState のメソッド:
+
+   | 群 | 口 | 呼ばれるとき |
+   |---|---|---|
+   | G1 | `g01Document()` | 行のループの前。指標 (`s.metrics`・`s.listGateChars`) から excess_bold・excess_list |
+   | G2 | `g02SentenceEnd()` | 同上 (`s.sentences` が段落の文の記録) |
+   | G3 | `g03Bold()` | 同上。issue 1083 の `lint.BoldFindings(s.text, s.an)` を呼ぶ |
+   | G4・G5・G6 | `g04Emoji(r)`・`g05Dash(r)` (表と引用でなく、文書にダッシュがあるとき)・`g06Heading(r)` (見出しの行。続けて骨組みが `g08Vocabulary`) | 行ごと |
+   | G7〜G13 | `bodySteps` の順 (`g07TrailingColon`・`g08Vocabulary`・`g08Translated`・`g09Filler`・`g09InfoSentences`・`g10InstructionResidue`・`g11ShortSentences`・`g12Negation`・`g13PauseComma`) | 表・見出し・引用でない行ごと。事前の口は `g08Prepare`・`g12Prepare`、事後の口は `g12Document`。`g12RecordBoldLabel(r)` は行の文を切る前 |
+   | G14〜G20 | `g14WordFindings`・`g15RenyoFindings`・`g16AiPhraseFindings`・`g17SlideCommaFindings`・`g18ShapeFindings`・`g19DocumentFindings`・`g20ProjectTermFindings` | 行のループの後、本家の `analysis["_findings"] = findings` 以降の順 (`s.findings` はそれまでの候補) |
+
+2. **状態は自分の `g<番号>State` に持つ** (`lintState.g01`〜`g20`。本家の行のループの外の変数と、事前の口が作る表)。骨組みが持つのは複数の群が読むものだけ: `previousSentence`・`kikuLines`・`metrics`・`rule9`・`sentences`・`findings`。
+   候補は `s.add(newFinding(rule, line, severity, message, snippet))` で、本家が足す順に足す (足す順が `--json` の `findings` の順)。内部の欄 (`Words`・`Objects`・`Heads` など) は `finding` の欄で、持つ欄は nil でない値を入れる (空でも持つなら `[]string{}`)。
+3. **`rules.go` の `implementedRules` の自分の規則を `true` にする**。検出を、本家の検出の生の並び (`testdata/golden/lint-raw.json`) と規則で絞って突き合わせるテスト (`TestRawFindingsMatchPythonRecording`) が、true の規則だけを比べる (入っていない規則の候補を Go が出すと落ちる)。
+   群どうしの依存 (G11 → G9・G14 → G8・G17 → G13) は、依存先の規則が全部 true になるまで依存元を true にできない (`TestImplementedRulesRespectGroupDependencies`)。
+   40 規則が全部 true になると、`TestCLIMatchesPythonRecording` が CLI の記録 (全ファイル × 種類・読者・語の一覧・text と `--json` の出力の全体と rc。8,065 件) を全件、字まで比べる段に切り替わる。
+4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにあり、いまは呼ばれたら panic する。群を入れるとき、本家の message の組み立てをそこに書く。
+5. 記録に足りない入力の形 (地図 4.3 節) は、入力の集まり (`testdata/corpus/`) に足すと全部の記録を作り直すことになる。足すときは `go run ./oracle/cmd/golden` で全部を作り直し、差分を読む。
+
+### 本家との突き合わせ (T4)
+
+| 記録 | 中身 | 比べるテスト |
+|---|---|---|
+| `lint-cli.json` (8,065 件) | 入力の集まり 332 ファイル × (`--json`・`--doc-type` 13 種・`--words`・`--no-words`・text・`--strict`・`--fail-on` の組) と、誤りの呼び出し・標準入力・作業フォルダを変えた語の一覧の探し方の 88 件。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc | `TestCLIMatchesPythonRecording` (検出の生の並びが空の入力 3,777 件と、検査まで進まない呼び出し。40 規則が入るまで) |
+| `lint-raw.json` (2,656 件) | 全ファイル × 8 つの文脈 (種類なし・essay・slides・promo・script・minutes・article・語の一覧) の、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む。「規則:行:digest」の列) と、文書の指標 (`metrics`) の digest | `TestRawFindingsMatchPythonRecording` (指標は全件、候補は入った規則だけ)・`TestEveryRuleHasHitsInRawRecording` (40 規則全部に当たる入力がある) |
+| `lint-post.json` (77 件) | 本家の `lint_text` の検出を、作った候補に差し替え (driver が `_project_term_findings` を包む)、種類で外す・allow・ダッシュの上限・点数・件数・context・`--json` の形・`render_report` だけを本家のまま走らせた結果 | `TestPostProcessingMatchesPythonRecording` (検出の群が入る前に、候補のある入力で後処理と出力を確かめる唯一の比較) |
+
+- 記録の driver は 3 つ (`oracle/py/record_lint_cli.py`・`record_lint_raw.py`・`record_lint_post.py`)。CLI の driver は 1 つの Python のプロセスの中で `main(argv)` を何度も呼ぶ (stdin・stdout・stderr は 1 回ごとに作り直し、作業フォルダの実パスは `<<ROOT>>` に戻す)。
+  `go run ./oracle/cmd/golden -only lint-cli|lint-raw|lint-post` で 1 つずつ作り直せる (それぞれ約 40 秒・10 秒・数秒)。
+- 本家のファイルには手を入れない。検出の生の並びは、`yomiyasu_lint._project_term_findings` を driver が包んで取る (`lint_text` は module の global から名前を引く)。
+- 揃わない範囲:
+  - `-h` の文面は本家が出したもの (端末の幅が 80 桁のとき) を `lint/help.txt` に持つ。`COLUMNS` で幅を変えても Go は変わらない。
+  - argparse の写しは、本家の記録にある形 (`--opt=値`・`--`・`-` ・負の数・空白を含む引数・`-h` の連結・省略形の拒否・値の欠け・知らないオプション) を確かめている。ほかの形 (`-hx` 以外の短い名前の連結など) は未確認。
+  - `--fail-on` の値の小文字化は `strings.ToLower` に İ の分解を足したもの。語末の Σ を ς にする規則と、Python の Unicode のバージョンとの差は写さない (使えない値の文に出る字だけに現れる)。
+  - 本家の rc 3 のうち、トレースバックの文面と、Windows の閉じたパイプ (`EINVAL`) は写さない。書き出せなかったときの rc 3 は同じ。
+  - 入力のパスの検査 (`visibility.InputPathProblem`) とファイルを開く処理は、プロセスの cwd を見る。語の一覧の探し方だけが `Env.Cwd` を見る。`Main` を cwd の違う `Env` で呼ぶテストは、プロセスの cwd も移す。
+  - 結果の text は `result` の構造体から作る (`renderReport`)。check (1077) が子の JSON を読んで `render_report` を呼ぶ形が要るときは、JSON の値から作る入口をそのとき足す。
+
 ## 標準ライブラリを写す package (`internal/`)
 
 | package | 写すもの | 記録 | 件数 |
@@ -295,6 +348,7 @@ make -C src/ja-writing lint test    # CI と同じ (Python は動かさない)
 make -C src/ja-writing golden       # 記録を作り直す (Python と ネットワークが要る。UPDATE=1 で環境の違いを許す)
                                     #   TMPDIR は、上に .git・.yomiyasu-words・.yomiyasu が無い場所に向ける (repo の中の tmp/ は使えない)
 go run ./oracle/cmd/golden -only visibility   # markdown_visibility の関数の記録 (visibility.json) だけを作り直す (約 10 秒)
+go run ./oracle/cmd/golden -only lint-cli     # lint の CLI の記録 (lint-cli.json。約 40 秒)。-only lint-raw (検出の生の並び) と -only lint-post (後処理) も同じ形
 go run ./oracle/cmd/golden -only lint-base    # lint の土台の関数の記録 (lint-base.json) と絵文字の表 (lint/emoji_tables_gen.go) だけを作り直す (約 15 秒)
 go run ./oracle/cmd/worstcase -rounds 5 -shape single   # 試す数の上限の最悪の組の所要を本家と Go で測る (テストの合否には使わない)
 make -C src/ja-writing pin-upstream # 固定する commit を変えるときだけ

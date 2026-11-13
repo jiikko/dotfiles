@@ -229,7 +229,7 @@ func TestPlanRunsCoversTools(t *testing.T) {
 // 記録は 1 回の make golden で同じ環境から作る。1 つでも本家の commit・Python・unicodedata のバージョンが違えば、混ざった環境の記録になる。
 func TestGoldenFilesShareOneEnvironment(t *testing.T) {
 	var first Header
-	for i, name := range []string{PatternsFile, PyreFile, UnicodeFile, JSONFile, PystrFile, SmokeFile, DifflibFile, VisibilityFile, PauseCommaFile, LintBaseFile} {
+	for i, name := range []string{PatternsFile, PyreFile, UnicodeFile, JSONFile, PystrFile, SmokeFile, DifflibFile, VisibilityFile, PauseCommaFile, LintBaseFile, LintCLIFile, LintRawFile, LintPostFile} {
 		var file struct{ Header Header }
 		if err := ReadGoldenHeader(goldenDir, name, &file); err != nil {
 			t.Fatal(err)

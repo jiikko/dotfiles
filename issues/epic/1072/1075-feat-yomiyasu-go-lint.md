@@ -120,3 +120,20 @@
   - 次の係へ: 群は `lint/<群>.go` に 1 ファイルずつ足し、`*document` (解析 `an`・`proseVisibleText`・`endClosersFor`・`rule9Context`・`plainSentenceRecords`・`v220ScanText`) を受け取る。
     文末の飾りの字を正規表現へ埋め込む群 (G8 の `_MOMENT_PATTERN`・G9・G11・G12 など) は `endDecorationRun()` を使う (表から作る文字列。記録の定数 `_END_DECORATION_RUN` と同じ)。
     記録を足すときは `oracle/lintbase_cases.go` の形 (`recorder`・`lintDocCalls`) に倣い、`lint/oracle_test.go` の `invoke` に関数を足す。群の str の関数と analysis を取る関数を同じ記録に入れるか、新しい記録のファイルにするかは、1 ファイルの大きさ (いま 4.4 MB) で決める。
+
+- 2026-11-13 T4 (後処理・出力・CLI) と骨組みを入れた。`ja-writing lint` は動くが、検出する規則は 0 (候補が出ない)。群 G1〜G20 は別のセッションが足す。
+  - 作ったもの (`src/ja-writing/lint/`): CLI (`lint.go`・`args.go`。argparse の写しと `-h` の文面 `help.txt`)・後処理 (`post.go`: 種類で外す・allow・ダッシュの上限・点数)・出力 (`result.go`: `--json` の値と text)・
+    規則の表 (`rules.go`: 40 規則 → 群・種類ごとの扱い・実装済みの規則の表 `implementedRules`)・骨組み (`lint_text.go`: `lint_text` の順。行のループは `beginRow` と `bodySteps`)・群ごとの口 (`g01`〜`g20`)。
+    本家の `analyze_markdown_metrics` に当たる文書の指標は G1 のファイルに入れた (出力の `metrics` と点数に要るため。`excess_bold` / `excess_list` の候補は空)。
+  - **群ごとの呼び出し口の約束**: 群は自分のファイル (`g<番号>_*.go`) の `lintState` のメソッドだけを書く。口の一覧と呼ばれる順は README の「lint の骨組みと群の足し方」。状態は群ごとの `g<番号>State` (欄は最初から全部ある)。
+    規則を入れたら `implementedRules` の値を true にし、`lint-raw.json` との突き合わせに通す。依存 (G11 → G9・G14 → G8・G17 → G13) は、依存先が全部入るまで入れられない。
+    G3 の口は `g03Bold` (1083 の `lint.BoldFindings(s.text, s.an)` を呼ぶ。`internal/bold` と `lint/bold*.go` はこの段で作っていない)。
+    allow.txt で語を一部だけ外すときに message を作り直す 4 つの関数 (`calqueMessage`・`renyoMessage`・`aiPhraseMessage`・`projectTermMessage`) は群のファイルにあり、呼ばれたら panic する。
+  - 記録 3 本 (`testdata/golden/`): `lint-cli.json` (8,065 件。全ファイル × 種類 13・語の一覧・text・条件、誤りの呼び出し・標準入力・作業フォルダの違い 88 件)・`lint-raw.json` (2,656 件。検出の生の並びと metrics。全 40 規則に当たる入力がある)・
+    `lint-post.json` (77 件。本家の検出を作った候補に差し替えて、後処理と出力だけを本家で走らせたもの)。driver は `oracle/py/record_lint_{cli,raw,post}.py`。本家のファイルには手を入れず、`_project_term_findings` を driver が包んだ (動くことを確かめた)。
+  - 比べた結果: CLI の記録のうち、本家が候補を 1 件も出さない入力と検査まで進まない呼び出し 3,777 件の rc・stderr・stdout (SHA-256 と長さ。全文は 16 件) が本家と同じ。
+    指標 (`metrics`) は 2,656 件全部、後処理と出力は 77 件全部で同じ。40 規則が全部入ると、残り 4,288 件 (本家が候補を出す入力) も全件比べる段に切り替わる。
+  - 実装をわざと壊して `bin/mutate-verify-list` で 38 本を確かめた (引数 6・CLI 6・出力 4・後処理 9・規則の表 4・指標 6・骨組み 3。うち 4 本は最初は構文エラーか緑のままで、書き直すか、入力のない所の単体のテスト (`TestIsDetailsName`) を足して red にした)。38 本とも想定の検査で red。
+  - 満たせていないこと: 受け入れ条件のうち、40 規則の一致・規則ごとの当たる入力と当たらない入力の件数・dotfiles の文書を通した所要・群ごとに実装をわざと壊す確かめは、群が入ってから。
+    地図 4.3 節の入力 (比喩動詞の残りの 7 型など) は足していない (入力の集まりを足すと全部の記録を作り直すので、群を入れる人が必要な形を足す)。
+    `-h` の文面は本家の出力の写し、argparse は記録にある形だけを確かめた (README の「揃わない範囲」)。check (1077) が子の JSON から `render_report` を呼ぶ入口は足していない。
