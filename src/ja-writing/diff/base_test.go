@@ -14,7 +14,7 @@ import (
 
 // 本家 (Python) の記録 (testdata/golden/diff-base.json) と、群 B (9 キーの下ごしらえ)・C (文末の種類と立場)・E (太字) の Go の実装を突き合わせる。
 // 記録は oracle.DiffBaseCases の呼び出しを本家に通した結果の digest (正規の JSON の SHA-256 の先頭 8 字) で、Go も同じ呼び出しを通して同じ正規の JSON を作る
-// (本家の sort_keys=True を再現する代わりに、組む側が鍵を昇順に並べて入れる)。
+// (本家の sort_keys=True を再現する代わりに、組む側が鍵を昇順に並べて入れる。full_diff は CLI の出力と同じ挿入順で組むので replay.SortKeys を通す)。
 
 func unitValue(u EndingUnit) pyjson.Value {
 	o := pyjson.NewObject()
@@ -93,6 +93,19 @@ func invoke(t *testing.T, c oracle.Call) pyjson.Value {
 			o.Set("rewrite_kind", c.RewriteKind)
 			return o
 		})
+	case "full_diff":
+		var notes []EncodingNote
+		if len(a) > 2 {
+			for _, n := range a[2].([]any) {
+				m := n.(map[string]any)
+				notes = append(notes, EncodingNote{Kind: m["kind"].(string), Old: m["old"], New: m["new"]})
+			}
+		}
+		full, err := FullDiff(argString(t, a[0]), argString(t, a[1]), notes)
+		if err != nil {
+			t.Fatalf("full_diff: %v", err)
+		}
+		return replay.SortKeys(full)
 	case "bold_problems":
 		problems, err := bold.Problems(argString(t, a[0]), argBool(t, a[1]))
 		if err != nil {

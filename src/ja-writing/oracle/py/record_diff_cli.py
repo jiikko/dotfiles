@@ -1,7 +1,7 @@
 """本家 yomiyasu_diff.py の CLI を 1 つのプロセスの中で何度も動かして、stdout・stderr・rc を記録する driver (record_lint_cli.py と同じ作り)。
 
 標準入力: {"scripts_dir": "...", "cases": [{"name": "...", "args": [...], "cwd": 作業フォルダ (root からの相対。省くと root), "stdin_b64": 標準入力のバイト列, "keep": 真なら stdout も記録に残す}, ...]}
-標準出力: [{"name": ..., "rc": 終了コード, "out": stdout の SHA-256 の先頭 16 字, "len": stdout のバイト数, "err": stderr (全文), "n": 見直し候補の数か null,
+標準出力: [{"name": ..., "rc": 終了コード, "req": 検査の本体 diff() に渡した引数 (原文・書き直した文・立場・注記・種類・読者・語の一覧の context・資料) の正規の JSON の SHA-256 の先頭 16 字 (本体まで進んだ実行だけ), "out": stdout の SHA-256 の先頭 16 字, "len": stdout のバイト数, "err": stderr (全文), "n": 見直し候補の数か null,
           "kinds": --json の出力で何が出たか (検出の種類の並び。昇順・重複なし。出ない実行は省く), "stdout": keep のときだけ}, ...]
 
 main(argv) を呼ぶ (python の sys.exit 相当の SystemExit は終了コードとして受ける)。stdin・stdout・stderr は 1 回ごとに作り直し、本物の CLI と同じく stdout は main が UTF-8・改行 "\n" に設定する。
@@ -20,6 +20,18 @@ sys.path.insert(0, plan["scripts_dir"])
 import yomiyasu_diff as D  # noqa: E402
 
 ROOT = os.path.realpath(os.getcwd())
+CAPTURED = []
+_DIFF = D.diff
+
+
+def _capturing_diff(orig_raw, rw_raw, stance=None, *, encoding_notes=None, doc_type=None, reader=None, words=None, materials=None):
+    """_run が diff() に渡す値を控えて、本物の diff() をそのまま呼ぶ (出力は変えない)。Go の本体へ渡す値 (prepare の戻り値) と突き合わせる。"""
+    CAPTURED.append({"orig": orig_raw, "rw": rw_raw, "stance": stance, "encoding_notes": list(encoding_notes or []), "doc_type": doc_type,
+                     "reader": reader, "words": D.words_context(words) if words is not None else None, "materials": list(materials or [])})
+    return _DIFF(orig_raw, rw_raw, stance, encoding_notes=encoding_notes, doc_type=doc_type, reader=reader, words=words, materials=materials)
+
+
+D.diff = _capturing_diff
 REAL_STDIN, REAL_STDOUT, REAL_STDERR = sys.stdin, sys.stdout, sys.stderr
 
 RULE_KEYS = ("markers", "new_words", "lost_words", "structure", "spans", "logic", "bold", "type_changes", "added_actors", "heading_shapes")
@@ -79,6 +91,7 @@ for case in plan["cases"]:
     so = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", newline="\n", write_through=True)
     se = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", newline="\n", write_through=True)
     sys.stdout, sys.stderr = so, se
+    CAPTURED.clear()
     try:
         try:
             rc = D.main(list(case["args"]))
@@ -100,6 +113,10 @@ for case in plan["cases"]:
     entry = {"name": case["name"], "rc": rc, "out": hashlib.sha256(raw).hexdigest()[:16], "len": len(raw), "err": stderr, "n": count}
     if kinds is not None:
         entry["kinds"] = kinds
+    if CAPTURED:
+        assert len(CAPTURED) == 1, "1 回の実行で diff() が複数回呼ばれた"
+        canon = json.dumps(CAPTURED[0], ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        entry["req"] = hashlib.sha256(unroot(canon).encode("utf-8")).hexdigest()[:16]
     if case.get("keep"):
         entry["stdout"] = stdout
     out.append(entry)

@@ -43,33 +43,44 @@ type request struct {
 	failOn    bool
 	json      bool
 	old, new  string
-	oldInfo   visibility.SourceInfo
-	newInfo   visibility.SourceInfo
+	notes     []EncodingNote
 	materials []string
 }
 
-// run は本家の _run。確かめる順は本家と同じ (誤りが重なったときにどの文が出るかを決める)。
+// run は本家の _run。引数の検査と入力の読み (prepare) を済ませ、検査の本体まで進む呼び出しだけ compare に渡す。
 func run(env cmdenv.Env) (int, error) {
+	req, code, err := prepare(env)
+	if req == nil {
+		return code, err
+	}
+	return compare(env, *req)
+}
+
+// prepare は _run の、検査の本体 (diff()) を呼ぶ前まで。確かめる順は本家と同じ (誤りが重なったときにどの文が出るかを決める)。
+// 本体まで進む呼び出しは request を返す (code と err は使わない)。そこで終わる呼び出し (誤り・-h・--version・--endings) は request が nil で、code と err が結果。
+// 本体へ渡す値を本家と突き合わせるため (本体が入るまでの間も)、request を取り出せる形にしてある。
+func prepare(env cmdenv.Env) (req *request, code int, err error) {
+	finish := func(code int, err error) (*request, int, error) { return nil, code, err }
 	o, err := parseArgs(env.Args)
 	var perr parseError
 	if errors.As(err, &perr) {
-		return usageTo(env, string(perr))
+		code, err := usageTo(env, string(perr))
+		return finish(code, err)
 	}
 	if o.help {
-		return 0, pycli.AtExit("stdout", pycli.PrintTo(env, helpText))
+		return finish(0, pycli.AtExit("stdout", pycli.PrintTo(env, helpText)))
 	}
 	if o.version {
-		return 0, pycli.AtExit("stdout", pycli.PrintTo(env, fmt.Sprintf("%s %s (JSON format %d)\n", prog, visibility.Version, formatVersion)))
+		return finish(0, pycli.AtExit("stdout", pycli.PrintTo(env, fmt.Sprintf("%s %s (JSON format %d)\n", prog, visibility.Version, formatVersion))))
 	}
 	if code, handled, err := checkShape(env, o); handled {
-		return code, err
+		return finish(code, err)
 	}
 	failOn, problem := failOnValues(o.failOn)
 	if problem != "" {
-		return fail(env, problem)
+		return finish(fail(env, problem))
 	}
-	var req request
-	req.failOn, req.json = failOn, o.json
+	r := &request{failOn: failOn, json: o.json}
 	if o.stance != nil {
 		stance, ok := stances[*o.stance]
 		if !ok {
@@ -77,32 +88,32 @@ func run(env cmdenv.Env) (int, error) {
 			if pystr.Strip(shown) == "" {
 				shown = "（空）"
 			}
-			return fail(env, fmt.Sprintf("--stance に使えない値です: %s。使えるのは %s です。", shown, strings.Join(stanceNames, "、")))
+			return finish(fail(env, fmt.Sprintf("--stance に使えない値です: %s。使えるのは %s です。", shown, strings.Join(stanceNames, "、"))))
 		}
-		req.stance = stance
+		r.stance = stance
 	}
-	if req.docType, err = visibility.NormalizeDocType(o.docType); err != nil {
-		return fail(env, err.Error())
+	if r.docType, err = visibility.NormalizeDocType(o.docType); err != nil {
+		return finish(fail(env, err.Error()))
 	}
-	if req.reader, err = visibility.NormalizeReader(o.reader); err != nil {
-		return fail(env, err.Error())
+	if r.reader, err = visibility.NormalizeReader(o.reader); err != nil {
+		return finish(fail(env, err.Error()))
 	}
 	if !o.endings {
 		var cwd *string
 		if env.Cwd != "" {
 			cwd = &env.Cwd
 		}
-		if req.words, _, err = visibility.ResolveWords(cwd, o.words, o.noWords); err != nil {
+		if r.words, _, err = visibility.ResolveWords(cwd, o.words, o.noWords); err != nil {
 			var werr *visibility.Error
 			if errors.As(err, &werr) && werr.Type == visibility.TypeWordsError {
-				return fail(env, werr.Message)
+				return finish(fail(env, werr.Message))
 			}
-			return 0, err
+			return finish(0, err)
 		}
 	}
 	for _, path := range append(append([]string{}, o.files...), o.materials...) {
 		if reason, ok := visibility.InputPathProblem(path); !ok {
-			return fail(env, fmt.Sprintf("Error opening file %s: %s。このファイルを渡すときは、標準入力から渡してください（ファイルの名前の代わりに - を渡します。1か所だけ）", path, reason))
+			return finish(fail(env, fmt.Sprintf("Error opening file %s: %s。このファイルを渡すときは、標準入力から渡してください（ファイルの名前の代わりに - を渡します。1か所だけ）", path, reason)))
 		}
 	}
 	texts := make([]string, len(o.files))
@@ -110,25 +121,25 @@ func run(env cmdenv.Env) (int, error) {
 	for i := range o.files {
 		var problem string
 		if texts[i], infos[i], problem = pycli.ReadInput(env, &o.files[i]); problem != "" {
-			return fail(env, problem)
+			return finish(fail(env, problem))
 		}
 	}
 	for _, path := range o.materials {
 		text, _, problem := pycli.ReadInput(env, &path)
 		if problem != "" {
-			return fail(env, problem)
+			return finish(fail(env, problem))
 		}
-		req.materials = append(req.materials, text)
+		r.materials = append(r.materials, text)
 	}
 	if o.endings {
-		report, err := endingsReport(texts[0], req.stance)
+		report, err := endingsReport(texts[0], r.stance)
 		if err != nil {
-			return 0, err
+			return finish(0, err)
 		}
-		return 0, pycli.PrintTo(env, report+"\n")
+		return finish(0, pycli.PrintTo(env, report+"\n"))
 	}
-	req.old, req.new, req.oldInfo, req.newInfo = texts[0], texts[1], infos[0], infos[1]
-	return compare(env, req)
+	r.old, r.new, r.notes = texts[0], texts[1], encodingNotes(infos[0], infos[1])
+	return r, 0, nil
 }
 
 // checkShape は、ファイルの数・--endings と一緒に使えないオプション・--words と --no-words・標準入力の数の誤り (本家の parser.error。どれも rc 2)。

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/oracle"
@@ -23,6 +24,29 @@ func ResultDigest(v pyjson.Value) (canon, digest string, err error) {
 	}
 	sum := sha256.Sum256([]byte(s))
 	return s, hex.EncodeToString(sum[:])[:oracle.DigestWidth], nil
+}
+
+// SortKeys は本家の sort_keys=True: 入れ子の dict の鍵を文字の昇順に並べ直した値。CLI の出力と同じく挿入順で作った値を、ResultDigest に渡す前に通す。
+// 整数の鍵の dict (本家は整数の大小で並べてから文字にする) は、数の順に入れた Object をそのまま渡し、これを通さない。
+func SortKeys(v pyjson.Value) pyjson.Value {
+	switch x := v.(type) {
+	case *pyjson.Object:
+		keys := x.Keys()
+		sort.Strings(keys)
+		out := pyjson.NewObject()
+		for _, k := range keys {
+			val, _ := x.Get(k)
+			out.Set(k, SortKeys(val))
+		}
+		return out
+	case []pyjson.Value:
+		out := make([]pyjson.Value, len(x))
+		for i, e := range x {
+			out[i] = SortKeys(e)
+		}
+		return out
+	}
+	return v
 }
 
 // List は pyjson の配列 (本家の list) を値から組む。

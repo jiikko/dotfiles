@@ -21,7 +21,11 @@ var DiffBaseFunctions = []string{
 	"normalize", "has_list", "sentences", "paragraphs", "logic_points",
 	"bare_end", "register", "ending_kind", "ending_units", "stance_flags", "ending_changes",
 	"bold_problems",
+	"full_diff",
 }
+
+// DiffEncodingNote は full_diff に渡す注記の 1 つ (本家の dict と同じ 3 つの鍵)。
+type DiffEncodingNote = map[string]any
 
 // DiffStanceArgs は stance_flags に渡す立場 (nil は指定なし)。
 var DiffStanceArgs = []any{nil, "勧め", "決まり", "説明"}
@@ -94,10 +98,17 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 		pairs = append(pairs, [3]string{p[0], o, n})
 	}
 	for _, p := range pairs {
-		cases = append(cases, VisCase{Name: "pair/" + p[0], Calls: []Call{dcall("ending_changes", p[1], p[2])}})
+		cases = append(cases, VisCase{Name: "pair/" + p[0], Calls: []Call{dcall("ending_changes", p[1], p[2]), dcall("full_diff", p[1], p[2])}})
 	}
 	for _, p := range diffEndingPairs() {
 		cases = append(cases, VisCase{Name: "pair/snippet/" + p[0], Calls: []Call{{Module: DiffModule, Function: "ending_changes", Args: []any{p[1], p[2]}, Digest: true, Keep: len(p[1]) < 400}}})
+	}
+	for _, f := range diffFullCases() {
+		args := []any{f.old, f.new}
+		if f.notes != nil {
+			args = append(args, f.notes)
+		}
+		cases = append(cases, VisCase{Name: "full/" + f.name, Calls: []Call{{Module: DiffModule, Function: "full_diff", Args: args, Digest: true, Keep: len(f.old)+len(f.new) < 2000}}})
 	}
 	var calls []Call
 	for _, s := range diffEndingStrings {

@@ -45,8 +45,10 @@ type LintCLIRecord struct {
 	N    *int   `json:"n"`
 	Raw  *int   `json:"raw,omitempty"`
 	// Kinds は diff の --json の出力で何が出たか (検出の種類の並び。昇順)。lint の記録には無い。
-	Kinds  []string `json:"kinds,omitempty"`
-	Stdout string   `json:"stdout,omitempty"`
+	Kinds []string `json:"kinds,omitempty"`
+	// Req は diff の検査の本体 diff() に渡された引数の正規の JSON の SHA-256 の先頭 16 字 (本体まで進んだ実行だけ)。lint の記録には無い。
+	Req    string `json:"req,omitempty"`
+	Stdout string `json:"stdout,omitempty"`
 }
 
 // LintCLIGolden は lint-cli.json の中身。
