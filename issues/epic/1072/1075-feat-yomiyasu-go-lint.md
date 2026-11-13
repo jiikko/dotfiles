@@ -63,6 +63,12 @@
   (`_emoji_matches`・`_sentence_end_type`・`_has_negative_parallelism`・`bold_problems` など) は関数の単位の記録で比べる
 - **分担**: T1〜T4 と骨組み (群を呼ぶ順と、群ごとのファイル) は dotfiles-c5 が先に入れる。そのあと群を別のセッションに分けられる。G3 は [1083](1083-feat-ja-writing-lint-bold-not-rendered.md) に切り出した (dotfiles-24 が担当。2026-11-13)。G13 は [1084](1084-feat-ja-writing-lint-pause-comma.md) に切り出した (dotfiles-bb が担当。2026-11-13。str を受ける関数を先に作り、骨組みへのつなぎ込みは土台が入った後)
 
+### G3 をつなぐ口 (1083 からの申し送り、dotfiles-24、2026-11-13)
+
+- 骨組みから呼ぶのは `lint.BoldFindings(text string, a *visibility.Analysis) ([]lint.BoldFinding, error)`。`BoldFinding` は `Rule`・`Line`・`Severity`・`Message`・`Snippet` を持ち、本家の `lint_text` の 5577〜5584 行の dict と同じ値を入れる。候補の型が決まったら、骨組みの側でこの欄を写す
+- 中身は `internal/bold.ProblemsWithAnalysis`。`internal/bold.Problems(text, skipFrontmatter)` が本家の `bold_problems` に当たり、diff (1076) からはこちらを呼ぶ
+- visibility に公開の入口を 2 つ足した (`Escaped`・`HasPrefixAt`)。記録は `testdata/golden/bold.json` (本家の lint と diff に同じ入力を当てて 1,456 case が一致)。`go run ./oracle/cmd/golden -only bold` で作り直せる
+
 ### 答えがずれやすい所 (地図の 3 節の要点)
 
 - set から選択肢を組む所 (2977・3990・4028・4033・4715 など) は、どれも答えに影響しないと読めた (同じ位置で同じ長さの語が同時に当たらない)。Go は (長さの降順, 字の順) で固定し、map を反復して出力を組まない
