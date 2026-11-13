@@ -90,7 +90,7 @@ func diffTypeCases() []diffFullCase {
 		cases = append(cases, diffFullCase{name: "simile-" + strconv.Itoa(i), old: doc(s), new: doc("確認します。")}, diffFullCase{name: "simile-added-" + strconv.Itoa(i), old: doc("確認します。"), new: doc(s)})
 	}
 	cases = append(cases, diffTypeRangeCases(doc)...)
-	cases = append(cases, diffRedTeamTypeCases()...)
+	cases = append(cases, diffBrokenFormTypeCases()...)
 	cases = append(cases, diffTypeFuzz()...)
 	return append(cases, diffTypeFuzzSimilar()...)
 }

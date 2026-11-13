@@ -100,7 +100,7 @@ func diffModalCases() []diffFullCase {
 		}
 	}
 	cases = append(cases, diffModalHand(doc)...)
-	cases = append(cases, diffRedTeamModalCases()...)
+	cases = append(cases, diffBrokenFormModalCases()...)
 	return append(cases, diffModalFuzz()...)
 }
 
