@@ -88,16 +88,24 @@
 
 ## 受け入れ条件
 
-- [ ] 40 規則すべてが入力の集まりで本家と同じ候補 (行・列・規則・重さ・文) を出す。`--json` の出力も字まで同じ
-- [ ] 規則 ID ごとに、当たる入力と当たらない入力が入力の集まりにあり、その件数を記録から数える検査が通る (1073 の空振りを止める検査)
-- [ ] rc が本家と同じ (`--strict`・`--fail-on` の組み合わせを含む)
-- [ ] 語の一覧の読み込みと、`--doc-type` / `--reader` の切り替えが本家と同じ結果になる
+- [x] 40 規則すべてが入力の集まりで本家と同じ候補 (行・列・規則・重さ・文) を出す。`--json` の出力も字まで同じ
+  (根拠: `TestRawFindingsMatchPythonRecording` が 409 入力 × 8 文脈 = 3,272 件で 40 規則の候補を内部の欄まで検出の順に比べて通る。`TestCLIMatchesPythonRecording` が CLI の記録 8,072 件の stdout (SHA-256 の先頭 16 字と長さ)・stderr・rc を比べて「残り 0 件」。
+  dotfiles の tracked な Markdown 1,684 ファイルを `--json`・text・`--strict` で本家と Go に通した 5,052 呼び出しも stdout・stderr・rc の違い 0 件 (下の「dotfiles の文書を通した答えの一致」))
+- [x] 規則 ID ごとに、当たる入力と当たらない入力が入力の集まりにあり、その件数を記録から数える検査が通る (1073 の空振りを止める検査)
+  (根拠: `TestEveryRuleHasHitAndMissInputsInRecording`。件数の表は下の「規則ごとの件数」。commit 20778e696)
+- [x] rc が本家と同じ (`--strict`・`--fail-on` の組み合わせを含む)
+  (根拠: CLI の記録の `text|strict`・`text|fail-on-warn`・`text|fail-on-error`・`text|fail-on-mixed`・`json|fail-on-warn` は rc 0 と rc 1 の両方がある (例 `--strict` は 135 件が 1・197 件が 0)。`scenario/*` の 95 件の引数の形 (`--fail-on` の不正値・`--strict` の重ねがけ・`--version` と不正値の組み合わせなど) の rc 2 も全部同じ。`TestRunExitCodeAndExitLine`・`TestFailConditions`・`TestHitConditionsAndExitLine`)
+- [x] 語の一覧の読み込みと、`--doc-type` / `--reader` の切り替えが本家と同じ結果になる
+  (根拠: CLI の記録の `json|dt=*` 4,316 件・`json|reader=*` 9 件・`json|words` と `json|no-words` と `text|words` 各 332 件・`text|slides+expert` 332 件・`scenario/words-*` と `scenario/doc-type-*` と `scenario/reader-*`。`TestPostProcessingMatchesPythonRecording` の種類ごとの扱い。語の一覧の読み込みは 1074 の `visibility.ResolveWords` の記録)
 - [x] 絵文字の数え方の公開の関数が、本家の `_emoji_matches` と同じ値を返す (`lint.EmojiMatches`。`lint-base.json` の入力の集まりの全行・全コードポイント・旗 676 組と、opus の敵対的レビューの乱数 9 万件で一致)
-- [ ] dotfiles の文書を通した所要を、本家と Go の両方で測った数字がある
-- [ ] 規則を 1 本ずつ外したとき (群ごとに最低 1 本)、記録との突き合わせが落ちることを確かめた (`mutate-verify`)
-- [ ] `make test-dupscan-gate` が通る
-- [ ] 1080 (done) の表で「Go で扱う」とした 76 項目のうちの 40 項目について、当てた規則の名前が本当にその型を拾うかを、lint の規則の実装と記録で確かめる
+- [x] dotfiles の文書を通した所要を、本家と Go の両方で測った数字がある (下の「dotfiles の文書を通した所要」)
+- [x] 規則を 1 本ずつ外したとき (群ごとに最低 1 本)、記録との突き合わせが落ちることを確かめた (`mutate-verify`)
+  (根拠: 進捗の各群の記録。G1 6・G2 8・G3 と G13 の 6 (名前から G3 は「候補を足さない」「行をつないだ表を引かない」の 2 本・残りが G13)・G4 5・G5 11・G6 6・G7 6・G8 14・G9 7・G10 12・G11 17・G12 11・G14 35・G15 7+3・G16 11・G17 17・G18 13・G19 14・G20 15 本。
+  全部が想定の検査で red。緑のまま通ったものは等価と判断した理由を各群に書いてある。G3 の太字の判定と G13 の読点の判定は 1083・1084 の `internal/bold`・`lint/pausecomma` にも 1 本ずつの確かめがある)
+- [x] `make test-dupscan-gate` が通る (最後の編集の後の木で rc 0。下の「受け入れ条件の確認」)
+- [x] 1080 (done) の表で「Go で扱う」とした 76 項目のうちの 40 項目について、当てた規則の名前が本当にその型を拾うかを、lint の規則の実装と記録で確かめる
   (1080 は規則の名前を grep で当てただけ。lint の範囲でないもの (diff の検出) は 1076 で確かめる)
+  (結果: 下の「1080 の 40 項目の照合」。40 項目のうち 22 は道具そのもの (R3) で規則の名前が無く、規則を当てたのは 18 項目 (lint 16・diff 2)。lint の 16 項目のうち、1080 の例の文が当てた規則に当たったのは一部で、当て方が誤りの項目が見つかった。結論は表のとおり)
 
 ## 関連ファイル
 
@@ -319,3 +327,113 @@
 - G14 の定数 5 個の結論: 本番の値と比べる値は、どちらも組んだ後の正規表現として本家の記録と比べられていたので、比べが完全に空振りしていたわけではない。ただし定数と本番の写しが別々に在ると、定数側だけを直しても本番が変わらず、定数の比べは本番を守らない写しを見ることになる。本家の死蔵の定数は無かった (5 個とも本家で `_CALQUE_SUBJECT_WORD` などの組み立てに使われている。`_CALQUE_PERSON_END` は 3452・3453 行、`_KIKU_LITERAL` は 1255・1270・3679 行、`_PUBLICATION_WORDS` は 989・4451 行、`_CALQUE_STYLE_CONTEXT_PATTERN` は 4479・4521 行、`_CALQUE_SUBJECTS` は 3447・3556 行)。
 - わざと壊した本数: G14 の定数 5 本 (`calquePersonEnd`・`kikuLiteral`・`publicationWords`・`calqueStyleContextPattern`・`calqueSubjects` の中身を 1 字変える。どれも `TestLintBaseMatchesPythonRecording` が red) と、規則の足場の撤去 4 本 (`g20ProjectTermFindings` の呼び出しを外す → `TestRawFindingsMatchPythonRecording` が red・規則 ID を表にないものに変える → 「規則の表にない」で red・`ruleGroup` から 1 規則を外す → `TestEveryRuleHasHitsInRawRecording` が red・`projectTermMessage` を壊す → `TestPostProcessingMatchesPythonRecording` が red)。9 本とも想定の検査で red。
 - 確かめていない: 手で回した検査が CI より狭い範囲か (CI の Tests の run は push 後に見る)。移した関数 (`emojiFlagPattern` ほか) は挙動を変えない移動なので、わざと壊す確認はしていない (移した先のテストが緑のまま通ること・staticcheck が報告しなくなったことだけ見た)。
+
+## 受け入れ条件の残りを片付けた (2026-11-13)
+
+### 規則ごとの件数 (`lint-raw.json`。409 入力 × 8 文脈)
+
+`TestEveryRuleHasHitAndMissInputsInRecording` が数える。候補を出す文脈ごとに「その規則の候補が出た入力」と「出なかった入力」を数え、どちらかが 0 件なら落とす。
+文脈で検出が変わる 5 規則 (`dialogue_period`・`narrative_density`・`pause_comma`・`project_term`・`slide_comma`) は、候補を出す文脈の表 (`ruleOwnContexts`) を持ち、その文脈の中だけで当たらない入力を数える。表にない文脈で候補が出ても、表の文脈で出なくなっても落ちる。
+件数は文脈ごとに少し違うことがあり (`copy_comma_noun` は promo だけ当たる入力が 2)、範囲で書いた。
+
+| 規則 | 候補を出す文脈 | 当たる入力 | 当たらない入力 |
+|---|---|---|---|
+| ai_phrase | 全 8 文脈 | 4 | 405 |
+| bare_verb_chain | 全 8 文脈 | 3 | 406 |
+| bold_label_list | 全 8 文脈 | 11 | 398 |
+| bold_not_rendered | 全 8 文脈 | 14 | 395 |
+| calque | 全 8 文脈 | 59 | 350 |
+| cleft_list_ending | 全 8 文脈 | 6 | 403 |
+| copy_comma_noun | 全 8 文脈 | 2〜4 | 405〜407 |
+| count_declaration | 全 8 文脈 | 4 | 405 |
+| dash_decoration | 全 8 文脈 | 19 | 390 |
+| dash_insertion | 全 8 文脈 | 6 | 403 |
+| dash_list_ending | 全 8 文脈 | 5 | 404 |
+| dialogue_period | script | 9 | 400 |
+| emoji_prohibited | 全 8 文脈 | 34 | 375 |
+| excess_bold | 全 8 文脈 | 19 | 390 |
+| excess_list | 全 8 文脈 | 25 | 384 |
+| fragment_run | 全 8 文脈 | 6 | 403 |
+| heading_colon | 全 8 文脈 | 4 | 405 |
+| instruction_residue | 全 8 文脈 | 3 | 406 |
+| katakana_term | 全 8 文脈 | 7 | 402 |
+| meta_filler | 全 8 文脈 | 33 | 376 |
+| meta_intro | 全 8 文脈 | 11 | 398 |
+| metaphor_label | 全 8 文脈 | 14 | 395 |
+| metaphor_verb | 全 8 文脈 | 31 | 378 |
+| narrative_density | essay | 67 | 342 |
+| negative_parallelism | 全 8 文脈 | 45 | 364 |
+| negative_parallelism_density | 全 8 文脈 | 19 | 390 |
+| pause_comma | article・essay・minutes・slides | 146〜148 | 261〜263 |
+| project_term | words | 70 | 339 |
+| redundant_bracket | 全 8 文脈 | 3 | 406 |
+| renyo_noun | 全 8 文脈 | 38 | 371 |
+| say_hedge | 全 8 文脈 | 3 | 406 |
+| sentence_end_repetition | 全 8 文脈 | 39 | 370 |
+| short_mochiron | 全 8 文脈 | 5 | 404 |
+| short_summary_heading | 全 8 文脈 | 7 | 402 |
+| slide_comma | slides | 111 | 298 |
+| slop_vocabulary | 全 8 文脈 | 32 | 377 |
+| summary_restatement | 全 8 文脈 | 6 | 403 |
+| thin_evaluation | 全 8 文脈 | 3 | 406 |
+| trailing_colon | 全 8 文脈 | 50 | 359 |
+| translated_term | 全 8 文脈 | 18 | 391 |
+
+検査自身の確かめ: 判定をわざと壊した 5 本 (当たらない入力の判定・表にない文脈の判定・当たらない入力の数え方・当たった入力が無い文脈の判定・表から文脈の項目を外す) が想定の検査で red (`mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/lint-groups/1075-close/mut-b-logs2/)。
+最初に書いた「当たる入力が 0 件」の判定は、当たった入力のある文脈しか数えないので到達できず、変えても緑のままだった (等価)。判定を「その文脈の数えが無い」に直して red にした。
+`TestRuleInputCheckRejectsEmptySides` が、記録の写しから規則の候補を消す・全部の入力に足す・別の文脈に足す 3 形で検査が落ちることを見る。
+
+### dotfiles の文書を通した答えの一致
+
+tracked な Markdown 1,684 ファイル (14,122,130 バイト。worktree の 71da112f8 の時点の写し) を、本家 (Python 3.15.0・本家の commit db78b9bc5) と Go に、`--json`・text・`--strict` の 3 形で通した (`bench/docbench.py check`。5,052 呼び出し)。
+stdout・stderr・rc の違いは 0 件。`--strict` の rc は 258 件が 0・1,420 件が 1・6 件が 2 (どちらも同じ。`.claude/rules/` の下の 6 ファイルで、名前が点で始まるフォルダの中のファイルは読まない仕様のため)。記録に無い形の取りこぼしは見つからなかった。
+
+### dotfiles の文書を通した所要
+
+- 対象: dotfiles の tracked な Markdown のうち `docs/*.md` (30)・`_claude/rules/*.md` (37)・`issues/epic/1072/*.md` (18) の 85 ファイル、合計 1,150,528 バイト (1,124 KB)。全部をつないだ 1 文書は 1,150,696 バイト。
+- 条件: Apple M3 Max・macOS (Darwin 27.0.0)・Python 3.15.0・Go 1.26.0 (darwin/arm64)・本家の commit db78b9bc5・Go は `go build` したバイナリ (71da112f8 に 7 commit を重ねた worktree のソース。測る道具の追加は含まない)。7 周。周ごとに本家と Go の順を入れ替えた。
+  本家は `env -i` の固定の環境 (`PYTHONHASHSEED=0`・`TZ=UTC`) で `python3 -P -s -S -B -X utf8` (`bench/pybench.sh` と同じ)。Go にも同じ環境変数を渡した。測り終えた時点のロードアベレージは 3.2・5.5・5.3 (1・5・15 分。ほかの session が動いていた)。
+- コマンド: `python3 -I bench/docbench.py time <本家の scripts の dir> <ja-writing> <根の dir> <一覧> -n 7` (根の dir は tracked の文書を `tmp/` の下へ写したもの。`.yomiyasu-words` が無いことを確かめて止める)。
+
+| 測ったもの | 本家 (中央値・最小〜最大) | Go (中央値・最小〜最大) | 比 |
+|---|---|---|---|
+| `--version` (起動の下限) | 0.065 秒 (0.064〜0.072) | 0.006 秒 (0.005〜0.006) | 約 11 倍 |
+| 1 ファイルずつ起動した 85 回の合計 (起動込み) | 8.001 秒 (7.976〜8.017) | 3.862 秒 (3.798〜3.977) | 2.1 倍 |
+| つないだ 1 文書を 1 回 (1.1 MB) | 0.854 秒 (0.846〜0.861) | 0.895 秒 (0.875〜0.915) | 1.0 倍 (Go がわずかに遅い) |
+
+- 1 ファイルあたりの中央値の平均は本家 94 ms・Go 46 ms。揺れ (最小〜最大) は、1 ファイルずつの合計で本家 0.5%・Go 4.7%、つないだ 1 文書で本家 1.8%・Go 4.6% 程度で、本家との比に比べて小さい。
+- 読み取り: 小さい文書を 1 つずつ流すときの差は、起動の差 (約 60 ms) と、小さい文書の処理の差が合わさったもの。1 MB 級の長い文書では Go は本家と同じ所要で、速くなっていない (実装の写しを優先し、最適化は 1079 のループで行う前の数字)。1079 はこの表を before にする。
+
+### 1080 の 40 項目の照合
+
+1080 の表の「Go の実装で扱う 40 項目」を数えると、道具そのもの (R3 の 22 本) が 22・lint の規則を当てたものが 16・diff を当てたものが 2 で、40 になる。規則の名前を当てたのは 18 項目だけで、R3 の 22 は規則の名前が無い (照合の対象は 1077・1078 の道具の機能)。
+1 項目ずつ、1080 の出典 (`gap-analysis-76items.json`) の例の文と、当てた規則の実装が拾う形の文を、本家と Go に `--json` で通した (`lint-groups/1075-close/items/`。全部の文で本家と Go の出力が同じ)。lint の範囲でない diff の検出 (R1-23・R2-12) は 1076 で確かめる。
+
+| 項目 | 当てた規則 | 結果 |
+|---|---|---|
+| R1-12 読点と文長 | pause_comma | 拾う。「古いキャッシュが、重複して読み込まれる。」が当たる。ただし `--doc-type` を article・essay・minutes・slides にしたときだけで、種類なし・promo・script・words では出ない。|
+| R2-25 間を作るだけの読点 | pause_comma | 拾う。例の 2 文とも当たる (article)。種類なしでは出ない |
+| R1-13 太字とラベル付き箇条書き | excess_bold・bold_label_list | 拾う。太字の多い 300 字以上の文書で excess_bold・5 行のラベル付き箇条書きで bold_label_list。2 行では bold_label_list は出ない (行数の下限がある) |
+| R1-14 案内用の見出し | heading_colon・short_summary_heading | 一部だけ。「# jqとは：使い方」は heading_colon・「## まとめ」は short_summary_heading が拾う。「〜について」で終わる見出しと「AではなくB」の見出しは拾わない (「# 設定について（補足）」「# 速いのではなく軽い」で候補が出ない。1080 の「未確認」の答え)。「## 概要」も拾わない |
+| R1-15 装飾記号とコピー調 | emoji_prohibited・dash_*・trailing_colon・fragment_run・pause_comma | 拾う。絵文字 (😀)・ダッシュ (――)・文末の装飾コロン・「速い。軽い。安い。」は fragment_run が当たる。「資料を、全員へ。」は slides の pause_comma だけが当たる (種類なしでは出ない)。「ぜひ参考にしてみてください！」は emoji_prohibited でなく meta_filler が当たる |
+| R2-24 装飾の記号 | dash_*・redundant_bracket・trailing_colon・emoji_prohibited | 一部だけ。ダッシュ (dash_insertion)・装飾のコロン・絵文字は当たる。補足のカッコの redundant_bracket は見出しの行でだけ当たり (「## 修正前のAI生成文（素の出力）」)、地の文の「（素の出力）」は拾わない。強調だけのカギ括弧は、「これは「とても」大事な点です。」で候補が出なかった |
+| R2-02 比喩動詞のうち取り込んでいないもの | metaphor_verb | 当て方が誤り。metaphor_verb が拾うのは決まった形だけ (「実装・詳細…に踏み込む」「動かしながら引き返す」「代わりに添える」「議論・価格…が収斂する」「静かに沈黙する」) で、これらの形の文は当たる。1080 の例の「例外を上に逃がす」(「逃がす」は本家の lint に無い)・「その価格帯に収斂した」(「価格が」の形でない)・単独の「壊れる」は当たらない。項目の題どおり「取り込んでいないもの」なので、lint の規則では拾えない |
+| R2-04 強調の分裂文 | cleft_list_ending | 拾う。「今回の改修で増えたのは、画面、帳票、通知。」が当たる |
+| R2-13 誇張語と決まり文句 | slop_vocabulary | 当て方が誤り。7 語 (圧倒的・爆速・革命的・徹底解説・シームレス・価値を最大化・次のレベルへ) の文を通して、slop_vocabulary は 1 つも拾わない (「次のレベルに引き上げます」は calque)。「圧倒的」は本家の diff の程度の語のパターンにあるので 1076 に回る。爆速・革命的・徹底解説は lint にも diff にも無く、ja-writing の規範の文 (1080) だけが持つ |
+| R2-14 体験を大げさに見せる熟語 | slop_vocabulary | 一部だけ。真理・極致・深淵・美学・虚飾は当たる。結晶・凝縮は当たらない |
+| R2-16 急増した比喩の名詞 | slop_vocabulary | 当て方が誤り。13 語のうち slop_vocabulary が拾うのは「土台」だけ。事故・破綻・素通り・実測・照合・突き合わせる・入口・構図・別物・定番・刺さるは当たらない。「落とし穴」は、本家の字面では「落とし穴が潜む」の形で ai_phrase の対象 (R2-23 の型。この形の文では確かめていない) |
+| R2-15 具体的に見えて何を指すか分からない語 | slop_vocabulary・metaphor_label | 一部だけ。手触り・解像度・腹落ちは slop_vocabulary が当たる (「## 手触りの正体」の見出しも)。粒度・軸・言語化・落とし込む・本質・仕組み・境界は当たらない (1080 の「技術用語としての粒度・座標軸は残す」とは別に、そもそも一覧に無い)。metaphor_label は「## 進捗」「## テスト」のような見出しに情報の候補を出す規則で、「手触りの正体」には出ない |
+| R2-18 意味の薄いカタカナ語 | katakana_term | 拾う。4 語 (マイルストーン・ソリューション・エンゲージメント・プラットフォーム) とも当たる |
+| R2-19 名詞が持つ評価を述語で繰り返す文 | thin_evaluation | 拾う。「書き心地がなめらかです。」が当たる |
+| R2-20 比喩・程度・効果の語だけで中身が無い文 | thin_evaluation | 当て方が誤り。例の「大幅に高速化しました。」「信頼性が向上します。」は当たらない。thin_evaluation が拾うのは「質感も上質です」のような名詞の評価を繰り返す形 (R2-19 の型) で、例の語は `lists/fact-gaps.txt` の語。lint は fact-gaps を読まず、本家の diff の事実の穴の検出 (1076) が使う |
+| R2-23 2026 年に見つかった言い回し | ai_phrase | 一部だけ。「潜んでいます」「欠かせない存在」「という見立て」「なんよ」(文末)「という挙動を排除」は ai_phrase が当たる。「そこで効くのは」「テーブルの上にある」は calque が拾う (ai_phrase でない)。「〜レベルの」の「専門家レベルの対応」は当たらない |
+| R1-23 前後の比較 | (diff) | 1076 で確かめる |
+| R2-12 硬い漢語と名詞化 | (diff) | lint は拾わない (「実現することができます」「可能です」「活用する」「実施する」の文は候補なし)。名詞化の語は diff の `nominalization` の一覧が持つので、1076 で確かめる |
+
+- 当て方が誤りの項目: R2-02・R2-13・R2-16・R2-20 の 4 つ。一部だけの項目: R1-14・R2-24・R2-14・R2-15・R2-23 の 5 つ。拾う項目: R1-12・R2-25・R1-13・R1-15 (一部の形は規則が違う)・R2-04・R2-18・R2-19 の 7 つ。
+  1080 の表の「規則の名前」は項目と規則の対応の目安で、項目の語を全部拾う保証ではない。lint が拾わない語 (R2-13 の爆速・革命的、R2-16 の 12 語、R2-02 の「逃がす」など) は、本家の lint も拾わないので、ja-writing の規範の文 (1080 で足した 19 項目) と人の読みに残る。Go の lint で拾う範囲を広げるかは、1078 の組み込みの後に、本家と答えを揃える方針 (epic のユーザー決定 2026-11-12) と合わせて決める。
+- 1080 の表への反映: 1080 は done なので表は書き換えない。この節が照合の結果の正本。
+
+### 受け入れ条件の確認 (最後の編集の後の木)
+
+検査の rc とログの場所は報告に書いた (`lint-groups/1075-close/` の `v-*.rc`)。
