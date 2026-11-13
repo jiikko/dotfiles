@@ -118,7 +118,7 @@ func dashFinding(text string, lineNo int, snippet string) (finding, bool) {
 	if isDashAttribution(text) {
 		text = pystr.LStripChars(pystr.LStrip(text), dashChars)
 	}
-	linked, err := linkAttribution.get().Sub("]", pyre.NewText(text), 0)
+	linked, err := linkAttribution.Get().Sub("]", pyre.NewText(text), 0)
 	if err != nil {
 		panic(err)
 	}

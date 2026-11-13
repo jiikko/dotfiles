@@ -39,8 +39,8 @@ func TestPatternSourcesAppearInPatternRecording(t *testing.T) {
 		}
 	}
 	for name, source := range map[string]string{
-		"EMOJI_PATTERN": emojiPatternText(), "_END_BRACKET_AFTER_PREDICATE": endBracketAfterPredicate.pattern(), "_END_BREAK_RUN": endBreakRun.pattern(),
-		"_END_BREAK_CONTINUES": endBreakContinuesPattern.pattern(), "_WH_QUESTION": whQuestion.pattern(), "_V220_QUOTES": v220Quotes.pattern(), "_V220_IDENTIFIER": v220Identifier.pattern(),
+		"EMOJI_PATTERN": emojiPatternText(), "_END_BRACKET_AFTER_PREDICATE": endBracketAfterPredicate.Pattern(), "_END_BREAK_RUN": endBreakRun.Pattern(),
+		"_END_BREAK_CONTINUES": endBreakContinuesPattern.Pattern(), "_WH_QUESTION": whQuestion.Pattern(), "_V220_QUOTES": v220Quotes.Pattern(), "_V220_IDENTIFIER": v220Identifier.Pattern(),
 	} {
 		if !recorded[source] {
 			t.Errorf("%s のパターンの文字列が、本家の記録 (patterns.json) に無い: %.80s", name, source)

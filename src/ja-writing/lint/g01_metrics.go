@@ -178,7 +178,7 @@ func (d *document) detailsInnerLines() (map[int]bool, bool) {
 				rawClose, position = nil, found.End(0)
 				continue
 			}
-			token, err := detailsToken.get().Search(text, position, pyre.NoEnd)
+			token, err := detailsToken.Get().Search(text, position, pyre.NoEnd)
 			if err != nil {
 				panic(err)
 			}

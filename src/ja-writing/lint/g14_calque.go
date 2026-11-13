@@ -54,7 +54,7 @@ type sent struct {
 func newSent(s string) *sent { return &sent{s: s, r: pyunicode.Runes(s), t: pyre.NewText(s)} }
 
 func (x *sent) search(p *lazyPattern, pos, end int) *pyre.Match {
-	m, err := p.get().Search(x.t, pos, end)
+	m, err := p.Get().Search(x.t, pos, end)
 	if err != nil {
 		panic(err)
 	}
@@ -69,7 +69,7 @@ func (x *sent) techMemo() func() bool {
 func (x *sent) searchAll(p *lazyPattern) bool { return x.search(p, 0, pyre.NoEnd) != nil }
 
 func (x *sent) match(p *lazyPattern, pos int) *pyre.Match {
-	m, err := p.get().Match(x.t, pos, pyre.NoEnd)
+	m, err := p.Get().Match(x.t, pos, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -77,7 +77,7 @@ func (x *sent) match(p *lazyPattern, pos int) *pyre.Match {
 }
 
 func (x *sent) finditer(p *lazyPattern, pos, end int) []*pyre.Match {
-	ms, err := p.get().Finditer(x.t, pos, end)
+	ms, err := p.Get().Finditer(x.t, pos, end)
 	if err != nil {
 		panic(err)
 	}
@@ -297,7 +297,7 @@ func calqueHasOrg(x *sent) bool {
 // docTech は本家の _v220_doc_tech。技術の文書か (calqueTech の語のうち、calqueDocTechGeneral を除いた語が calqueDocTechMin 種類以上)。
 func docTech(text string) bool {
 	set := map[string]bool{}
-	ms, err := calqueTech.get().Finditer(pyre.NewText(text), 0, pyre.NoEnd)
+	ms, err := calqueTech.Get().Finditer(pyre.NewText(text), 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -393,7 +393,7 @@ var calquePhrase = newLazyFrom(func() string {
 	var parts []string
 	for _, group := range [][]namedLazy{calquePhrases, calquePhrasesV250} {
 		for _, p := range group {
-			parts = append(parts, "(?:"+p.re.pattern()+")")
+			parts = append(parts, "(?:"+p.re.Pattern()+")")
 		}
 	}
 	return strings.Join(parts, "|")
@@ -585,7 +585,7 @@ func (s *lintState) g14WordFindings() {
 	tables := v220Patterns()
 	candidates := map[int]bool{}
 	for _, pattern := range tables.trigger {
-		for _, n := range s.candidateLines(pattern.get()) {
+		for _, n := range s.candidateLines(pattern.Get()) {
 			candidates[n] = true
 		}
 	}

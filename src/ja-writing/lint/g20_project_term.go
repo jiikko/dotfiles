@@ -64,10 +64,10 @@ func flagPattern(flag []string) *pyre.Pattern {
 // flag.txt の語の端 (flagPattern) と同じ境目を、使う語の端にも当てる。日本語の字の端では見分けない。
 func replacementBounded(text pyre.Text, start int, replacement string) bool {
 	runes := pyunicode.Runes(replacement)
-	if mustMatchAt0(wordASCII, string(runes[0])) && !matchAtPos(replacementBefore.get(), text, start) {
+	if mustMatchAt0(wordASCII, string(runes[0])) && !matchAtPos(replacementBefore.Get(), text, start) {
 		return false
 	}
-	return !mustMatchAt0(wordASCII, string(runes[len(runes)-1])) || matchAtPos(replacementAfter.get(), text, start+len(runes))
+	return !mustMatchAt0(wordASCII, string(runes[len(runes)-1])) || matchAtPos(replacementAfter.Get(), text, start+len(runes))
 }
 
 // inReplacement は本家の _in_replacement。flag.txt の語の当たりが、その語の使う語の中に収まっているか (使う語が語を含む組で、もう使う語で書いてある所を数えない)。

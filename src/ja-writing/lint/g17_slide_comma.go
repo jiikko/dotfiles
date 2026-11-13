@@ -187,19 +187,19 @@ func (s *lintState) g17SlideCommaFindings() {
 			if (comma.name == "主題" || comma.name == "主語") && pauseLines[lineNo] {
 				continue
 			}
-			matches, err := comma.re.get().Finditer(bodyText, 0, pyre.NoEnd)
+			matches, err := comma.re.Get().Finditer(bodyText, 0, pyre.NoEnd)
 			if err != nil {
 				panic(err)
 			}
 			for _, m := range matches {
 				end := m.End(0)
-				if comma.name == "主題" && (matchAtPos(slideActorAfter.get(), bodyText, end) || matchAtPos(slideListAfter.get(), bodyText, end) ||
+				if comma.name == "主題" && (matchAtPos(slideActorAfter.Get(), bodyText, end) || matchAtPos(slideListAfter.Get(), bodyText, end) ||
 					matchAtPos(pausecomma.TEAttrObject(), bodyText, end)) {
 					continue
 				}
 				tail := runeSlice(bodyRunes, end-2, end)
 				if next, ok := slideSameNext[tail]; ok && (comma.name == "主語" || comma.name == "目的語") &&
-					(matchAtPos(next.get(), bodyText, end) || mustSearch(slideSameTailPattern(tail), runeSlice(bodyRunes, 0, end-2))) {
+					(matchAtPos(next.Get(), bodyText, end) || mustSearch(slideSameTailPattern(tail), runeSlice(bodyRunes, 0, end-2))) {
 					continue
 				}
 				begin := 0

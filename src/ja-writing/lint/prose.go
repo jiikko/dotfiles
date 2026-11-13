@@ -149,7 +149,7 @@ func endsWithQuestion(sentence string) bool {
 			return false
 		}
 	}
-	m, err := whQuestion.get().Search(pyre.NewText(sentence), 0, end)
+	m, err := whQuestion.Get().Search(pyre.NewText(sentence), 0, end)
 	if err != nil {
 		panic(err)
 	}
@@ -341,7 +341,7 @@ func (d *document) v220ScanText(lineNo int) string {
 
 // blankMatches は re.sub(lambda m: " " * len(m.group()), text) (一致を同じ長さの空白にする)。
 func blankMatches(p *lazyPattern, text string) string {
-	out, err := p.get().SubFunc(func(m *pyre.Match) string {
+	out, err := p.Get().SubFunc(func(m *pyre.Match) string {
 		start, end := m.Span(0)
 		return strings.Repeat(" ", end-start)
 	}, pyre.NewText(text), 0)

@@ -25,7 +25,7 @@ func (s *lintState) g16AiPhraseFindings() {
 		return
 	}
 	docType := s.docTypeName()
-	for _, lineNo := range s.candidateLines(aiPhraseHead.get()) {
+	for _, lineNo := range s.candidateLines(aiPhraseHead.Get()) {
 		row := s.an.Lines[lineNo-1]
 		if (row.Kind != "paragraph" && row.Kind != "list" && row.Kind != "heading" && row.Kind != "table") || row.QuoteDepth != 0 {
 			continue
@@ -57,13 +57,13 @@ func (s *lintState) aiPhraseWords(words []string, sentence, docType, kind string
 		switch form.name {
 		case "見立てです":
 			// 「見立て」より前に判断した人や組織の語がある文は除く。
-			if m, err := aiJudge.get().Search(text, 0, runeIndexFrom(sentence, "見立て", start)); err != nil {
+			if m, err := aiJudge.Get().Search(text, 0, runeIndexFrom(sentence, "見立て", start)); err != nil {
 				panic(err)
 			} else if m != nil {
 				continue
 			}
 		case "が招く":
-			if m, err := aiInviter.get().Search(text, 0, start); err != nil {
+			if m, err := aiInviter.Get().Search(text, 0, start); err != nil {
 				panic(err)
 			} else if m != nil {
 				continue

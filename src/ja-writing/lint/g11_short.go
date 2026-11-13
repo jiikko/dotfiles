@@ -31,7 +31,7 @@ func (s *lintState) g11ShortSentences(r *rowCtx) {
 	}
 	// 引用は中身を伏せた「」に置き換え、短い文の数に入れない (「1位は「田中」。」を断片にしない)。
 	if strings.Count(r.plainText, "。")+strings.Count(r.plainText, "！") >= 3 {
-		masked, err := quotedSegment.get().Sub("「」", pyre.NewText(r.plainText), 0)
+		masked, err := quotedSegment.Get().Sub("「」", pyre.NewText(r.plainText), 0)
 		if err != nil {
 			panic(err)
 		}
@@ -70,7 +70,7 @@ func (s *lintState) shortMochiron(r *rowCtx) bool {
 
 // matchAt0 は p.match(text)。
 func matchAt0(p *lazyPattern, text string) *pyre.Match {
-	m, err := p.get().Match(pyre.NewText(text), 0, pyre.NoEnd)
+	m, err := p.Get().Match(pyre.NewText(text), 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -78,7 +78,7 @@ func matchAt0(p *lazyPattern, text string) *pyre.Match {
 }
 
 func subText(p *lazyPattern, repl, text string) string {
-	out, err := p.get().Sub(repl, pyre.NewText(text), 0)
+	out, err := p.Get().Sub(repl, pyre.NewText(text), 0)
 	if err != nil {
 		panic(err)
 	}

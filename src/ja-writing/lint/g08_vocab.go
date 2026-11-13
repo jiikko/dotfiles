@@ -38,12 +38,12 @@ var labelWord = newLazy(`「([^」]+)」`, 0)
 // hitWords は本家の _hit_words。候補の内部の欄 Words の値 (message に出る表の語・そこから「〜」と英語の注記を除いた語・当たった文字列を、重ねずにこの順で)。
 func hitWords(label string, match *pyre.Match) []string {
 	shown := label
-	if m, err := labelWord.get().Search(pyre.NewText(label), 0, pyre.NoEnd); err != nil {
+	if m, err := labelWord.Get().Search(pyre.NewText(label), 0, pyre.NoEnd); err != nil {
 		panic(err)
 	} else if m != nil {
 		shown, _ = m.Group(1)
 	}
-	name, err := hitWordNote.get().Sub("", pyre.NewText(shown), 0)
+	name, err := hitWordNote.Get().Sub("", pyre.NewText(shown), 0)
 	if err != nil {
 		panic(err)
 	}
@@ -65,7 +65,7 @@ func hitWords(label string, match *pyre.Match) []string {
 var hitWordNote = newLazy(`[ \u3000]*[（(][^）)]*[）)]$`, 0)
 
 func searchText(p *lazyPattern, text string) *pyre.Match {
-	m, err := p.get().Search(pyre.NewText(text), 0, pyre.NoEnd)
+	m, err := p.Get().Search(pyre.NewText(text), 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -121,7 +121,7 @@ func (s *lintState) g08Metaphor(r *rowCtx, plain, snippet string) {
 			continue
 		}
 		if p.desc == silentFailDesc && kowareru != nil {
-			matches, err := p.re.get().Finditer(pyre.NewText(plain), 0, pyre.NoEnd)
+			matches, err := p.re.Get().Finditer(pyre.NewText(plain), 0, pyre.NoEnd)
 			if err != nil {
 				panic(err)
 			}
@@ -162,7 +162,7 @@ func kikuMetaphorInLine(text string, before []string) bool {
 	for _, sentence := range sentences {
 		looseKnown, loose := false, false
 		sentenceRunes := pyunicode.Runes(sentence)
-		candidates, err := kikuCandidate.get().Finditer(pyre.NewText(sentence), 0, pyre.NoEnd)
+		candidates, err := kikuCandidate.Get().Finditer(pyre.NewText(sentence), 0, pyre.NoEnd)
 		if err != nil {
 			panic(err)
 		}
@@ -213,7 +213,7 @@ var kikuCandidate = newLazy(kikuPattern, 0)
 
 // mustFindall0 は p.finditer(text) の全文の当たり (group(0))。
 func mustFindall0(p *lazyPattern, text string) []string {
-	matches, err := p.get().Finditer(pyre.NewText(text), 0, pyre.NoEnd)
+	matches, err := p.Get().Finditer(pyre.NewText(text), 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}

@@ -214,7 +214,7 @@ func g14ConstantValue(name string) (pyjson.Value, bool) {
 }
 
 // namedLazyValue は (名前, 正規表現の文字列) の組。
-func namedLazyValue(n namedLazy) pyjson.Value { return list(n.name, n.re.pattern()) }
+func namedLazyValue(n namedLazy) pyjson.Value { return list(n.name, n.re.Pattern()) }
 
 // stringValue は文字列の値。
 func stringValue(s string) pyjson.Value { return s }

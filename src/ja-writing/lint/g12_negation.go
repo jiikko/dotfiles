@@ -42,7 +42,7 @@ func (s *lintState) g12Prepare() {
 		if !strings.Contains(joined.String(), "でもない。") {
 			return
 		}
-		matches, err := negationExtra.get().Finditer(pyre.NewText(joined.String()), 0, pyre.NoEnd)
+		matches, err := negationExtra.Get().Finditer(pyre.NewText(joined.String()), 0, pyre.NoEnd)
 		if err != nil {
 			panic(err)
 		}

@@ -102,7 +102,7 @@ func labelText(row *visibility.Line, scan string) string {
 
 // replaceAll は p.sub(repl, text) (repl は置換の文字列で、中に逆スラッシュを持たない)。
 func replaceAll(p *lazyPattern, text, repl string) string {
-	out, err := p.get().Sub(repl, pyre.NewText(text), 0)
+	out, err := p.Get().Sub(repl, pyre.NewText(text), 0)
 	if err != nil {
 		panic(err)
 	}

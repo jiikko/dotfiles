@@ -19,8 +19,8 @@ const pyUnicodeFlag = 32
 // patternValue は本家の re.Pattern の JSON ({"flags", "pattern"}。鍵は昇順)。
 func patternValue(p *lazyPattern) pyjson.Value {
 	o := pyjson.NewObject()
-	o.Set("flags", int64(pyUnicodeFlag|p.flags))
-	o.Set("pattern", p.pattern())
+	o.Set("flags", int64(pyUnicodeFlag|p.Flags()))
+	o.Set("pattern", p.Pattern())
 	return o
 }
 
@@ -68,7 +68,7 @@ func literalHints() pyjson.Value {
 	}
 	for _, p := range infoSentencePatterns {
 		if p.required != nil {
-			hints[p.re.pattern()] = p.required
+			hints[p.re.Pattern()] = p.required
 		}
 	}
 	return stringMap(hints, stringList)
@@ -120,7 +120,7 @@ func tableConstantValue(name string) (pyjson.Value, bool) {
 	case "FILLER_NOTES":
 		return stringMap(fillerNotes, func(s string) pyjson.Value { return s }), true
 	case "INFO_SENTENCE_PATTERNS":
-		return mapList(infoSentencePatterns, func(p infoRow) pyjson.Value { return list(p.re.pattern(), p.rule, p.message) }), true
+		return mapList(infoSentencePatterns, func(p infoRow) pyjson.Value { return list(p.re.Pattern(), p.rule, p.message) }), true
 	case "_OVERSTATEMENT_PATTERN":
 		return overstatementPattern, true
 	case "_V220_MESSAGE_TAIL":

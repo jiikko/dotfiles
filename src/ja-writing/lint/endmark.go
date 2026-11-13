@@ -146,7 +146,7 @@ func bracketOpensSentence(text []rune, position int, closer rune) bool {
 
 // endsWithPredicate は _END_BRACKET_AFTER_PREDICATE.search(text, pos, endpos) が合うか。`$` は endpos の手前の最後の改行の前にも合うので、正規表現を通す。
 func endsWithPredicate(text []rune, pos, endpos int) bool {
-	m, err := endBracketAfterPredicate.get().Search(pyre.NewText(pyunicode.FromRunes(text)), pos, endpos)
+	m, err := endBracketAfterPredicate.Get().Search(pyre.NewText(pyunicode.FromRunes(text)), pos, endpos)
 	if err != nil {
 		panic(err)
 	}
@@ -208,7 +208,7 @@ func decorationBreaks(sentence string) []string {
 		return nil
 	}
 	text := pyre.NewText(sentence)
-	runs, err := endBreakRun.get().Finditer(text, 0, len(rs))
+	runs, err := endBreakRun.Get().Finditer(text, 0, len(rs))
 	if err != nil {
 		panic(err)
 	}
@@ -251,7 +251,7 @@ func decorationBreaks(sentence string) []string {
 }
 
 func endContinuesAt(text pyre.Text, pos int) bool {
-	m, err := endBreakContinuesPattern.get().Match(text, pos, text.Len())
+	m, err := endBreakContinuesPattern.Get().Match(text, pos, text.Len())
 	if err != nil {
 		panic(err)
 	}

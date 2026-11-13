@@ -180,7 +180,7 @@ func literalAlternationPlain(words []string) string {
 
 // thinMatch は本家の _v220_thin_match (thin_evaluation の正規表現を文の先頭から当てる)。
 func thinMatch(sentence string) *pyre.Match {
-	m, err := v220Patterns().thin.get().Match(pyre.NewText(sentence), 0, pyre.NoEnd)
+	m, err := v220Patterns().thin.Get().Match(pyre.NewText(sentence), 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}

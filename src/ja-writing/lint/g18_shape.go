@@ -81,7 +81,7 @@ func copyCommaNounSentence(sentence string) bool {
 
 // fullMatch は p.fullmatch(text) が当たるか。
 func fullMatch(p *lazyPattern, text string) bool {
-	m, err := p.get().FullMatch(pyre.NewText(text), 0, pyre.NoEnd)
+	m, err := p.Get().FullMatch(pyre.NewText(text), 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -111,7 +111,7 @@ func bareVerbChainSentence(sentence string) bool {
 
 // shapeGatePositions は文書の元の文字で、3 規則のどれかに当たりうる所の始まり (コードポイントの位置)。
 func (s *lintState) shapeGatePositions() []int {
-	matches, err := shapeCommaGate.get().Finditer(pyre.NewText(s.an.Text), 0, pyre.NoEnd)
+	matches, err := shapeCommaGate.Get().Finditer(pyre.NewText(s.an.Text), 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}

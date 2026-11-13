@@ -14,37 +14,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"strings"
-	"syscall"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pycli"
 	"ja-writing/visibility"
 )
 
-// 終了コード (本家の argparse の定義): 0 は検査を最後まで実行し条件に当たらない・1 は --strict か --fail-on の条件に当たった・2 は使い方か入力の誤り・3 は内部の誤りか出力先が閉じた。
-const (
-	exitHit      = 1
-	exitInternal = 3
-	// exitLateFlush は Python が終わり際に標準出力・標準エラーを書き出せなかったときの終了コード (Py_FinalizeEx の失敗で 120)。
-	exitLateFlush = 120
-)
-
-// lateFlushError は、本家では書き込みが終わり際の flush まで遅れる出力 (-h・--version・使い方の誤り。どれも本家は自分で flush せずに終わる) が、
-// 読む側の閉じたパイプで書けなかったこと。本家はこのとき main の BrokenPipeError を通らず、インタプリタが rc 120 で終わる (stdout なら 2 行の知らせを出す)。
-type lateFlushError struct{ stream string }
-
-func (e lateFlushError) Error() string { return e.stream + " の書き出しの失敗 (終わり際)" }
-
-// atExit は、本家で終わり際の flush まで遅れる書き込みの誤りを lateFlushError にする。EPIPE 以外 (ENOSPC など) はそのまま返す。
-func atExit(stream string, err error) error {
-	if errors.Is(err, errOutputClosed) {
-		return lateFlushError{stream}
-	}
-	return err
-}
+// exitHit は --strict か --fail-on の条件に当たったときの終了コード (0 は当たらない・2 は使い方か入力の誤り・3 は内部の誤りか出力先が閉じた。pycli に共通の値)。
+const exitHit = pycli.ExitHit
 
 // Main は subcommand の入口 (本家の main)。
 func Main(_ context.Context, env cmdenv.Env) int {
@@ -52,52 +31,15 @@ func Main(_ context.Context, env cmdenv.Env) int {
 	if err == nil {
 		return code
 	}
-	var late lateFlushError
-	if errors.As(err, &late) {
-		if late.stream == "stdout" {
-			eprintln(env, "Exception ignored while flushing sys.stdout:\nBrokenPipeError: [Errno 32] Broken pipe")
-		}
-		return exitLateFlush
-	}
-	// 本家の BrokenPipeError と、ほかの例外 (rc 3)。文面の細部 (トレースバック) は揃えない。
-	var internal *visibility.Error
-	if errors.As(err, &internal) {
-		eprintln(env, fmt.Sprintf("%s: 内部エラー: %s: %s", prog, internal.Type, internal.Message))
-	} else if errors.Is(err, errOutputClosed) {
-		eprintln(env, prog+": 出力先が閉じられたため、結果を最後まで書けませんでした。")
-	} else {
-		eprintln(env, fmt.Sprintf("%s: 内部エラー: %v", prog, err))
-	}
-	return exitInternal
+	return pycli.Finish(env, prog, err)
 }
 
-var errOutputClosed = errors.New("output closed")
+func eprintln(env cmdenv.Env, message string) { pycli.Eprintln(env, message) }
 
-// eprintln は標準エラーに 1 行書く (書けなくても何もしない。本家の _error)。
-func eprintln(env cmdenv.Env, message string) { _, _ = io.WriteString(env.Stderr, message+"\n") }
+func printTo(env cmdenv.Env, text string) error { return pycli.PrintTo(env, text) }
 
-// printTo は標準出力に書く。書けなかった誤りは writeError で分ける。
-func printTo(env cmdenv.Env, text string) error { return writeTo(env.Stdout, text) }
-
-// usageTo は parser.error の文を標準エラーに書く。書けなかったら、本家と同じく rc 2 でなく終わり際の失敗 (lateFlushError) にする
-// (本家の _error が書けなくても黙って rc 2 を返すのとは別)。
 func usageTo(env cmdenv.Env, message string) (int, error) {
-	if err := writeTo(env.Stderr, usageError(message)); err != nil {
-		return 0, atExit("stderr", err)
-	}
-	return cmdenv.ExitUsage, nil
-}
-
-// writeTo は w に書き、書けなかった誤りを本家の main の分け方で返す: 読む側が閉じた (EPIPE。本家の BrokenPipeError) は errOutputClosed、
-// ほか (ENOSPC など。本家は OSError の内部エラー) はその誤り。EPIPE を受けるには、入口 (main.go) が SIGPIPE を Notify で受けている必要がある。
-func writeTo(w io.Writer, text string) error {
-	if _, err := io.WriteString(w, text); err != nil {
-		if errors.Is(err, syscall.EPIPE) {
-			return errOutputClosed
-		}
-		return err
-	}
-	return nil
+	return pycli.UsageTo(env, usageText, prog, message)
 }
 
 // lintFunc は検査の本体 (lintText)。run に引数で渡すのは、候補を出す群が入るまでの間も、rc と終了コードの行の配線を注入した候補で確かめるため。
@@ -111,10 +53,10 @@ func run(env cmdenv.Env, lint lintFunc) (int, error) {
 		return usageTo(env, string(perr))
 	}
 	if o.help {
-		return 0, atExit("stdout", printTo(env, helpText))
+		return 0, pycli.AtExit("stdout", printTo(env, helpText))
 	}
 	if o.version {
-		return 0, atExit("stdout", printTo(env, fmt.Sprintf("%s %s (JSON format %d)\n", prog, toolVersion, formatVersion)))
+		return 0, pycli.AtExit("stdout", printTo(env, fmt.Sprintf("%s %s (JSON format %d)\n", prog, toolVersion, formatVersion)))
 	}
 	names, problem := failConditions(o.conditions)
 	if problem != "" {
@@ -153,7 +95,7 @@ func run(env cmdenv.Env, lint lintFunc) (int, error) {
 			return cmdenv.ExitUsage, nil
 		}
 	}
-	content, problem := readInput(env, o.file)
+	content, _, problem := pycli.ReadInput(env, o.file)
 	if problem != "" {
 		eprintln(env, problem)
 		return cmdenv.ExitUsage, nil
@@ -230,7 +172,7 @@ func failConditions(raw []condition) (names []string, problem string) {
 		}
 		pieces := 0
 		for _, piece := range strings.Split(c.value, ",") {
-			piece = failOnWord(piece)
+			piece = pycli.FailOnWord(piece)
 			if piece == "" {
 				continue
 			}
@@ -253,28 +195,4 @@ func failConditions(raw []condition) (names []string, problem string) {
 		return nil, fmt.Sprintf("--fail-on に使えない値です: %s。lint で使えるのは warn と error です。", unknown[0])
 	}
 	return names, ""
-}
-
-// readInput は本家の _read_input。ファイルか標準入力を読み、(文字列, "") か ("", 誤りの文) を返す。
-func readInput(env cmdenv.Env, file *string) (string, string) {
-	if file != nil && *file != "-" {
-		data, err := os.ReadFile(*file)
-		if err != nil {
-			return "", fmt.Sprintf("Error opening file %s: ファイルを開けません（%s）", *file, visibility.OSErrorReason(*file, err))
-		}
-		text, _, derr := visibility.DecodeSourceBytes(data)
-		if derr != nil {
-			return "", fmt.Sprintf("Error opening file %s: UTF-8 として読めません", *file)
-		}
-		return text, ""
-	}
-	data, err := io.ReadAll(env.Stdin)
-	if err != nil {
-		return "", fmt.Sprintf("Error reading stdin: 標準入力を読めません（%s）", visibility.OSErrorReason("", err))
-	}
-	text, _, derr := visibility.DecodeSourceBytes(data)
-	if derr != nil {
-		return "", "Error reading stdin: UTF-8 として読めません"
-	}
-	return text, ""
 }
