@@ -5,7 +5,7 @@
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
 lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
-`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標は本家と同じ。40 規則は 1075 の続きの群 G1〜G20 で足すので、いまは候補が出ない)。ほかの subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す (diff は 1076、check と hook は 1077 で実装する)。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。ほかの subcommand は `まだ実装していません` と標準エラーに出して rc 2 を返す (diff は 1076、check と hook は 1077 で実装する)。
 
 ## 構成
 
@@ -197,7 +197,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 
 ### 本家との突き合わせ (`lint/oracle_test.go`・`testdata/golden/lint-base.json`)
 
-`oracle.LintBaseCases` が土台の関数への呼び出し (484,515 回。456 case) を作り、`make golden` (`-only lint-base` で約 15 秒) が本家に通して、呼び出しごとの結果の digest を記録する。形は `visibility.json` と同じ。
+`oracle.LintBaseCases` が土台と各群の関数への呼び出し (494,482 回。803 case) を作り、`make golden` (`-only lint-base` で約 15 秒) が本家に通して、呼び出しごとの結果の digest を記録する。形は `visibility.json` と同じ。
 `analysis` を取る関数は、`markdown_visibility.analyze_markdown` の結果を `save` し、`Ref` で渡す (結果の記録は要らないので、driver の `quiet` で digest を 8 つの 0 にする)。
 
 | 入力 | 中身 |
@@ -218,7 +218,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 ## lint の骨組みと群の足し方 (`lint/`。issue 1075 の T4)
 
 `ja-writing lint` は動く (`lint.Main`)。引数と終了コードは本家の argparse と `_run` の確かめる順 (`--version` → 条件 → 種類と読者 → words の同時指定 → 語の一覧 → 入力のパス → 入力を読む) をそのまま写し、text と `--json` (format_version 2・鍵の順・`indent=2`・`ensure_ascii`) の出力も本家と同じ。
-検出する規則は 0 (40 規則は群 G1〜G20 として別のセッションが足す) なので、いまは候補が 1 件も出ない。文書の指標 (`metrics`) と語の一覧の `context` は本家と同じ値を出す。
+40 規則は群 G1〜G20 が全部入っている (`implementedRules` が全部 true)。文書の指標 (`metrics`) と語の一覧の `context` も本家と同じ値を出す。
 
 | ファイル | 中身 |
 |---|---|
@@ -226,7 +226,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 | `args.go`・`help.txt` | argparse の写し (`parseArgs`・`usageError`)。`-h` の文面は本家が出したものをそのまま持つ (`help.txt`) |
 | `lint_text.go` | `lintText` (本家の `lint_text` 5512-5988)・`detect` (検出まで)・`eachRow` (行のループ)・`beginRow`・`bodySteps` |
 | `post.go`・`result.go`・`rules.go` | 検出の後 (種類で外す・allow・ダッシュの上限・点数・件数)・出力 (`--json` の値・text の `renderReport`)・規則の表 (規則 → 群・種類ごとの扱い・実装済みの規則) |
-| `g01_metrics.go` ほか `g02`〜`g20` | 群ごとの検出の口。G1 の指標 (`metricsAndListGate`) と G8 の窓 (`g08Window`) は骨組みが使うので中身がある。ほかは空 |
+| `g01_metrics.go` ほか `g02`〜`g20` | 群ごとの検出 (全部入っている)。G1 の指標 (`metricsAndListGate`) と G8 の窓 (`g08Window`) は骨組みも使う。G14 は `g14_calque.go` (型 1〜5・calque の message・手掛かりの行の絞り込み)・`g14_label.go` (metaphor_label)・`g14_lists.go` (一覧と手掛かりの語の正規表現)・`g14_tables.go` (本家が組み終えた表) |
 
 ### 群を足す人へ
 
@@ -246,19 +246,19 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 3. **`rules.go` の `implementedRules` の自分の規則を `true` にする**。検出を、本家の検出の生の並び (`testdata/golden/lint-raw.json`) と規則で絞って突き合わせるテスト (`TestRawFindingsMatchPythonRecording`) が、true の規則だけを比べる (入っていない規則の候補を Go が出すと落ちる)。
    群どうしの依存 (G11 → G9・G14 → G8・G17 → G13) は、依存先の規則が全部 true になるまで依存元を true にできない (`TestImplementedRulesRespectGroupDependencies`)。
    40 規則が全部 true になると、`TestCLIMatchesPythonRecording` が CLI の記録 (全ファイル × 種類・読者・語の一覧・text と `--json` の出力の全体と rc。8,072 件) を全件比べる段に切り替わる (stdout は SHA-256 の先頭 16 字と長さ・stderr は全文・rc)。
-   入っている群: G3 (`bold_not_rendered`。`g03Bold`)・G13 (`pause_comma`。`g13PauseComma` が `lint/pausecomma` を呼ぶ)。
-4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにある。G14 の `calqueMessage` だけは、群が入るまで呼ばれたら panic する。群を入れるとき、本家の message の組み立てをそこに書く。
+   入っている群: G1〜G20 の全部 (G3 の `bold_not_rendered` は `g03Bold`、G13 の `pause_comma` は `g13PauseComma` が `lint/pausecomma` を呼ぶ)。
+4. allow.txt で語を一部だけ外したときに message を作り直す関数 (`calqueMessage` (G14)・`renyoMessage` (G15)・`aiPhraseMessage` (G16)・`projectTermMessage` (G20)) は、その群のファイルにある。
 5. 記録に足りない入力の形 (地図 4.3 節) は、`oracle/lintrawgap.go` の `lintRawGapInputs` に足す (検出の生の並びの記録 `lint-raw.json` にだけ入る。`rawgap/` の下に置かれ、全部の文脈で通る)。
    入力の集まり (`testdata/corpus/`) に足すと、lint-base・visibility・lint-cli・lint-raw の記録が全部変わる。足したら `go run ./oracle/cmd/golden -only lint-raw` で作り直し、既存の行が変わっていないことを差分で読む。
-   いま足してある入力: `SLOP_WORDS` のうち入力の集まりに 1 回も出ない 5 語・`METAPHOR_VERB_PATTERNS` の同じ 5 型・`heading_colon`・`redundant_bracket` の 5 つの補足・`count_declaration` の 2 型 × 数字の書き方・`dialogue_period`。群を入れる人は、自分の群の表に入力の集まりで当たらない項目が残っていないかを、本家の表と入力の集まりの全文で数えて確かめる (`ai_phrase`・`calque`・`katakana_term`・`shape`・スライドの表の当たらない項目は未測定)。
+   足した入力は `lintRawGapInputs` の注釈を読む (G1〜G20 の境目と、入力の集まりで当たらない語・型の項目を 1 行ずつ。G14 の分は `lintrawgap_g14.go`)。群を入れる人は、自分の群の表に入力の集まりで当たらない項目が残っていないかを、本家の表を 1 項目ずつ外した結果の比べで数えて確かめる (G14 は 1,085 項目を数え、等価な 319 項目の理由は issue 1075)。
 
 ### 本家との突き合わせ (T4)
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
-| `lint-cli.json` (8,072 件) | 入力の集まり 332 ファイル × (`--json`・`--doc-type` 13 種・`--words`・`--no-words`・text・`--strict`・`--fail-on` の組) と、誤りの呼び出し・標準入力・作業フォルダを変えた語の一覧の探し方の 95 件。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc | `TestCLIMatchesPythonRecording` (検出の生の並びが空の入力 3,777 件と、検査まで進まない呼び出し。40 規則が入るまで) |
-| `lint-raw.json` (2,704 件) | 全ファイルと足した入力 6 つ (`rawgap/`) × 8 つの文脈 (種類なし・essay・slides・promo・script・minutes・article・語の一覧) の、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む。「規則:行:digest」の列) と、文書の指標 (`metrics`) の digest | `TestRawFindingsMatchPythonRecording` (指標は全件、候補は入った規則だけ)・`TestEveryRuleHasHitsInRawRecording` (40 規則全部に当たる入力がある)・`TestGapInputsHitInRawRecording` (足した入力が語・型ごとに 1 件当たる) |
-| `lint-post.json` (85 件) | 本家の `lint_text` の検出を、作った候補に差し替え (driver が `_project_term_findings` を包む)、種類で外す・allow・ダッシュの上限・点数・件数・context・`--json` の形・`render_report` だけを本家のまま走らせた結果。`--json` は鍵を並べ直さない出力の digest も持つ (鍵の順の違いは正規の JSON の digest では見えない) | `TestPostProcessingMatchesPythonRecording` (検出の群が入る前に、候補のある入力で後処理と出力を確かめる唯一の比較。`allow-partial|` の 8 件は、allow で語の一部だけを外して message を作り直す形で、その規則の群が入るまで Go の側は比べない) |
+| `lint-cli.json` (8,072 件) | 入力の集まり 332 ファイル × (`--json`・`--doc-type` 13 種・`--words`・`--no-words`・text・`--strict`・`--fail-on` の組) と、誤りの呼び出し・標準入力・作業フォルダを変えた語の一覧の探し方の 95 件。stdout は SHA-256 の先頭 16 字と長さ、stderr は全文、rc | `TestCLIMatchesPythonRecording` (40 規則が全部入ったので全 8,072 件を比べる。検出の生の並びが空の入力だけを比べる段は終わった) |
+| `lint-raw.json` (3,232 件) | 全ファイルと足した入力 72 (`rawgap/`) × 8 つの文脈 (種類なし・essay・slides・promo・script・minutes・article・語の一覧) の、種類・allow・ダッシュの上限で外す前の候補 (内部の欄を含む。「規則:行:digest」の列) と、文書の指標 (`metrics`) の digest | `TestRawFindingsMatchPythonRecording` (指標は全件、候補は入った規則だけ)・`TestEveryRuleHasHitsInRawRecording` (40 規則全部に当たる入力がある)・`TestGapInputsHitInRawRecording` (足した入力が語・型ごとに 1 件当たる) |
+| `lint-post.json` (85 件) | 本家の `lint_text` の検出を、作った候補に差し替え (driver が `_project_term_findings` を包む)、種類で外す・allow・ダッシュの上限・点数・件数・context・`--json` の形・`render_report` だけを本家のまま走らせた結果。`--json` は鍵を並べ直さない出力の digest も持つ (鍵の順の違いは正規の JSON の digest では見えない) | `TestPostProcessingMatchesPythonRecording` (検出の群が入る前に、候補のある入力で後処理と出力を確かめる唯一の比較。`allow-partial|` の 8 件は、allow で語の一部だけを外して message を作り直す形で、群が全部入ったので全件比べる) |
 
 - 記録の driver は 3 つ (`oracle/py/record_lint_cli.py`・`record_lint_raw.py`・`record_lint_post.py`)。CLI の driver は 1 つの Python のプロセスの中で `main(argv)` を何度も呼ぶ (stdin・stdout・stderr は 1 回ごとに作り直し、作業フォルダの実パスは `<<ROOT>>` に戻す)。
   `go run ./oracle/cmd/golden -only lint-cli|lint-raw|lint-post` で 1 つずつ作り直せる (それぞれ約 40 秒・10 秒・数秒)。
