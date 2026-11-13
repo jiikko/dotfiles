@@ -18,12 +18,22 @@ func diffHeadingStageCalls(old, new string) []Call {
 	withShapes.ArgsOutOnly = []int{2}
 	withShapes.Keep = len(old)+len(new) < 3000
 	plain := dcall("_heading_structure", ref(1), ref(0, "hunks"))
-	return []Call{build, withShapes, plain}
+	pairs := dcall("_sentence_pairs", ref(1), ref(0))
+	pairs.Keep = len(old)+len(new) < 600
+	bodies := func(side int) Call {
+		c := dcall("_all_bodies", ref(1), side)
+		c.Keep = len(old)+len(new) < 600
+		return c
+	}
+	return []Call{build, withShapes, plain, pairs, bodies(0), bodies(1)}
 }
+
+// diffDoc は行を改行でつないだ文書 (末尾に改行を付ける)。
+func diffDoc(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
 
 // diffHeadingCases は見出しの段の手書きの組と固定の種の組 (名前は heading/ を付けて case にする)。
 func diffHeadingCases() []diffFullCase {
-	doc := func(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
+	doc := diffDoc
 	numbered := func(n int, format string) []string {
 		lines := make([]string, n)
 		for i := range lines {

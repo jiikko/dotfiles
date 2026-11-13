@@ -141,6 +141,18 @@ func invokeStage(t *testing.T, c oracle.Call, build []any) pyjson.Value {
 			return list
 		}
 		return replay.SortKeys(replay.List(list, replay.List(replay.MapList(shapes, HeadingShape.Value))))
+	case "_sentence_pairs":
+		v, err := SentencePairs(orig, rw)
+		if err != nil {
+			t.Fatalf("_sentence_pairs: %v", err)
+		}
+		return replay.SortKeys(v)
+	case "_all_bodies":
+		v, err := AllBodies(orig, rw, c.Args[1].(int))
+		if err != nil {
+			t.Fatalf("_all_bodies: %v", err)
+		}
+		return v
 	}
 	t.Fatalf("段 %s を Go に持っていない", c.Function)
 	return nil
@@ -338,5 +350,48 @@ func TestHeadingStageRecordingHitsEveryOutput(t *testing.T) {
 		if !hit {
 			t.Errorf("見出しの段の記録に、%q を含む文が無い (その枝が記録に当たらない)", part)
 		}
+	}
+}
+
+// 群 L の段は、まとめた hunk の並び (hunks を持つ組)・1 行対 1 行の組・伏せる範囲を除いた文 (text が raw と違う) が記録に現れる。
+func TestSentenceStageRecordingHitsEveryBranch(t *testing.T) {
+	g, _ := loadBase(t)
+	merged, single, masked, unmasked := 0, 0, 0, 0
+	for _, c := range g.Cases {
+		for _, k := range c.Kept {
+			var v []any
+			if json.Unmarshal(k.Result, &v) != nil {
+				continue
+			}
+			for _, e := range v {
+				switch x := e.(type) {
+				case map[string]any:
+					if _, ok := x["hunks"]; ok {
+						merged++
+					}
+					if pairs, ok := x["pairs"].([]any); ok && len(pairs) == 1 {
+						if old, ok := x["old"].([]any); ok && len(old) == 1 {
+							single++
+						}
+					}
+				case []any:
+					if len(x) < 2 {
+						continue
+					}
+					text, ok1 := x[0].(string)
+					raw, ok2 := x[1].(string)
+					if len(x) == 4 && ok1 && ok2 {
+						if text != raw {
+							masked++
+						} else {
+							unmasked++
+						}
+					}
+				}
+			}
+		}
+	}
+	if merged == 0 || single == 0 || masked == 0 || unmasked == 0 {
+		t.Errorf("文の組の段の記録に当たらない枝がある: まとめた並び %d・1 文ずつの組 %d・伏せた文 %d・伏せない文 %d", merged, single, masked, unmasked)
 	}
 }
