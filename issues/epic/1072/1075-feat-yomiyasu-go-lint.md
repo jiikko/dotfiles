@@ -305,3 +305,17 @@
 - 記録の作り直しは `-only lint-raw` と `-only lint-post` だけ。`lint-cli.json` は入力が変わらないので作り直していない (rawgap の入力は CLI の case に入らない)。
 - わざと壊した 13 本 (P2-1・2・3・5・6・7・8・9・10 と P2-4 を 3 字に縮めたもの・P3-2 の 11 本、P3-1 の飛ばしを戻したもの、等価と判断した P2-4 の 5 字) のうち、12 本が想定の検査 (`TestRawFindingsMatchPythonRecording` の該当入力・`TestPostProcessingMatchesPythonRecording` の該当 case・`TestCLIMatchesPythonRecording` の件数の検査) で red、等価の 1 本は green。ログは tmp/yomiyasu-gap-2026-11-12/lint-groups/g14/fix-mut-*.log。
 - 未確認 (レビューの記録): 生成器が本家の字面から語を作るので、人の自然な文でしか通らない分岐 (「全〇〇に響く」で主語の終わりが「全〇〇」より前にある細かい形など) を取りこぼしている可能性。比べた Python は手元の 3.15.0 だけで、記録を作ったバージョンと同じ答えかは確かめていない (記録の作り直しは同じバージョンで通った)。
+
+### production 到達不能の検査 (make test-unused-excluding-tests) の赤を直した (2026-11-13)
+
+- 278882a82 から 6 回続けて赤だった (CI の Tests。`src/ja-writing/lint` の 52 件)。原因は、群を入れる間 `make -C src/ja-writing lint test` だけを回し、repo の root の `make test-unused-excluding-tests` (staticcheck の U1000 を `-tests=false` で回す。module の lint にもテストにも入らない) を手元で回していなかったこと。手元で回すと同じ 52 件が出た。
+- 直した中身 (6 commit)。allowlist は使わなかった。
+  - G14 の定数 5 個 (`calquePersonEnd`・`kikuLiteral`・`publicationWords`・`calqueStyleContextPattern`・`calqueSubjects`): 本番の正規表現が同じ中身を別に写して持ち、定数は本家と比べる値としてだけ在った。本家と同じく定数から組む形にして写しを 1 つにした (`calqueSubjectWord`・`calqueTech`・`calquePersonSubject`・`calquePersonExt`・`calqueVersionPub`・`calqueStyleContext`・罫の手掛かり・`kikuRE`・`calqueMattersFocus`・`translatedTermPatterns` の `_VERSION_DEMONSTRATIVE` の行)。`kikuLiteral` は本家と同じく `kikuLiteralNear` と `kikuLiteralSoftware` に分けた (`context_near` は前者だけを使う)。
+  - 絵文字の 2 個 (`emojiFlagPattern`・`emojiPatternText`): 本番は正規表現で照合しないので、テストだけが使う。`emoji_pattern_test.go` へ移した。
+  - 候補の内部の欄を記録と比べる値にする 5 個 (`internalValue` ほか): `finding_internal_test.go` へ移した。
+  - G1〜G10・G14〜G20 の空の `gNNState` と `lintState` の欄、何も呼ばない `g08Prepare`、欄の重なりを見る `TestGroupStatesAreSeparateFields` と `groupStates`: 並行して群を入れるときに欄がぶつからないための足場で、40 規則が入った今は役目を終えたので消した。
+  - `implementedRules`・`groupDependencies`・`sortedRules`: 消した。守っていたのは「依存先の群が入るまで依存元の規則を true にしない」という入れる順だけで、全部が入って true にする表も無くなった。raw の比べは 40 規則の全部を検出の順のまま比べる形になり、規則の表にない規則の候補が出たら落ちる・規則ごとに 1 件以上比べる、は残した (`TestRawFindingsMatchPythonRecording`)。`ruleGroup` は規則 ID の集合の一覧として `rules_test.go` へ移した。`findingsOf` もテストへ移した。
+  - 重複の検査 (`make test-dupscan-gate`) が、直した後の `calqueSubjectWord` と `calqueTech` の組み立ての写しを止めたので、`calqueSubjectPattern` に寄せた。
+- G14 の定数 5 個の結論: 本番の値と比べる値は、どちらも組んだ後の正規表現として本家の記録と比べられていたので、比べが完全に空振りしていたわけではない。ただし定数と本番の写しが別々に在ると、定数側だけを直しても本番が変わらず、定数の比べは本番を守らない写しを見ることになる。本家の死蔵の定数は無かった (5 個とも本家で `_CALQUE_SUBJECT_WORD` などの組み立てに使われている。`_CALQUE_PERSON_END` は 3452・3453 行、`_KIKU_LITERAL` は 1255・1270・3679 行、`_PUBLICATION_WORDS` は 989・4451 行、`_CALQUE_STYLE_CONTEXT_PATTERN` は 4479・4521 行、`_CALQUE_SUBJECTS` は 3447・3556 行)。
+- わざと壊した本数: G14 の定数 5 本 (`calquePersonEnd`・`kikuLiteral`・`publicationWords`・`calqueStyleContextPattern`・`calqueSubjects` の中身を 1 字変える。どれも `TestLintBaseMatchesPythonRecording` が red) と、規則の足場の撤去 4 本 (`g20ProjectTermFindings` の呼び出しを外す → `TestRawFindingsMatchPythonRecording` が red・規則 ID を表にないものに変える → 「規則の表にない」で red・`ruleGroup` から 1 規則を外す → `TestEveryRuleHasHitsInRawRecording` が red・`projectTermMessage` を壊す → `TestPostProcessingMatchesPythonRecording` が red)。9 本とも想定の検査で red。
+- 確かめていない: 手で回した検査が CI より狭い範囲か (CI の Tests の run は push 後に見る)。移した関数 (`emojiFlagPattern` ほか) は挙動を変えない移動なので、わざと壊す確認はしていない (移した先のテストが緑のまま通ること・staticcheck が報告しなくなったことだけ見た)。
