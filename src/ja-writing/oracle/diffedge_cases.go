@@ -1,5 +1,7 @@
 package oracle
 
+import "strings"
+
 // diffEdgeInput は CLI の記録に足す、分かれ目の入力 (群 AC の読点の増え・文書の組み立て)。args は --json --no-words の前に足す引数。
 type diffEdgeInput struct {
 	name, old, new string
@@ -122,5 +124,13 @@ func diffEdgeInputs() []diffEdgeInput {
 		{"d-hedge-quiet-hq3-0", "前の文です。\n原因はの範囲では設定と思われる。\n", "前の文です。\nたぶん原因は設定。\n", []string{}},
 		{"d-hedge-quiet-hq3-1", "前の文です。\n原因は示唆する設定と思われる。\n", "前の文です。\nたぶん原因は設定と推測される。\n", []string{}},
 		{"d-hedge-quiet-hq3-2", "前の文です。\nもしかすると原因はの範囲では設定と思われる。\n", "前の文です。\n原因は設定と推測される。\n", []string{}},
+		{"r-eol", reportMixed, strings.ReplaceAll(reportMixed, "\n", "\r\n"), []string{}},
+		{"r-bom", reportMixed, "\ufeff" + reportMixed, []string{}},
+		{"r-final-newline", strings.TrimSuffix(reportMixed, "\n"), reportMixed, []string{}},
+		{"r-midline-bom", "設定を変えます。\n", "設定を\ufeff変えます。\n", []string{}},
 	}
 }
+
+// reportMixed は、つながりの語・崩れた太字・文末の立場が混ざる文。人が読む出力の「書き直した文だけの候補」の節を出すかを、
+// 全文差分が 0 の組 (改行コード・BOM・末尾の改行だけが違う) で突く。
+const reportMixed = "これは**「重要」**です。\nまた、そのため結果が出ました。だから次も試します。\n"

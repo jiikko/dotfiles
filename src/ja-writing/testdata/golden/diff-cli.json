@@ -8146,6 +8146,14 @@
   {"name":"boundary/d-hedge-quiet-hq-2|","rc":0,"out":"1f5e1a73b4dffb74","len":4078,"err":"","n":4,"kinds":["endings:changes","hunk:replace","rule:lost_words","rule:markers","rule:type_changes","status:has_candidates","type_change:lost/推量"],"req":"d3ab94cea8dfa34d"},
   {"name":"boundary/d-hedge-quiet-hq3-0|","rc":0,"out":"320b860ce2bae429","len":3980,"err":"","n":3,"kinds":["endings:changes","hunk:replace","rule:lost_words","rule:type_changes","status:has_candidates","type_change:lost/推量"],"req":"68ca9ac4ff89177e"},
   {"name":"boundary/d-hedge-quiet-hq3-1|","rc":0,"out":"e2aaada1f1f02838","len":4102,"err":"","n":3,"kinds":["hunk:replace","rule:lost_words","rule:new_words","rule:spans","rule:type_changes","status:has_candidates","type_change:lost/推量"],"req":"d887088d7e662ef8"},
-  {"name":"boundary/d-hedge-quiet-hq3-2|","rc":0,"out":"3fad7a6dadbbed07","len":4154,"err":"","n":3,"kinds":["hunk:replace","rule:lost_words","rule:new_words","rule:spans","rule:type_changes","status:has_candidates","type_change:lost/推量"],"req":"ce5f0120bc24b943"}
+  {"name":"boundary/d-hedge-quiet-hq3-2|","rc":0,"out":"3fad7a6dadbbed07","len":4154,"err":"","n":3,"kinds":["hunk:replace","rule:lost_words","rule:new_words","rule:spans","rule:type_changes","status:has_candidates","type_change:lost/推量"],"req":"ce5f0120bc24b943"},
+  {"name":"boundary/r-eol|","rc":0,"out":"df32017bc7c48a9c","len":3254,"err":"","n":0,"kinds":["encoding_notes","rule:bold","rule:logic","status:changed_without_candidates"],"req":"26feb6dd6268c980"},
+  {"name":"boundary/r-eol|text","rc":0,"out":"bdf69afecff79f6e","len":721,"err":"","n":null,"req":"26feb6dd6268c980"},
+  {"name":"boundary/r-bom|","rc":0,"out":"96c9d7c9d7f479d4","len":3253,"err":"","n":0,"kinds":["encoding_notes","rule:bold","rule:logic","status:changed_without_candidates"],"req":"7d19d4c022e14cc3"},
+  {"name":"boundary/r-bom|text","rc":0,"out":"5241b2244d13d1b1","len":676,"err":"","n":null,"req":"7d19d4c022e14cc3"},
+  {"name":"boundary/r-final-newline|","rc":0,"out":"fee9fbb7edc78d17","len":3188,"err":"","n":0,"kinds":["rule:bold","rule:logic","status:changed_without_candidates"],"req":"e2d8b8ad66504d55"},
+  {"name":"boundary/r-final-newline|text","rc":0,"out":"687f89a1df875532","len":679,"err":"","n":null,"req":"e2d8b8ad66504d55"},
+  {"name":"boundary/r-midline-bom|","rc":0,"out":"d2303dd2521ddf13","len":3189,"err":"","n":0,"kinds":["hunk:replace","hunk:whitespace_only","status:changed_without_candidates"],"req":"4a6770779bf939bf"},
+  {"name":"boundary/r-midline-bom|text","rc":0,"out":"0580a6cc9b1dd8a0","len":628,"err":"","n":null,"req":"4a6770779bf939bf"}
 ]
 }
