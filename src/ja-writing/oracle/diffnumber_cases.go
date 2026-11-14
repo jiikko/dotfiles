@@ -166,6 +166,12 @@ func diffNumberHandPairs() []diffFullCase {
 		{name: "ratio-bound", old: doc("甲は3日。", "乙の長い説明の文です。移行は5日かかる。"), new: doc("移行は5日かかる。", "甲は4日。")},
 		{name: "empty-old", old: "", new: doc("移行は3日。")},
 		{name: "empty-new", old: doc("移行は3日。"), new: ""},
+		{name: "ichiji-after-word-char", old: doc("夜一時に集まる。朝一時十分に出る。"), new: doc("夜二時に集まる。朝二時十分に出る。")},
+		{name: "jippun-ma-ni-au", old: doc("十分間に合います。"), new: doc("十分間かかります。")},
+		{name: "whole-period-year-to-year", old: doc("年一年と暖かくなる。"), new: doc("年ごとに暖かくなる。")},
+		{name: "kana-strict-kokonotsu", old: doc("ここのつくりを見る。いつつくる。"), new: doc("ここのつくりを見る。")},
+		{name: "weak-repeated-one", old: doc("一つ1つ確認する。"), new: doc("順に確認する。")},
+		{name: "weak-repeated-two", old: doc("1つ1つ確認する。"), new: doc("順に確認する。")},
 		{name: "crlf", old: "移行は3日で終える。\r\n試験は5人。\r\n", new: "移行は5日で終える。\r\n試験は5人。\r\n"},
 	}
 }
