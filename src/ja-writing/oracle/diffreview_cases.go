@@ -530,6 +530,7 @@ func diffReviewCoveredCalls() []Call {
 	}
 	order := number("order", 2, 2, map[string]any{"old_order": []any{"1", "2"}, "new_order": []any{"2", "1"}})
 	orderOther := number("order", 2, 2, map[string]any{"old_order": []any{"2", "1"}, "new_order": []any{"1", "2"}})
+	orderNewOther := number("order", 2, 2, map[string]any{"old_order": []any{"1", "2"}, "new_order": []any{"1", "2"}})
 	orderLine := number("order", 9, 2, map[string]any{"old_order": []any{"1", "2"}, "new_order": []any{"2", "1"}})
 	removed := func(line int, items ...any) map[string]any {
 		return number("lost", line, nil, map[string]any{"removed": items, "added": []any{}})
@@ -549,6 +550,7 @@ func diffReviewCoveredCalls() []Call {
 		{tok("[1, 2]", "b3"), tok("[2, 1]", "b4"), []any{order}},
 		{tok("[1, 2]", "b3"), tok("[2, 1]", "b4"), []any{orderOther}},
 		{tok("[1, 2]", "b3"), tok("[2, 1]", "b4"), []any{orderLine}},
+		{tok("[1, 2]", "b3"), tok("[2, 1]", "b4"), []any{orderNewOther}},
 		{tok("[1, 2]", "b3"), tok("[2, 1]", "b4"), []any{other, order}},
 		{tok("(Smith, 2019)", "b5"), tok("(Smith, 2020)", "b6"), nil},
 		{tok("(Smith, 2019)", "b5"), tok("(Smith, 2020)", "b6"), []any{replaced}},
