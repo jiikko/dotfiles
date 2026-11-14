@@ -321,4 +321,12 @@ fulldiff("fd-short-diff-leading-equal", [hunk(old_lines=["あ。" * 90 + "x"], n
 fulldiff("fd-short-diff-no-omit", [hunk(old_lines=["あ" * 170], new_lines=["い" * 170], segments=[["-", "あ" * 3], ["+", "い" * 3], ["-", "あ"]])])
 fulldiff("fd-short-diff-full", [hunk(old_lines=["あ。" * 90], new_lines=["あ。" * 90 + "い"], segments=[["+", "い"]])])
 
+# ---- 報告で緑のまま通った所 (敵対的レビュー) ----
+MIXED = "これは**「重要」**です。\nまた、そのため結果が出ました。だから次も試します。\n"
+real("eol-only-with-candidates", MIXED, MIXED.replace("\n", "\r\n"))
+real("bom-only-with-candidates", MIXED, "\ufeff" + MIXED)
+real("final-newline-only-with-candidates", MIXED.rstrip("\n"), MIXED)
+real("midline-bom", "設定を変えます。\n", "設定を\ufeff変えます。\n")
+risks("risk-unsupported-both-lines", risk("unsupported", "number", {"text": "42"}, old_line=1, new_line=3))
+
 json.dump({"cases": CASES}, sys.stdout, ensure_ascii=True, separators=(",", ":"))
