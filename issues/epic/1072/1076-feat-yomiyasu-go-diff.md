@@ -114,7 +114,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [x] 長い文書の所要を本家と Go の両方で測った数字がある (12 本目の「所要」の表。合否には使わない)
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A〜AD の全部が済み。AD は 12 本目で 16 本)
+- [x] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A〜AD の全部が済み。AD は 12 本目で 16 本、12 本目の敵対的レビューの後に 6 本)
 - [x] `make test-dupscan-gate` が通る (12 本目の最終の検査で rc 0)
 
 ## 関連ファイル
@@ -891,3 +891,34 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 #### 最終の検査 (12 本目)
 
 最後のコードと記録の編集 (b818a325d。以降はこの節を含む docs だけ。コメント 1 行を直した後の木で、この commit の前に回し直した) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf12/c2-lt.log・c2-un.log・c2-tl.log・c2-dup.log。docs の commit の木での回し直しは fin-*.log と fin*.rc)。
+
+### 12 本目の敵対的レビュー (opus。diff-wf12 の 471aae31a..763ee5f1d。群 AD。直したのは diff-wf12 の修正の係)
+
+壊していない木は、`--json` なしの CLI を本家と比べて食い違い 0 だった (前の本目の入力 13,156 回・新しい生成器 2 つの 10,500 組・`--words` 132 回・出力先が先に閉じる場合)。書式の丸め 160,800 通り・`visibleText` と `showLine` の全コードポイント・本家の定数の表 13 個も同じ。P1 は 0 件。壊した形を 135 本当てて、report の記録で緑だったのが 9 本、CLI の記録まで通して緑だったのが 5 本 (内訳は下の P2 の 2 本・答えが変わらない 2 本・CLI から届かない 1 本)。レビューの全文は tmp/yomiyasu-gap-2026-11-12/diff-wf12/redteam.md。
+
+指摘の扱い (本家の答えはレビューが示した入力を python で確かめ、Go の側は記録の作り直しで確かめた。記録は書き足しだけ。report は 159 → 164 case、CLI は 8,146 → 8,154 件で、既存の case は消えず・変わらない):
+
+| 指摘 (壊した形) | 扱い | 結果 |
+|---|---|---|
+| P2-1 `showsRewrittenOnly` の hunks > 0 の条件を外す (全文差分 0 の組で「規則の見直し候補」が出る) | 直した。report の記録の `real/eol-only-with-candidates`・`bom-only-with-candidates`・`final-newline-only-with-candidates` と、CLI の記録の `boundary/r-eol`・`r-bom`・`r-final-newline` (text も) | report・CLI とも red (`> 0` → `>= 0` も red) |
+| P2-2 `visibleNames` の U+FEFF を消す (`〔BOM〕` が `〔U+FEFF〕` になる) | 直した。`real/midline-bom` と `boundary/r-midline-bom` (text も) | report・CLI とも red |
+| P3-1 `unsupported` の「後の行があれば後の行だけを書く」を `if false` にする | 直した。`risk-unsupported-both-lines` (old_line=1・new_line=3)。CLI の diff は `unsupported` を作らないので、CLI の記録には足していない (check の 1077 が使うときに足す) | report で red |
+| P3-2 `oracle/diffactor_cases.go` のコメントが「Go は持たない」のまま。AD の表が本家の定数との突き合わせに入っていない | コメントを直した。表の突き合わせは足さない: 値は本家と全部同じで、39 項目を 1 つずつ書き換えると記録で落ちる (`heading_underline` は CLI の記録で落ちる) とレビューが示した。表だけを本家の定数と並べる試験は、同じ守りを二重に持つ。再提起するなら、表の値が記録に出ない項目 (書き換えても記録が緑のまま通るもの) を実測で示すこと | 採らない (コメントだけ) |
+| P3-3 受け入れ条件の「検出の群ごとに最低 1 つ…」のチェックが付いていない | 付けた | - |
+| `difl-tag` (insert と delete の hunk は片側が 0 行で、行数の判定が先に断る) | 採らない。答えが変わらない。再提起には、行数の判定を通り抜けて tag の違いで答えが変わる入力を本家で示すこと | - |
+| `comma-nil` (空の dict を作る経路が無い) | 採らない。CLI からも `diff()` からも届かない。再提起には、その経路を作る入力を示すこと | - |
+
+わざと壊した形 (`bin/mutate-verify-list`。commit した木 (7def5ce68) で最後に回し、本数はこの run から数えた。一覧と各ログは tmp/yomiyasu-gap-2026-11-12/diff-wf12/mut12b/): 6 本のうち 6 本が rc 0 (想定の検査で red)。
+
+| 壊した形 | 検査 | 落ちた case |
+|---|---|---|
+| `hunks-cond-off` (hunks > 0 の条件を外す) | `TestReportMatchesPythonRecording` | `real/final-newline-only-with-candidates` |
+| `hunks-cond-ge0` (`> 0` → `>= 0`) | 同上 | 同上 |
+| `bom-name-off` (U+FEFF の項目を消す) | 同上 | `real/bom-only-with-candidates`・`real/midline-bom` |
+| `unsupported-newline-off` (`if newLine != nil` → `if false`) | 同上 | `risk-unsupported-both-lines` |
+| `cli-hunks-cond-off` | `TestCLIMatchesPythonRecording` | `boundary/r-eol\|text`・`r-bom\|text`・`r-final-newline\|text` |
+| `cli-bom-name-off` | 同上 | `boundary/r-midline-bom\|text` |
+
+壊せなかったもの: 上の「壊していない木」の比べのとおり、本家と違う答えを返す入力は 0。所要: `go test -race` の `ja-writing/diff` は 61 秒 (最長は `TestRequestMatchesPythonRecording` の 27 秒。CI の上限 600 秒の十分下) で、race から外す試験は増やしていない。
+
+未確認リスク (レビューの報告のまま。確かめていない): 単独のサロゲートは CLI から届かない (11 本目の未確認リストの確かめで report と `diffDocument` の直接の比べは済み)。11 本目の `a-kanjikana`・`a-narrow-mod`・`a-swap-break` の 3 本が答えを変えないことは示していない。`report_value.go` の別の型を読む枝は記録で通っていない (本家の `diff()` が作らない型)。
