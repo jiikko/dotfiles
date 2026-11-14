@@ -34,6 +34,15 @@ var DiffNumberFunctions = []string{"extract_numbers", "_number_risks", "_plain_n
 // DiffNumberConstantNames は群 M の定数の名前 (Go の突き合わせが、この名前の Get を群 M の定数に回す)。
 func DiffNumberConstantNames() []string { return diffNumberConstants }
 
+// keepAdder は呼び出しを結果つきで (Keep) calls に足す関数を返す (関数の単位の記録の入力に使う)。
+func keepAdder(calls *[]Call) func(fn string, args ...any) {
+	return func(fn string, args ...any) {
+		c := dcall(fn, args...)
+		c.Keep = true
+		*calls = append(*calls, c)
+	}
+}
+
 // diffNumberStageCalls は組 1 つを、本家の _build_full_diff (覚える)・_sentence_pairs (覚える)・_number_risks と、両方の文書の extract_numbers に通す呼び出し。
 func diffNumberStageCalls(old, new string, keep bool) []Call {
 	build := dcall("_build_full_diff", old, new, nil)
@@ -332,11 +341,7 @@ var diffNumberRatios = [][2]string{
 // diffNumberStringCalls は数の下ごしらえの関数の呼び出し (結果そのものを記録に残す)。
 func diffNumberStringCalls() []Call {
 	var calls []Call
-	add := func(fn string, args ...any) {
-		c := dcall(fn, args...)
-		c.Keep = true
-		calls = append(calls, c)
-	}
+	add := keepAdder(&calls)
 	for _, s := range diffNumberDigits {
 		add("_plain_number", s)
 	}

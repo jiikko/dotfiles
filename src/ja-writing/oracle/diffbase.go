@@ -36,6 +36,10 @@ func init() {
 	DiffBaseFunctions = append(DiffBaseFunctions, diffToneConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, DiffNumberFunctions...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffNumberConstants...)
+	DiffBaseFunctions = append(DiffBaseFunctions, DiffNegationFunctions...)
+	DiffBaseFunctions = append(DiffBaseFunctions, diffNegationConstants...)
+	DiffBaseFunctions = append(DiffBaseFunctions, DiffSwapFunctions...)
+	DiffBaseFunctions = append(DiffBaseFunctions, diffSwapConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffRuleConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffModalConstants...)
@@ -235,7 +239,10 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	// 群 AA (勢い)
 	cases = append(cases, diffToneCases(pairs)...)
 	// 群 M (数値)
-	return append(cases, diffNumberCases(pairs)...), nil
+	cases = append(cases, diffNumberCases(pairs)...)
+	// 群 N (否定)・群 O (主語と目的語の入れ替え)
+	cases = append(cases, diffNegationCases(pairs)...)
+	return append(cases, diffSwapCases(pairs)...), nil
 }
 
 // diffEndingStrings は文末の関数に通す手書きの文 (1 つが 1 つの枝を狙う)。

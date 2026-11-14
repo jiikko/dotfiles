@@ -50,6 +50,12 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Get && slices.Contains(oracle.DiffNegationConstantNames(), call.Function):
+				got = negationConstantValue(t, call.Function)
+			case call.Get && slices.Contains(oracle.DiffSwapConstantNames(), call.Function):
+				got = swapConstantValue(t, call.Function)
+			case slices.Contains(oracle.DiffNegationFunctions, call.Function) || slices.Contains(oracle.DiffSwapFunctions, call.Function):
+				got = invokeNegation(t, call, build)
 			case call.Get && slices.Contains(oracle.DiffNumberConstantNames(), call.Function):
 				got = numberConstantValue(t, call.Function)
 			case slices.Contains(oracle.DiffNumberFunctions, call.Function):
@@ -110,6 +116,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 	checkStiffHits(t)
 	checkToneHits(t)
 	checkNumberHits(t)
+	checkNegationSwapHits(t)
 	total := 0
 	for _, n := range calls {
 		total += n

@@ -97,6 +97,13 @@ func finditerDynamic(source string, text pyre.Text) []*pyre.Match {
 	return ms
 }
 
+// maskLastChar は一致した語の最後の 1 字を「＃」にする (「少ない」の「な」を伏せて、ない・なく のどれにも当たらなくする)。
+func maskLastChar(m *pyre.Match) string {
+	whole, _ := m.Group(0)
+	rs := pyunicode.Runes(whole)
+	return pyunicode.FromRunes(rs[:len(rs)-1]) + "＃"
+}
+
 func repeatMask(m *pyre.Match) string { return strings.Repeat("＃", m.End(0)-m.Start(0)) }
 
 // negativeZu は text に打ち消しの「ず」があれば真 (副詞の「まず」「あえず」「かならず」は打ち消しにしない)。
@@ -147,11 +154,7 @@ func quantityNegated(text pyre.Text, position int) bool {
 		rest = rt.Slice(0, cut.Start(0))
 	}
 	rest = mustSubFunc(quantityNotNeg, pyre.NewText(rest), repeatMask)
-	rest = mustSubFunc(negationWords, pyre.NewText(rest), func(m *pyre.Match) string {
-		whole, _ := m.Group(0)
-		rs := pyunicode.Runes(whole)
-		return pyunicode.FromRunes(rs[:len(rs)-1]) + "＃"
-	})
+	rest = mustSubFunc(negationWords, pyre.NewText(rest), maskLastChar)
 	return mustSearchAt(quantityNeg, pyre.NewText(rest), 0, pyre.NoEnd) != nil || negativeZu(rest)
 }
 
