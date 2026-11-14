@@ -296,6 +296,17 @@ func diffNumberOrder() []diffFullCase {
 	return cases
 }
 
+// diffFuzzJoin は行ごとの文の並びを、文をつないで行にし、行を改行 1 つか空行でつないだ文書にする (固定の種の組の組み立て)。
+func diffFuzzJoin(r *rand.Rand, ls [][]string) string {
+	var parts []string
+	for _, l := range ls {
+		if len(l) > 0 {
+			parts = append(parts, strings.Join(l, ""))
+		}
+	}
+	return diffJoinParts(parts, r.IntN(3))
+}
+
 // diffJoinParts は行をつなげる (0: 改行 1 つ、1: 空行を挟む、2: 改行 1 つ)。
 func diffJoinParts(parts []string, mode int) string {
 	if len(parts) == 0 {

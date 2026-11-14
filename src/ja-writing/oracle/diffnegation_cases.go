@@ -167,16 +167,7 @@ func diffNegationFuzz() []diffFullCase {
 				cur[i][j] = variant(variant(cur[i][j]))
 			}
 		}
-		join := func(ls [][]string) string {
-			var parts []string
-			for _, l := range ls {
-				if len(l) > 0 {
-					parts = append(parts, strings.Join(l, ""))
-				}
-			}
-			return diffJoinParts(parts, r.IntN(3))
-		}
-		cases = append(cases, diffFullCase{name: "fuzz-" + strconv.Itoa(n), old: join(lines), new: join(cur)})
+		cases = append(cases, diffFullCase{name: "fuzz-" + strconv.Itoa(n), old: diffFuzzJoin(r, lines), new: diffFuzzJoin(r, cur)})
 	}
 	return cases
 }
