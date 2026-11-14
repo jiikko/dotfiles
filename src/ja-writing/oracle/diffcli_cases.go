@@ -16,6 +16,7 @@ const diffOptionPairs = 6
 //   - オプションを通す組 (upstream の先頭 diffOptionPairs 組と手で作った入力の全部) は、種類 13 通り・読者・立場・語の一覧・資料も
 //   - --endings は入力の集まりの全ファイルと、手で作った入力の全ファイル (立場なしと 3 つ)
 //   - 誤りの呼び出し・標準入力・作業フォルダ (scenario/)
+//   - 本家が Python の例外で止まる入力 (limit/) と、わざと壊しても緑のまま通った分かれ目に当たる入力 (boundary/。diffEdgeInputs)
 func DiffCLICases(c Corpus, inputs []DiffInput, docTypes, readers []string) []LintCLICase {
 	var cases []LintCLICase
 	add := caseAdder(&cases)
@@ -98,6 +99,10 @@ func DiffCLICases(c Corpus, inputs []DiffInput, docTypes, readers []string) []Li
 			args := append(append([]string{}, extra...), "limit/"+in.name+"/old.md", "limit/"+in.name+"/new.md")
 			cases = append(cases, LintCLICase{Name: "limit/" + in.name + "|" + strings.Join(extra, " "), Args: args, FirstLine: true})
 		}
+	}
+	for _, in := range diffEdgeInputs() {
+		args := append(append([]string{}, in.args...), "--json", "--no-words", "boundary/"+in.name+"/old.md", "boundary/"+in.name+"/new.md")
+		cases = append(cases, LintCLICase{Name: "boundary/" + in.name + "|" + strings.Join(in.args, " "), Args: args})
 	}
 	return cases
 }

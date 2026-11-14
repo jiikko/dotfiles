@@ -59,3 +59,28 @@ func TestDiffInputsAreAllUsedByCases(t *testing.T) {
 		t.Errorf("入力の集まりから作る直す前と後の組が %d 組 (70 組以上のはず)", len(DiffCorpusPairs(c)))
 	}
 }
+
+// CLI の記録の case の名前は 1 つずつ別 (名前が重なると、記録を名前で引く読み手が片方を見失う)。
+func TestDiffCLICaseNamesAreUnique(t *testing.T) {
+	c, err := LoadCorpus(corpusDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs, err := LoadDiffInputs("../testdata/diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, cs := range DiffCLICases(c, inputs, []string{"mail"}, []string{"expert"}) {
+		if seen[cs.Name] {
+			t.Errorf("CLI の記録の case の名前 %q が重なっている", cs.Name)
+		}
+		seen[cs.Name] = true
+	}
+	for _, e := range diffActorEdges() {
+		if seen["actor-edge/"+e.name] {
+			t.Errorf("群 AB の分かれ目の組の名前 %q が重なっている", e.name)
+		}
+		seen["actor-edge/"+e.name] = true
+	}
+}

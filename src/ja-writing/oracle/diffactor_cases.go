@@ -306,5 +306,8 @@ func diffActorCases(pairs [][3]string) []VisCase {
 		}
 		cases = append(cases, VisCase{Name: "actor/fuzz/" + f.name, Calls: diffActorStageCalls(f.old, f.new, m, false)})
 	}
+	for _, e := range diffActorEdges() {
+		cases = append(cases, VisCase{Name: "actor/edge/" + e.name, Calls: diffActorStageCalls(e.old, e.new, [][]string{e.materials}, true)})
+	}
 	return cases
 }
