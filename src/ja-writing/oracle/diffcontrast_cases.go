@@ -381,6 +381,32 @@ func diffContrastSmallCalls() []Call {
 	}{{"道具ではなく、道具の使い方だ。", "道具", 4}, {"道具ではなく、道具の淹れ方だ。", "道具", 4}, {"道具ではなく、道具の使い方と道具のコスト。", "道具", 4}, {"道具ではなく道具の", "道具", 4}, {"道具ではなく道具のあ", "道具", 4}, {"道具のX", "道具", 0}} {
 		add("_b_side_phrases", c.text, c.token, c.markEnd)
 	}
+	for _, c := range [][2]string{{"とXは古いAPIの廃止", "性能改善"}, {"とX廃止", "性能改善"}, {"とXの廃止", "性能改善"}, {"外れ", "国内"}, {"外れ", "社内"}} {
+		add("_neg_after", c[0], c[1])
+	}
+	for _, c := range []struct {
+		text     string
+		left, at int
+		after    string
+	}{{"XをAに替えBより目的", 0, 2, "に替えBより目的"}, {"会議は減らすことだ", 0, 0, "は減らすことだ"}, {"会議は減らすことを最優先にする", 0, 0, "は減らすことを最優先にする"}, {"XがAに替える", 0, 2, "に替える"}} {
+		add("_demoted", c.text, c.left, c.at, c.after)
+	}
+	for _, c := range []struct {
+		text, token string
+		clauseOnly  bool
+	}{{"品質が目的だが、速度も使う。", "品質", false}, {"まず 、品質を使う", "品質", true}, {"外外外が目的だ", "外外", false}, {"最優先は、品質を使うことだ", "品質", true}, {"まず、品質を使う", "品質", true}} {
+		add("_affirmed_with_weight", c.text, c.token, c.clauseOnly, []string{})
+	}
+	for _, c := range []struct {
+		text, token, word string
+		position          int
+	}{{"まず、手作業で回して自動化にも試す", "手作業", "自動化", 3}, {"をまず手作業で自動化に替える", "手作業", "自動化", 3}, {"まず、手作業で回して自動化を中止する", "手作業", "自動化", 3}, {"まず、手作業で回して自動化を試す", "手作業", "自動化", 3}} {
+		add("_side_affirmed", c.text, c.position, c.token, len([]rune(c.text)), []string{c.word})
+	}
+	add("_original_affirms", "ののの", "のの", 0, 0)
+	add("_original_affirms", "大事な道具、ではなく道具の使い方", "道具", 10, 6)
+	add("_head_clue", "品質")
+	add("_head_clue", "データ")
 	for _, s := range []string{"を", "の使い方を", "は障害を避け", "について", "への適用は", "を本番で使うのは", "", "の数を", "をxをy"} {
 		add("_other_object", s)
 	}
