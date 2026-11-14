@@ -294,6 +294,14 @@ func (m *masker) mask(text string, start int) string {
 	return pyunicode.FromRunes(pieces)
 }
 
+// kind は文の行の種類 (行がなければ空)。
+func (m *masker) kind(sn sentence) string {
+	if index := sn.line - 1; index < len(m.rows) {
+		return m.rows[index].Kind
+	}
+	return ""
+}
+
 func (m *masker) body(sn sentence) (body, bool) {
 	index := sn.line - 1
 	if index < len(m.rows) && m.skip[m.rows[index].Kind] {

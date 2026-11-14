@@ -48,6 +48,8 @@ func init() {
 	DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffRuleConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffModalConstants...)
+	DiffBaseFunctions = append(DiffBaseFunctions, DiffContrastFunctions...)
+	DiffBaseFunctions = append(DiffBaseFunctions, diffContrastConstants...)
 }
 
 // DiffEncodingNote は full_diff に渡す注記の 1 つ (本家の dict と同じ 3 つの鍵)。
@@ -253,7 +255,9 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	// 群 P (問い・変えない箇所・印の候補)
 	cases = append(cases, diffQuestionCases(pairs)...)
 	// 群 T (気持ちの創作)
-	return append(cases, diffFeelingCases(pairs)...), nil
+	cases = append(cases, diffFeelingCases(pairs)...)
+	// 群 S (否定対比の逆転)
+	return append(cases, diffContrastCases(pairs)...), nil
 }
 
 // diffEndingStrings は文末の関数に通す手書きの文 (1 つが 1 つの枝を狙う)。
