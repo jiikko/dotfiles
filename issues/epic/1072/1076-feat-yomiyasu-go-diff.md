@@ -716,7 +716,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 群 Y (`diff/meaning.go`): 本家と同じ順で数値・否定・入れ替え・問い・変えない箇所・否定対比・気持ちを集めて並べ (`riskOrder`)、文の種類の印を `_classify_hedge_marks` で出力に残す・外す (same・strengthen)・戻す (強める向きで確度の候補が出ない文) に分け、引用の候補・確度・かぎかっこ・許可・能力・選ぶ範囲・因果・概数と範囲の語・群 V の候補を足し、状態の候補に写した確度の見直しを取り除く。入口は `MeaningRisks`。`sides.immutable` と `sides.quiet_marks` は `meaningResult` で返す
   - 9 本目で確かめていないと書いたことを閉じた: (a) 本番が慎重表現に渡す確度の恐れは、`hedges` が `meaning_risks` の出力と、出力から外した印の恐れ (quiet) を受ける形に直した (これまでは文の種類の印の全部と確度の恐れだけを渡していた)。`HedgesSection` もその形。記録は `_meaning_risks` のあとに同じ `sides` で呼ぶ `_hedges` で、quiet が空でない組は、段の記録で 20 回以上届くことを数える (最初の記録では 284 回)。(b) `meaning_risks` に渡る全種類の恐れの並びは、公開の `meaning_risks` (2,276 呼び出し) と段の記録で、種類ごとに 20 回以上届くことを数える
   - 入口のうち `CertaintyRisks`・`ImmutableValues`・`QuoteRisks` は、まだ本番と違う入力 (文の種類の印の全部など) で作っている (試験からしか呼ばれない)。本番の形は `MeaningRisks` に任せ、群 AC で `diff()` に配線するときに整理する
-- 記録: `diff-base.json` は 146,425 → 178,665 case・1,297,165 → 1,791,860 呼び出し (27.2MB → 33.5MB。40MB に届かないので別のファイルには分けなかった)。作り直しは約 285 秒 (群 V の前は約 240 秒)。群 V は 17,840 case・299,051 呼び出し (`addition/`)、群 Y は 14,400 case あまり・195,000 呼び出し (`meaning/`)
+- 記録: `diff-base.json` は 146,425 → 178,694 case・1,297,165 → 1,792,251 呼び出し (27.2MB → 33.5MB。40MB に届かないので別のファイルには分けなかった)。作り直しは約 285 秒 (群 V の前は約 240 秒)。群 V は 17,858 case・299,267 呼び出し (`addition/`)、群 Y は 14,411 case・195,819 呼び出し (`meaning/`)。この件数は 10 本目の敵対的レビューの指摘を直した後の値 (最初は 178,665 case・1,791,860 呼び出し・群 V 17,840 case・299,051 呼び出し・群 Y 14,400 case・195,644 呼び出し)
   - 群 V の組: 入力の集まりと diff の入力の組・手書き 90 組あまり (本家のコメントと docstring の例・語どうしが隣り合う・主題が「が」だけ・依頼の語が約束のすぐ後ろにある)・固定の種 PCG 1076/40 (状態 2,200)・41 (約束 2,600)・42 (因果 2,000)・43 (3 種類を混ぜた 2,400)・45 (時から原因への書き換え 700)。下の関数は銀行の文と組み合わせ 1,909 文を通す。文書の種類の指定は無い
   - 群 Y の組: 入力の集まりと diff の入力の組・手書き 40 組あまり・群 V の手書きの組・固定の種 PCG 1076/50 (群 M〜X の銀行を混ぜた 3,600)・51 (推量の語から強い言い方への書き換え 1,500。文書の種類 2 通り)・ほかの群の組の抜き出し (入れ替え 3 つに 1 つ・否定対比と概数と範囲と動かしてはいけない値は 6 つに 1 つ)。公開の `meaning_risks` は手書きの組と組 8 つに 1 つに、type_changes なし・ありで通す。段の呼び出しは本家の `diff()` と同じ順 (`_type_changes`・`_modality_changes`・`_logic_changes` を覚えてから `_meaning_risks`) で、`getattr(sides, "immutable")`・`getattr(sides, "quiet_marks")` (組み込みの `getattr` を記録の道具のまま使う) と `_hedges` を続けて呼ぶ
   - 既存の case は消えず、digest も変わらない (9 本目の前の記録 base-orig と python で照合: 消えた case 0・変わった case 0・増えた case 32,240)。cb3b2987f の記録と比べると 32 case (`addition/strings/`) の digest だけが変わった: 分かれ目の文を足したので、60 文ずつの束の組が変わった
@@ -725,7 +725,9 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - わざと壊して比べた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf10/mut/ の logv・logall・logtrim・logre、一覧は同じ dir の muts-v.json・muts-y.json と muts-*.list。本数は各 run の表から数えた。一覧は群 V 50・群 Y 21 本を作り、時間のため 38 本を当てた):
   - 群 V: 26 本を当て、23 本が red。最初の run (cb3b2987f の木) は 13 本のうち 8 本が red (うち 1 本は run の途中で止めた)・5 本が緑 (隣り合う語の境・主題の最後の 2 字・依頼の窓の後ろ・主題が「が」だけ・窓の前)。緑のうち 4 本に分かれ目の入力を足して (2a2ce1d21) 当て直し red。続けて 13 本を当て、11 本が red・2 本が緑
     - 緑のまま 3 本 (どれも等価かどうか未確認): `v-promise-window-before` (依頼の窓の頭を 2 字下げる。依頼の語は 3 字以上なので、窓の頭の 2 字前から始まれず、約束の頭の字と重なるときだけ違う。重なる組を作れなかった)・`v-promise-open-quote` (閉じていないかぎかっこの判定。閉じる前に文が終わる組を作れなかったと読んだ)・`v-oldfuture-start` (原文の述語の前の窓を 1 字狭める。窓の頭から 4 字目にだけ効く自動詞の語の組を作れなかった)。再提起するなら、本家と壊した形の答えが違う `_addition_risks` の入力を示す
+    - 🚨 上の 3 本のうち `v-promise-window-before` と `v-promise-open-quote` の「等価かどうか未確認」と書いた理由は誤りだった (`v-oldfuture-start` は等価の見込みのまま)。10 本目の敵対的レビューで 2 本とも本家と答えが違う入力があると分かり、記録に足して red にした (下の「10 本目の敵対的レビュー」)
   - 群 Y: 12 本を当て、10 本が red (`y-restore-line` は最初の壊し方が構文エラーで、直して当て直した。`y-hedges-quiet` は見る試験を入口の試験に変えて当て直した)。緑のまま 2 本: `y-strengthened-subkind` (外した印を戻すかを決める確度の候補の subkind の絞り。強める向きの印と、弱める向きの確度の候補が同じ文に出る組を作れなかった)・`y-additions-quiet` (群 V に外した印を渡さない。足した 3 組でも答えが変わらなかった。外した印が足す推量の種類で止める候補が、状態の候補の確度の見直しとの重なりで先に止まっていると読んだが、実測はしていない)
+    - 🚨 `y-additions-quiet` の「確度の見直しとの重なりで先に止まる」の読みは誤りだった (同上)
   - 最初の run の red は、その後の commit の木では当て直していない (足したのは入力だけで、既存の case は変わらないので red のままのはず。実測はしていない)
 - 確かめていないこと:
   - 群 AB・AC・AD は未着手。`AdditionRisks`・`MeaningRisks` は試験からしか呼ばれない (群 AC で `diff()` の組み立てに配線する)。`CertaintyRisks` などの他の入口は上のとおり
@@ -738,3 +740,40 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 #### 最終の検査 (10 本目)
 
 最後のコードの編集 (3fd360d3c。以降は docs だけ) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf10/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin1〜4.rc)。この節の commit は docs だけの差分なので回し直していない。
+
+### 10 本目の敵対的レビュー (opus。diff-wf10 の c4257433c..230f6a7af。群 V・Y。直したのは diff-wf10 の修正の係)
+
+壊していない木は、本家を正解にした比べ (`AdditionRisks`・`MeaningRisks` の type_changes なし・あり・`HedgesSection` を、文書の種類は指定なしと article で 22,488 組。書き足し・推量と確度の語・Markdown の包み・同じ文の繰り返し・CRLF・BOM・ゼロ幅の字) で食い違い 0・panic 0 だった (P1 は 0 件)。
+指摘のうち P2 の 6 本は、レビューが示した入力を python (本家) と Go の両方で通し、本家の答えを記録の作り直しで確かめた。入力を手書きの組に足して作り直した (書き足しだけ。230f6a7af に対して消えた case 0・変わった case 0・増えた case 29。178,665 → 178,694 case・1,791,860 → 1,792,251 呼び出し。群 V の `addition/` は 17,840 → 17,858 case・299,051 → 299,267 呼び出し、群 Y の `meaning/` は 14,400 → 14,411 case・195,644 → 195,819 呼び出し)。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P2-1 `v-promise-open-quote` が緑 (issue の「閉じる前に文が終わる組を作れなかった」は誤り。閉じたかぎかっこの後の約束が分かれ目) | 直した。`addition/hand/promise-after-closed-quote`・`-2` を足した (d12ec3947) | red |
+| P2-2 `v-promise-window-before` が緑 (issue の「依頼の語は 3 字以上」は誤り。窓は「申し上げ」などの名乗りの判定にも使われる) | 直した。`promise-greeting-moushiage`・`-2` を足した (d12ec3947) | red |
+| P2-3 `y-additions-quiet` が緑 (「確度の見直しとの重なりで先に止まる」は誤り。外した推量の印が状態の候補を止める) | 直した。`meaning/hand/quiet-mark-blocks-state-1`・`-2` を足した (d12ec3947) | red |
+| P2-4 `v-promise-subkind-order` が緑 (実装の係が当てていなかった 33 本の 1 つ) | 直した。`promise-subkind-order-both`・`-2` を足した (d12ec3947) | red |
+| P2-5 `v-promise-report-later` が緑 (同上) | 直した。`promise-report-perf-later` を足した (d12ec3947) | red |
+| P2-6 `v-promise-report-maybe` が緑 (同上) | 直した。`promise-report-perf-future`・`-2` を足した (d12ec3947) | red |
+| P3-1 公開の入口 `MeaningRisks`・`AdditionRisks`・`HedgesSection` が文書の種類を `normalize_doc_type` に通さない (`"ARTICLE"` が article と別の答え・`"bogus"` がエラーなし) | 直した。`entryDocType` で `visibility.NormalizeDocType` を通す。入口の型が string なので空は指定なしのまま (本家で ValueError になる空文字列は区別できない。`diff()` の配線は `*string` のまま通す) (8ae817f06) | `TestEntryPointsNormalizeDocType`。正規化を外すと red |
+| P3-2 issue の「群 Y は 14,400 case あまり・195,000 呼び出し」 | 直した。最初の記録は 14,400 case・195,644 呼び出し。今は上の値 | README・epic の件数も作り直した記録から数え直した値に直した |
+
+当てていなかった 33 本のうち緑のまま 7 本の扱い:
+- 分かれ目の入力を足した 3 本 (上の P2-4〜6)
+- `y-immutable-risks`: 等価。本家の `_immutable_values` は risks から `kind == "number"` しか読まず、文の種類の印は number でない。再提起するなら、number の恐れを文の種類の印から作る入力を示す
+- `y-strengthened-subkind`・`v-oldfuture-start`: レビューの判定は等価 (前者は本家の `_certainty_change` で counted が真になる 3 段がどれも強さの上がる向き、後者は窓に当てる正規表現がどれも `$` で終わり前に付く語が最長 3 字)。python で 20,000 組・46,619 文を探しても分かれなかった。再提起するなら、本家と壊した形の答えが違う `_addition_risks`・`_certainty_change` の入力を示す
+- `v-kept-apology`・`v-promise-prevent-act`・`v-promise-sahen-name`: 本家と違う入力を作れなかった。等価かどうかは示していない (未確認リスク)
+
+壊した形の結果 (`bin/mutate-verify-list`。commit した木 (8ae817f06) で最後に回し、本数はこの run から数えた。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf10/fix/mlog、一覧は同じ dir の muts-fix.list): 6 本のうち 6 本が rc 0 (想定の `TestBaseMatchesPythonRecording` が red)。群 V は `v-promise-open-quote`・`v-promise-window-before`・`v-promise-subkind-order`・`v-promise-report-later`・`v-promise-report-maybe` の 5 本、群 Y は `y-additions-quiet` の 1 本。入口の正規化は、正規化を外した形で `TestEntryPointsNormalizeDocType` が red になるのを手で確かめた。
+
+レビューが壊せなかったところ (報告から): 群 Y の組み立ての順 (`riskOrder` の並べ替え・行番号が null のときの扱い・強める向きの印の戻し・確度の見直しの取り除き)・`certaintyRisks` に出力に残した印だけを渡す形・記録の届き方の検査 (`TestBaseMatchesPythonRecording` から呼ばれ、`NORACE_CHECKS` にある)・共有の部品の変更が diff の package の中に収まること。
+
+所要: `go test -race -json -count=1 ./diff` は手元で 85 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。CI の上限 600 秒の半分に遠いので `NORACE_CHECKS` は増やしていない。
+
+未確認リスク (レビューの報告から):
+- 文書の種類が mail・paper の組は、レビューの比べにも記録の群 V・Y にも入れていない
+- 群 V・Y の所要 (長い文書・同じ段落の繰り返し) は測っていない
+- 上の `v-kept-apology`・`v-promise-prevent-act`・`v-promise-sahen-name` が等価かどうかは示していない
+
+#### 最終の検査 (10 本目の敵対的レビューの後)
+
+最後のコードと記録の編集 (8ae817f06) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf10/fix/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin-*.rc)。この節の commit は docs だけの差分。
