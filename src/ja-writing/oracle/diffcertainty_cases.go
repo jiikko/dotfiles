@@ -18,7 +18,7 @@ var diffCertaintyConstants = []string{
 
 // DiffCertaintyFunctions は群 U の関数。
 var DiffCertaintyFunctions = []string{
-	"_certainty_risks", "_certainty_words", "_certainty_word_spans", "_certainty_negations", "_cancel_same_level", "_cancel_pairs", "_hedge_conditions", "_hedge_clause", "_classify_hedge_marks", "_certainty_change", "_unpaired_neighbors",
+	"_certainty_risks", "_certainty_words", "_certainty_word_spans", "_certainty_negations", "_cancel_same_level", "_cancel_pairs", "_hedge_conditions", "_hedge_clause", "_hedge_polarity", "_classify_hedge_marks", "_certainty_change", "_unpaired_neighbors",
 }
 
 // DiffCertaintyConstantNames は定数の名前 (Go の突き合わせが、この名前の Get を回す)。
@@ -82,6 +82,12 @@ var diffCertaintyBank = []string{
 	"設定を開きます。", "結果は3件でした。", "確認します。", "実施します。", "確認する。", "確認した。",
 }
 
+// diffCertaintyExtraBank は、確度の語のすぐあとに否定が続く文 (推量の語の範囲と、そのすぐあとの否定を数えない所を狙う)。
+// bank と別に持つのは、bank の並びが変わると、乱数で選んだ組の case が全部変わるため。
+var diffCertaintyExtraBank = []string{
+	"遅れる可能性も否定できない。", "遅れる可能性は否定できません。", "可能性が捨てきれず、遅れない。", "可能性も拭えないので止まらない。", "止まらない可能性もある。", "止まらない可能性も否定できない。", "止まるかもしれないが、続かない。",
+}
+
 // diffCertaintyContexts は組の文の前後に置く、組にならなかった文 (確度の語を持つもの・持たないもの・元の文と同じ字を共有するもの)。
 var diffCertaintyContexts = []string{
 	"前の文です。", "次の文です。", "必ず確認する。", "必ず実施する。", "確実に遅れる。", "確実です。", "遅れる可能性がある。", "遅れる見込みです。", "来月に修正する予定です。", "予定です。", "遅れるでしょう。",
@@ -117,6 +123,10 @@ func diffCertaintyHandPairs() []diffFullCase {
 		{name: "split-sentence-must", old: doc("確認して実施します。"), new: doc("確認します。必ず実施します。")},
 		{name: "split-sentence-twice", old: doc("確認して実施して報告します。"), new: doc("確認します。必ず実施します。確実に報告します。")},
 		{name: "multi-pair-context", old: doc("A を見る。B を見る。C を見る。"), new: doc("A を必ず見る。B を見る。C を確実に見る。")},
+		{name: "duty-neighbor-after", old: doc("確認します。必須にする。"), new: doc("必ず確認します。")},
+		{name: "duty-neighbor-before", old: doc("必須にする。確認します。"), new: doc("必ず確認します。")},
+		{name: "split-shared-neighbor", old: doc("一つ目を確認する。二つ目を確認する。"), new: doc("一つ目を確認します。必ず確認する。二つ目を確認します。")},
+		{name: "split-shared-neighbor-lines", old: doc("一つ目を確認する。", "二つ目を確認する。"), new: doc("一つ目を確認します。", "必ず確認する。", "二つ目を確認します。")},
 		{name: "marks-hedge-suppressed", old: doc("遅れるようです。"), new: doc("遅れます。")},
 		{name: "marks-opinion-suppressed", old: doc("遅れると思います。"), new: doc("遅れます。")},
 		{name: "marks-weaken-suppressed", old: doc("遅れます。"), new: doc("遅れると思います。")},
@@ -196,6 +206,10 @@ func diffCertaintyMixedFuzz() []diffFullCase {
 
 func diffCertaintyBankCases() []diffFullCase {
 	var cases []diffFullCase
+	for i, s := range diffCertaintyExtraBank {
+		cases = append(cases, diffFullCase{name: "extra-" + strconv.Itoa(i), old: diffDoc(s), new: diffDoc("遅れます。")},
+			diffFullCase{name: "extra-rev-" + strconv.Itoa(i), old: diffDoc("遅れます。"), new: diffDoc(s)})
+	}
 	for i, s := range diffCertaintyBank {
 		base := diffFullCase{name: "bank-" + strconv.Itoa(i), old: diffDoc(s), new: diffDoc("遅れます。")}
 		cases = append(cases, base,
@@ -271,6 +285,7 @@ func diffCertaintyStringCalls(texts []string, others []string, keep bool) []Call
 			}
 		}
 		add(dcall("_cancel_same_level", diffRef("spans"), diffRef("spansB")))
+		add(dcall("_hedge_polarity", text, map[string]any{"$ref": "spans", "path": []any{0}}, diffRef("spans")))
 		add(dcall("_cancel_pairs", diffRef("spans"), diffRef("spansB")))
 		for _, k := range kinds {
 			add(dcall("_classify_hedge_marks", text, other, k[0], k[1]))
@@ -286,6 +301,12 @@ func diffCertaintyStringCalls(texts []string, others []string, keep bool) []Call
 // diffCertaintySmallCalls は _unpaired_neighbors の手書きの呼び出し (結果そのものを記録に残す)。
 func diffCertaintySmallCalls() []Call {
 	var calls []Call
+	long := "字" + strings.Repeat("あ", 150) + "語"
+	for _, start := range []int{151, 100, 160} {
+		call := dcall("_hedge_clause", long, start)
+		call.Keep = true
+		calls = append(calls, call)
+	}
 	for _, c := range []struct {
 		count, index int
 		paired       []int
@@ -325,5 +346,7 @@ func diffCertaintyCases(pairs [][3]string) []VisCase {
 		j := min(i+80, len(texts))
 		cases = append(cases, VisCase{Name: "certainty/strings/" + strconv.Itoa(i/80), Calls: diffCertaintyStringCalls(texts[i:j], others[i:j], false)})
 	}
-	return cases
+	extra := diffCertaintyExtraBank
+	rotated := append(append([]string{}, extra[1:]...), extra[0])
+	return append(cases, VisCase{Name: "certainty/strings/extra", Calls: diffCertaintyStringCalls(extra, rotated, false)})
 }

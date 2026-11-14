@@ -7,6 +7,7 @@ import (
 	"ja-writing/internal/pyunicode"
 	"ja-writing/oracle"
 	"ja-writing/oracle/replay"
+	"ja-writing/visibility"
 )
 
 // 群 U の段の記録の突き合わせ。
@@ -225,3 +226,13 @@ func charSetOf(set map[string]bool) pyjson.Value {
 }
 
 var _ = pyunicode.Runes
+
+// invokeHedgePolarity は _hedge_polarity (語は覚えた語の先頭。語が無いと本家は添字の IndexError で止まる)。
+func invokeHedgePolarity(t *testing.T, c oracle.Call) (pyjson.Value, error) {
+	t.Helper()
+	spans := certaintySpansOf(t, c.Args[2])
+	if len(spans) == 0 {
+		return nil, &visibility.Error{Type: visibility.TypeIndexError, Message: "list index out of range"}
+	}
+	return int64(hedgePolarity(argString(t, c.Args[0]), spans[0], spans)), nil
+}

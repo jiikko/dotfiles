@@ -52,6 +52,8 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Function == "_hedge_polarity":
+				got, exc = invokeHedgePolarity(t, call)
 			case call.Get && slices.Contains(oracle.DiffCertaintyConstantNames(), call.Function):
 				got = certaintyConstantValue(t, call.Function)
 			case slices.Contains(oracle.DiffCertaintyFunctions, call.Function):
