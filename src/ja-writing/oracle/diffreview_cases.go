@@ -629,3 +629,8 @@ func withKeep(keep bool, c Call) Call {
 	c.Keep = keep
 	return c
 }
+
+// callAdder は呼び出しを calls の後ろに足す関数 (結果そのものを記録に残すかは keep)。
+func callAdder(calls *[]Call, keep bool) func(Call) {
+	return func(c Call) { *calls = append(*calls, withKeep(keep, c)) }
+}

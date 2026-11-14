@@ -129,7 +129,7 @@ var diffActorMaterials = [][]string{
 // diffActorStringCalls は文 1 つに、文の単位の関数を全部通す呼び出し (sources は覚える _ActorSource の名前と原文の並び)。
 func diffActorStringCalls(texts []string, keep bool) []Call {
 	var calls []Call
-	add := func(c Call) { calls = append(calls, withKeep(keep, c)) }
+	add := callAdder(&calls, keep)
 	for i, src := range diffActorSources {
 		c := dcall("_ActorSource", anySlice(src))
 		calls = append(calls, diffSave(c, "src"+strconv.Itoa(i)))

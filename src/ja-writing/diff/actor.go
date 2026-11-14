@@ -67,6 +67,7 @@ func sortedByLenDesc(words []string) []string {
 	return out
 }
 
+// dupscan:allow intentional src/dupscan/internal/lang/swift の set と同じ形だが、別の module (dupscan は Swift の字句の表で、これは本家の語の一覧の frozenset)。寄せると module をまたぐ依存が増えるだけ
 func wordSet(words []string) map[string]bool {
 	out := make(map[string]bool, len(words))
 	for _, w := range words {

@@ -23,15 +23,6 @@ func failOnCount(risks []*pyjson.Object) int {
 	return n
 }
 
-func typeKindHitsValue(list []KindHits) pyjson.Value {
-	return pyjson.MapList(list, func(k KindHits) pyjson.Value {
-		o := pyjson.NewObject()
-		o.Set("kind", k.Kind)
-		o.Set("hits", pyjson.Strings(k.Hits))
-		return o
-	})
-}
-
 func endingFlagsOf(flags []EndingFlag) pyjson.Value {
 	return pyjson.MapList(flags, func(f EndingFlag) pyjson.Value {
 		o := pyjson.NewObject()
@@ -99,8 +90,8 @@ func ruleCandidatesInto(out *pyjson.Object, c *RuleCandidates) {
 		o := pyjson.NewObject()
 		o.Set("orig", t.Orig)
 		o.Set("rewrite", t.Rewrite)
-		o.Set("lost", typeKindHitsValue(t.Lost))
-		o.Set("added", typeKindHitsValue(t.Added))
+		o.Set("lost", kindHitsList(t.Lost))
+		o.Set("added", kindHitsList(t.Added))
 		return o
 	}))
 }

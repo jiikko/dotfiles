@@ -418,7 +418,7 @@ var diffAdditionStems = [][]any{{}, {"確"}, {"確", "認"}, {"直"}, {"出"}, {
 // diffAdditionStringCalls は下の関数の呼び出し (texts[i] に others[i] を相手に通す。結果そのものを記録に残すかは keep)。
 func diffAdditionStringCalls(texts, others []string, keep bool) []Call {
 	var calls []Call
-	add := func(c Call) { calls = append(calls, withKeep(keep, c)) }
+	add := callAdder(&calls, keep)
 	for i, text := range texts {
 		other := others[i]
 		length := len([]rune(text))
