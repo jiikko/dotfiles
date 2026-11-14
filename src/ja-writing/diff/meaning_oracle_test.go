@@ -93,3 +93,22 @@ func checkMeaningHits(t *testing.T) {
 	}
 	t.Logf("群 Y の記録の届き方: %v", meaningHits)
 }
+
+// 慎重表現の入口は、出力から外した文の種類の印の恐れ (quiet) も読む。読まないと、推量の言い換えで外した文に独立の候補が出る。
+func TestHedgesSectionReadsQuietMarks(t *testing.T) {
+	old, new := diffDocForTest("遅れると考えられる。"), diffDocForTest("遅れる見込みです。")
+	result, s, groups, err := meaningRisksOf(old, new, true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.quiet) == 0 {
+		t.Fatal("この組は文の種類の印の恐れを出力から外すはず")
+	}
+	got, err := HedgesSection(old, new, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if equalValues(t, got, s.hedges(groups, result.risks)) {
+		t.Error("quiet を渡さない形と同じ答え: 外した印の恐れを読んでいない")
+	}
+}
