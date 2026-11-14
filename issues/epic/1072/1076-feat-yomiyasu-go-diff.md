@@ -110,11 +110,11 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 ## 受け入れ条件
 
 - [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings` と引数の誤りは済み。検査の本体は、群 AC で `diff()` の組み立てと CLI に配線するまで未)
-- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) は、記録が届く回数を数える検査がある。M 以降は未)
+- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q の段は、記録が届く回数を数える検査がある。P 以降は未)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA は済み。M 以降は未)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q は済み。P S T U V W X Y・AB 以降は未)
 - [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
@@ -201,7 +201,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 残り (この係では手を付けていない): 群 K (見出しの構造) → L (文の組と本文) → AD (人が読む出力)・以降の ④〜⑧。K 以降は `_Sides` を引数に取る段の記録 (`oracle/py/record_diff_stages.py`) が先に要る
   (`call_function.py` の `save` で `_Sides(orig, rw)` を覚え、`_build_full_diff` の hunks を引数に渡す口を足す設計。K の `_heading_order_pairs` は (件数, 似かたの和) の組の max と、組の等しさの比べ (`best[a][b] == best[a-1][b]`) が float のまま要る)
 
-受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は A B C E J K L が済み・「`make test-dupscan-gate`」は今の木で通る。
+受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み (M・N・O・Q の段は 6 本目で数える検査を足した)・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は A B C E J K L が済み・「`make test-dupscan-gate`」は今の木で通る。
 
 ### 2 本目の敵対的レビュー (opus。diff-wf2 の f6614b8d3..6ca4e6615)
 
@@ -449,3 +449,29 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 最後のコードの編集 (8edca7083。78b1e3cdd のコメントを `make test-lint` の `test-comment-provenance` が止めたので直した) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0
 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf5/wf6/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin-rc.txt)。この節の docs の commit の後に `make test-lint` をもう一度回した。cadd1aaf4・7d32241f8 は単独では lint test を回していない (コメントとテストの引数の確認だけの変更で、78b1e3cdd の木で全部通した)。
+
+### 6 本目 (diff-wf6。2026-11-14。worktree で作業し、push していない)
+
+- 順は M → N・O → Q (Q は N・O のあとにした。Q の正規表現が名前つきグループで、先に小さい群を通した)。群 P 以降 (P S T U V W X Y・AB・AC・AD) は手を付けていない
+- commit:
+  - bd056ab37 feat(ja-writing): diff の数値 (群 M: extract_numbers・_number_risks)
+  - d054d5ba7 test(ja-writing): 群 M の記録に、緑のまま通った壊した形の入力を足す
+  - b9f15352d feat(ja-writing): diff の否定 (群 N) と主語と目的語の入れ替え (群 O)。N と O は 1 つの commit (記録の作り直しが 2 回に分かれると、片方の commit では記録の半分が空になる)
+  - 4581c661f feat(ja-writing): diff の概数と範囲の語 (群 Q)
+  - 各 commit で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した。ただし bd056ab37 は、入力の語を言い換えて記録を作り直す前の木で通し、直した後は diff のテストと記録の突き合わせだけを回した。`make test-lint` は最後の木だけ (rc 0)
+- 群 M (`diff/numbers.go`・`numrisks.go`・`quantity.go`): 本家の `_find_numbers` ほか。`_negative_zu` と「少ない」などの語 (`negationWords`) は群 N・S の持ち物だが、`_quantity_negated` が使うので M に入れた。
+  🚨 `_cancel_notation` は何も打ち消せないとき渡された Counter をそのまま返す (本家と同じ。続く `_drop_weak` が書き換えるので、別のオブジェクトにすると `raw_added - added` の値が変わる)。Go は map の参照で同じ形にした。巨大な整数 (4,300 桁超) は本家が ValueError で止まるが Go は止まらない (記録に無い)
+- 群 N (`diff/negation.go`)・O (`swap.go`)・Q (`qualifier.go`): 本家の関数を写した。Q の正規表現は本家の `pattern` 属性から生成して貼った (手で写さない)
+- 記録: `diff-base.json` は 34,082 → 71,277 case・178,871 → 312,293 呼び出し。足したもの (呼び出し数): `extract_numbers` 19,293・`_number_risks` 9,557・`_negation_risks` 9,516・`_swap_risks` 8,600・`_qualifier_risks` 9,513・各群の関数と定数。組は群 F〜I と同じ入れ物 (`diffBags`) に、各群の手書きの組と固定の種 (PCG 1076/14〜19) を足した。書き足しだけ (既存の case の削除・変更 0 を python で照合)。作り直しは約 70〜90 秒
+  - 届き方を数える検査: 群 M は replaced・added・lost・order・文書全体の added と lost・何も出ない組のどれにも 20 回以上、N・O・Q も同じ (`checkNumberHits`・`checkNegationSwapHits`・`checkQualifierHits`)
+- 本家と揃わなかった所: 無い (全記録が最初の記録で一致した)
+- わざと壊して比べた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf6/mut-m・mut-f):
+  - 群 M の 1 回目 (bd056ab37 の木): 48 本のうち 26 本が red・19 本が緑のまま・3 本が構文エラー。緑のうち 5 本 (`m-ichiji-start`・`m-jippun-maniau`・`m-whole-period-year`・`m-kana-strict`・`m-weak-repeated`) は入力を足して (d054d5ba7) red にした (4581c661f の木で確かめた)。構文エラー 3 本は当て直して、`m-phrase-previous2` と `m-q-keep-before2` は緑のまま、`m-q-text-rest2` は再び構文エラー (当て直していない)
+  - 群 N: 9 本全部 red。群 O: 4 本全部 red。群 Q: 8 本のうち 4 本 red (`q-reach`・`q-yaku-noun`・`q-place`・`q-bound`)・4 本が緑のまま (`q-version`・`q-strict-count`・`q-subkind`・`q-compound`)
+  - 緑のまま通った形は、本家と違う答えを返す入力を作っていない。等価かどうかは未確認 (群 M: `m-follow-8` (長い単位が無く等価と読んだ)・`m-mask-newline`・`m-units-fit-range`・`m-cancel-sorted`・`m-cancel-alias`・`m-moved-ratio`・`m-lead-width`・`m-ctx-words`・`m-weak-hasunit`・`m-cluster-kept`・`m-sentencefinder`・`m-q-single-betsu`・`m-q-extra-subject`・`m-q-text-ratio-limit`・`m-phrase-previous2`・`m-q-keep-before2`。群 Q: 上の 4 本)。再提起するなら、その向きだけを変えた変更体で、本家と違う答えを返す入力 (o・r と両方の答え) を示す
+- 確かめていないこと:
+  - 群 M〜Q の所要 (長い文書・同じ段落の繰り返し) は測っていない。`_quantity_changed` の動的な正規表現は組み直しを覚えている (`dynamicPattern`)
+  - 群 M の CLI への配線は群 AC まで未 (`meaning_risks` の組み立ては群 Y)。`ExtractNumbers`・`NumberRisks` ほかは production から呼ばれる入口 (exported) として残した
+  - 単独のサロゲートと不正な UTF-8 は記録に入れていない
+  - 群 Q の `_QUALIFIER_LABELS` (報告の文面用) は群 AD で足す
+- 最終の検査 (4581c661f の木。rc は全部 0): `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate`。この docs の commit の後の確認は報告に書く
