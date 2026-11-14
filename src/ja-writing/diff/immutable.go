@@ -346,9 +346,12 @@ func positiveRemainder(a, b map[string]int) bool {
 	return false
 }
 
-func riskKind(r *pyjson.Object) string {
-	kind, _ := r.Get("kind")
-	s, _ := kind.(string)
+func riskKind(r *pyjson.Object) string { return riskString(r, "kind") }
+
+// riskString は risk[key] (文字列でなければ空)。
+func riskString(r *pyjson.Object, key string) string {
+	v, _ := r.Get(key)
+	s, _ := v.(string)
 	return s
 }
 

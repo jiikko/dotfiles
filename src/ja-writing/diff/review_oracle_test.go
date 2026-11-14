@@ -27,6 +27,9 @@ type reviewContext struct {
 	s          *sides
 	groups     []*sentenceGroup
 	marks      []marksReview
+	changes    []TypeChange
+	markRisks  []*pyjson.Object
+	negation   []*pyjson.Object
 	cert       map[string][]*pyjson.Object
 	nrisks     []*pyjson.Object
 	tokens     map[string][]valueToken
@@ -51,7 +54,8 @@ func reviewContextOf(t *testing.T, build []any) *reviewContext {
 	if o != r {
 		opcodes = difflib.NewExact(pyunicode.Runes(o), pyunicode.Runes(r)).GetOpcodes()
 	}
-	c := &reviewContext{old: orig, new: rw, full: full, s: s, groups: groups, marks: s.marksReviewsOf(TypeChanges(o, r, opcodes, &typeCache{})),
+	changes := TypeChanges(o, r, opcodes, &typeCache{})
+	c := &reviewContext{old: orig, new: rw, full: full, s: s, groups: groups, changes: changes, marks: s.marksReviewsOf(changes),
 		cert: map[string][]*pyjson.Object{}, tokens: map[string][]valueToken{}, politeness: map[string]*pyjson.Object{}}
 	reviewCache = c
 	return c
@@ -62,6 +66,24 @@ func (c *reviewContext) certainty(docType string) []*pyjson.Object {
 		c.cert[docType] = c.s.certaintyRisks(c.groups, c.marks, nil, docType)
 	}
 	return c.cert[docType]
+}
+
+// marksRiskObjects は文の種類の印の恐れ (本家の _marks_risks の戻り値)、negationRisks は否定の恐れ (本家の _negation_risks の risk)。
+func (c *reviewContext) marksRiskObjects() []*pyjson.Object {
+	if c.markRisks == nil {
+		c.markRisks = append([]*pyjson.Object{}, c.s.marksRisks(c.changes)...)
+	}
+	return c.markRisks
+}
+
+func (c *reviewContext) negationRisks() []*pyjson.Object {
+	if c.negation == nil {
+		c.negation = []*pyjson.Object{}
+		for _, item := range c.s.negationRisks(c.groups) {
+			c.negation = append(c.negation, item.risk)
+		}
+	}
+	return c.negation
 }
 
 func (c *reviewContext) numberRisks() []*pyjson.Object {

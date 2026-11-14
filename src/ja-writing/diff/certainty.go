@@ -178,6 +178,11 @@ func certaintyChange(old, new string, oldContext, newContext, splitContext []*[]
 	return r
 }
 
+// hasHedgeKind は文の種類の印に、推量か意見があるか (確度と状態の候補が、文の種類の印の候補に任せる文を決める)。
+func hasHedgeKind(kinds []string) bool {
+	return slices.ContainsFunc(kinds, func(kind string) bool { return kind == "推量" || kind == "意見" })
+}
+
 // marksReview は文の種類の印の恐れ (kind sentence_type・subkind marks) のうち、確度が読む欄 (本家の risks から取り出すもの)。
 type marksReview struct {
 	oldLine     int
@@ -201,11 +206,25 @@ func (s *sides) marksReviewsOf(changes []TypeChange) []marksReview {
 }
 
 // sameReviewSentence は hedges と確度で共通の、原文の文の照らし方 (本家の _same_review_sentence)。
-func sameReviewSentence(b body, r marksReview) bool {
-	if r.oldLine != 0 && r.oldLine != b.line {
+func sameReviewSentence(b body, r marksReview) bool { return sameReviewText(b, r.oldLine, r.old) }
+
+// sameReviewRisk は sameReviewSentence を、risk の dict (old_line が null なら行を問わず、old が null なら空) に使う形。
+func sameReviewRisk(b body, r *pyjson.Object) bool {
+	var oldLine int
+	if v, _ := r.Get("old_line"); v != nil {
+		oldLine = int(v.(int64))
+	}
+	old, _ := r.Get("old")
+	text, _ := old.(string)
+	return sameReviewText(b, oldLine, text)
+}
+
+// sameReviewText は oldLine (0 なら行を問わない) と old の文が、b と同じ文か。行が違えば偽で、同じ行なら正規化した文の含み合いで見る。
+func sameReviewText(b body, oldLine int, old string) bool {
+	if oldLine != 0 && oldLine != b.line {
 		return false
 	}
-	text, other := pystr.Strip(Normalize(b.raw)), pystr.Strip(Normalize(r.old))
+	text, other := pystr.Strip(Normalize(b.raw)), pystr.Strip(Normalize(old))
 	return strings.Contains(other, text) || strings.Contains(text, other)
 }
 
@@ -300,7 +319,7 @@ func (s *sides) certaintyRisks(groups []*sentenceGroup, marks []marksReview, mas
 				if change.direction == "strengthened" {
 					kinds = r.lost
 				}
-				return sameReviewSentence(old, r) && slices.ContainsFunc(kinds, func(kind string) bool { return kind == "推量" || kind == "意見" })
+				return sameReviewSentence(old, r) && hasHedgeKind(kinds)
 			}) {
 				continue
 			}
