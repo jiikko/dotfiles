@@ -93,6 +93,9 @@ func (s *sides) valueTokens(side int, re *pyre.Lazy) []valueToken {
 	for _, match := range mustFinditer(re, s.docText(side), 0, pyre.NoEnd) {
 		a, b := match.Span(0)
 		line := s.lineOf(side, a)
+		// 本家は添字が範囲の外なら IndexError で止まる。行の区切りになりうる字 (\r・U+2028・\x0b・\x1c・\x85 など) を差し込んだ 507 文書では
+		// 解析の行の数が行の数 + 1 から外れず届かなかったが、届かないことの証明ではないので、止めずに種類の判定を飛ばす形を残す。
+		// 再提起するなら、本家の IndexError を起こす入力を示すこと。
 		if line-1 < len(rows) && valueSkipKinds[rows[line-1].Kind] {
 			continue
 		}
