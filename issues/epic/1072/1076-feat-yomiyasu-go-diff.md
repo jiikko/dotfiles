@@ -201,7 +201,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 残り (この係では手を付けていない): 群 K (見出しの構造) → L (文の組と本文) → AD (人が読む出力)・以降の ④〜⑧。K 以降は `_Sides` を引数に取る段の記録 (`oracle/py/record_diff_stages.py`) が先に要る
   (`call_function.py` の `save` で `_Sides(orig, rw)` を覚え、`_build_full_diff` の hunks を引数に渡す口を足す設計。K の `_heading_order_pairs` は (件数, 似かたの和) の組の max と、組の等しさの比べ (`best[a][b] == best[a-1][b]`) が float のまま要る)
 
-受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み (M・N・O・Q の段は 6 本目で数える検査を足した)・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は A B C E J K L が済み・「`make test-dupscan-gate`」は今の木で通る。
+受け入れ条件の状況: 「入力の集まりで本家と同じ出力」は本体 (AC) 待ち・「検出の種類ごとの当たる組と当たらない組」は 1 本目で済み (M・N・O・Q の段は 6 本目で数える検査を足した)・「difflib が全 API で同じ値」「速い照合の試験」は 1081・「長い文書の所要」は未測定・「群ごとに最低 1 つ壊して落ちる」は (この節の時点では) A B C E J K L が済み (その後の本数は受け入れ条件のチェックボックスと各本目の節が正)・「`make test-dupscan-gate`」は今の木で通る。
 
 ### 2 本目の敵対的レビュー (opus。diff-wf2 の f6614b8d3..6ca4e6615)
 
@@ -460,18 +460,42 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   - 4581c661f feat(ja-writing): diff の概数と範囲の語 (群 Q)
   - 各 commit で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した。ただし bd056ab37 は、入力の語を言い換えて記録を作り直す前の木で通し、直した後は diff のテストと記録の突き合わせだけを回した。`make test-lint` は最後の木だけ (rc 0)
 - 群 M (`diff/numbers.go`・`numrisks.go`・`quantity.go`): 本家の `_find_numbers` ほか。`_negative_zu` と「少ない」などの語 (`negationWords`) は群 N・S の持ち物だが、`_quantity_negated` が使うので M に入れた。
-  🚨 `_cancel_notation` は何も打ち消せないとき渡された Counter をそのまま返す (本家と同じ。続く `_drop_weak` が書き換えるので、別のオブジェクトにすると `raw_added - added` の値が変わる)。Go は map の参照で同じ形にした。巨大な整数 (4,300 桁超) は本家が ValueError で止まるが Go は止まらない (記録に無い)
+  🚨 `_cancel_notation` は何も打ち消せないとき渡された Counter をそのまま返す (本家と同じ。続く `_drop_weak` が書き換えるので、別のオブジェクトにすると `raw_added - added` の値が変わる)。Go は map の参照で同じ形にした。巨大な整数は本家が ValueError で止まるが Go は止まらない (記録に無い。止まる条件は 6 本目の敵対的レビューの節に書いた)
 - 群 N (`diff/negation.go`)・O (`swap.go`)・Q (`qualifier.go`): 本家の関数を写した。Q の正規表現は本家の `pattern` 属性から生成して貼った (手で写さない)
-- 記録: `diff-base.json` は 34,082 → 71,277 case・178,871 → 312,293 呼び出し。足したもの (呼び出し数): `extract_numbers` 19,293・`_number_risks` 9,557・`_negation_risks` 9,516・`_swap_risks` 8,600・`_qualifier_risks` 9,513・各群の関数と定数。組は群 F〜I と同じ入れ物 (`diffBags`) に、各群の手書きの組と固定の種 (PCG 1076/14〜19) を足した。書き足しだけ (既存の case の削除・変更 0 を python で照合)。作り直しは約 70〜90 秒
+- 記録: `diff-base.json` は 34,082 → 71,277 case・178,871 → 312,293 呼び出し (この commit の時点。6 本目の敵対的レビューの直しで 71,290 case・312,340 呼び出しになった)。足したもの (呼び出し数): `extract_numbers` 19,293・`_number_risks` 9,557・`_negation_risks` 9,516・`_swap_risks` 8,600・`_qualifier_risks` 9,513・各群の関数と定数。組は群 F〜I と同じ入れ物 (`diffBags`) に、各群の手書きの組と固定の種 (PCG 1076/14〜19) を足した。書き足しだけ (既存の case の削除・変更 0 を python で照合)。作り直しは約 70〜90 秒
   - 届き方を数える検査: 群 M は replaced・added・lost・order・文書全体の added と lost・何も出ない組のどれにも 20 回以上、N・O・Q も同じ (`checkNumberHits`・`checkNegationSwapHits`・`checkQualifierHits`)
 - 本家と揃わなかった所: 無い (全記録が最初の記録で一致した)
 - わざと壊して比べた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf6/mut-m・mut-f):
   - 群 M の 1 回目 (bd056ab37 の木): 48 本のうち 26 本が red・19 本が緑のまま・3 本が構文エラー。緑のうち 5 本 (`m-ichiji-start`・`m-jippun-maniau`・`m-whole-period-year`・`m-kana-strict`・`m-weak-repeated`) は入力を足して (d054d5ba7) red にした (4581c661f の木で確かめた)。構文エラー 3 本は当て直して、`m-phrase-previous2` と `m-q-keep-before2` は緑のまま、`m-q-text-rest2` は再び構文エラー (当て直していない)
   - 群 N: 9 本全部 red。群 O: 4 本全部 red。群 Q: 8 本のうち 4 本 red (`q-reach`・`q-yaku-noun`・`q-place`・`q-bound`)・4 本が緑のまま (`q-version`・`q-strict-count`・`q-subkind`・`q-compound`)
-  - 緑のまま通った形は、本家と違う答えを返す入力を作っていない。等価かどうかは未確認 (群 M: `m-follow-8` (長い単位が無く等価と読んだ)・`m-mask-newline`・`m-units-fit-range`・`m-cancel-sorted`・`m-cancel-alias`・`m-moved-ratio`・`m-lead-width`・`m-ctx-words`・`m-weak-hasunit`・`m-cluster-kept`・`m-sentencefinder`・`m-q-single-betsu`・`m-q-extra-subject`・`m-q-text-ratio-limit`・`m-phrase-previous2`・`m-q-keep-before2`。群 Q: 上の 4 本)。再提起するなら、その向きだけを変えた変更体で、本家と違う答えを返す入力 (o・r と両方の答え) を示す
+  - 緑のまま通った形は、本家と違う答えを返す入力を作っていない。等価かどうかは未確認 (群 M: `m-follow-8` (長い単位が無く等価と読んだ)・`m-units-fit-range`・`m-cancel-sorted`・`m-moved-ratio`・`m-lead-width`・`m-ctx-words`・`m-weak-hasunit`・`m-sentencefinder`・`m-q-single-betsu`・`m-q-extra-subject`・`m-q-text-ratio-limit`・`m-phrase-previous2`・`m-q-keep-before2`。群 Q: `q-version`・`q-compound`)。ここから外した 5 本 (`m-mask-newline`・`m-cancel-alias`・`m-cluster-kept`・`q-strict-count`・`q-subkind`) は、6 本目の敵対的レビューが本家と違う答えを返す入力を作れた (等価ではなかった)。直した結果は 6 本目の敵対的レビューの節。再提起するなら、その向きだけを変えた変更体で、本家と違う答えを返す入力 (o・r と両方の答え) を示す
 - 確かめていないこと:
   - 群 M〜Q の所要 (長い文書・同じ段落の繰り返し) は測っていない。`_quantity_changed` の動的な正規表現は組み直しを覚えている (`dynamicPattern`)
   - 群 M の CLI への配線は群 AC まで未 (`meaning_risks` の組み立ては群 Y)。`ExtractNumbers`・`NumberRisks` ほかは production から呼ばれる入口 (exported) として残した
   - 単独のサロゲートと不正な UTF-8 は記録に入れていない
   - 群 Q の `_QUALIFIER_LABELS` (報告の文面用) は群 AD で足す
 - 最終の検査 (4581c661f の木。rc は全部 0): `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate`。この docs の commit の後の確認は報告に書く
+
+### 6 本目の敵対的レビュー (opus。diff-wf6 の 8e0a9e1bb..440a3da08。群 M・N・O・Q。直したのは diff-wf6 の係)
+
+本家と違う答え (P1) は、壊していない Go では 1 件も作れなかった。約 38,000 組 (数の表記と Markdown を重ねた 27,000・入れ替え 6,000・否定の 2,000 字の境 1,086・概数と範囲の語 8,000) と前の係の 15,000 組を本家と比べ、食い違いは既知の 4,300 桁の ValueError だけだった。指摘は、本家 (python) の答えと壊した形の答えを並べて再現できたものだけ直した。直すときは、再現した入力を群ごとの手書きの組 (`oracle/diff{qualifier,negation,number}_cases.go`) に足して記録を作り直した (13 case の書き足しだけ。既存の case の削除・変更 0 を python で照合。71,277 → 71,290 case・312,293 → 312,340 呼び出し。群ごとの case 数は number 9,564・negation 9,523・swap 8,602・qualifier 9,519)。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P2-1 `q-strict-count` (`qualifier.go` の `len(olds) == 1 && len(news) == 1` → `>= 1`) | 直した。`最大3日近く　以上。` → `最大3日超　以上。` を `strict-count-wide-space` に足した | 記録が red (`qualifier/hand/strict-count-wide-space`) |
+| P2-2 `q-subkind` (subkind の条件から strict を外す) | 直した。`期間は約3日から5日以上。` → `期間は最大3日から5日超。` を `subkind-strict-to-range` に足した | 記録が red |
+| P2-3 `x-q-keys-rev` (keys を逆の順に積む) | 直した。`3日程度〜ほぼ3〜5日` → `3日超え〜少なくとも3〜5日` を `keys-order` に足した | 記録が red |
+| P2-4 `x-q-zip-old` (組にする数を 1 つに絞る) | 直した。`3〜5日以下、3〜5日以下` → `3〜5日まで、およそ3〜5日以下` を `same-value-twice` に足した | 記録が red |
+| P2-5 `x-n-align-inner` (`negation.go` の残りの上限の `>` → `>=`) | 直した。前後の同じ字を外した残りがちょうど 2,000 字の組を `long-rest-exact-new`・`long-rest-exact-old` (残りが後の側・元の側) と、1 字多い `long-rest-one-over` に足した | 記録が red (exact の 2 本) |
+| P2-6 `x-n-align-ge` (文の字数の上限の `>` → `>=`) | 直した。片側がちょうど 2,000 字で、`>=` にすると autojunk が効かず対応が変わる組 2 本 (`long-side-exact-a`・`long-side-exact-b`。レビューの fuzz が見つけた 1,997 字 → 2,000 字の組を、繰り返しの単位と挿入に分けて Go の式で作り直した) を足した。README に、2,000 字の分かれ目 2 つの組が否定にも入ったと書いた | 記録が red |
+| P2-7 `m-cancel-alias` (`_cancel_notation` が何も打ち消せないときの戻り値を clone に) | 直した。`` `八０いつつⅢ,． `` → `` `八０つつⅢ`,． `` を足した。本節の 1 本目の「緑のまま」の一覧から外した (この形で値が変わることは群 M の節に自分で書いていた) | 記録が red (`number/hand/cancel-alias-backtick`) |
+| P2-8 `m-cluster-kept` (`kept[k] \|\| cancelled[k] > 0` から後ろを外す) | 直した。時刻の組と、コードの囲みが挟まる組 (`3〜5日。> 3日3s` → ``3〜```\n3日\n```5日。> 3日3 日3s``) を足した | 記録が red (2 本) |
+| P2-9 `m-mask-newline` (`numbers.go` の伏せる範囲の改行を残す `chars[i] != '\n'` → `true`) | 直した。行頭の `1.` が箇条書きの番号と読まれる組 (前の係の fuzz が作った組) を足した | 記録が red |
+| P3-1 「4,300 桁を超える数字は ValueError」が狭い | 直した (記録には入れない)。python で確かめた: `1`×4,298 + `千円` は ValueError・`1`×4,297 + `千円` は通る。算用数字だけの並びは 4,301 桁でも通る (`1`×4,301 + `円`)。漢数字だけの並び (`二`×4,301 + `日`) は止まる。止まる所は、位取りの掛け算や漢数字の変換で int の結果を 10 進の文字にする所。食い違いは `extract_numbers`・`_number_risks` に加えて `_qualifier_risks` にも出る。Go は止まらず数を返す。本家と同じ ValueError を Go が投げるか、入力の上限として扱うかは決めていない (実際の文書で 4,298 桁の数字は出ない。再提起するなら、実在する入力でこの食い違いが出た例を添える) | 未解決 (記録に無いと明記) |
+| P3-2 受け入れ条件の状況の行が群の一覧を A B C E J K L のまま | 直した。時点の記録だと書き、正はチェックボックスと各本目の節とした | 直した |
+
+壊した形の結果 (`bin/mutate-verify-list`。commit した木 (53a39b003) で最後に回し、本数はこの run から数えた。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf6/fix/mutlogs): 上の 9 本に、群 N の `n-place-gap-lt` (変わった箇所をまとめる間隔の比べを `<=` → `<`)・`n-limit-const` (`charAlignLimit` 2000 → 1999) を足した 11 本が、全部 rc 0 (想定どおり red)。群ごとの本数は M が 3・N が 4・Q が 4。足した case が落ちたことを各ログの case 名で照合した (`n-place-gap-lt` は足した case ではなく、既存の別の case が落とした)。
+
+壊せなかったところ (レビューの報告から): 記録の件数 (71,277 case・312,293 呼び出し。群ごとの case 数) は記録のファイルから数えて issue・README と合った。群 M・N・O・Q の届き方の検査は `TestBaseMatchesPythonRecording` の中から呼ばれ、このテストは `NORACE_CHECKS` に入っていて空振りしない。`x-n-limit`・`x-o-honor-reach`・`x-o-particle-reach`・`x-o-passive`・`x-q-reach`・`x-q-yaku-start`・`x-q-chikaku`・`x-q-splitdec` は記録が red で、本番の関数を通っている。共有の部品の変更の後も、コピーの `go test ./...` は rc 0。`x-q-reach-ge` は等価の見込み。次の 16 本は fuzz 52,002 組でも記録でも緑のままで、本家と違う入力を作れなかった: `x-q-reach-ge`・`q-version`・`q-compound`・`m-follow-8`・`m-units-fit-range`・`m-cancel-sorted`・`m-moved-ratio`・`m-lead-width`・`m-ctx-words`・`m-weak-hasunit`・`m-sentencefinder`・`m-q-single-betsu`・`m-q-extra-subject`・`m-q-text-ratio-limit`・`m-phrase-previous2`・`m-q-keep-before2` (`m-q-text-rest3` は記録で red)。
+
+未確認リスク: 単独のサロゲートと不正な UTF-8 は試していない。所要は測っていない (fuzz の 1 万 5 千組で Go は 4〜12 秒)。int の桁数の上限で止まる形が、まだ写していない P 以降の群にもある見込みだが、確かめていない。
