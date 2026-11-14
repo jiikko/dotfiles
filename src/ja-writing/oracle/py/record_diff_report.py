@@ -321,7 +321,7 @@ fulldiff("fd-short-diff-leading-equal", [hunk(old_lines=["あ。" * 90 + "x"], n
 fulldiff("fd-short-diff-no-omit", [hunk(old_lines=["あ" * 170], new_lines=["い" * 170], segments=[["-", "あ" * 3], ["+", "い" * 3], ["-", "あ"]])])
 fulldiff("fd-short-diff-full", [hunk(old_lines=["あ。" * 90], new_lines=["あ。" * 90 + "い"], segments=[["+", "い"]])])
 
-# ---- 報告で緑のまま通った所 (敵対的レビュー) ----
+# ---- 全文差分が 0 の組の候補の節・行の途中の BOM の名前・unsupported の行の書き分け ----
 MIXED = "これは**「重要」**です。\nまた、そのため結果が出ました。だから次も試します。\n"
 real("eol-only-with-candidates", MIXED, MIXED.replace("\n", "\r\n"))
 real("bom-only-with-candidates", MIXED, "\ufeff" + MIXED)
