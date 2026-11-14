@@ -109,13 +109,13 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 ## 受け入れ条件
 
-- [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings`・引数の誤り・`--json` の出力 (群 AC。`diff()` の組み立てと CLI への配線) は済み。人が読む出力は群 AD まで未)
+- [x] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (CLI の記録 8,146 件を全件比べて通る。人が読む出力は群 AD (12 本目) で入り、`--json` なしの呼び出しも全件比べる)
 - [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U・X・W・V・Y の段は、記録が届く回数を数える検査がある)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
-- [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U・X・W・V・Y・AB・AC は済み。AD 以降は未)
-- [ ] `make test-dupscan-gate` が通る
+- [x] 長い文書の所要を本家と Go の両方で測った数字がある (12 本目の「所要」の表。合否には使わない)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A〜AD の全部が済み。AD は 12 本目で 16 本)
+- [x] `make test-dupscan-gate` が通る (12 本目の最終の検査で rc 0)
 
 ## 関連ファイル
 
@@ -845,3 +845,49 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 #### 最終の検査 (11 本目の敵対的レビューの後)
 
 最後のコードと記録の編集 (2eb54648c。以降は docs だけ) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf11/fix/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin1〜4.rc)。この節の commit は docs だけの差分なので回し直していない。
+
+### 12 本目 (diff-wf12。2026-11-15。worktree で作業し、push していない)
+
+- 群 AD (本家 10531〜11180 行の `report(d)` と、それが読む表・関数) を `diff/report*.go` に写した。一覧 (写した本家の関数と印) は tmp/yomiyasu-gap-2026-11-12/diff-wf12/inventory.md。`report` は `diffDocument` の値 (`*pyjson.Object`) だけを読み、本家の `--json` を `pyjson.Loads` で読んだ値と同じ型で動く。`compare` は `--json` なしでも `diffDocument` を先に組んでから `report` を作る (11 本目のレビュー P3-2 のとおり。rc 3 の入力は report の前に同じ rc 3 になる)。`_fail_on_line` は `failOnLine`。`cmdenv.Unimplemented` は hook と check がまだ使うので残る
+- 本家の `detector_summary` (check が使う。diff の CLI からは届かない) は写していない (群 AE。1077 で check と一緒に)。`_QUALIFIER_LABELS`・`_CERTAINTY_LEVELS`・`_PROTECTED_LABELS` ほかの表は、Go に無かったものだけを `report*.go` に置いた (`modalityNames`・`countedTypes`・`toneInfoDocTypes`・`sentenceEnd`・`isBlank`・`shorten`・`boldHead` は既にあるものを使った)
+- commit:
+  - 471aae31a feat(ja-writing): diff の人が読む出力 (群 AD: report) を作り、CLI の記録 8,146 件の全部と report の記録 151 case を本家と同じにする
+  - b818a325d test(ja-writing): report の記録に、わざと壊しても緑のまま通った 3 か所 (160 字の境・終了コード 1 の行の並び・文体の切り替えの 2 行目) の入力を足す
+  - この節の docs の commit
+  - 🚨 471aae31a は単独で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が全部 rc 0 (最初の dupscan gate の 3 件 (`report` の closure・`orNone`・`MarshalDiffReport`) を直してから commit した)。b818a325d も同じ 4 本を回して全部 rc 0
+- 記録: `diff-cli.json` は 8,146 件のまま (作り直していない)。これまで「人が読む出力が無くて比べていない」だった 2,562 件を含め、全件を比べる (全文まで比べるのは 56 件)。記録の突き合わせの `reportImplemented` と「比べていない」の数え方は外した。新しい記録 `diff-report.json` (本家の `report(d)` と `_fail_on_line`。159 case) を作った。入力の dict は記録の中に持つので Go 側は組み立てずに読む。dict は本家の `diff()` が返した値 (実際の組 52) と、節を書き換えた値 (意味が変わる恐れの種類と subkind の全部・位置 4 通り・硬化と勢いの全 subkind・参考にする文の分岐・慎重表現・値・敬語・文体の切り替え・全文差分の `差:` の出し方)。driver は `oracle/py/record_diff_report.py`、作り直しは `go run ./oracle/cmd/golden -only diff-report` (数秒。634KB)。race の run でも 0.02 秒なので `NORACE_CHECKS` には入れていない。`go test -race -json -count=1 ./diff` は手元で 60.6 秒 (11 本目は CLI の突き合わせを外した後で 60 秒。最も重いのは `TestRequestMatchesPythonRecording` の 27 秒。CI の上限 600 秒の半分は 300 秒で、その 5 分の 1)。`TestCLIMatchesPythonRecording` は race なしで 15 秒 (`NORACE_CHECKS`)
+- カバレッジ: report の記録と CLI の記録の 2 つの試験で `report*.go` を通した文は 712 のうち 699 (98.2%。`go test -coverprofile`)。通っていないのは、`ContextLabel` の失敗の返し 1 か所・`lineWhere` の「どちらの行も無い」の返し 1 か所 (どちらも本家の `diff()` が作らない dict でしか届かない)・`report_value.go` の型の読みの別の型 (float64 を整数として読む・真偽や float を `{}` で書く・nil の欄) 11 か所。`listNote` (一覧を読めなかったときの 1 行) は Go の `diffDocument` が出さない欄 (`list_problem` は常に null) だが、記録の dict (本家が出さない形を書き換えで作った) が通すので記録で比べている
+- わざと壊した形 (`bin/mutate-verify-list`。commit した木 (b818a325d。コメント 1 行だけ違う、同じコードの木) で最後に回し、本数はこの run から数えた。一覧は tmp/yomiyasu-gap-2026-11-12/diff-wf12/mut/muts.list、ログは同じ dir の mlog2/): 16 本のうち 16 本が rc 0 (想定の検査が red)。「差:」を出す条件の比べの向き (`>=`)・5 か所の定数・160 字の定数、候補の上限 (`tonePlacesShown`)、「うち」の文を出すかの判定 (`kind != "modality"`)、状態の行の「上」「下」、平均の文の長さの比べ、44 字で切る定数、Cf の判定、位置の同点 (`old == new`)、終了コード 1 の行の種類の並び、「ほか」の行の下限 (`> 1`)、規則の数え方の `rewrittenOnly`、読点の割る数 0、見直し候補と参考が混ざる判定、`--fail-on` の数え方 (CLI の記録)。最初の run (記録に 3 か所足す前) は 16 本のうち 3 本が緑のまま通った (160 字の境・終了コード 1 の行の並び・「ほか」の行の下限)。入力を足して (`b818a325d`)、この 3 本も red になった。壊し方の表は同じ dir の mut/muts.json
+- 本家と揃わなかった所: 無い (CLI の記録 8,146 件と report の記録 159 case のどちらも食い違い 0)
+
+#### 所要 (受け入れ条件の「長い文書の所要」。合否には使わない)
+
+`go build -o ja-writing .` で作った Go のバイナリと、本家 (python3 -P -s -S -B -X utf8。環境変数は空から作り、`PYTHONHASHSEED=0`。上に `.git` と `.yomiyasu-words` が無い cwd) を、同じ入力で周ごとに本家と Go の順を入れ替えて測った (測る道具は tmp/yomiyasu-gap-2026-11-12/diff-wf12/bench/run.py。入力は同じ dir の in/)。起動は `--version` の中央値で、「処理」は壁時計の中央値から同じ道具の起動を引いた値。出力は本家と Go で全部同じ (stdout・rc)。1 周 1 入力 1 回で、本家 `bench/pybench.sh` と違う道具。マシンの状態だけで同じコードが 1〜2 割ずれる (bench/README.md)。
+
+| 入力 | 中身 | 本家の中央値 | Go の中央値 | 本家の処理 | Go の処理 | 周 |
+|---|---|---|---|---|---|---|
+| 起動 (`--version`) | | 0.106 秒 | 0.006 秒 | | | 5 |
+| rep50 | 同じ 3 文の段落を 50 回 (5KB) | 0.173 | 0.055 | 0.066 | 0.049 | 5 |
+| rep200 | 同じ段落を 200 回 (20KB) | 0.254 | 0.124 | 0.148 | 0.118 | 5 |
+| rep800 | 同じ段落を 800 回 (82KB) | 0.537 | 0.404 | 0.431 | 0.399 | 5 |
+| rep3000 | 同じ段落を 3,000 回 (300KB) | 1.661 | 1.866 | 1.549 | 1.860 | 3 |
+| bold160 | 崩れた太字 160 組 (`tests/test_v202_diff_bold_performance.py` の unit) | 0.157 | 0.039 | 0.051 | 0.034 | 5 |
+| bold1000 | 同じ unit を 1,000 組 | 0.235 | 0.204 | 0.123 | 0.198 | 3 |
+| line300 | 改行の無い 1 行に同じ 2 文を 300 回 (16KB) | 0.246 | 0.169 | 0.139 | 0.163 | 5 |
+| big25k | 原文 25,932 字 (項ごとに数字が違う。1 段落) | 0.343 | 0.242 | 0.237 | 0.236 | 5 |
+| big25kp | 原文 26,571 字 (空行で段落に分ける) | 0.352 | 0.244 | 0.245 | 0.238 | 5 |
+| big60k | 原文 62,939 字 | 0.602 | 0.525 | 0.495 | 0.519 | 5 |
+
+読み取り (測った範囲だけ): どの入力も、本家と Go の所要は入力の大きさにほぼ比例して伸びる (rep800 → rep3000 は入力 3.75 倍で本家 3.1 倍・Go 4.6 倍。2 乗の伸びは見えない)。起動込みでは小さい文書は Go が速く (起動の差 0.1 秒)、大きい繰り返しの文書 (rep3000・bold1000・big60k) では処理だけだと Go が本家と同じか少し遅い (1.0〜1.6 倍)。bold1000 は本家の 0.123 秒に対して Go が 0.198 秒で、これは 1079 の改善のループで見る候補。
+未測定: 本家の 2.0.1 と 2.2.2 の速さの直しの前後 (本家の過去の commit) との比較、`pair-256k` (bench/gen.py の入力) の diff (1082 の before に数字がある)。
+
+#### 未確認リストの確かめ (11 本目のレビューの未確認リスク)
+
+- 単独のサロゲート: 本家の `diff()` と `report()` に単独のサロゲートを含む 12 組 (高位だけ・低位だけ・対・見出し・太字・引用・数値・できる→する・読点の語を含む形) を通し、`--json` の出力と人が読む出力を Go の `diffDocument` と `report` (WTF-8 の文字列) と比べた。12 組とも本家と同じ (一時の試験を作って回し、消した)。CLI は UTF-8 のファイルだけを受けるので、単独のサロゲートは CLI からは届かない (`UTF-8 として読めません` で rc 2。この経路は `diff-cli.json` の誤りの呼び出しで比べている)
+- 不正な UTF-8: 上のとおり CLI は rc 2 の誤りの文で断り、`diff-cli.json` の記録 (UTF-8 でないファイル) を全件比べて通る
+- 20,000 字以上の原文: 25,932 字・26,571 字・62,939 字の原文 (上の big25k・big25kp・big60k) を CLI で通し、stdout と rc が本家と同じ (2 字の索引を使う長さ)。本家の実装を読んだ確認 (11 本目) と合う
+- `a-kanjikana`・`a-narrow-mod`・`a-swap-break` (11 本目で等価の見込みとした 3 本) の等価は、今回も示していない
+
+#### 最終の検査 (12 本目)
+
+最後のコードと記録の編集 (b818a325d。以降はこの節を含む docs だけ。コメント 1 行を直した後の木で、この commit の前に回し直した) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf12/c2-lt.log・c2-un.log・c2-tl.log・c2-dup.log。docs の commit の木での回し直しは fin-*.log と fin*.rc)。
