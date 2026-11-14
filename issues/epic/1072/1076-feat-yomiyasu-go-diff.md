@@ -525,7 +525,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
     - red: 台詞の最後の「。」を外した組の両向き・形容動詞の語幹の一覧・文末の rstrip・問いの片方だけの判定・`_find_line` の 20 字・文の終わりでの切り・modality_review の判定・logic の old_hits・マークの側の取り違え・正規化した行・画像のパスの始まり・リンクの定義の末尾の改行・二分探索の始まり (`bisect_right - 1`)・同じ subkind の最初の行・1 行が 1 行に変わる塊の相手の行・hunk の中の文字の位置の進め方・省いた置き換えの塊の中身の比べ・上の `qp-high`
     - 緑のまま (2): `qp-quote-break` (引用の行の `break` を外す。同じ subkind の 2 回目以降は `hit` が行番号を上書きしないので、`break` は速くするだけで等価と読んだ。実測はしていない)・`qp-sort-kind` (範囲を並べる最後の鍵 `kind` を逆にする。始まりも終わりも同じ範囲が 2 つの種類で出る入力を作れなかった。13 通りの書き方で `protectedSpansOf` を調べ、どれも 1 つの種類だけだった)。再提起するなら、始まりと終わりが同じで種類が違う範囲が出る文書と、本家・壊した形の答えを示す
   - 群 T: 11 本のうち 7 本が red (最終の木で。最初は 5 本が red・6 本が緑のまま)・4 本が緑のまま。`qt-join` (原文の行を空でつなぐ。前の行の終わりの「売上が」が次の行の「落ち込」の後読みに掛かる) と `qt-group-index` (risk の hunk の番号を group の最初の hunk にする) は、組 3 本を足して (fd27e5ea5) red にした。red のもの: 3 つ目の欄・推敲後の文で表を数えない・原文で数えない行の種類・原文の伏せ・risk の元の行番号・上の 2 本
-    - 緑のまま (4): `qt-old-texts` (原文と同じ文を飛ばす判定を外す。同じ文は原文にあるので、原文を調べる側で家族が「ある」になり、結果が変わらないと読んだ)・`qt-words-dedupe` (同じ当たりの文字列を 2 回数えない判定を外す。今の一覧の 51 家族は同じ文字列に当たらない。気持ちの語の 178 文で確かめた (python)。一覧を差し替えると食い違いうる)・`qt-pair-first` (同じ後の文に組が 2 つあるときの先・後の取り方。そういう組を作れていない)・`qt-new-masker-skip-frontmatter` (推敲後の masker の数えない種類のうち、コード・先頭の設定・HTML は、そもそも文を作らない行なので、表だけが効く)。いずれも本家と違う答えを返す入力を作っていない。等価かどうかは未確認
+    - 緑のまま (4): `qt-old-texts` (原文と同じ文を飛ばす判定を外す。同じ文は原文にあるので結果が変わらないと読んだが、誤り。7 本目の敵対的レビューで直した。下の節)・`qt-words-dedupe` (同じ当たりの文字列を 2 回数えない判定を外す。今の一覧の 51 家族は同じ文字列に当たらない。気持ちの語の 178 文で確かめた (python)。一覧を差し替えると食い違いうる)・`qt-pair-first` (同じ後の文に組が 2 つあるときの先・後の取り方。そういう組を作れていない)・`qt-new-masker-skip-frontmatter` (推敲後の masker の数えない種類のうち、コード・先頭の設定・HTML は、そもそも文を作らない行なので、表だけが効く)。いずれも本家と違う答えを返す入力を作っていない。等価かどうかは未確認
 - 確かめていないこと:
   - 群 S U V W X Y・AB・AC・AD は未着手 (上)。`diff()` の組み立て (群 AC) と CLI への配線までは、検出の群は production から `FeelingRisks` などの入口でしか呼ばれない
   - 群 P・T の所要 (長い文書・同じ段落の繰り返し・変えない箇所が数万個ある文書) は測っていない。`_protected_hits` は範囲を二分探索で引くので、hunk ごとの費用は範囲の数に依らないが、実測はしていない。`go test -race ./diff` は手元で 82 秒 (最も重い `TestRequestMatchesPythonRecording` が 27 秒) で、CI の上限 600 秒の半分に遠い。`TestBaseMatchesPythonRecording` は前の係のとおり race なしで回す
@@ -537,3 +537,24 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 最後のコードの編集 (fd27e5ea5) の後の木 (README・epic・この issue の docs の変更を含む) で、`make -C src/ja-writing lint test` (lint 0 issues・`go test -race ./...` 全部 ok)・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0
 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf7/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と同じ名前の .rc)。この節を足す docs の commit の後に `make test-lint` をもう一度回した (rc は fin2-tl.rc)。
+
+### 7 本目の敵対的レビュー (opus。diff-wf7 の 07c0b2ae9..a02adb095。群 P・T。直したのは diff-wf7 の修正の係)
+
+壊していない HEAD は、約 48,800 組 (Markdown の包み・問いの文末・印・許可・選ぶ範囲・気持ちの語・CRLF・BOM・ゼロ幅の字・行をまたぐ伏せ・文字の対応を省く塊) の fuzz で本家と食い違わず、panic も無かった。記録の件数 (105,525 case・481,116 呼び出し) は記録のファイルから数えて合った。
+指摘は 4 本とも、壊した形と入力を自分で再現できた (本家の答えは python で確かめた。fuzz の食い違いは t1 86 件・g2 1 件・g2 88 件・b1 131 件・q1 1 件)。入力を手書きの組に足し、記録を作り直した (書き足しだけ: 105,525 → 105,529 case・481,116 → 481,131 呼び出し。既存の case は消えず、既存の digest も変わらない。python で照合し missing 0・changed 0)。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P1 / P2-1 `qt-old-texts` の等価の理由が誤り。原文を調べる側は原文を伏せてから探すので、原文の同じ文が行をまたぐインラインのコードの中にあり、推敲後では伏せられていないと、家族は「原文にない」になる (入力: 原文 `a \`a` / `嬉しかった。\``、推敲後 `a \`a` / `嬉しかった。`) | 直した。`feeling/hand/same-sentence-masked-in-original` を足した。7 本目の節の「同じ文は原文にあるので結果が変わらない」は誤りだったので書き直した | `qt-old-texts` が red。落ちた case は足した case |
+| P2-2 `a-default-quote-first` (`subkind == "" &&` を外す。コードの囲みの中の `> >` の行を quote にしてしまう) | 直した。`protected/hand/code-fence-holds-quote-row` を足した | `qp-default-quote-first` が red。落ちた case は足した case |
+| P2-3 `a-quote-hit-first-only` (引用の行を塊の最初の行でしか数えない。記録の `too-large-quote-lines` は引用が 1 行目にしかなかった) | 直した。引用が 5 行目にある `protected/budget/too-large-quote-fifth-line` を足した | `qp-quote-hit-first-only` が red。落ちた case は足した case |
+| P2-4 `a-contents-high-min` (`min(sp.right, high)` の切りを外す。インラインのコードが等しい行をまたいで 2 つ目の hunk まで伸びる) | 直した。`protected/budget/too-large-code-spans-equal-line` を足した | `qp-contents-high-min` が red。落ちた case は足した case |
+| P3 `qt-new-masker-skip-frontmatter` の等価の理由の依存先が書かれていない | 採った。等価の根拠は、群 L の `_sentence_pairs` (Go は diff/sentences.go) が code・先頭の設定 (frontmatter)・HTML の行を文の組に入れないことに依る。その不変条件を守る検査は群 P・T の側に無く、群 L の記録の側にある。群 L の振る舞いを変えるなら、この壊した形の等価を測り直す | 等価のまま (fuzz と手の入力で破れず) |
+
+壊した形の結果 (`bin/mutate-verify-list`。commit した木 (24605315d) で最後に回し、本数はこの run から数えた。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf7/fix/mutlog): 7 本が全部 rc 0 (想定どおり red)。群 P が 4 本 (`qp-high`・`qp-default-quote-first`・`qp-quote-hit-first-only`・`qp-contents-high-min`)、群 T が 3 本 (`qt-join`・`qt-old-texts`・`qt-group-index`)。足した case が落ちたことを、4 本の新しい壊した形のログの case 名で照合した。7 本目の節の緑のまま (4) から `qt-old-texts` を外した (残りは `qt-words-dedupe`・`qt-pair-first`・`qt-new-masker-skip-frontmatter` の 3 本と、群 P の `qp-quote-break`・`qp-sort-kind`)。
+
+壊せなかったところ (レビューの報告から): `qt-words-dedupe`・`qt-pair-first`・`qt-new-masker-skip-frontmatter`・`qp-sort-kind`・`qp-quote-break` は fuzz で食い違い 0 (`qp-sort-kind` は始まりと終わりが同じで種類が違う範囲を 19 通りの書き方で探して出なかった)。レビューが当てた壊した形のうち a-final-plus・a-qend-paren・a-ofp-rstrip・a-findline-cut・a-findline-empty・a-findline-strip・a-block-last・a-hits-ge・a-f-oldrows の 9 本は記録で red。a-opcodes-always・a-one-to-one-tag・a-f-combined・a-f-newskip-code・a-f-oldnew-skip は記録でも fuzz でも緑で、等価と読まれた。等価かどうか未確認なのは a-image-gt (画像のパスが空のときの `left >= right` → `>`)・a-contents-ge (`sp.right > low` → `>=`) の 2 本で、p1 の組でも食い違い 0。
+再提起に要る実測: 上の等価・未確認の壊した形について、本家と違う答えを返す入力 (o・r と、本家・壊した形の答え) を python と Go の両方で示す。
+
+未確認リスク: 単独のサロゲートと不正な UTF-8 は試していない。`meaning_risks()` の `_LAST_TYPE_RANGES` の後始末は群 AC で確かめるまで未確認。群 S 以降に要る写し残しは、群 S を見ていないので確かめていない。
+所要: `go test -race -json ./diff` は手元で 82 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。6 本目の後の CI の race の run (165 秒) は、CI の上限 600 秒の半分 (300 秒) に届かないので、`NORACE_CHECKS` は増やしていない。`TestBaseMatchesPythonRecording` は前のとおり race なしで回し、手元で 26 秒。足した case は 4 つだけで、所要はほぼ変わらない。
