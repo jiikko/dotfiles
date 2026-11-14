@@ -130,3 +130,4 @@ Go のテストの待ちを `testwait.Recv` に機械的に寄せたとき、`ca
 - retro 876 (2026-11-08 に本文から移した): 終了の扱いを指摘ごとに直し、敵対的レビューが 5 周した
 - obaket retro 1401: Task の連鎖を helper へ寄せたとき closure を `@Sendable` にして MainActor を離し、actor への到着が旧実装より遅れた。関係する suite だけでは見えず、全体テストの 2 本で分かった
 - obaket retro 1406: 「suite を消した直後の同じ run loop のクリックだけが届く」を受容の理由に書いたが、`ProfileManagementUseCase` は MainActor でなく `removeSuite` は main の外で走っていた。敵対レビューが見つけた
+- obaket retro 1524: Swift Testing の exit test (`#expect(processExitsWith:)`) は host のアプリを子 process として起こし直す。子には `XCTestBundlePath` は渡るが `XCTestConfigurationFilePath` は渡らず、後者だけを見ていた「テストの host か」の判定が子で偽になった。子が本物の profile に対して本番の起動処理を走らせ、テストのたびに Keychain のダイアログが出ていた (exit test を 1 本足した変更から。子の中で判定を確かめるテストを足して直した)
