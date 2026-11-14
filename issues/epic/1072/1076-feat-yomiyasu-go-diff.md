@@ -572,10 +572,10 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 群 S (`diff/contrast.go`・`diff/contrast_words.go`): 否定対比の主張の逆転 (`_contrast_risks`)。原文の「Aではなく B」(では/じゃ/でも + なく・ない・なかっ・ありません、でなく、は使わず・はせず) から名詞を取り (`_negated_tokens`。送り仮名つきの語・「高い品質」の「品質」・主題の「は」・「だけでなく」を外す・反語と理由の節を外す)、推敲後の文で、重みの語 (目的・最優先・まず など 23 語) と同じ節に否定なしで出るか (`_affirmed_with_weight`。比べて下げる形 `_demoted`・否定のある節 `_neg_after`・仮説・逆接を外す)、B と並べて肯定されるか (`_affirmed_plain`) を見る。原文でもともと肯定の A (`_original_affirms`)・B の側の「Aの〜」の句 (`_b_side_phrases`・`_head_clue`)・見出しの行 (`_CONTRAST_SKIP_KINDS` は本文の数えない種類から見出しと表を外したもの。Go は `contrastSkipKinds`、masker に `kind` を足した) を写した。入口は `ContrastRisks(orig, rw)`
 - 群 U (`diff/certainty.go`・`diff/certainty_words.go`・`diff/hedge.go`): 確度。表 43 行 (強さ 1 可能性・2 見込み・推量・3 予定・5 確実。前の語と重なる位置は後の語に数えない) の語を取り出し (`_certainty_word_spans`)、文の組ごとに同じ強さを打ち消して (同じ名前から先に。隣の組にならなかった文の語でも打ち消し、使った語は取り除く)、強さが動いた段を出す (`_certainty_change`・`_certainty_risks`。元の文から分けた文の強さ 5 の語も比べる。文書の種類が `COUNTED_TYPES` のときは「場合がある」「ことがある」の言い切りと強さ 5 の足しも数える)。推量の分類 `_classify_hedge_marks` (same・strengthen・weaken・negation・condition・question など) は群 Y が呼ぶので公開の関数 `ClassifyHedgeMarks` にした。入口は `CertaintyRisks(orig, rw, docType)`。`_certainty_risks` が読む「文の種類の印」の恐れは、`marksReview` (旧の行・旧の文・lost と added の種類) に写した
   - 同じ語を「同じものか」で見る所 (`word is b`・`pool.remove(word)`) は、語をポインタで持ち、除くのは値が等しい最初の語にした (Python の `list.remove` と同じ)。隣の文の語のリストは組をまたいで共有され、使った語が減っていく (`pools` を群ごとに持つ)
-- 記録: `diff-base.json` は 105,529 → 127,597 case・481,131 → 730,487 呼び出し (13.7MB → 20.9MB)。群 S は 10,198 case (`contrast/`・`_contrast_risks` 10,170 と下の関数 14 本の計 約 72,000 呼び出し・定数 44)、群 U は 11,870 case (`certainty/`・`_certainty_risks` 24,328 と下の関数 12 本の計 約 74,000 呼び出し・定数 19)。
+- 記録: `diff-base.json` は 105,529 → 127,597 case・481,131 → 730,487 呼び出し (17.4MB → 21.0MB。8 本目の敵対的レビューの直しの前は 21,000,285 B)。群 S は 10,198 case (`contrast/`・`_contrast_risks` 10,170 と下の関数 14 本の計 約 72,000 呼び出し・定数 44)、群 U は 11,870 case (`certainty/`・`_certainty_risks` 24,328 と下の関数 12 本の計 約 69,800 呼び出し・定数 19。8 本目の敵対的レビュー P3-3 で数え直した値。覚えるだけの呼び出しを除く)。
   - 群 S の組は、手書き 90 組あまり (本家のコメントと docstring の例を 1 つずつ)・固定の種 PCG 1076/24 の 2,400 組 (原文の書式 44 と推敲後の書式 154 を名詞 48 語で組み合わせる)・入力の集まりと手で作った入力の全組。下の関数は、書式から作った文 1,500 に名詞の組を当てた呼び出しと、手書きの文の組
   - 群 U の組は、手書き 50 組あまり・確度の語の表の文 380 あまりを `遅れます。` と入れ替える組 (3 通り)・固定の種 PCG 1076/26 の 2,600 組 (隣の文を前後に置く)・PCG 1076/28 の強さの違う語を 1 つの文に持たせた 400 組・入力の集まりと手で作った入力の全組。文書の種類は 4 通り (指定なし・article・incident・mail)。下の関数は、表の文とその組み合わせから作った 2,175 文の組
-  - 既存の case は消えず、digest も変わらない (python で照合: missing 0・changed は、呼び出しを足した `contrast/strings/small`・`certainty/small`・`certainty/strings/*` の 29 case だけ)。作り直しは約 140〜165 秒
+  - 既存の case は消えず、digest も変わらない (cd7616d4a の記録と python で照合: 消えた case 0・変わった case 0・増えた case 22,068。29 件という書き方は、この系列の途中の commit で足した case の変化のことで、cd7616d4a にあった case の変化ではなかった)。作り直しは約 140〜165 秒
   - 届き方を数える検査を足した (`checkContrastHits`・`checkCertaintyHits`): 段は、逆転が出る組と出ない組・確度の候補の 2 つの kind と強まる・弱まる・混ざる・文書の種類で数える (`counted_by`) と出ない組。下の関数は、見つかる・見つからないのどちらにも 20 回以上 (S は 26 項目・U は 17 項目)。最初の記録で `shown_word` の送り仮名を足す側・`continues_word` の真・U の `mixed` が足りなかったので、手書きの組と名詞をつなげた呼び出しを足した (確度は文の組ごとに比べるので、混ざる組は 1 つの文に 2 つの語を持たせる)
 - 本家と揃わなかった所: 無い。群 S・U とも、最初の記録の突き合わせで食い違い 0 だった (最初に出た食い違いは、記録の呼び出しの引数が `None` になる、私の入力の誤りで、本家と Go が同じ例外を返していた)
 - 4,300 桁を超える数字で本家が ValueError で止まる件 (6 本目の敵対的レビュー P3-1): 群 S・U の範囲に `int(` も数字を数にする処理も無い (python で該当の行を grep して 0 件)。記録にも入れていない。群 AC で CLI に配線するときの扱いは変わらず未決
@@ -596,5 +596,40 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 #### 最終の検査 (8 本目)
 
-最後のコードの編集の後の木で、`make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回した。rc と所要は下に追記する。
+最後のコードの編集の後の木で、`make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回した。rc は全部 0 (8 本目の敵対的レビューの直しの後の木 3dcfa62f6 + README の件数。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf8/w8/fin.rc)。
 所要: `go test -race -json ./diff` は手元で 84 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。CI の上限 600 秒の半分に遠いので、`NORACE_CHECKS` は増やしていない。`TestBaseMatchesPythonRecording` は前のとおり race なしで回す。
+
+### 8 本目の敵対的レビュー (opus。diff-wf8 の cd7616d4a..9603cffa7。群 S・U。直したのは diff-wf8 の修正の係)
+
+壊していない HEAD は、本家を正解にした fuzz (否定対比 23,000 組・確度 36,000 組・推量の分類の 4 通り・本家の docstring とコメントの例 24,064 組・Markdown・全角・サロゲートペア・結合文字・URL・CRLF・BOM・ゼロ幅の字を差し込んだ 6,517 組) で食い違い 0 だった (P1 は 0 件)。推量の分類 14 種のすべてに届いた。
+指摘のうち P2 の 3 本と P3 の 4 本は、発火する入力を自分で再現できた (本家の答えは python で確かめた)。入力を記録に足し、作り直した (書き足しだけ: 127,597 → 127,603 case・730,487 → 734,178 呼び出し。cd7616d4a の記録に対して消えた case 0・変わった case 0。python で照合し missing 0・changed 0)。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P2-1 `c-oldtexts-text` (`oldTexts[newBody.raw]` → `.text`。入力: 原文 `既存施設だけでなく、既存施設のツールではない https://e.x/a\r\n`、推敲後は同じ文の後ろに `前の文です。` を足したもの) | 直した。`contrast/hand/masked-same-sentence-crlf` を足した | `c8-oldtexts-text` が red。落ちた case は足した case |
+| P2-2 `c-paired-wordonly` (組の相手の打ち消しの `false` → `true`。入力は表の行・リスト・番号つきの行を混ぜた 4 行) | 直した。`contrast/hand/paired-other-affirms-across-clause` を足した | `c8-paired-wordonly` が red。落ちた case は足した case |
+| P2-3 `h-stop-fullcomma` (`hedgePolarity` の区切りの字から全角の「，」を外す。例: `確認しない，遅れるでしょう。` の否定の数が変わる) | 直した。全角の読点・半角の読点・「、」で節を切った 6 組を `certainty/strings/comma` として足した | `h8-stop-fullcomma` が red。落ちた case は足した case。`h8-stop-asciicomma`・`h8-stop-none` も red |
+| P3-1 例外の 222 件は記録の手順が参照 `[0]` を解くときの IndexError で、製品の例外ではない。参照の path を読まない | 採った。テストが path を解く形に直し、`DiffRaisingFunctions` の説明と commit の言い方を直した (製品の `hedgePolarity` は検査していない)。語の無い文を記録から外す案は、既存の digest が変わるので採らなかった | f0e937fe6 |
+| P3-2 `_certainty_risks` の記録の marks・masks を読まない | 採った。覚えた marks 以外・masks が None 以外なら落とす。今の記録は masks が常に None なので、このガードを外す壊した形は緑のまま通る (将来の群 Y のためのガード。壊した形での確認はできない) | f0e937fe6 |
+| P3-3 issue の数の食い違い | 採った。群 U の呼び出しは約 69,800、記録の大きさは 17.4MB → 21.0MB、「changed 29 case」は cd7616d4a に対して変化 0・増えた case と書き直した (上の 8 本目の節) | 数え直した値は記録から取った |
+| P3-4 性能 | 採らない (起票の対象)。測った値は下の表 | 群 F の `TypeChanges` の性質で、群 AC で `diff()` を組むときに再測する |
+| P3-5 推量の分類の `unanchored` は 2 回・`mixed` は 7 回しか届かない | 採った。`unanchored`・`mixed`・`consolidated`・`not_core`・`unpaired`・`lost`・`added` に本家が返す文の組を 22 組ずつ固定し (`certainty/strings/hedge-classes`)、`checkCertaintyHits` の 20 回以上の一覧に足した | 直した後は `unanchored` 34・`mixed` 29・`consolidated` 46・`not_core` 43・`unpaired` 1,402・`lost` 55・`added` 52 |
+| 実装の係が緑のまま残した `u-hedge-hits-overlap`・`u-marks-line`・`sc-risk-markstart`・`sc-risk-targets` | 壊せなかった (下) | 等価と読んだまま |
+
+直したあとで足りなかった 1 本: 私が足した `c8-paired-raw` (組の相手の打ち消しを、伏せた後の文でなく原文で引く) が、最初の記録では緑のまま残った。本家を同じ形に書き換えたものと比べて答えが変わる入力を python で探し (2,349 組)、件数が違う 2 組を `contrast/hand/paired-other-code-holds-weight`・`-b` として足した (3dcfa62f6)。原文のインラインのコードの中に重みの語がある組。
+
+壊した形の結果 (`bin/mutate-verify-list`。commit した木 (3dcfa62f6) で最後に回し、本数はこの run から数えた。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf8/w8/mutlog2。一覧は w8/muts.list): 10 本が全部 rc 0 (想定どおり red)。
+- 群 S: `c8-oldtexts-text`・`c8-paired-wordonly`・`c8-paired-gt` (`>= 0` → `> 0`)・`c8-paired-raw`。最初の 2 本と最後の 1 本は、足した case 自身が落ちたことをログの case 名で照合した (`c8-paired-gt` は既存の fuzz の case で落ちた)。
+- 群 U: `h8-stop-fullcomma`・`h8-stop-asciicomma`・`h8-stop-none`・`h8-unanchored-disjoint` (`disjoint` の反転)・`h8-notcore`・`h8-mixed` (`> 1` → `> 2`)。`h8-stop-fullcomma` は足した `certainty/strings/comma` が落ちた。
+
+壊せなかったところ (レビューの報告から。再提起に要る実測は、本家と壊した形の答えが違う入力を python と Go の両方で示すこと):
+- `sc-risk-markstart`: 否定の印の中に節の切れ目の字は無く、否定の印のすぐ前が切れ目のときは `_negated_tokens` が名詞を取らない。等価と読み、レビューの fuzz (c2・x1) でも食い違い 0
+- `sc-risk-targets`: `newForOld` の値は append した後にしか入らない。等価
+- `u-hedge-hits-overlap`: 文の断片を 2 つつないだ文 1 万あまりで、推量の語が確度の語の終わりちょうどから始まる文は 0 件だった。壊せなかった
+- `u-marks-line`: 旧の行が None になる印の変化は fuzz に 5 件あったが、答えが変わる入力は 5 件の中にも手で組んだ 8 組・約 1.5 万通りの組み合わせにも無かった。到達できないことは示していない
+- レビューが足した 36 本のうち、記録も fuzz も緑だった 15 本 (多くは等価と読んだ。`c-oldfornew-first` は、推敲後の 1 文が原文の 2 文と組になる入力を `_sentence_pairs` が出すかを確かめていない)
+
+測った性能 (レビューの値。1 種類の文書で 1 回ずつ。n 文を全部書き換えた文書。単位は秒): `ContrastRisks` は n=100・300・600 で Go 0.15・1.40・5.69、本家 0.10・0.77・3.13 (どちらも n の 2 乗で、Go は約 1.8 倍)。`CertaintyRisks` は Go 0.028・0.36・2.20 で、うち群 F の `TypeChanges` が 0.022・0.33・2.31 (本家の `_type_changes` は 0.011・0.046・0.153。n=600 で 15 倍、n が 2 倍になると 7 倍)。確度の本体だけは本家より速い。
+所要: `go test -race -json -count=1 ./diff` は手元で 79 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。CI の上限 600 秒の半分に遠いので `NORACE_CHECKS` は増やしていない。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf8/w8/race.json。
+
+未確認リスク: `u-marks-line` が到達できるか・単独のサロゲートと不正な UTF-8 (Go の JSON が U+FFFD に置き換えるので fuzz の道具で比べられない)・群 Y が `_certainty_risks` に masks と全種類の risks を渡す経路・`oldForNew` の上書きの向き (`c-oldfornew-first`)。
