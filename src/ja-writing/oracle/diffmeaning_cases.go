@@ -77,6 +77,8 @@ func diffMeaningHandPairs() []diffFullCase {
 		{name: "hedge-state-kept", old: doc("原因は未確認で、遅れる可能性がある。"), new: doc("原因は未確認です。遅れます。")},
 		{name: "state-lost-certainty-review", old: doc("原因は未確認で、必ず遅れる。"), new: doc("遅れます。")},
 		{name: "state-lost-weaken", old: doc("原因は不明です。"), new: doc("原因は不明かもしれない。")},
+		{name: "quiet-mark-blocks-state-1", old: doc("前の文です。", "おそらく原因は調査中。"), new: doc("前の文です。", "もしかすると原因は調査中と思われる。")},
+		{name: "quiet-mark-blocks-state-2", old: doc("確実に原因は不明と推測される。"), new: doc("確実に日程は未定はずだ。")},
 		{name: "citation-number", old: doc("詳しくは[1]を見る。"), new: doc("詳しくは[2]を見る。")},
 		{name: "citation-author", old: doc("詳しくは(田中, 2019)を見る。"), new: doc("詳しくは(山田, 2019)を見る。")},
 		{name: "citation-lost", old: doc("詳しくは[1]を見る。"), new: doc("詳しくは見る。")},
