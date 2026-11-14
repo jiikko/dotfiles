@@ -47,6 +47,12 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					saved[call.Save] = Normalize(argString(t, call.Args[0]))
 				case "_certainty_word_spans":
 					certaintySaved[call.Save] = argString(t, call.Args[0])
+				case "_ActorSource":
+					var texts []string
+					for _, x := range call.Args[0].([]any) {
+						texts = append(texts, argString(t, x))
+					}
+					actorSources[call.Save] = texts
 				case "_Body":
 					reviewBodies[call.Save] = body{argString(t, call.Args[0]), argString(t, call.Args[1]), argInt(t, call.Args[2]), argInt(t, call.Args[3])}
 				}
@@ -54,6 +60,12 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Get && slices.Contains(oracle.DiffActorConstantNames(), call.Function):
+				got = actorConstantValue(t, call.Function)
+			case call.Function == "_added_actors":
+				got = invokeAddedActors(t, call, build)
+			case slices.Contains(oracle.DiffActorFunctions, call.Function):
+				got = invokeActor(t, call, build)
 			case slices.Contains(oracle.DiffMeaningFunctions, call.Function):
 				got = invokeMeaning(t, call, build)
 			case call.Get && slices.Contains(oracle.DiffAdditionConstantNames(), call.Function):
@@ -159,6 +171,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 	checkReviewHits(t)
 	checkAdditionHits(t)
 	checkMeaningHits(t)
+	checkActorHits(t)
 	total := 0
 	for _, n := range calls {
 		total += n
