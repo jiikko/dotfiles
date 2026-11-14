@@ -134,6 +134,9 @@ func invokeCertainty(t *testing.T, c oracle.Call, build []any) pyjson.Value {
 	a := c.Args
 	switch c.Function {
 	case "_certainty_risks":
+		if m, ok := a[2].(map[string]any); !ok || m["$ref"] != "marks" || a[3] != nil {
+			t.Fatalf("_certainty_risks の marks・masks が記録の想定 (覚えた marks・masks なし) と違う: %v %v", a[2], a[3])
+		}
 		docType := ""
 		if a[4] != nil {
 			docType = argString(t, a[4])
@@ -227,12 +230,22 @@ func charSetOf(set map[string]bool) pyjson.Value {
 
 var _ = pyunicode.Runes
 
-// invokeHedgePolarity は _hedge_polarity (語は覚えた語の先頭。語が無いと本家は添字の IndexError で止まる)。
+// invokeHedgePolarity は _hedge_polarity。語の引数は覚えた語の列を path の添字で引いたもの。
+// 語が無い文で出る IndexError は、記録の手順が参照を解くときの例外で、_hedge_polarity の中の例外ではない (製品の hedgePolarity は添字を引かない)。
 func invokeHedgePolarity(t *testing.T, c oracle.Call) (pyjson.Value, error) {
 	t.Helper()
 	spans := certaintySpansOf(t, c.Args[2])
-	if len(spans) == 0 {
+	ref, ok := c.Args[1].(map[string]any)
+	path, _ := ref["path"].([]any)
+	if !ok || len(path) != 1 {
+		t.Fatalf("語の参照が [添字 1 つ] の形でない: %v", c.Args[1])
+	}
+	idx := argInt(t, path[0])
+	if idx < 0 {
+		t.Fatalf("語の参照の添字が負: %v", path[0])
+	}
+	if idx >= len(spans) {
 		return nil, &visibility.Error{Type: visibility.TypeIndexError, Message: "list index out of range"}
 	}
-	return int64(hedgePolarity(argString(t, c.Args[0]), spans[0], spans)), nil
+	return int64(hedgePolarity(argString(t, c.Args[0]), spans[idx], spans)), nil
 }

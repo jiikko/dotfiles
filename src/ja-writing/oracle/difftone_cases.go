@@ -18,7 +18,7 @@ var diffToneConstants = []string{
 
 // DiffRaisingFunctions は、記録の中に例外になる呼び出しと成功する呼び出しの両方を持つ関数 (本家が投げる例外は仕様の一部で、型と文面も突き合わせる)。
 // parse_list は書き方の誤りの ValueError、tone と _tone_excerpt は、印が共通の前の部分をまたいで推敲後の位置が負になるときの IndexError。
-// _hedge_polarity は、覚えた語の先頭を引数に取る呼び出しなので、語の無い文では本家の記録の手順が添字の IndexError で止まる (型と文面は Go も同じに返す)。
+// _hedge_polarity の例外は、語の無い文で記録の手順が参照 (覚えた語の列の [0]) を解くときの IndexError で、本家の関数の中の例外ではない。Go のテストが参照を解く所で同じ型と文面を返すことを突き合わせるだけで、製品の hedgePolarity は検査していない。
 var DiffRaisingFunctions = []string{"parse_list", "tone", "_tone_excerpt", "_hedge_polarity"}
 
 // DiffToneFunctions は群 AA の関数。
