@@ -110,11 +110,11 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 ## 受け入れ条件
 
 - [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings` と引数の誤りは済み。検査の本体は、群 AC で `diff()` の組み立てと CLI に配線するまで未)
-- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U・X・W の段は、記録が届く回数を数える検査がある。V 以降は未)
+- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U・X・W・V・Y の段は、記録が届く回数を数える検査がある)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U・X・W は済み。V Y・AB 以降は未)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U・X・W・V・Y は済み。AB 以降は未)
 - [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
@@ -701,3 +701,40 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 #### 最終の検査 (9 本目の敵対的レビューの後)
 
 最後のコードと記録の編集 (f6e31790f) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-dupscan-gate` の rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/fix/f-lt.log・f-un.log・f-dup.log と .rc)。この節と README・epic の件数の commit は docs だけの差分で、`make test-lint` を回した結果は報告に書く。
+
+### 10 本目 (diff-wf10。2026-11-14〜15。worktree で作業し、push していない)
+
+- 順は V → Y。V を commit して検査を通してから Y に入った。群 AB・AC・AD は手を付けていない。本家の該当の範囲の一覧は tmp/yomiyasu-gap-2026-11-12/diff-wf10/inventory.md (群 V は定義・定数 77、群 Y は 2)。写さなかったのは、本家のどこからも呼ばれない `_addition_old_future_count`・`_addition_old_negative` と、`_addition_causal_words` だけが呼ぶ `_addition_find_all` (Go は表を直接たどる)
+- commit:
+  - cb3b2987f feat(ja-writing): diff の書き足した内容の恐れ (群 V: _addition_risks) を作り、本家の記録と突き合わせる (message の「定数 47 本」は誤りで、記録した定数は 48 本)
+  - 2a2ce1d21 feat(ja-writing): diff の意味が変わる恐れの組み立て (群 Y: _meaning_risks・meaning_risks) を作り、慎重表現の入口を本番の形に揃える
+  - 3fd360d3c test(ja-writing): 群 Y の記録に、出力から外した推量の印が慎重表現と状態の候補を重ねない組を足し、入口が外した印を読む試験を足す
+  - この節と README・epic の docs の commit
+  - 🚨 単独で検査が通らない commit: 無い。cb3b2987f は `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した (最初の木は lint の intrange 1 と dupscan gate の重複 3 で落ち、直してから commit)。2a2ce1d21 も同じ 3 つを通した (lint は staticcheck の De Morgan 2 で一度落ちて直した)。3fd360d3c は記録の突き合わせ (`go test ./diff` の 2 本) までで、`make lint test` の全体は最後の木で回した
+- 群 V (`diff/addition.go`・`diff/addition_words.go`): 状態の消え (`state`: 未確認・検討中などが、近い文にも残らず消えた文。残る言い方・済んだ言い切り・他の家族への言い換え・主題の一致を見る)・約束の足し (`promise`・`promise_review`: 再発防止・保証・その他の約束。原文の述語を 1 つずつ打ち消し、書き手の印が無い約束は見直しに回す)・因果の足し (`claim`: 理由・原因・結果のつなぎ。原文の数を打ち消し、2 字の並びが 2 文以上に重なれば `joined`、原文に無い語が半分以上なら `new_content`、原文の「〜時に」を原因にしたものは `time_to_cause`)。入口は `AdditionRisks`。文の種類の印・確度・否定の恐れは、risk の並び (`*pyjson.Object`) で受ける
+  - 4,300 桁の件: 群 V・Y の範囲に `int(` は無い (python で該当の行を grep して 0 件)。記録にも入れていない。群 AC の扱いは未決のまま
+- 群 Y (`diff/meaning.go`): 本家と同じ順で数値・否定・入れ替え・問い・変えない箇所・否定対比・気持ちを集めて並べ (`riskOrder`)、文の種類の印を `_classify_hedge_marks` で出力に残す・外す (same・strengthen)・戻す (強める向きで確度の候補が出ない文) に分け、引用の候補・確度・かぎかっこ・許可・能力・選ぶ範囲・因果・概数と範囲の語・群 V の候補を足し、状態の候補に写した確度の見直しを取り除く。入口は `MeaningRisks`。`sides.immutable` と `sides.quiet_marks` は `meaningResult` で返す
+  - 9 本目で確かめていないと書いたことを閉じた: (a) 本番が慎重表現に渡す確度の恐れは、`hedges` が `meaning_risks` の出力と、出力から外した印の恐れ (quiet) を受ける形に直した (これまでは文の種類の印の全部と確度の恐れだけを渡していた)。`HedgesSection` もその形。記録は `_meaning_risks` のあとに同じ `sides` で呼ぶ `_hedges` で、quiet が空でない組は、段の記録で 20 回以上届くことを数える (最初の記録では 284 回)。(b) `meaning_risks` に渡る全種類の恐れの並びは、公開の `meaning_risks` (2,276 呼び出し) と段の記録で、種類ごとに 20 回以上届くことを数える
+  - 入口のうち `CertaintyRisks`・`ImmutableValues`・`QuoteRisks` は、まだ本番と違う入力 (文の種類の印の全部など) で作っている (試験からしか呼ばれない)。本番の形は `MeaningRisks` に任せ、群 AC で `diff()` に配線するときに整理する
+- 記録: `diff-base.json` は 146,425 → 178,665 case・1,297,165 → 1,791,860 呼び出し (27.2MB → 33.5MB。40MB に届かないので別のファイルには分けなかった)。作り直しは約 285 秒 (群 V の前は約 240 秒)。群 V は 17,840 case・299,051 呼び出し (`addition/`)、群 Y は 14,400 case あまり・195,000 呼び出し (`meaning/`)
+  - 群 V の組: 入力の集まりと diff の入力の組・手書き 90 組あまり (本家のコメントと docstring の例・語どうしが隣り合う・主題が「が」だけ・依頼の語が約束のすぐ後ろにある)・固定の種 PCG 1076/40 (状態 2,200)・41 (約束 2,600)・42 (因果 2,000)・43 (3 種類を混ぜた 2,400)・45 (時から原因への書き換え 700)。下の関数は銀行の文と組み合わせ 1,909 文を通す。文書の種類の指定は無い
+  - 群 Y の組: 入力の集まりと diff の入力の組・手書き 40 組あまり・群 V の手書きの組・固定の種 PCG 1076/50 (群 M〜X の銀行を混ぜた 3,600)・51 (推量の語から強い言い方への書き換え 1,500。文書の種類 2 通り)・ほかの群の組の抜き出し (入れ替え 3 つに 1 つ・否定対比と概数と範囲と動かしてはいけない値は 6 つに 1 つ)。公開の `meaning_risks` は手書きの組と組 8 つに 1 つに、type_changes なし・ありで通す。段の呼び出しは本家の `diff()` と同じ順 (`_type_changes`・`_modality_changes`・`_logic_changes` を覚えてから `_meaning_risks`) で、`getattr(sides, "immutable")`・`getattr(sides, "quiet_marks")` (組み込みの `getattr` を記録の道具のまま使う) と `_hedges` を続けて呼ぶ
+  - 既存の case は消えず、digest も変わらない (9 本目の前の記録 base-orig と python で照合: 消えた case 0・変わった case 0・増えた case 32,240)。cb3b2987f の記録と比べると 32 case (`addition/strings/`) の digest だけが変わった: 分かれ目の文を足したので、60 文ずつの束の組が変わった
+  - 届き方を数える検査 (`checkAdditionHits`・`checkMeaningHits`): 群 V は state:lost・promise の 3 つの subkind・promise_review・claim の 3 つの reason と何も出ない組が 20 回以上。群 Y は全種類 (19 種) の候補・何も出ない組・quiet・restored (強める向きの印を戻した)・filtered (状態の候補に写して確度の見直しを取り除いた)・immutable・公開の関数が 20 回以上。最初の記録では `time_to_cause` が 12 回、swap・contrast_reversal・number_qualifier・immutable が 5〜15 回だったので、時から原因への書き換えの組と、ほかの群の組の抜き出しを足した
+- 本家と揃わなかった所: 無い。群 V・Y とも、最初の記録の突き合わせで食い違い 0 だった
+- わざと壊して比べた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf10/mut/ の logv・logall・logtrim・logre、一覧は同じ dir の muts-v.json・muts-y.json と muts-*.list。本数は各 run の表から数えた。一覧は群 V 50・群 Y 21 本を作り、時間のため 38 本を当てた):
+  - 群 V: 26 本を当て、23 本が red。最初の run (cb3b2987f の木) は 13 本のうち 8 本が red (うち 1 本は run の途中で止めた)・5 本が緑 (隣り合う語の境・主題の最後の 2 字・依頼の窓の後ろ・主題が「が」だけ・窓の前)。緑のうち 4 本に分かれ目の入力を足して (2a2ce1d21) 当て直し red。続けて 13 本を当て、11 本が red・2 本が緑
+    - 緑のまま 3 本 (どれも等価かどうか未確認): `v-promise-window-before` (依頼の窓の頭を 2 字下げる。依頼の語は 3 字以上なので、窓の頭の 2 字前から始まれず、約束の頭の字と重なるときだけ違う。重なる組を作れなかった)・`v-promise-open-quote` (閉じていないかぎかっこの判定。閉じる前に文が終わる組を作れなかったと読んだ)・`v-oldfuture-start` (原文の述語の前の窓を 1 字狭める。窓の頭から 4 字目にだけ効く自動詞の語の組を作れなかった)。再提起するなら、本家と壊した形の答えが違う `_addition_risks` の入力を示す
+  - 群 Y: 12 本を当て、10 本が red (`y-restore-line` は最初の壊し方が構文エラーで、直して当て直した。`y-hedges-quiet` は見る試験を入口の試験に変えて当て直した)。緑のまま 2 本: `y-strengthened-subkind` (外した印を戻すかを決める確度の候補の subkind の絞り。強める向きの印と、弱める向きの確度の候補が同じ文に出る組を作れなかった)・`y-additions-quiet` (群 V に外した印を渡さない。足した 3 組でも答えが変わらなかった。外した印が足す推量の種類で止める候補が、状態の候補の確度の見直しとの重なりで先に止まっていると読んだが、実測はしていない)
+  - 最初の run の red は、その後の commit の木では当て直していない (足したのは入力だけで、既存の case は変わらないので red のままのはず。実測はしていない)
+- 確かめていないこと:
+  - 群 AB・AC・AD は未着手。`AdditionRisks`・`MeaningRisks` は試験からしか呼ばれない (群 AC で `diff()` の組み立てに配線する)。`CertaintyRisks` などの他の入口は上のとおり
+  - 群 V・Y の所要 (長い文書・同じ段落の繰り返し) は測っていない。群 V の `additionRisks` は組ごとに語の表を当て、`covered` は文ごとに 2 字の並びの逆引きを作る。本家は同じ段落の繰り返しで遅かったので、Go も遅い恐れがある
+  - 単独のサロゲートと不正な UTF-8 は記録に入れていない
+  - 本家の `_addition_risks` の `risks` に、群 V が読まない種類 (数値・入れ替えなど) の恐れを混ぜた入力は、群 Y の段の記録で通っている (全種類を渡している) が、V の段だけの記録は 3 種類 (印・確度・否定) だけを渡す
+  - 文書の種類の指定は群 V の段の記録に無い (群 Y の段と公開の関数は、指定なし・article の 2 通り)
+- 所要: `go test -race -json ./diff` は手元で 90 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。CI の上限 600 秒の半分に遠いので `NORACE_CHECKS` は増やしていない。`TestBaseMatchesPythonRecording` は race なしで手元 56 秒 (9 本目は 39 秒)
+
+#### 最終の検査 (10 本目)
+
+最後のコードの編集 (3fd360d3c。以降は docs だけ) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf10/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin1〜4.rc)。この節の commit は docs だけの差分なので回し直していない。
