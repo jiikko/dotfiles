@@ -171,6 +171,7 @@ func diffProtectedHandPairs() []diffFullCase {
 		{name: "replace-quote-and-code", old: doc("> 引用です。", "`a` を使う。"), new: doc("> 引用でした。", "`b` を使う。")},
 		{name: "whitespace-only-code", old: doc("`a` を使う。"), new: doc("`a`  を使う。")},
 		{name: "empty-old", old: "", new: doc("```", "x", "```")},
+		{name: "code-fence-holds-quote-row", old: doc("```", "x = 1", "```"), new: doc("```", "> > 楽しめる。", "x = 1", "```")},
 		{name: "crlf-fence", old: "```\r\nx\r\n```\r\n", new: "```\r\ny\r\n```\r\n"},
 		{name: "inline-code-double-backtick", old: doc("``a`b`` を使う。"), new: doc("``a`c`` を使う。")},
 		{name: "heading-code", old: doc("# `a` の説明"), new: doc("# `b` の説明")},
@@ -219,9 +220,17 @@ func diffProtectedBudget() []diffFullCase {
 		}
 		return string(r) + "。" + mark + "\n"
 	}
+	// 引用の行が塊の最初の行ではない塊
+	quoteAt := func(changed bool) string {
+		lines := strings.Split(strings.TrimSuffix(build(500, 60, changed, none), "\n"), "\n")
+		lines[4] = "> " + lines[4]
+		return strings.Join(lines, "\n") + "\n"
+	}
 	return []diffFullCase{
 		{name: "too-large-last-line-code", old: build(600, 59, false, none) + lastLine(false, "`x`"), new: build(600, 59, true, none) + lastLine(true, "`y`")},
 		{name: "too-large-last-line-link", old: build(600, 59, false, none) + lastLine(false, "[a](https://a.example/1)"), new: build(600, 59, true, none) + lastLine(true, "[a](https://b.example/1)")},
+		{name: "too-large-quote-fifth-line", old: quoteAt(false), new: quoteAt(true)},
+		{name: "too-large-code-spans-equal-line", old: build(700, 59, false, none) + lastLine(false, " `x") + "SAME 行。\nyo` 終わり。\n", new: build(700, 59, true, none) + lastLine(true, " `x") + "SAME 行。\nyn` 終わり。\n"},
 		pair("too-large-code", 300, code),
 		pair("too-large-link", 400, link),
 		{name: "too-large-quote-lines", old: "> " + build(500, 60, false, none), new: "> " + build(500, 60, true, none)},

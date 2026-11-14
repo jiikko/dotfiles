@@ -53,6 +53,7 @@ func diffFeelingHandPairs() []diffFullCase {
 		{name: "family-in-inline-code-original", old: doc("`ほっとした` を使う。"), new: doc("ほっとしました。")},
 		{name: "family-in-inline-code-new", old: doc("設定を開きます。"), new: doc("設定を開きます。`ほっとした` を使う。")},
 		{name: "family-in-link-new", old: doc("設定を開きます。"), new: doc("設定を開きます。[ほっとした](https://a.example/)")},
+		{name: "same-sentence-masked-in-original", old: doc("a `a", "嬉しかった。`"), new: doc("a `a", "嬉しかった。")},
 		{name: "two-families", old: doc("設定を開きます。"), new: doc("ほっとして、嬉しいです。")},
 		{name: "same-family-twice", old: doc("設定を開きます。"), new: doc("ほっとして、ほっとしました。")},
 		{name: "two-words-same-family", old: doc("設定を開きます。"), new: doc("嬉しいです。うれしいです。")},
