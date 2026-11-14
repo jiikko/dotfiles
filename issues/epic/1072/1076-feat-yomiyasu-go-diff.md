@@ -110,11 +110,11 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 ## 受け入れ条件
 
 - [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings` と引数の誤りは済み。検査の本体は、群 AC で `diff()` の組み立てと CLI に配線するまで未)
-- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T の段は、記録が届く回数を数える検査がある。S 以降は未)
+- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U の段は、記録が届く回数を数える検査がある。V 以降は未)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T は済み。S U V W X Y・AB 以降は未)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U は済み。V W X Y・AB 以降は未)
 - [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
@@ -558,3 +558,43 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 未確認リスク: 単独のサロゲートと不正な UTF-8 は試していない。`meaning_risks()` の `_LAST_TYPE_RANGES` の後始末は群 AC で確かめるまで未確認。群 S 以降に要る写し残しは、群 S を見ていないので確かめていない。
 所要: `go test -race -json ./diff` は手元で 82 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。6 本目の後の CI の race の run (165 秒) は、CI の上限 600 秒の半分 (300 秒) に届かないので、`NORACE_CHECKS` は増やしていない。`TestBaseMatchesPythonRecording` は前のとおり race なしで回し、手元で 26 秒。足した case は 4 つだけで、所要はほぼ変わらない。
+
+### 8 本目 (diff-wf8。2026-11-14。worktree で作業し、push していない)
+
+- 順は S → U。V W X Y・AB・AC・AD は手を付けていない。本家の該当の範囲の一覧は、群 S が関数 16 (うち `_negative_zu` は群 M で写し済み)・`_lazy_compile` 34、群 U が関数 14・`_lazy_compile` 11 と表 43 行。全部写した (S は関数 15・定数 44、U は関数 14・定数 19)。写さなかったのは、この範囲にあるが後の群だけが使う `_CERTAINTY_LEVELS` (群 AD の `report`)・`_DIALOGUE`・`_QUOTE_CLOSE`・`_QUOTE_DROP` (群 W)。
+- commit:
+  - e81c960da feat(ja-writing): diff の否定対比の逆転 (群 S: _contrast_risks) を作り、本家の記録と突き合わせる
+  - d293bb810 test(ja-writing): 群 S の記録に、緑のまま通した壊した形 (打ち消しの判定・下げる形・肯定した側の語・原文の肯定) を落とす入力を足す
+  - 47afbb0f6 feat(ja-writing): diff の確度 (群 U: _certainty_risks・_classify_hedge_marks) を作り、本家の記録と突き合わせる
+  - 39776c82d test(ja-writing): 群 U の記録に、緑のまま通した壊した形 (推量の節の字数・否定の位置・決まりの言い方・分けた文の語の使い回し) を落とす入力を足す
+  - この節と README・epic の docs の commit と、`_hedge_polarity` を例外ありの関数の一覧に足した commit (下)
+  - 🚨 単独では検査が通らない commit: 39776c82d は `go test -race ./diff` の `TestBaseRecordingCoversEveryFunction` が落ちる (`_hedge_polarity` の例外を一覧に足し忘れた。次の commit が直す)。e81c960da・47afbb0f6 は、commit の前の木で `make -C src/ja-writing lint`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通し、`go test ./diff ./oracle` も通した (e81c960da は最初の木で dupscan gate が重複 3 件で落ちたので、既にある helper を使う形に直してから commit)。d293bb810 は lint・dupscan gate と `go test ./diff` までで、`make test` の全体は回していない
+- 群 S (`diff/contrast.go`・`diff/contrast_words.go`): 否定対比の主張の逆転 (`_contrast_risks`)。原文の「Aではなく B」(では/じゃ/でも + なく・ない・なかっ・ありません、でなく、は使わず・はせず) から名詞を取り (`_negated_tokens`。送り仮名つきの語・「高い品質」の「品質」・主題の「は」・「だけでなく」を外す・反語と理由の節を外す)、推敲後の文で、重みの語 (目的・最優先・まず など 23 語) と同じ節に否定なしで出るか (`_affirmed_with_weight`。比べて下げる形 `_demoted`・否定のある節 `_neg_after`・仮説・逆接を外す)、B と並べて肯定されるか (`_affirmed_plain`) を見る。原文でもともと肯定の A (`_original_affirms`)・B の側の「Aの〜」の句 (`_b_side_phrases`・`_head_clue`)・見出しの行 (`_CONTRAST_SKIP_KINDS` は本文の数えない種類から見出しと表を外したもの。Go は `contrastSkipKinds`、masker に `kind` を足した) を写した。入口は `ContrastRisks(orig, rw)`
+- 群 U (`diff/certainty.go`・`diff/certainty_words.go`・`diff/hedge.go`): 確度。表 43 行 (強さ 1 可能性・2 見込み・推量・3 予定・5 確実。前の語と重なる位置は後の語に数えない) の語を取り出し (`_certainty_word_spans`)、文の組ごとに同じ強さを打ち消して (同じ名前から先に。隣の組にならなかった文の語でも打ち消し、使った語は取り除く)、強さが動いた段を出す (`_certainty_change`・`_certainty_risks`。元の文から分けた文の強さ 5 の語も比べる。文書の種類が `COUNTED_TYPES` のときは「場合がある」「ことがある」の言い切りと強さ 5 の足しも数える)。推量の分類 `_classify_hedge_marks` (same・strengthen・weaken・negation・condition・question など) は群 Y が呼ぶので公開の関数 `ClassifyHedgeMarks` にした。入口は `CertaintyRisks(orig, rw, docType)`。`_certainty_risks` が読む「文の種類の印」の恐れは、`marksReview` (旧の行・旧の文・lost と added の種類) に写した
+  - 同じ語を「同じものか」で見る所 (`word is b`・`pool.remove(word)`) は、語をポインタで持ち、除くのは値が等しい最初の語にした (Python の `list.remove` と同じ)。隣の文の語のリストは組をまたいで共有され、使った語が減っていく (`pools` を群ごとに持つ)
+- 記録: `diff-base.json` は 105,529 → 127,597 case・481,131 → 730,487 呼び出し (13.7MB → 20.9MB)。群 S は 10,198 case (`contrast/`・`_contrast_risks` 10,170 と下の関数 14 本の計 約 72,000 呼び出し・定数 44)、群 U は 11,870 case (`certainty/`・`_certainty_risks` 24,328 と下の関数 12 本の計 約 74,000 呼び出し・定数 19)。
+  - 群 S の組は、手書き 90 組あまり (本家のコメントと docstring の例を 1 つずつ)・固定の種 PCG 1076/24 の 2,400 組 (原文の書式 44 と推敲後の書式 154 を名詞 48 語で組み合わせる)・入力の集まりと手で作った入力の全組。下の関数は、書式から作った文 1,500 に名詞の組を当てた呼び出しと、手書きの文の組
+  - 群 U の組は、手書き 50 組あまり・確度の語の表の文 380 あまりを `遅れます。` と入れ替える組 (3 通り)・固定の種 PCG 1076/26 の 2,600 組 (隣の文を前後に置く)・PCG 1076/28 の強さの違う語を 1 つの文に持たせた 400 組・入力の集まりと手で作った入力の全組。文書の種類は 4 通り (指定なし・article・incident・mail)。下の関数は、表の文とその組み合わせから作った 2,175 文の組
+  - 既存の case は消えず、digest も変わらない (python で照合: missing 0・changed は、呼び出しを足した `contrast/strings/small`・`certainty/small`・`certainty/strings/*` の 29 case だけ)。作り直しは約 140〜165 秒
+  - 届き方を数える検査を足した (`checkContrastHits`・`checkCertaintyHits`): 段は、逆転が出る組と出ない組・確度の候補の 2 つの kind と強まる・弱まる・混ざる・文書の種類で数える (`counted_by`) と出ない組。下の関数は、見つかる・見つからないのどちらにも 20 回以上 (S は 26 項目・U は 17 項目)。最初の記録で `shown_word` の送り仮名を足す側・`continues_word` の真・U の `mixed` が足りなかったので、手書きの組と名詞をつなげた呼び出しを足した (確度は文の組ごとに比べるので、混ざる組は 1 つの文に 2 つの語を持たせる)
+- 本家と揃わなかった所: 無い。群 S・U とも、最初の記録の突き合わせで食い違い 0 だった (最初に出た食い違いは、記録の呼び出しの引数が `None` になる、私の入力の誤りで、本家と Go が同じ例外を返していた)
+- 4,300 桁を超える数字で本家が ValueError で止まる件 (6 本目の敵対的レビュー P3-1): 群 S・U の範囲に `int(` も数字を数にする処理も無い (python で該当の行を grep して 0 件)。記録にも入れていない。群 AC で CLI に配線するときの扱いは変わらず未決
+- わざと壊して比べた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf8/mut-s/log・log2 と mut-u/log・log2。本数は各 run の表から数えた。壊した形の一覧は mut-s/muts.json と mut-u/muts.json にある):
+  - 群 S: 47 本。最初の run (e81c960da の木) は 25 本が red・15 本が緑・7 本が構文エラー (使わなくなった変数)。緑の 15 本に、関数の単位の呼び出し (`_neg_after` の並べた語の「の」・`_demoted` の置き換え先と「減らす」・`_affirmed_with_weight` の逆接・前の節の空白・重なる語・`_side_affirmed` の「にも」・置き換え元の窓・退ける言い方・`_original_affirms` の重なる当たりと否定の印の前の節・`_head_clue`) を足し (d293bb810)、構文エラーの 7 本は壊し方を直して、その 22 本を d293bb810 の木で当て直した: 20 本が red・2 本が緑のまま。最終は 47 本のうち 45 本が red
+    - 緑のまま 2 本 (どちらも等価と読んだ。実測はしていない): `sc-risk-markstart` (`originalAffirms` に渡す否定の印の始まりを、終わりにする。節の切れ目が否定の印の中に入らないので、`clauseBounds` の位置が同じ節に入ると読んだ。stage で否定の印の直前が節の切れ目なら名詞が取れないので、この形は stage から届かない) と `sc-risk-targets` (`newForOld[i]` が空のリストになることは無い。追加するときは必ず 1 件入る)。再提起するなら、本家と壊した形の答えが違う `_contrast_risks` の入力を示す
+    - red の主なもの: 否定の語の外・節の始め・名詞の長さと字の種類・反語の位置・名詞の取り出し・送り仮名の語・重みの語の前の主題の句・仮説・見出しの行・見出しと表の数えない種類・原文の肯定・組の相手・同じ組の重複を出さない判定・B の句を伏せる処理・示す語の送り仮名
+  - 群 U: 37 本。最初の run (47afbb0f6 の木) は 28 本が red・6 本が緑・3 本が構文エラー。緑の 6 本に、`_hedge_polarity` (語が無いと添字の IndexError で止まる形も)・200 字より前の字を持つ `_hedge_clause`・語のすぐあとに否定が続く文・原文の隣の文に決まりの言い方がある組・同じ文を 2 つの組が分けた先とみなす組を足し (39776c82d)、構文エラーの 3 本は壊し方を直して、その 9 本を 39776c82d の木で当て直した: 7 本が red・2 本が緑のまま。最終は 37 本のうち 35 本が red
+    - 緑のまま 2 本 (等価かどうか未確認): `u-marks-line` (`sameReviewSentence` の旧の行が 0 (行が見つからない) のときの除外を外す。旧の行が見つからない印の変化を作れなかった) と `u-hedge-hits-overlap` (推量の語の範囲と確度の語の重なりの比べの `<` → `<=`。語の終わりちょうどから推量の語が始まる組を作れなかった)。再提起するなら、本家と壊した形の答えが違う入力を示す
+    - 注意: 最初の run の red は、その後の commit の木では当て直していない (足したのは入力だけで、既存の case は変わらないので、red のままのはず。実測はしていない)
+- 確かめていないこと:
+  - 群 V W X Y・AB・AC・AD は未着手。`diff()` の組み立て (群 AC) と CLI への配線までは、`ContrastRisks`・`CertaintyRisks`・`ClassifyHedgeMarks` は試験からしか呼ばれない
+  - 群 S・U の所要 (長い文書・同じ段落の繰り返し) は測っていない。群 U の `certaintyWordSpans` は文ごとに表の 43 本の正規表現を当てるので、同じ段落を繰り返す文書では遅い恐れがある (本家の前置きの検査は表に無いので写していない)
+  - 単独のサロゲートと不正な UTF-8 は記録に入れていない
+  - `_certainty_risks` に渡す `masks` を本家が `None` 以外で呼ぶ経路 (群 Y が作る masker) は、群 Y まで未確認
+  - 本家が `_certainty_risks` に渡す `risks` は、文の種類の印の恐れだけでなく全種類の恐れの並びだが、確度が読むのは (kind, subkind) が (sentence_type, marks) のものだけなので、Go は印の恐れだけを受ける。群 Y で本家と同じ並びを渡す形に直す必要は無いと読んだが、配線のときに突き合わせる
+  - 群 U の `_hedge_polarity` の記録は、語が無い文では本家が IndexError で止まる形を含む (`DiffRaisingFunctions`)。製品の本家の呼び出しではなく、記録の手順の引数の組み立てで起きる
+
+#### 最終の検査 (8 本目)
+
+最後のコードの編集の後の木で、`make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回した。rc と所要は下に追記する。
+所要: `go test -race -json ./diff` は手元で 84 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。CI の上限 600 秒の半分に遠いので、`NORACE_CHECKS` は増やしていない。`TestBaseMatchesPythonRecording` は前のとおり race なしで回す。
