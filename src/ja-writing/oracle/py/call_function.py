@@ -11,6 +11,8 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
   fixture の操作 ("op") が例外になったときは keep が無くても exception を添える (呼び出し側が、どの操作がなぜ失敗したかを出して止まるため)。
 - "args_out_only": [添字...] の呼び出しは、結果を [戻り値, 呼んだ後の args のうち、その添字のもの] にする (args に解析の結果のような JSON にできない値があるときに、書き足される引数だけを記録する)。
   args の中の {"$ref": "名前", "path": [...]} は、覚えた値の添字・鍵を辿った一部 (_build_full_diff の戻り値の tuple から _Sides や hunks を取る)。
+  args の中の {"$concat": [...]} は、要素 (list か {"$ref"}) をつないだ 1 つの list。{"$column": 値, "n": 添字} は、値 (list) の各行の n 番目を集めた list
+  (_number_risks の戻り値 (番号, 順, risk) の並びから risk の並びを取る)。どちらも足すだけで、使わなければ前と一字も同じ出力。
 - "method": "名前" の呼び出しは、関数 (クラスでもよい) を呼んだ戻り値の、その名前のメソッドを引数なしで呼んだ結果を戻り値にする
   (difflib のように、組み立てた照合器の get_opcodes の結果を覚えて次の呼び出しへ渡す。付けなければ前と一字も同じ出力)。
 - "args_out": true の呼び出しは、結果を [戻り値, 呼んだ後の args] にする (引数の list に書き足す関数 (calque の型の判定が語を足す) の足した中身を記録する。付けなければ前と一字も同じ出力)。
@@ -48,10 +50,17 @@ def resolve(value):
             for step in value["path"]:
                 picked = picked[step]
             return picked
+        if set(value) == {"$column", "n"}:
+            return [row[value["n"]] for row in resolve(value["$column"])]
         if len(value) == 1:
             (key, inner), = value.items()
             if key == "$ref":
                 return registry[inner]
+            if key == "$concat":
+                joined = []
+                for part in resolve(inner):
+                    joined += part
+                return joined
             if key == "$bytes_b64":
                 return base64.b64decode(inner)
             if key == "$str":

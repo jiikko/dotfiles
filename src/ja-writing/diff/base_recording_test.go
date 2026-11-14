@@ -47,11 +47,17 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					saved[call.Save] = Normalize(argString(t, call.Args[0]))
 				case "_certainty_word_spans":
 					certaintySaved[call.Save] = argString(t, call.Args[0])
+				case "_Body":
+					reviewBodies[call.Save] = body{argString(t, call.Args[0]), argString(t, call.Args[1]), argInt(t, call.Args[2]), argInt(t, call.Args[3])}
 				}
 				if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; want != "00000000" {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Get && slices.Contains(oracle.DiffReviewConstantNames(), call.Function):
+				got = reviewConstantValue(t, call.Function)
+			case slices.Contains(oracle.DiffReviewFunctions, call.Function):
+				got = invokeReview(t, call, build)
 			case call.Function == "_hedge_polarity":
 				got, exc = invokeHedgePolarity(t, call)
 			case call.Get && slices.Contains(oracle.DiffCertaintyConstantNames(), call.Function):
@@ -144,6 +150,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 	checkFeelingHits(t)
 	checkContrastHits(t)
 	checkCertaintyHits(t)
+	checkReviewHits(t)
 	total := 0
 	for _, n := range calls {
 		total += n
