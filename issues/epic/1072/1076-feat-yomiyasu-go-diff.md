@@ -109,12 +109,12 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 ## 受け入れ条件
 
-- [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings` と引数の誤りは済み。検査の本体は、群 AC で `diff()` の組み立てと CLI に配線するまで未)
+- [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings`・引数の誤り・`--json` の出力 (群 AC。`diff()` の組み立てと CLI への配線) は済み。人が読む出力は群 AD まで未)
 - [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U・X・W・V・Y の段は、記録が届く回数を数える検査がある)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U・X・W・V・Y は済み。AB 以降は未)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U・X・W・V・Y・AB・AC は済み。AD 以降は未)
 - [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
@@ -188,7 +188,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
   `diff-cli.json` は 8,002 件 (新しい入力 `actor-material-order` の分が 54 件増え、既存の行の中身の変更は 0。`req` の欄が本体まで進む 5,6xx 件に付いた)
 - 本体へ渡す値 (1 本目の敵対的レビュー P2-6 への手当て): `run` を `prepare` (本体を呼ぶ前まで。request を返す) と `compare` に分けた。本家の `_run` が `diff()` に渡す引数 (原文・書き直した文・立場・注記・種類・読者・語の一覧の context・資料) を、
   記録の driver (`oracle/py/record_diff_cli.py`) が `diff` を差し込んで控え、正規の JSON の SHA-256 を `req` に記録する。`TestRequestMatchesPythonRecording` が Go の `prepare` の戻り値と全件突き合わせ、本体まで進む記録と Go が 1 件ずつ一致すること・全部の欄 (立場・種類・読者・語の一覧・資料・注記) に値の入った記録があることも見る。
-  これで本体 (群 AC) が入るまでの間も、本体へ渡す値は機械で守られる。`bodyImplemented` は本体 (AC) が入ったときに真にする (今のまま)。**資料の順が実際に使われる所 (added_actors) の出力は、群 AB が入るまで比べられない** (渡す値の順だけは今守っている)
+  これで本体 (群 AC) が入るまでの間も、本体へ渡す値は機械で守られる。`bodyImplemented` は本体 (AC) が入ったときに真にする (今のまま)。**資料の順が実際に使われる所 (added_actors) の出力は、群 AB が入るまで比べられない** (渡す値の順だけは今守っている) (11 本目: 群 AB・AC が入り、`added_actors` を含む `--json` の出力を全件比べている)
 - 大きい入力 (`full-budget`・`full-long-fragment`) を、オプションを通す組から外したままにする: 外した理由は本家の実行時間で、オプション (種類・読者・立場・語の一覧・資料) の処理は入力の大きさに依らず、本体へ渡す値の突き合わせはこの 2 つも通常の呼び出し (text・`--json`・`--fail-on`) で受けているため、オプション付きで増やしても守るものが増えない。全文差分の上限の経路は関数の記録で通す (`full-budget` は `too_large`、新しい `budget-second-hunk` は `budget`、`full-long-fragment` と `long-one-side-pairs` は長い断片)
 - わざと壊して red を確かめた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf2/mut-j4/): 9 本、全部想定の検査で red。動かした行の取り合いの確認の外し・近さの窓 8 → 2・同点の後の候補を取る形 (`>=` と枝刈りの `<=` → `<` の 2 か所)・引用の中の行の種類・合計の上限の引き算の外し・断片の長さの判定の `||` → `&&`・改行コード none の除外の外し・元と後の入れ替え・資料の順の逆転。
   最初に当てた 9 本のうち 7 本は緑のまま通った (手書きの入力が分かれ目に当たっていなかった)。固定の種の組と狙いを定めた組を足して 9 本とも red にした。`>=` だけを壊した形は枝刈りの `<=` のせいで等価 (同点の候補が ratio を求める前に落ちる) で、2 か所を一緒に当てた
@@ -322,7 +322,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 確かめていないこと:
   - 上の緑のままの壊した形 (群 F 40 本・群 H・I 21 本。当て直して 28 本・13 本になった。下の節) の入力が本家と違う答えを返すか
   - 群 F〜I の所要 (数十万字・同じ段落を繰り返す文書の `typeRanges`・`pairGoneSentences`・`logicTails`) は測っていない。本家の `_overlapping`・`_widen_to_sentences`・`passed_by_grams` の覚えは写した (結果が同じなので、記録では遅さが見えない)
-  - `diff()` の全体の流れ (群 AC) で `typeCache` を使い回すとき、`_LAST_TYPE_RANGES` を使い終えたら空に戻す所 (本家の `diff()` と `meaning_risks()`) は、群 AC が入るまで未確認。`TypeChanges` が cache に置き、`shared` が使い回す形だけを記録で見ている (`ModalityChanges`・`LogicChanges` は cache を空で渡す形で比べた)
+  - `diff()` の全体の流れ (群 AC) で `typeCache` を使い回すとき、`_LAST_TYPE_RANGES` を使い終えたら空に戻す所 (本家の `diff()` と `meaning_risks()`) は、群 AC が入るまで未確認。`TypeChanges` が cache に置き、`shared` が使い回す形だけを記録で見ている (11 本目: 群 AC が入り、`document_test.go` の `TestDiffDocumentKeepsNothingFromThePreviousDocument` と、本家を 1 つのプロセスで続けて呼んだレビューの比べ 13,085 組 (食い違い 0) で、前の文書の範囲が残らないことを確かめた) (`ModalityChanges`・`LogicChanges` は cache を空で渡す形で比べた)
   - 単独のサロゲートを含む文書は、群 F〜I の記録に入れていない
 - 最終の検査: 下の「最終の検査 (4 本目)」
 
@@ -529,7 +529,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 確かめていないこと:
   - 群 S U V W X Y・AB・AC・AD は未着手 (上)。`diff()` の組み立て (群 AC) と CLI への配線までは、検出の群は production から `FeelingRisks` などの入口でしか呼ばれない
   - 群 P・T の所要 (長い文書・同じ段落の繰り返し・変えない箇所が数万個ある文書) は測っていない。`_protected_hits` は範囲を二分探索で引くので、hunk ごとの費用は範囲の数に依らないが、実測はしていない。`go test -race ./diff` は手元で 82 秒 (最も重い `TestRequestMatchesPythonRecording` が 27 秒) で、CI の上限 600 秒の半分に遠い。`TestBaseMatchesPythonRecording` は前の係のとおり race なしで回す
-  - `ChangeRisksOf` が `o == r` のとき型の変化の入力を空にする (本家の `diff()` と同じ) 点は、記録の本家 (いつも `_ExactSequenceMatcher` の opcodes を渡す) との突き合わせで同じになることを確かめた (同じ文書の組が記録に入っている)。ただし `meaning_risks()` の `finally` で `_LAST_TYPE_RANGES` を空にする所は、群 AC まで未確認
+  - `ChangeRisksOf` が `o == r` のとき型の変化の入力を空にする (本家の `diff()` と同じ) 点は、記録の本家 (いつも `_ExactSequenceMatcher` の opcodes を渡す) との突き合わせで同じになることを確かめた (同じ文書の組が記録に入っている)。ただし `meaning_risks()` の `finally` で `_LAST_TYPE_RANGES` を空にする所は、群 AC まで未確認 (11 本目で確かめた。上の 325 行目の節のとおり)
   - 単独のサロゲートと不正な UTF-8 は記録に入れていない (Go の `encoding/json` が置き換えるので渡せない)
   - `_find_line` の「見つからない」(None) は記録に入っている (`find-line/` の case)。ただし行が複数の hunk にまたがる組での振る舞いは、`_marks_risks` の組 (印が文の途中で変わる組) 経由でしか見ていない
 
@@ -556,7 +556,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 壊せなかったところ (レビューの報告から): `qt-words-dedupe`・`qt-pair-first`・`qt-new-masker-skip-frontmatter`・`qp-sort-kind`・`qp-quote-break` は fuzz で食い違い 0 (`qp-sort-kind` は始まりと終わりが同じで種類が違う範囲を 19 通りの書き方で探して出なかった)。レビューが当てた壊した形のうち a-final-plus・a-qend-paren・a-ofp-rstrip・a-findline-cut・a-findline-empty・a-findline-strip・a-block-last・a-hits-ge・a-f-oldrows の 9 本は記録で red。a-opcodes-always・a-one-to-one-tag・a-f-combined・a-f-newskip-code・a-f-oldnew-skip は記録でも fuzz でも緑で、等価と読まれた。等価かどうか未確認なのは a-image-gt (画像のパスが空のときの `left >= right` → `>`)・a-contents-ge (`sp.right > low` → `>=`) の 2 本で、p1 の組でも食い違い 0。
 再提起に要る実測: 上の等価・未確認の壊した形について、本家と違う答えを返す入力 (o・r と、本家・壊した形の答え) を python と Go の両方で示す。
 
-未確認リスク: 単独のサロゲートと不正な UTF-8 は試していない。`meaning_risks()` の `_LAST_TYPE_RANGES` の後始末は群 AC で確かめるまで未確認。群 S 以降に要る写し残しは、群 S を見ていないので確かめていない。
+未確認リスク: 単独のサロゲートと不正な UTF-8 は試していない。`meaning_risks()` の `_LAST_TYPE_RANGES` の後始末は群 AC で確かめるまで未確認 (11 本目で確かめた)。群 S 以降に要る写し残しは、群 S を見ていないので確かめていない。
 所要: `go test -race -json ./diff` は手元で 82 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。6 本目の後の CI の race の run (165 秒) は、CI の上限 600 秒の半分 (300 秒) に届かないので、`NORACE_CHECKS` は増やしていない。`TestBaseMatchesPythonRecording` は前のとおり race なしで回し、手元で 26 秒。足した case は 4 つだけで、所要はほぼ変わらない。
 
 ### 8 本目 (diff-wf8。2026-11-14。worktree で作業し、push していない)
@@ -777,3 +777,71 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 #### 最終の検査 (10 本目の敵対的レビューの後)
 
 最後のコードと記録の編集 (8ae817f06) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf10/fix/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin-*.rc)。この節の commit は docs だけの差分。
+
+### 11 本目 (diff-wf11。2026-11-15。worktree で作業し、push していない)
+
+- 順は AB → AC。本家の該当の範囲は `_added_actors` とその下の関数・定数 (群 AB)、`_comma_increase` と `diff()` の組み立て (群 AC)
+- commit:
+  - dc772ee41 feat(ja-writing): diff の足した人や担当 (群 AB) を作り、関数の記録 9,132 case を本家と同じにする
+  - c94de5c17 feat(ja-writing): diff の --json の出力 (群 AC: 読点の増え・文書の組み立て・桁の上限) を作り、CLI の記録を本家と同じにする
+  - c99b3e960 test(ja-writing): 敵対的レビューで緑のまま通った群 AB・AC の分かれ目 16 か所の入力を記録に足し、CLI の突き合わせを race の run から外す
+  - 6ea9eac71 fix(ja-writing): diff の --json なしでも diff() を先に組み、本家が rc 3 で止まる入力を rc 3 で返す
+  - 2eb54648c refactor(ja-writing): 群 AB・AC が足した写し 4 つ (make test-dupscan-gate が止めたもの) を寄せる
+  - この節の docs の commit
+  - 🚨 dc772ee41 と c94de5c17 は `make test-dupscan-gate` を単独では通らない (新しい写し 4 件。2eb54648c で寄せた。dc772ee41 の木では未実測だが、写しの 2 件は AB の `wordSet` と closure)。dc772ee41 は単独で他の検査が通ったかも回していない。AC の木で `make test-unused-excluding-tests` が、群 AB の `actorSkipSet` と `(*actorMention).value` が production から使われないと報告したので c94de5c17 で直した (前者は `actorMaskSkip` に寄せて消し、後者は試験からしか呼ばれないので試験のファイルへ移した)。AB だけの木でも同じ報告が出た可能性があり、出ていれば dc772ee41 は単独では通らない。c94de5c17 の木では lint の staticcheck (De Morgan) も 1 件落ちたので直してから commit した
+- 群 AB は `_actor_candidates` に原文を変えて通す形で語の探し方を確かめ、2 字の索引は部分文字列の検索と同じ答えなので写さない (本家の `_ActorSource` を読んで、`_starts` が 0..len−2 の全部の 2 字の位置を持つことを確かめた)。群 AC は `comma.go`・`document.go`・`pyexception.go` (4,300 桁の上限と `tone` の IndexError を rc 3 と標準エラーの 1 行目で返す)
+- 記録: `diff-cli.json` は 8,002 → 8,146 件 (`limit/` 33 件・`boundary/` 111 件を足した。比べた 5,584 件・人が読む出力が無くて比べていない 2,562 件)。`diff-base.json` は 178,694 → 187,842 case・1,792,251 → 1,842,183 呼び出し。作り直しは書き足しだけ (消えた case 0・変わった case 0)
+- 本家と揃わなかった所: 無い (レビューの比べ 13,085 組で食い違い 0・panic 0)
+
+### 11 本目の敵対的レビュー (opus。diff-wf11 の 2298e50a6..dc772ee41 と、そのとき未コミットだった群 AC。直したのは diff-wf11 の修正の係)
+
+壊していない木は、本家を正解にした比べ (`--json --no-words` の stdout 全文・rc・標準エラーの 1 行目を 13,085 組。人や担当の語・読点・Markdown・資料・`--fail-on`・`--doc-type`・4,300 桁と `tone` の IndexError の境 (rc 3 が 69 件)) で食い違い 0・panic 0 だった (P1 は 0 件。本家を 1 つのプロセスで続けて呼んだので、前の文書の型の範囲が残れば食い違いに出るはずだが出なかった)。
+指摘のうち P2 の 16 か所は、レビューが示した入力を本家 (python) と Go の両方で通し、本家の答えを記録の作り直しで確かめた。入力を記録に足した (書き足しだけ。CLI は消えた case 0・変わった case 0・増えた case 111 + 11、関数は消えた case 0・変わった case 0・増えた case 16)。群 AC の読点の境は `diffEdgeInputs` (CLI の記録の `boundary/`)、群 AB の語の探し方は `diffActorEdges` (関数の記録の `actor/edge/`) に入れた。
+
+| 指摘 (壊した形) | 扱い | 結果 |
+|---|---|---|
+| P2 `c-rate-eq` (0.3 ちょうどの増え) | 直した。`boundary/cm-*` | red |
+| P2 `c-shown` (候補の上限 5 件) | 直した。`boundary/cm-*` | red |
+| P2 `c-joinmax` (つなぐ文は 4 文まで) | 直した。`boundary/so-*`・`cm-*` | red |
+| P2 `c-join-counted` (見出しの文までつなぐ) | 直した。`boundary/c-join-counted-*` | red |
+| P2 `c-step-order` (前後どちらからつなぐか) | 直した。`boundary/so-*` | red |
+| P2 `c-nosort` (つないだ元の文の並べ替え) | 直した。`boundary/c-nosort-*` | red |
+| P2 `c-used` (同じ元の文を 2 度使わない) | 直した。`boundary/c-used-*` | red |
+| P2 `c-first-counted` (先頭の文が数えた文かの判定) | 直した。`boundary/c-first-counted-*` | red |
+| P2 `c-quotedepth` (引用の行の読点) | 直した。`boundary/c-quotedepth-*` | red |
+| P2 `d-rewonly` (書き直しだけの差の status) | 直した。`boundary/cm-*` ほか | red |
+| P2 `d-hedge-quiet` (外した推量の印と慎重表現) | 直した。`boundary/d-hedge-quiet-*`・`hq3-*` | red |
+| P2 `a-sha-4` (「者」の芯の長さの下限) | 直した。`actor/edge/a-sha-4-*` | red |
+| P2 `a-same-no` (資料の「A の B」) | 直した。`actor/edge/a-same-no-*` (資料つきの `a-same-no-material` を含む) | red |
+| P2 `a-support` (「サポート」の動詞) | 直した。`actor/edge/a-support-*` | red |
+| P2 `a-norm-space` (資料どうしの空白) | 直した。`actor/edge/a-norm-space-*` | red |
+| P2 `a-window` (並べて置き換えた文の窓) | 直した。`actor/edge/a-window-*` | red |
+| P3-1 `diff-cli.json` の case の順がコードの順と違い、作業ツリーのままだと `TestCLIMatchesPythonRecording` が落ちる | 直した。記録を作り直した (既存の case は変わらず順だけが揃う)。case の名前が重ならない試験 (`TestDiffCLICaseNamesAreUnique`) も足した | 緑 |
+| P3-2 `--json` なしで本家が rc 3 になる入力が、Go では「まだ実装していません」(rc 2) | 直した。`compare` が `--json` なしでも先に `diffDocument` を組む。`limit/<名前>\|text` の 11 件を足した | red (`p3-compare-order`) |
+| P3-3 issue の古い記述 | 直した。上の 4 か所に 11 本目で確かめたことを足した | — |
+
+等価と判定されて壊した形を採らなかった 10 本 (緑のまま。再提起するなら、本家と壊した形の答えが違う入力を示す):
+- `c-sent-min`: 後ろの `newCount-oldCount < 2` が同じ文を落とすので等価
+- `c-zero-rate`: 読点は数えた文からしか数えないので、文が 0 なら読点も 0
+- `c-nohunk`: 行の差が無いのは改行・BOM だけの違いで、読点の数は同じ
+- `c-quote-edge`: かぎかっこの範囲はかぎかっこの字の位置から始まるので、読点が範囲の頭に来ない
+- `d-unsupported`: kind unsupported は `ground()` だけが作り、`diff()` には出ない
+- `a-strip`: 空白だけの文は語が無いので候補も無い
+- `a-pos-floor`: high == low+1 なら位置は low のまま
+- `a-kanjikana`・`a-narrow-mod`・`a-swap-break`: 本家の関数に同じ壊し方を当てて探しても分かれる入力が 0 件。等価の見込みで、示してはいない (未確認リスク)
+
+壊した形の結果 (`bin/mutate-verify-list`。commit した木 (2eb54648c と同じコードの木) で最後に回し、本数はこの run から数えた。一覧は tmp/yomiyasu-gap-2026-11-12/diff-wf11/fix/muts.list、ログは同じ dir の mlog/): 17 本のうち 17 本が rc 0 (想定の検査が red)。群 AC の読点 9 本・document 2 本・`compare` の順 1 本は `TestCLIMatchesPythonRecording`、群 AB 5 本は `TestBaseMatchesPythonRecording`。群ごと 3 本以上 (定数・比べの向き・同点・前置きの検査を含む)。壊し方の表は同じ dir の muts.json。
+
+レビューが壊せなかったところ (報告から): 共有の部品 (`lintcli.go` の変更の後も lint の CLI と raw の記録は緑)・`actor_oracle_test.go` が `NORACE_CHECKS` の試験から呼ばれて空振りしないこと・「既存の case を変えず 9,132 case を足した」の主張 (187,826 − 178,694 = 9,132)・2 字の索引の主張。
+
+所要: `go test -race -json -count=1 ./diff` は、`TestCLIMatchesPythonRecording` を race から外す前は手元で 183 秒 (この 1 本が 124 秒。CI の上限 600 秒の半分に近づく計算) で、外した後は 60 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒)。外した試験は race なしで 22 秒 (`NORACE_CHECKS`)。
+
+未確認リスク (レビューの報告から):
+- 単独のサロゲートと不正な UTF-8 は試していない
+- 20,000 字以上の原文 (本家が 2 字の索引を使う長さ) は比べに入れていない。答えが同じことは本家の実装を読んで確かめた
+- 人が読む出力 (群 AD) は未実装なので比べていない
+- 上の `a-kanjikana`・`a-narrow-mod`・`a-swap-break` が等価かどうかは示していない
+
+#### 最終の検査 (11 本目の敵対的レビューの後)
+
+最後のコードと記録の編集 (2eb54648c。以降は docs だけ) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf11/fix/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin1〜4.rc)。この節の commit は docs だけの差分なので回し直していない。
