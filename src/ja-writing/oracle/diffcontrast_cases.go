@@ -184,6 +184,8 @@ func diffContrastHandPairs() []diffFullCase {
 		{name: "empty-old", old: "", new: doc("品質を最優先にする。")},
 		{name: "empty-new", old: doc("品質ではなく速度を使う。"), new: ""},
 		{name: "crlf", old: "品質ではなく速度を使う。\r\n", new: "品質を最優先にする。\r\n"},
+		{name: "masked-same-sentence-crlf", old: "既存施設だけでなく、既存施設のツールではない https://e.x/a\r\n", new: "既存施設だけでなく、既存施設のツールではない https://e.x/a\n前の文です。\n"},
+		{name: "paired-other-affirms-across-clause", old: "| データじゃなく支払い期限とので、 | x |\n前の文です。\n- 目的は共通化ではなく、外部の認証を確認する。\n1. 最優先は道具よりでもなく、共通化を使う\n", new: "| 支払い期限は使わない | x |\n- 主な狙いは認証の速度にする\n1. 最優先は手作業だけでなく、共通化を優先するが、"},
 	}
 }
 

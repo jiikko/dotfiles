@@ -88,6 +88,13 @@ var diffCertaintyExtraBank = []string{
 	"遅れる可能性も否定できない。", "遅れる可能性は否定できません。", "可能性が捨てきれず、遅れない。", "可能性も拭えないので止まらない。", "止まらない可能性もある。", "止まらない可能性も否定できない。", "止まるかもしれないが、続かない。",
 }
 
+// diffCertaintyCommaTexts は、全角の読点「，」で節を切った否定と推量の語の文 (_hedge_polarity の節の初めを決める字を狙う)。others は同じ位置の書き直した文。
+// extra bank と別に持つのは、extra bank の長さが変わると、その並びで作る case が変わるため。
+var diffCertaintyCommaTexts = [][2]string{
+	{"確認しない，遅れるでしょう。", "たぶん遅れる。"}, {"遅れるでしょう，確認しない。", "たぶん遅れる。"}, {"遅れない，たぶん止まるでしょう。", "たぶん遅れる。"},
+	{"確認しなかった，遅れる可能性がある。", "遅れるかもしれない。"}, {"確認しない,遅れるでしょう。", "たぶん遅れる。"}, {"確認しない、遅れるでしょう。", "たぶん遅れる。"},
+}
+
 // diffCertaintyContexts は組の文の前後に置く、組にならなかった文 (確度の語を持つもの・持たないもの・元の文と同じ字を共有するもの)。
 var diffCertaintyContexts = []string{
 	"前の文です。", "次の文です。", "必ず確認する。", "必ず実施する。", "確実に遅れる。", "確実です。", "遅れる可能性がある。", "遅れる見込みです。", "来月に修正する予定です。", "予定です。", "遅れるでしょう。",
@@ -348,5 +355,15 @@ func diffCertaintyCases(pairs [][3]string) []VisCase {
 	}
 	extra := diffCertaintyExtraBank
 	rotated := append(append([]string{}, extra[1:]...), extra[0])
-	return append(cases, VisCase{Name: "certainty/strings/extra", Calls: diffCertaintyStringCalls(extra, rotated, false)})
+	commaTexts, commaOthers := make([]string, len(diffCertaintyCommaTexts)), make([]string, len(diffCertaintyCommaTexts))
+	for i, p := range diffCertaintyCommaTexts {
+		commaTexts[i], commaOthers[i] = p[0], p[1]
+	}
+	hedgeTexts, hedgeOthers := make([]string, len(diffCertaintyHedgePairs)), make([]string, len(diffCertaintyHedgePairs))
+	for i, p := range diffCertaintyHedgePairs {
+		hedgeTexts[i], hedgeOthers[i] = p[0], p[1]
+	}
+	return append(cases, VisCase{Name: "certainty/strings/extra", Calls: diffCertaintyStringCalls(extra, rotated, false)},
+		VisCase{Name: "certainty/strings/comma", Calls: diffCertaintyStringCalls(commaTexts, commaOthers, false)},
+		VisCase{Name: "certainty/strings/hedge-classes", Calls: diffCertaintyStringCalls(hedgeTexts, hedgeOthers, false)})
 }

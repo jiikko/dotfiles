@@ -21,7 +21,8 @@ var certaintySaved = map[string]string{}
 func checkCertaintyHits(t *testing.T) {
 	t.Helper()
 	for _, want := range []string{"certainty:certainty", "certainty:certainty_review", "certainty:(none)", "certainty:strengthened", "certainty:weakened", "certainty:mixed",
-		"certainty:counted_by", "change:found", "change:none", "hedge:same", "hedge:strengthen", "hedge:weaken", "hedge:negation", "hedge:question", "hedge:condition", "hedge:other_kinds", "hedge:not_in_table"} {
+		"certainty:counted_by", "change:found", "change:none", "hedge:same", "hedge:strengthen", "hedge:weaken", "hedge:negation", "hedge:question", "hedge:condition", "hedge:other_kinds", "hedge:not_in_table",
+		"hedge:unanchored", "hedge:mixed", "hedge:consolidated", "hedge:not_core", "hedge:unpaired", "hedge:lost", "hedge:added"} {
 		if certaintyHits[want] < 20 {
 			t.Errorf("群 U の記録が %s に届いた回数は %d (20 回以上が要る)", want, certaintyHits[want])
 		}
