@@ -17,7 +17,8 @@ CASES = []
 
 
 def add(name, d):
-    CASES.append({"name": name, "d": d, "report": D.report(d)})
+    CASES.append({"name": name, "d": d, "report": D.report(d),
+                  "fail_on_line": D._fail_on_line(d["meaning_risk_count"], d["fail_on_meaning_risk_count"], d["meaning_risks"])})
 
 
 def real(name, old, new, **kw):
@@ -114,7 +115,8 @@ def risk(kind, subkind=None, detail=None, old_line=3, new_line=3, old="元の文
 
 
 def risks(name, *items):
-    variant(name, meaning_risks=list(items), meaning_risk_count=len(items))
+    counted = sum(1 for r in items if r["kind"] in D.FAIL_ON_KINDS or (r["kind"] == "unsupported" and r["subkind"] == "number"))
+    variant(name, meaning_risks=list(items), meaning_risk_count=len(items), fail_on_meaning_risk_count=counted)
 
 
 risks("risk-where", risk("negation", None, {"old": "ない", "new": "ある"}, 3, 3), risk("negation", None, {"old": "a", "new": "b"}, 3, 5),
@@ -158,6 +160,13 @@ risks("risk-others", risk("contrast_reversal", None, {"word": "A"}), risk("feeli
 risks("risk-unsupported", risk("unsupported", "number", {"text": "42"}, old_line=None), risk("unsupported", "name", {"text": "田中"}, old_line=None, new_line=None),
       risk("unsupported", "name", {"text": "鈴木"}, old_line=1, new_line=None, new=None))
 risks("risk-fallback", risk("mystery", "sub"), risk("mystery", None), risk("mystery", None, old_line=None, new_line=None, old=None, new=None))
+
+# 数える種類と数えない種類 (promise_review など) を混ぜた件数の行 (終了コード 1 の行の「うち」の書き方)。種類の並びの順も確かめる
+risks("risk-fail-on-all", risk("causality", None, {"from": "a", "to": "b", "old_hits": [], "new_hits": []}), risk("choice", "one_to_all", {"from": "a", "to": "b", "old_hits": [], "new_hits": []}),
+      risk("modality", "permission_lost", {"from": "許可", "to": "断定", "lost": [], "added": []}), risk("promise", "added", {"phrases": ["x"]}), risk("state", None, {"words": ["x"]}),
+      risk("certainty", "strengthened", {"steps": []}), risk("number", "lost", {"removed": ["1"]}), risk("promise_review", None, {"phrases": ["x"]}), risk("feeling", None, {"words": ["x"]}))
+risks("risk-fail-on-two", risk("state", None, {"words": ["x"]}), risk("causality", None, {"from": "a", "to": "b", "old_hits": [], "new_hits": []}), risk("quote", "lost", {"dialogue": False, "bracket": "「」", "old_quote": "a", "new_quote": ""}))
+risks("risk-fail-on-equal", risk("number", "lost", {"removed": ["1"]}), risk("negation", None, {"old": "a", "new": "b"}))
 
 # ---- 規則の見直し候補 ----
 variant("rules-all", markers=[{"kind": "推量", "orig": 0, "rewrite": 2, "orig_hits": [], "rewrite_hits": ["だろう", "かも"]}, {"kind": "伝聞", "orig": 1, "rewrite": 0, "orig_hits": ["そうだ"], "rewrite_hits": []}],
@@ -251,6 +260,7 @@ variant("politeness", politeness={"candidate_count": 2, "candidates": [
     {"old_line": 1, "new_line": 2, "old": "です", "new": "だ", "subkind": "desu_masu_ratio", "detail": {"old_ratio": 0.9, "new_ratio": 0.3333}}]})
 REG = lambda sub, pattern, **d: {"old_line": 1, "new_line": 1, "old": "元", "new": "後", "subkind": sub, "detail": {"pattern": pattern, "switched": 2, "old_counts": {"plain": 1, "polite": 4}, "new_counts": {"plain": 3, "polite": 2}, "lines": [[1, 1], [2, 3], [4, 4]], **d}}  # noqa: E731
 variant("register", register={"candidate_count": 4, "candidates": [REG("to_polite", "unified"), REG("to_plain", "unified"), REG("to_polite", "switch"), REG("to_plain", "switch", lines=[[1, 1]])]})
+variant("register-two-lines", register={"candidate_count": 1, "candidates": [REG("to_plain", "switch", lines=[[1, 1], [2, 3]])]})
 variant("register-label", register={"candidate_count": 1, "candidates": [REG("to_plain", "switch")]}, hedges={"candidate_count": 1, "candidates": []})
 
 # ---- 文脈の行 ----
@@ -300,6 +310,10 @@ fulldiff("fd-diffline-ins-only", [hunk(old_lines=["あいう"], new_lines=["あX
 LONGS = "変わらない前の文です。" * 20
 fulldiff("fd-short-diff", [hunk(old_lines=[LONGS + "保存期間は3日です。" + LONGS + "終わり"], new_lines=[LONGS + "保存期間は5日です。" + LONGS + "終わり"],
                                segments=[["=", LONGS + "保存期間は"], ["-", "3"], ["+", "5"], ["=", "日です。" + LONGS + "終わり"]])])
+SENT80 = "あ。" * 40
+for tag, (o, n) in {"160-160": (160, 160), "161-160": (161, 160), "160-161": (160, 161), "161-161": (161, 161)}.items():
+    fulldiff("fd-line-" + tag, [hunk(old_lines=[SENT80 + "x" * (o - 80 - 1) + "A"], new_lines=[SENT80 + "x" * (n - 80 - 1) + "B"],
+                                     segments=[["=", SENT80], ["=", "x" * (min(o, n) - 81)], ["-", "A" + "x" * (o - min(o, n))], ["+", "B" + "x" * (n - min(o, n))]])])
 fulldiff("fd-short-diff-edges", [hunk(old_lines=["あ" * 170], new_lines=["あ" * 169 + "い"], segments=[["-", "あ"], ["+", "い"], ["=", "。！？" + "あ" * 169 + "」』）) "]])])
 fulldiff("fd-short-diff-nosentence", [hunk(old_lines=["あ" * 170], new_lines=["い" + "あ" * 169], segments=[["+", "い"], ["=", "あ" * 169], ["-", "あ"]])])
 fulldiff("fd-short-diff-allchanged-sentence", [hunk(old_lines=["あ。" * 90 + "x"], new_lines=["あ。" * 90 + "y"], segments=[["-", "x"], ["+", "y"], ["=", "。" * 5], ["-", "z"]])])

@@ -16,6 +16,8 @@ type DiffReportCase struct {
 	Name   string          `json:"name"`
 	D      json.RawMessage `json:"d"`
 	Report string          `json:"report"`
+	// FailOnLine は本家の _fail_on_line (終了コード 1 の行) に、この dict の件数と恐れを渡した戻り値
+	FailOnLine string `json:"fail_on_line"`
 }
 
 // DiffReportGolden は diff-report.json の中身。

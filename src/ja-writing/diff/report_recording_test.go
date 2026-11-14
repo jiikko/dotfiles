@@ -20,7 +20,12 @@ func TestReportMatchesPythonRecording(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: dict を読めません: %v", c.Name, err)
 		}
-		got, err := report(v.(*pyjson.Object))
+		d := v.(*pyjson.Object)
+		risks, _ := d.Get("meaning_risks")
+		if got := failOnLine(fieldInt(d, "meaning_risk_count"), fieldInt(d, "fail_on_meaning_risk_count"), risks.([]pyjson.Value)); got != c.FailOnLine {
+			t.Errorf("%s: 終了コード 1 の行が本家と違う: %q (本家 %q)", c.Name, got, c.FailOnLine)
+		}
+		got, err := report(d)
 		if err != nil {
 			t.Errorf("%s: %v", c.Name, err)
 			continue
