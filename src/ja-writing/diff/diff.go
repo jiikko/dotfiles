@@ -4,7 +4,7 @@
 //   - diff.go (Main・run): 引数と終了コード (本家の _run・main。群 A)。引数の定義は args.go (argparse の解析は lint と共有する internal/pycli)
 //   - base.go (群 B): 9 キーの下ごしらえ。ending.go (群 C): 文末の種類と立場。endings.go: --endings の出力 (群 E の太字は lint と共有する internal/bold を呼ぶだけで、写さない)
 //
-// 本家の名前との対応は各ファイルの冒頭のコメントにある。diff 本体 (差分と検出) はまだ無く、--endings 以外の検査まで進む呼び出しは「まだ実装していません」で終わる。
+// 本家の名前との対応は各ファイルの冒頭のコメントにある。差分と検出の本体は document.go (diffDocument。本家の diff())、人が読む出力は report*.go (本家の report) にある。
 package diff
 
 import (
@@ -183,25 +183,35 @@ func checkShape(env cmdenv.Env, o options) (code int, handled bool, err error) {
 	return 0, false, nil
 }
 
-// compare は差分の検査の本体 (本家の diff() と出力)。--json の出力までを写してあり、人が読む出力 (report) はまだ無い (--json なしの呼び出しは「まだ実装していません」で終わる)。
-// --json なしでも diff() は先に組む。本家が Python の例外 (rc 3) で止まる入力を、report が入った後も同じ rc 3 で返すため (組む前に断ると、止まる入力が「まだ実装していません」の rc 2 に化ける)。
+// compare は差分の検査の本体 (本家の diff() と出力)。--json なしでも diff() は先に組む: 本家が Python の例外 (rc 3) で止まる入力は、report を作る前に同じ rc 3 で返す。
 func compare(env cmdenv.Env, req request) (int, error) {
 	d, err := diffDocument(req)
 	if err != nil {
 		return 0, err
 	}
-	if !req.json {
-		return cmdenv.Unimplemented(env, "diff"), nil
-	}
-	text, err := pyjson.Dumps(d, pyjson.Options{Indented: true, Indent: 1})
-	if err != nil {
-		return 0, err
-	}
-	if err := pycli.PrintTo(env, text+"\n"); err != nil {
-		return 0, err
-	}
+	total, _ := d.Get("meaning_risk_count")
 	counted, _ := d.Get("fail_on_meaning_risk_count")
-	if req.failOn && counted.(int64) > 0 {
+	hit := req.failOn && counted.(int64) > 0
+	var out string
+	if req.json {
+		if out, err = pyjson.Dumps(d, pyjson.Options{Indented: true, Indent: 1}); err != nil {
+			return 0, err
+		}
+		out += "\n"
+	} else {
+		if out, err = report(d); err != nil {
+			return 0, err
+		}
+		out += "\n"
+		if hit {
+			risks, _ := d.Get("meaning_risks")
+			out += "\n" + failOnLine(int(total.(int64)), int(counted.(int64)), risks.([]pyjson.Value)) + "\n"
+		}
+	}
+	if err := pycli.PrintTo(env, out); err != nil {
+		return 0, err
+	}
+	if hit {
 		return pycli.ExitHit, nil
 	}
 	return 0, nil

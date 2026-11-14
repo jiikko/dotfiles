@@ -190,6 +190,13 @@ var goldens = []golden{
 		}
 		return oracle.MarshalLintCLI(g)
 	}},
+	{name: "diff-report", file: oracle.DiffReportFile, what: "diff の人が読む出力 (report) の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+		g, err := r.RecordDiffReport(e.ctx, e.header.WithoutCorpus())
+		if err != nil {
+			return nil, err
+		}
+		return oracle.MarshalDiffReport(g)
+	}},
 	{name: "diff-base", file: oracle.DiffBaseFile, what: "diff の関数の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		inputs, err := oracle.LoadDiffInputs(e.p.diff)
 		if err != nil {
