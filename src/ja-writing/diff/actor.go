@@ -43,7 +43,6 @@ var (
 	actorOfHeadsSet    = wordSet(actorOfHeads)
 	actorSwap          = sortedByLenDesc(actorSwapSource)
 	actorSpecificSet   = wordSet(actorSpecific)
-	actorSkipSet       = wordSet(actorSkipKinds)
 	actorTitleBadSet   = wordSet(actorTitleBad)
 	actorNotTitleSet   = wordSet(actorNotTitle)
 	actorOrgStemBadSet = wordSet(actorOrgStemBad)
@@ -87,14 +86,6 @@ type actorMention struct {
 	start, end               int
 	word, head, prefix, kind string
 	modifier                 *actorMention
-}
-
-func (m *actorMention) value() pyjson.Value {
-	var modifier pyjson.Value
-	if m.modifier != nil {
-		modifier = m.modifier.value()
-	}
-	return []pyjson.Value{int64(m.start), int64(m.end), m.word, m.head, m.prefix, m.kind, modifier}
 }
 
 func actorMatchChar(l *pyre.Lazy, t pyre.Text, pos int) bool { return mustMatch(l, t, pos) != nil }

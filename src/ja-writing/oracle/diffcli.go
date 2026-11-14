@@ -87,6 +87,10 @@ func DiffCLIFiles(c Corpus, wordsDir, diffDir string) (map[string]string, error)
 	if err != nil {
 		return nil, err
 	}
+	for _, in := range diffLimitInputs() {
+		files["limit/"+in.name+"/old.md"] = in.old
+		files["limit/"+in.name+"/new.md"] = in.new
+	}
 	files["withwords/a.md"] = "# まとめ\n\n設定を扱います。ポイントは3つです。\n"
 	files["withwords/b.md"] = "# まとめ\n\n設定を扱います。ポイントは4つです。サーバを使います。\n"
 	inputs, err := LoadDiffInputs(diffDir)

@@ -103,6 +103,8 @@ for case in plan["cases"]:
     se.flush()
     stdout = unroot(so.buffer.getvalue().decode("utf-8"))
     stderr = unroot(se.buffer.getvalue().decode("utf-8"))
+    if case.get("first_line") and stderr:
+        stderr = stderr.split("\n", 1)[0] + "\n"
     raw = stdout.encode("utf-8")
     count = None
     kinds = None

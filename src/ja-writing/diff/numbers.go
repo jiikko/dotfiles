@@ -301,7 +301,11 @@ func kanjiValue(text []rune) (string, bool) {
 		for _, r := range text {
 			sb.WriteByte(byte('0' + kanjiDigits[r]))
 		}
-		n, _ := new(big.Int).SetString(sb.String(), 10)
+		digits := sb.String()
+		if len(digits) > pyMaxIntDigits {
+			raiseIntLimit(digits, true)
+		}
+		n, _ := new(big.Int).SetString(digits, 10)
 		return n.String(), true
 	}
 	total, last := 0, 10000
@@ -594,8 +598,15 @@ func findNumbers(text []rune, a *visibility.Analysis, maskedKinds map[string]boo
 		}
 		if thousand != nil {
 			taken = append(taken, [2]int{m.Start(0), follow})
+			if len(digits) > pyMaxIntDigits {
+				raiseIntLimit(digits, true)
+			}
 			n, _ := new(big.Int).SetString(digits, 10)
-			found = append(found, number{start: m.Start(0), end: follow, value: n.Mul(n, big.NewInt(1000)).String(), unit: canon(unitText)})
+			product := n.Mul(n, big.NewInt(1000)).String()
+			if len(product) > pyMaxIntDigits {
+				raiseIntLimit(product, false)
+			}
+			found = append(found, number{start: m.Start(0), end: follow, value: product, unit: canon(unitText)})
 			continue
 		}
 		if strings.Contains(digits, ",") && !thousandsRun.MustFullMatch(digits) {
@@ -698,7 +709,8 @@ type NumberItem struct {
 
 // ExtractNumbers は文の中の数値を、位置の順に取り出す。コード、インラインのコード、URL、リンク先、先頭の設定、HTML の中の数は取らない。引用と表の中の数は取る。
 // 表記だけの違い (全角と半角、3 桁区切りの有無、漢数字と算用数字、か月とヶ月) は Value と Unit が同じになる。
-func ExtractNumbers(text string) ([]NumberItem, error) {
+func ExtractNumbers(text string) (items []NumberItem, err error) {
+	defer recoverPyException(&err)
 	s, err := newSides(text, "")
 	if err != nil {
 		return nil, err

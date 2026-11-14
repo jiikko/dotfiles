@@ -1,5 +1,7 @@
 package oracle
 
+import "strings"
+
 // diffStances は --stance の値 (本家の STANCES の鍵。別名を含む)。
 var diffStances = []string{"勧め", "読み手に勧める", "決まり", "手順", "説明", "報告", "体験"}
 
@@ -90,6 +92,12 @@ func DiffCLICases(c Corpus, inputs []DiffInput, docTypes, readers []string) []Li
 	}
 	for _, s := range diffStdinScenarios(first, second) {
 		cases = append(cases, LintCLICase{Name: "scenario/" + s.name, Args: s.args, Stdin: []byte(s.stdin), Cwd: s.cwd, Keep: true})
+	}
+	for _, in := range diffLimitInputs() {
+		for _, extra := range [][]string{{"--json"}, {"--json", "--fail-on", "meaning-risk"}} {
+			args := append(append([]string{}, extra...), "limit/"+in.name+"/old.md", "limit/"+in.name+"/new.md")
+			cases = append(cases, LintCLICase{Name: "limit/" + in.name + "|" + strings.Join(extra, " "), Args: args, FirstLine: true})
+		}
 	}
 	return cases
 }
@@ -292,4 +300,28 @@ var DiffDetectionKinds = []string{
 	"status:no_change", "status:changed_without_candidates", "status:has_candidates",
 	"type_change:lost/推量", "type_change:added/伝聞", "type_change:added/推量", "type_change:added/例え",
 	"endings:changes", "endings:flags", "endings:orig_flags",
+}
+
+// diffLimitInput は本家が Python の例外で止まる (rc 3) 入力と、その境の手前で止まらない入力 (名前は止まるかどうかを表す)。
+type diffLimitInput struct{ name, old, new string }
+
+// diffLimitInputs は int と文字列の変換の桁数の上限 (4,300 桁) の境と、tone() の IndexError の入力。
+//   - 算用数字の千倍 (`1`×N + 千円): 4,297 桁は通り、4,298 桁で str(int) が止まる。4,301 桁で int(str) が止まる (数に単位が付かない並びは止まらない)
+//   - 漢数字の位取りの書き方 (`二`×N + 日): 4,300 桁は通り、4,301 桁で int(str) が止まる
+//   - tone(): 印が「とても」で、元の文が「とても」だけ・推敲後が「とてつもなく」で始まる長い文は、負の位置が文字列の長さを超えて IndexError
+func diffLimitInputs() []diffLimitInput {
+	doc := func(body string) string { return "合計は" + body + "です。\n" }
+	return []diffLimitInput{
+		{"pass-arabic-4297-thousand", doc("10千円"), doc(strings.Repeat("1", 4297) + "千円")},
+		{"stop-arabic-4298-thousand", doc("10千円"), doc(strings.Repeat("1", 4298) + "千円")},
+		{"stop-arabic-4300-thousand", doc("10千円"), doc(strings.Repeat("1", 4300) + "千円")},
+		{"stop-arabic-4301-thousand", doc("10千円"), doc(strings.Repeat("1", 4301) + "千円")},
+		{"pass-arabic-4301-unit", doc("10円"), doc(strings.Repeat("1", 4301) + "円")},
+		{"stop-arabic-old-4298-thousand", doc(strings.Repeat("1", 4298) + "千円"), doc("10千円")},
+		{"pass-kanji-4300", doc("十日"), doc(strings.Repeat("二", 4300) + "日")},
+		{"stop-kanji-4301", doc("十日"), doc(strings.Repeat("二", 4301) + "日")},
+		{"stop-kanji-4302", doc("十日"), doc(strings.Repeat("二", 4302) + "日")},
+		{"stop-tone-index-error", "とても\n", "とてつもなく" + strings.Repeat("あ", 60) + "。\n"},
+		{"pass-tone-short", "とても\n", "とてつもなく。\n"},
+	}
 }

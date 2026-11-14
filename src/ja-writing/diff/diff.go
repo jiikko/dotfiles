@@ -15,6 +15,7 @@ import (
 
 	"ja-writing/cmdenv"
 	"ja-writing/internal/pycli"
+	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pystr"
 	"ja-writing/visibility"
 )
@@ -182,7 +183,25 @@ func checkShape(env cmdenv.Env, o options) (code int, handled bool, err error) {
 	return 0, false, nil
 }
 
-// compare は差分の検査の本体 (本家の diff() と出力。まだ無い。引数の検査と入力の読みは済んでいる)。
-func compare(env cmdenv.Env, _ request) (int, error) {
-	return cmdenv.Unimplemented(env, "diff"), nil
+// compare は差分の検査の本体 (本家の diff() と出力)。--json の出力までを写してあり、人が読む出力 (report) はまだ無い (--json なしの呼び出しは「まだ実装していません」で終わる)。
+func compare(env cmdenv.Env, req request) (int, error) {
+	if !req.json {
+		return cmdenv.Unimplemented(env, "diff"), nil
+	}
+	d, err := diffDocument(req)
+	if err != nil {
+		return 0, err
+	}
+	text, err := pyjson.Dumps(d, pyjson.Options{Indented: true, Indent: 1})
+	if err != nil {
+		return 0, err
+	}
+	if err := pycli.PrintTo(env, text+"\n"); err != nil {
+		return 0, err
+	}
+	counted, _ := d.Get("fail_on_meaning_risk_count")
+	if req.failOn && counted.(int64) > 0 {
+		return pycli.ExitHit, nil
+	}
+	return 0, nil
 }

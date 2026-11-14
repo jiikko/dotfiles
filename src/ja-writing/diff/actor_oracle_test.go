@@ -86,10 +86,18 @@ func actorConstantValue(t *testing.T, name string) pyjson.Value {
 	case "_ACTOR_CORE":
 		return lazyValue(actorCoreRe)
 	case "_ACTOR_SKIP_KINDS":
-		return sortedSet(actorSkipSet)
+		return sortedSet(actorMaskSkip)
 	}
 	t.Fatalf("定数 %s を Go に持っていない", name)
 	return nil
+}
+
+func (m *actorMention) value() pyjson.Value {
+	var modifier pyjson.Value
+	if m.modifier != nil {
+		modifier = m.modifier.value()
+	}
+	return []pyjson.Value{int64(m.start), int64(m.end), m.word, m.head, m.prefix, m.kind, modifier}
 }
 
 func mentionsValue(ms []*actorMention) pyjson.Value {

@@ -20,6 +20,8 @@ type LintCLICase struct {
 	Cwd   string   `json:"cwd,omitempty"`
 	Stdin []byte   `json:"-"`
 	Keep  bool     `json:"keep,omitempty"`
+	// FirstLine は標準エラーの 1 行目だけを記録する (本家が rc 3 で止める呼び出し。トレースバックの文面は揃えない)。
+	FirstLine bool `json:"first_line,omitempty"`
 }
 
 // MarshalJSON は driver への指示の形にする (Stdin は base64)。
@@ -94,7 +96,7 @@ func (r Runner) recordCLI(ctx context.Context, driver string, header Header, cas
 		if rec.Name != cases[i].Name {
 			return LintCLIGolden{}, fmt.Errorf("%d 番目の記録の名前 %q が case の名前 %q と違います", i, rec.Name, cases[i].Name)
 		}
-		if rec.RC == 3 {
+		if rec.RC == 3 && !cases[i].FirstLine {
 			return LintCLIGolden{}, fmt.Errorf("case %s の本家が終了コード 3 で終わりました: %s", rec.Name, rec.Err)
 		}
 	}
