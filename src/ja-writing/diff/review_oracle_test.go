@@ -34,6 +34,8 @@ type reviewContext struct {
 	nrisks     []*pyjson.Object
 	tokens     map[string][]valueToken
 	politeness map[string]*pyjson.Object
+	// lastMeaning は直前の _meaning_risks の呼び出しの結果 (本家が _Sides に置く immutable と quiet_marks を、あとの getattr と _hedges が読む)
+	lastMeaning *meaningResult
 }
 
 var reviewCache *reviewContext
@@ -98,28 +100,29 @@ func (c *reviewContext) numberRisks() []*pyjson.Object {
 	return c.nrisks
 }
 
-// hedgeInputs は _hedges に渡す risks の引数 ($concat か 1 つの参照) を、Go の段の入力 (印の恐れと確度の恐れ) にする。
-func hedgeInputs(t *testing.T, c *reviewContext, arg any) ([]marksReview, []*pyjson.Object) {
+// hedgeInputs は _hedges に渡す risks の引数 ($concat か 1 つの参照) を、Go の段の入力 (文の種類の印の恐れと確度の恐れ) にする。
+func hedgeInputs(t *testing.T, c *reviewContext, arg any) []*pyjson.Object {
 	t.Helper()
 	refs := []any{arg}
 	if m, ok := arg.(map[string]any); ok && m["$concat"] != nil {
 		refs = m["$concat"].([]any)
 	}
-	var marks []marksReview
-	var certainty []*pyjson.Object
+	var risks []*pyjson.Object
 	for _, ref := range refs {
 		switch name := refName(t, ref); name {
 		case "marks":
-			marks = append(marks, c.marks...)
+			risks = append(risks, c.marksRiskObjects()...)
 		case "cert":
-			certainty = append(certainty, c.certainty("")...)
+			risks = append(risks, c.certainty("")...)
 		case "certA":
-			certainty = append(certainty, c.certainty("article")...)
+			risks = append(risks, c.certainty("article")...)
+		case "mr":
+			risks = append(risks, slices.Concat(c.lastMeaning.risks, c.lastMeaning.quiet)...)
 		default:
 			t.Fatalf("知らない参照 %s", name)
 		}
 	}
-	return marks, certainty
+	return risks
 }
 
 func valueKindOf(t *testing.T, ref string) (string, int) {
@@ -235,8 +238,7 @@ func invokeReview(t *testing.T, c oracle.Call, build []any) pyjson.Value {
 	switch c.Function {
 	case "_hedges":
 		ctx := reviewContextOf(t, build)
-		marks, certainty := hedgeInputs(t, ctx, a[2])
-		section := ctx.s.hedges(ctx.groups, marks, certainty)
+		section := ctx.s.hedges(ctx.groups, hedgeInputs(t, ctx, a[2]))
 		countCandidates("hedges:", section)
 		return replay.SortKeys(section)
 	case "_immutable_values":
@@ -425,7 +427,12 @@ func TestReviewEntryPointsMatchStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := ctx.s.hedges(ctx.groups, ctx.marks, ctx.certainty("")); !equalValues(t, hedges, want) {
+	// 入口は本家の diff() と同じ形 (意味が変わる恐れの出力と、出力から外した印の恐れ) を渡す
+	result, _, groups, err := meaningRisksOf(old, new, true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := ctx.s.hedges(groups, slices.Concat(result.risks, result.quiet)); !equalValues(t, hedges, want) {
 		t.Error("HedgesSection が段と違う")
 	}
 	quotes, err := QuoteRisks(old, new)

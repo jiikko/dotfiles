@@ -194,6 +194,16 @@ func diffAdditionHandPairs() []diffFullCase {
 		{name: "state-pending", old: doc("採用は保留です。"), new: doc("採用しました。")},
 		{name: "state-considering-next", old: doc("次回話し合う。"), new: doc("決めた。")},
 		{name: "state-empty-new", old: doc("原因は未確認です。"), new: ""},
+		{name: "state-touching-words", old: doc("原因不明未確認です。"), new: doc("遅れます。")},
+		{name: "state-touching-words-reverse", old: doc("原因未確認不明です。"), new: doc("遅れます。")},
+		{name: "state-topic-last-bigram", old: doc("確認結果は未確認です。"), new: doc("確認です。結果は未確認です。")},
+		{name: "state-topic-first-bigram", old: doc("確認結果は未確認です。"), new: doc("確認です。確認は未確認です。")},
+		{name: "state-comma-ga", old: doc("日程が検討中、会場は本社。"), new: doc("遅れます。")},
+		{name: "state-comma-wa", old: doc("日程は検討中、会場は本社。"), new: doc("遅れます。")},
+		{name: "promise-request-after-5", old: doc("遅れました。"), new: doc("修正します、ご確認をお願いします。")},
+		{name: "promise-request-after-9", old: doc("遅れました。"), new: doc("修正します、念のためご確認をお願いします。")},
+		{name: "promise-request-before", old: doc("遅れました。"), new: doc("お願い、修正します。")},
+		{name: "promise-touching-prevention", old: doc("遅れました。"), new: doc("再発防止徹底します。")},
 		{name: "promise-added", old: doc("遅れます。"), new: doc("遅れます。確認します。")},
 		{name: "promise-cancelled-by-old-future", old: doc("確認します。"), new: doc("チェックします。")},
 		{name: "promise-cancelled-synonym", old: doc("直します。"), new: doc("修正します。")},
@@ -377,12 +387,19 @@ func diffAdditionTexts() []string {
 	for _, bank := range [][]string{diffAdditionStateBank, diffAdditionKeptBank, diffAdditionNeutralBank, diffAdditionPromiseBank, diffAdditionFutureBank, diffAdditionCausalBank, diffAdditionTimeOldBank} {
 		texts = append(texts, bank...)
 	}
+	texts = append(texts, diffAdditionExtraTexts...)
 	n := len(texts)
 	for range 700 {
 		a, b := texts[r.IntN(n)], texts[r.IntN(n)]
 		texts = append(texts, a+b, strings.TrimSuffix(a, "。")+"、"+b)
 	}
 	return texts
+}
+
+// diffAdditionExtraTexts は、記録のほかの銀行にない、分かれ目の文 (語どうしが隣り合う・依頼の語が約束の少し後ろにある・主題が「が」だけ)。
+var diffAdditionExtraTexts = []string{
+	"原因不明未確認です。", "原因未確認不明です。", "日程が検討中、会場は本社。", "日程は検討中、会場は本社。", "修正します、ご確認をお願いします。", "修正します、念のためご確認をお願いします。",
+	"確認します、お願いします。", "修正します、ください。", "再発防止徹底します。", "障害により、そのため遅れた。", "確認結果は未確認です。", "結果は未確認です。", "お願い、修正します。",
 }
 
 var diffAdditionKeys = []string{"確認", "お送り", "ご連絡", "徹底", "ご報告", "検討", "x", "", "お", "ご", "修", "ア", "カタカナ", "お願", "ご案内", "一", "確認いたし", "A確認"}
@@ -432,6 +449,8 @@ func diffAdditionSmallCalls() []Call {
 	for _, key := range diffAdditionKeys {
 		calls = append(calls, withKeep(true, dcall("_addition_key_head", key)))
 	}
+	calls = append(calls, withKeep(true, dcall("_addition_on_topic", []any{"確認結果"}, "結果は")), withKeep(true, dcall("_addition_on_topic", []any{"確認結果"}, "確認は")),
+		withKeep(true, dcall("_addition_on_topic", []any{"確認結果"}, "認結は")), withKeep(true, dcall("_addition_on_topic", []any{"確認結果"}, "試験は")))
 	for _, w := range []string{"未確認", "未実施", "未", "未漢字語", "まだ終わっていない", "まだ決まっていません", "まだ確認が取れず", "分かっていない", "未対応の件", "検討中", "待っている"} {
 		calls = append(calls, withKeep(true, dcall("_addition_stem_neg", w)))
 	}

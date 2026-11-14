@@ -1,7 +1,6 @@
 package diff
 
 import (
-	"ja-writing/internal/difflib"
 	"slices"
 	"sort"
 	"strings"
@@ -92,20 +91,15 @@ func countedMinus(before, after []string) []string {
 	return out
 }
 
-// hedgeCovering は慎重表現の候補を出さない原文の文を決める、既存の候補 (本家の _hedges の marks)。
-// marks は文の種類の印の恐れ (出力から外した分も含む。本家の risks + sides.quiet_marks) のうち、推量が減ったもの。
-// certainty は確度の恐れ (kind certainty と、強まった certainty_review)。
-func hedgeCovering(marks []marksReview, certainty []*pyjson.Object) []marksReview {
+// hedgeCovering は慎重表現の候補を出さない文 (本家の _hedges の marks)。risks は意味が変わる恐れ (出力から外した文の種類の印の恐れも含む。本家の
+// risks + sides.quiet_marks) で、推量が減った文の種類の印の恐れと、確度の恐れ (kind certainty と、強まった certainty_review) を見る。
+func hedgeCovering(risks []*pyjson.Object) []marksReview {
 	var cover []marksReview
-	for _, m := range marks {
-		if slices.Contains(m.lost, "推量") {
-			cover = append(cover, m)
-		}
-	}
-	for _, r := range certainty {
-		kind, _ := r.Get("kind")
-		subkind, _ := r.Get("subkind")
-		if kind != "certainty" && (kind != "certainty_review" || subkind != "strengthened") {
+	for _, r := range risks {
+		kind, subkind := riskKind(r), riskString(r, "subkind")
+		lostHedge := kind == "sentence_type" && subkind == "marks" && slices.Contains(riskDetailMarkKinds(r, "lost"), "推量")
+		certain := kind == "certainty" || (kind == "certainty_review" && subkind == "strengthened")
+		if !lostHedge && !certain {
 			continue
 		}
 		m := marksReview{}
@@ -121,9 +115,9 @@ func hedgeCovering(marks []marksReview, certainty []*pyjson.Object) []marksRevie
 }
 
 // hedges は一覧の語の出現総数が減った文 (本家の _hedges)。文の分割先も数え、移動しただけの文は除く。
-func (s *sides) hedges(groups []*sentenceGroup, marks []marksReview, certainty []*pyjson.Object) *pyjson.Object {
+func (s *sides) hedges(groups []*sentenceGroup, risks []*pyjson.Object) *pyjson.Object {
 	regex := hedgeRegex()
-	cover := hedgeCovering(marks, certainty)
+	cover := hedgeCovering(risks)
 	masks := [2]*masker{s.newMasker(0), s.newMasker(1)}
 	var newDoc string
 	haveNewDoc := false
@@ -200,18 +194,11 @@ func (s *sides) hedges(groups []*sentenceGroup, marks []marksReview, certainty [
 }
 
 // HedgesSection は元の文と書き直した文の、慎重な言い方の節 (JSON の値の形)。docType は文書の種類 (空なら指定なし。確度の恐れを数える種類が変わる)。
-// 既存の候補は、文の種類の印の恐れ (出力から外した分も含む) と確度の恐れだけを読む。
+// 既存の候補は、本家の diff() が渡す形 (意味が変わる恐れの出力と、そこから外した文の種類の印の恐れ) で読む。
 func HedgesSection(orig, rw, docType string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
+	result, s, groups, err := meaningRisksOf(orig, rw, true, docType)
 	if err != nil {
 		return nil, err
 	}
-	o, r := Normalize(orig), Normalize(rw)
-	var opcodes []difflib.OpCode
-	if o != r {
-		opcodes = difflib.NewExact(pyunicode.Runes(o), pyunicode.Runes(r)).GetOpcodes()
-	}
-	groups := s.sentencePairs(full.hunks)
-	marks := s.marksReviewsOf(TypeChanges(o, r, opcodes, &typeCache{}))
-	return s.hedges(groups, marks, s.certaintyRisks(groups, marks, nil, docType)), nil
+	return s.hedges(groups, slices.Concat(result.risks, result.quiet)), nil
 }
