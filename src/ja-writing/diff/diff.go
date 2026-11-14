@@ -184,13 +184,14 @@ func checkShape(env cmdenv.Env, o options) (code int, handled bool, err error) {
 }
 
 // compare は差分の検査の本体 (本家の diff() と出力)。--json の出力までを写してあり、人が読む出力 (report) はまだ無い (--json なしの呼び出しは「まだ実装していません」で終わる)。
+// --json なしでも diff() は先に組む。本家が Python の例外 (rc 3) で止まる入力を、report が入った後も同じ rc 3 で返すため (組む前に断ると、止まる入力が「まだ実装していません」の rc 2 に化ける)。
 func compare(env cmdenv.Env, req request) (int, error) {
-	if !req.json {
-		return cmdenv.Unimplemented(env, "diff"), nil
-	}
 	d, err := diffDocument(req)
 	if err != nil {
 		return 0, err
+	}
+	if !req.json {
+		return cmdenv.Unimplemented(env, "diff"), nil
 	}
 	text, err := pyjson.Dumps(d, pyjson.Options{Indented: true, Indent: 1})
 	if err != nil {

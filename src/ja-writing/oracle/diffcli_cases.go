@@ -100,6 +100,10 @@ func DiffCLICases(c Corpus, inputs []DiffInput, docTypes, readers []string) []Li
 			cases = append(cases, LintCLICase{Name: "limit/" + in.name + "|" + strings.Join(extra, " "), Args: args, FirstLine: true})
 		}
 	}
+	for _, in := range diffLimitInputs() {
+		args := []string{"limit/" + in.name + "/old.md", "limit/" + in.name + "/new.md"}
+		cases = append(cases, LintCLICase{Name: "limit/" + in.name + "|text", Args: args, FirstLine: true})
+	}
 	for _, in := range diffEdgeInputs() {
 		args := append(append([]string{}, in.args...), "--json", "--no-words", "boundary/"+in.name+"/old.md", "boundary/"+in.name+"/new.md")
 		cases = append(cases, LintCLICase{Name: "boundary/" + in.name + "|" + strings.Join(in.args, " "), Args: args})
