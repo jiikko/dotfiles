@@ -110,11 +110,11 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 ## 受け入れ条件
 
 - [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings` と引数の誤りは済み。検査の本体は、群 AC で `diff()` の組み立てと CLI に配線するまで未)
-- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U の段は、記録が届く回数を数える検査がある。V 以降は未)
+- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U・X・W の段は、記録が届く回数を数える検査がある。V 以降は未)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U は済み。V W X Y・AB 以降は未)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T・S・U・X・W は済み。V Y・AB 以降は未)
 - [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
@@ -633,3 +633,41 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 所要: `go test -race -json -count=1 ./diff` は手元で 79 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。CI の上限 600 秒の半分に遠いので `NORACE_CHECKS` は増やしていない。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf8/w8/race.json。
 
 未確認リスク: `u-marks-line` が到達できるか・単独のサロゲートと不正な UTF-8 (Go の JSON が U+FFFD に置き換えるので fuzz の道具で比べられない)・群 Y が `_certainty_risks` に masks と全種類の risks を渡す経路・`oldForNew` の上書きの向き (`c-oldfornew-first`)。
+
+### 9 本目 (diff-wf9。2026-11-14。worktree で作業し、push していない)
+
+- 順は X → W のつもりだったが、記録が 1 つの入力の集まりと中間の値 (`_build_full_diff`・`_sentence_pairs`・`_marks_risks`・`_certainty_risks`・`_number_risks`) を共有するので、**コードと記録を 1 つの commit にした** (記録を群ごとに作り直すと、片方の commit では記録の半分を Go が持たず `TestBaseMatchesPythonRecording` が落ちる)。群 V・Y・AB・AC・AD は手を付けていない。本家の該当の範囲の一覧は tmp/yomiyasu-gap-2026-11-12/diff-wf9/inventory.md にあった (群 X は関数 13・正規表現 9・関数の中の `re.sub` 5・`re.findall` 11、群 W は関数 11・定数 3)。`NEW_REVIEW_SECTIONS`・`_NEW_SECTION_NAMES` は群 AD の `report` だけが使うので写していない
+- commit:
+  - bbf7669cc feat(ja-writing): diff の慎重表現・動かしてはいけない値・敬語 (群 X) とかぎかっこ・文体の切り替え (群 W) を作り、本家の記録と突き合わせる
+  - 970c468c7 test(ja-writing): 群 X・W の記録に、緑のまま通った壊した形を落とす入力 (統計の語の大小・窓の端の文) を足す
+  - 0fde9f2f9 test(ja-writing): 引用の数字の変化の記録に、古い側の順だけが合う数値の恐れの呼び出しを足す
+  - この節と README・epic の docs の commit
+  - 🚨 単独で検査が通らない commit は無い: bbf7669cc は `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した (最初の木は lint の staticcheck 1・unused 1 と dupscan gate の重複 5 で落ち、直してから commit)。970c468c7・0fde9f2f9 は入力と記録だけの変更で、`go test ./diff` の記録の突き合わせだけ回した (`make test` の全体は最後の木で回した)
+- 群 X (`diff/hedges.go`・`diff/immutable.go`・`diff/politeness.go`): 慎重な言い方 (`hedges`。語の出現総数が減った文。分割先と移動を数える。文の種類の印で推量が減った文・確度の恐れが出た文と重ねない)・動かしてはいけない値 (`immutableValues`。引用・宛名・メール・科学の単位・統計の値・符号。値を組・同じ塊・文書全体の順に打ち消す `uncancelledTokens`・数値の恐れと重ねない `citationNumberCovered`)・敬語の度合い (`politeness`。mail だけ)。入口は `HedgesSection`・`ImmutableValues`・`PolitenessSection`
+  - 本家の `sides.quiet_marks` (`_meaning_risks` が置く) は群 Y が作るので、`hedges` は「印の恐れ (出力から外した分も含む)」と「確度の恐れ」を別の引数で受ける。記録の段は `quiet_marks` が空のまま `_hedges` を呼んだ値と比べる
+  - `_uncancelled_tokens` の `places is None` の枝 (`_immutable_values` が `groups` なしで呼ばれる形) は、本家のどの呼び出しも通らないので写していない
+- 群 W (`diff/quote.go`・`diff/register.go`): かぎかっこの中の言葉の書き換え (`quoteRisks`。入れ子・文の句点をまたぐ会話・伏せる範囲・窓の端の文)・文体の切り替え (`registerChanges`。敬体の割合の候補が出ていれば数えない)。入口は `QuoteRisks`・`RegisterChanges`。`_DIALOGUE`・`_QUOTE_CLOSE`・`_QUOTE_DROP` (8 本目が写さなかった定数) もここで写した
+- 記録: `diff-base.json` は 127,603 → 146,414 case・734,178 → 1,297,026 呼び出し (21.0MB → 27.1MB)。群 X・W は 18,811 case・562,848 呼び出し (`review/`)。
+  - 組: 入力の集まりと diff の入力の組・手書き 128 組 (群 X 65・かぎかっこ 38・文体 25。本家のコメントと docstring の例・分かれ目の窓の端 (5・6・7 文)・統計の語の大小)・固定の種 PCG 1076/30 (慎重な言い方 1,800 組)・31 (値 2,800 組)・32 (敬語 1,800 組)・33 (かぎかっこ 2,400 組)・34 (文体 2,200 組。切り替えない文を切り替え先の文体にする組を半分)。下の関数は値の表 95 項目・かぎかっこの文・文体の文・`_citation_number_covered` の手書きの呼び出し 28 本
+  - 記録の道具に `args` の `{"$concat": [...]}` と `{"$column": 値, "n": 添字}` を足した (使わなければ前と同じ出力)。`_hedges` の `risks` は印の恐れと確度の恐れをつないで渡し、`_immutable_values` の `risks` は `_number_risks` の戻り値の (番号, 順, risk) から risk を取る
+  - 既存の case は消えず、digest も変わらない (bbf7669cc の前の記録と python で照合: 消えた case 0・変わった case 0)。0fde9f2f9 だけは、自分が足した `review/covered` の呼び出しの並びが変わり、その case の digest だけが変わる
+  - 届き方を数える検査 (`checkReviewHits`): 慎重な言い方の候補あり・なし・値の 6 種類 (引用・宛名・メール・科学の単位・統計・符号) の取り出しと候補・引用などの恐れの 3 つの subkind × 2 種類・敬語の 2 つの subkind と対象外・かぎかっこの changed・lost・会話の行・文体の to_polite・to_plain・unified・switched・politeness による見送り・候補なし が、どれも 20 回以上 (`covered` だけ手書きなので 5 回以上)。最初の記録で `unified` が 2 回・`covered` が 8・19 回しか届かなかったので、入力を足した (2 回目は 17 回なので割合を半分にして 20 回以上にした)
+- 本家と揃わなかった所: 無い。最初の記録の突き合わせで食い違いは 1 件だけで、`_ADDRESSEE` の定数の flags が、本家は先頭の `(?m)` を MULTILINE (8) に数えて 40 を返し、Go の `lazyValue` が 32 を返した検査側の誤りだった (Go の値は直した)
+- 4,300 桁を超える数字で本家が ValueError で止まる件 (6 本目の敵対的レビュー P3-1): 群 X・W の範囲 (9143〜9367・9480〜9819 行) に `int(` が無い (awk と grep で 0 件)。数字は `re.findall("[0-9]+")` で文字列のまま比べる。記録にも入れていない。群 AC で CLI に配線するときの扱いは変わらず未決
+- わざと壊して比べた (`bin/mutate-verify-list`。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/mut/log-x・log-w・log-redo・log-redo2、一覧は同じ dir の muts-x.json・muts-w.json):
+  - 群 X: 24 本。bbf7669cc の木で、19 本が red・3 本が緑 (統計の語の大小・文の位置の端・打ち消す数の 0 の項)・2 本が構文エラー (使わなくなった変数)。緑のうち 1 本 (`x-imm-statistic-sign`) に、`p`→`P`・`r`→`t` の組を足し (970c468c7)、構文エラー 2 本は壊し方を直して、その 3 本を当て直した: `x-hedge-cert-strengthened`・`x-imm-statistic-sign` は 970c468c7 の木で red、`x-imm-covered-order` は緑のままだったので古い側の順だけが合う恐れの呼び出しを足し (0fde9f2f9)、0fde9f2f9 の木で red。最終は 24 本のうち 22 本が red
+    - 緑のまま 2 本 (どちらも等価と読んだ。実測はしていない): `x-imm-sentence-at` (`sentenceAt` の `position < end` → `<=`。位置が文の範囲の終わりちょうどから始まる値は、文の間の空白だけの所から始まる値のことで、取り出す正規表現のどれも空白から始めない (宛名の `[ \t]*` は文の中)。届かないと読んだ) と `x-imm-removed-count` (増えた数字を数える表に 0 の項を足す。0 の項は `positiveRemainder` が見ないので、答えが同じ)。再提起するなら、本家と壊した形の答えが違う `_immutable_values` の入力を示す
+  - 群 W: 22 本。bbf7669cc の木で、18 本が red・3 本が緑 (窓の幅 2 本・伏せる範囲の端)・1 本が構文エラー。窓の端の文 (5・6・7 文) を足して (970c468c7)、構文エラーの 1 本は壊し方を直して、その 4 本を当て直した: 窓の 2 本と `w-reg-kudasai` が red。最終は 22 本のうち 21 本が red
+    - 緑のまま 1 本 (等価と読んだ。実測はしていない): `w-quote-blank` (`blankMasked` の `right <= start` → `<`。範囲の終わりが文の始まりちょうどなら、`for k := max(left, start); k < min(right, end)` が空で、文字列は変わらず返る)
+  - 合計 46 本のうち 43 本が red・3 本が緑のまま (等価と読んだ)。最初の run の red は、その後の commit の木では当て直していない (足したのは入力だけで既存の case は変わらないので red のままのはず。実測はしていない)
+- 確かめていないこと:
+  - 群 V Y・AB・AC・AD は未着手。`HedgesSection` ほかの入口は試験からしか呼ばれない (群 AC で `diff()` の組み立てに配線する)。`meaning_risks` に引用の候補を足す並べ替えと、`_meaning_risks` が `_hedges` に渡す全種類の恐れの並び (本家は印の恐れ・確度の恐れ以外も渡すが、`_hedges` は 2 種類しか読まない) は群 Y・AC で突き合わせる
+  - 群 X・W の所要 (長い文書・同じ段落の繰り返し・1 行に文が数千ある文書) は測っていない。`valueTokens` は種類ごと・側ごとに文書全体へ正規表現を当てるので、1 つの文書に 12 回走査する。本家の `_sentence_at` の二分探索は写した
+  - `valueTokens` は `analysis["lines"][line - 1]` の添字が範囲の外になる場合 (本家は IndexError で止まる) を、種類の判定を飛ばす形にしている。行の数が行の解析と食い違う入力は記録に無く、届くかどうかも未確認
+  - 単独のサロゲートと不正な UTF-8 は記録に入れていない
+  - `quiet_marks` が空でない (`_meaning_risks` が置いた後の) `_hedges` の呼び出しは、群 Y まで未確認
+- 所要: `go test -race -json ./diff` は手元で 88 秒 (最も重いのは `TestRequestMatchesPythonRecording` 28 秒・`TestCLIMatchesPythonRecording` 27 秒)。CI の上限 600 秒の半分に遠いので `NORACE_CHECKS` は増やしていない。`TestBaseMatchesPythonRecording` は前のとおり race なしで回し、手元で 39 秒 (8 本目は 38 秒。記録が 15% 増えても伸びは小さい)
+
+#### 最終の検査 (9 本目)
+
+(下に書く)
