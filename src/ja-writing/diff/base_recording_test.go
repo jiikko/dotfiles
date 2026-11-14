@@ -45,11 +45,17 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 					build = call.Args
 				case "normalize":
 					saved[call.Save] = Normalize(argString(t, call.Args[0]))
+				case "_certainty_word_spans":
+					certaintySaved[call.Save] = argString(t, call.Args[0])
 				}
 				if want := rec.Digests[j*oracle.DigestWidth : (j+1)*oracle.DigestWidth]; want != "00000000" {
 					t.Errorf("case %s の %d 番目: 覚えるだけの呼び出しの digest が %s", c.Name, j, want)
 				}
 				continue
+			case call.Get && slices.Contains(oracle.DiffCertaintyConstantNames(), call.Function):
+				got = certaintyConstantValue(t, call.Function)
+			case slices.Contains(oracle.DiffCertaintyFunctions, call.Function):
+				got = invokeCertainty(t, call, build)
 			case call.Get && slices.Contains(oracle.DiffContrastConstantNames(), call.Function):
 				got = contrastConstantValue(t, call.Function)
 			case slices.Contains(oracle.DiffContrastFunctions, call.Function):
@@ -135,6 +141,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 	checkQuestionHits(t)
 	checkFeelingHits(t)
 	checkContrastHits(t)
+	checkCertaintyHits(t)
 	total := 0
 	for _, n := range calls {
 		total += n

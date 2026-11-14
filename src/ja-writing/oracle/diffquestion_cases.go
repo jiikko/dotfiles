@@ -321,9 +321,15 @@ func diffProtectedStageCalls(old, new string, keep bool) []Call {
 	return calls
 }
 
+// diffSave は呼び出しを、結果の記録は要らずに覚えるだけにする (名前で覚える)。
+func diffSave(c Call, name string) Call {
+	c.Save, c.Quiet = name, true
+	return c
+}
+
 // diffChangeStageCalls は組 1 つに、文の種類の印・許可・能力・選ぶ範囲と因果の変化を、本家の diff() と同じ順で作らせて (覚える)、_marks_risks・_modality_risks・_logic_risks に通す呼び出し。
 func diffChangeStageCalls(old, new string, keep bool) []Call {
-	save := func(c Call, name string) Call { c.Save, c.Quiet = name, true; return c }
+	save := diffSave
 	ops := dcall("_ExactSequenceMatcher", nil, diffRef("o"), diffRef("r"))
 	ops.Kwargs = map[string]any{"autojunk": false}
 	ops.Method = "get_opcodes"
