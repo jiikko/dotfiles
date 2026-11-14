@@ -76,6 +76,17 @@ var diffNegationSwaps = [][2]string{
 func diffNegationHandPairs() []diffFullCase {
 	doc := diffDoc
 	long := func(n int, tail string) string { return strings.Repeat("あ", n) + tail }
+	cyc := func(unit string, n int) string { return strings.Repeat(unit, n) }
+	// filler は head + 「あいうえおかきくけこ」の繰り返しを n 字 + tail
+	filler := func(head string, n int, tail string) string {
+		unit := []rune("あいうえおかきくけこ")
+		var b strings.Builder
+		b.WriteString(head)
+		for i := range n {
+			b.WriteRune(unit[i%len(unit)])
+		}
+		return b.String() + tail
+	}
 	return []diffFullCase{
 		{name: "same", old: doc("設定を変更する。"), new: doc("設定を変更する。")},
 		{name: "flip", old: doc("設定を変更する。"), new: doc("設定を変更しない。")},
@@ -106,6 +117,15 @@ func diffNegationHandPairs() []diffFullCase {
 		{name: "long-over-limit", old: doc(long(2005, "設定する。")), new: doc(long(2005, "設定しない。"))},
 		{name: "long-rest-over", old: doc(long(10, strings.Repeat("い", 2100)+"する。")), new: doc(long(10, strings.Repeat("う", 2100)+"しない。"))},
 		{name: "long-diff-in-range", old: doc(long(2100, "設定する。")), new: doc(long(2100, "設定しない。") + "あ")},
+		// 前後の同じ字を外した残りがちょうど 2,000 字 (>= にすると残り全体を 1 つの箇所にして、否定を出さない)
+		{name: "long-rest-exact-new", old: filler("設定をする", 1996, "X。"), new: filler("設定をしない", 1996, "Y。")},
+		{name: "long-rest-exact-old", old: filler("設定をしない", 1996, "Y。"), new: filler("設定をする", 1996, "X。")},
+		{name: "long-rest-one-over", old: filler("設定をする", 1997, "X。"), new: filler("設定をしない", 1997, "Y。")},
+		// 片側がちょうど 2,000 字 (>= にすると残りだけを対応させ、autojunk が効かず対応が変わる)
+		{name: "long-side-exact-a", old: cyc("かきくけこ", 102) + "かきくけ必要公しないません不要ず開不要あ不で要要不要ないません不しない非開" + cyc("こけくきか", 289) + "こけくき。",
+			new: cyc("かきくけこ", 102) + "かきくけ必要公しないませんません不要ず開不要あ不で要要不要ないません不しない非開" + cyc("こけくきか", 289) + "こけくき。"},
+		{name: "long-side-exact-b", old: cyc("あいしなす", 141) + "開あしないす" + cyc("あすなしい", 257) + "。",
+			new: cyc("あいしなす", 141) + "開あしないしないす" + cyc("あすなしい", 257) + "。"},
 		{name: "empty-old", old: "", new: doc("設定しない。")},
 		{name: "added-sentence", old: doc("設定する。"), new: doc("設定する。", "確認しない。")},
 		{name: "run-shifted", old: doc("一段落目は使う。", "", "二段落目は使う。", "", "三段落目は使う。"), new: doc("一段落目は使わない。二段落目は使う。", "", "三段落目は使わない。")},

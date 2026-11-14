@@ -182,6 +182,11 @@ func diffNumberHandPairs() []diffFullCase {
 		{name: "weak-repeated-one", old: doc("一つ1つ確認する。"), new: doc("順に確認する。")},
 		{name: "weak-repeated-two", old: doc("1つ1つ確認する。"), new: doc("順に確認する。")},
 		{name: "crlf", old: "移行は3日で終える。\r\n試験は5人。\r\n", new: "移行は5日で終える。\r\n試験は5人。\r\n"},
+		// 打ち消しの引数を別の値にしない・まとまりの残し方・伏せた範囲の改行
+		{name: "cancel-alias-backtick", old: "`八０いつつⅢ,．", new: "`八０つつⅢ`,．"},
+		{name: "cluster-kept-time", old: "\u00a03 日\n10:30𝟑、\r", new: "\u00a010:03日\n10:30𝟑、\r"},
+		{name: "cluster-kept-fence", old: "3〜5日。> 3日3s", new: "3〜```\n3日\n```5日。> 3日3 日3s"},
+		{name: "mask-newline-list-number", old: "**`設定に部長によって３ms前後チームからせざるを得ない！**\nバグを、田中さんでなかった`1. ログに十分GB確認しない…`****チームを予算によって顧客のないわけではない。**", new: "**`設定に部長によって３ms前後チームからせざるを得ない！**\nバグを、田中さんでなかった`1. ログに十分GB確認する…`****チームを予算によって顧客のないわけではない。**"},
 	}
 }
 

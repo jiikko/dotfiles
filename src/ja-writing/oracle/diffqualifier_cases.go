@@ -93,6 +93,11 @@ func diffQualifierHandPairs() []diffFullCase {
 		{name: "join-slash", old: doc("2026/10/13ごろ。"), new: doc("2026/10/13。")},
 		{name: "join-time", old: doc("10:30前後。"), new: doc("10:30。")},
 		{name: "between-newline", old: doc("3日", "約5日"), new: doc("3日", "5日")},
+		// 同じ文に区切りの語が複数ある・同じ値が複数ある・語が 1 つずつでない組 (組の数・順・種類の分かれ目)
+		{name: "strict-count-wide-space", old: doc("最大3日近く　以上。"), new: doc("最大3日超　以上。")},
+		{name: "subkind-strict-to-range", old: doc("期間は約3日から5日以上。"), new: doc("期間は最大3日から5日超。")},
+		{name: "keys-order", old: doc("3日程度〜ほぼ3〜5日"), new: doc("3日超え〜少なくとも3〜5日")},
+		{name: "same-value-twice", old: doc("3〜5日以下、3〜5日以下"), new: doc("3〜5日まで、およそ3〜5日以下")},
 	}
 }
 
