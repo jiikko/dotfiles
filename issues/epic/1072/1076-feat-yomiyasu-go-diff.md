@@ -670,4 +670,4 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 
 #### 最終の検査 (9 本目)
 
-(下に書く)
+最後のコードの編集 (0fde9f2f9。以降は docs だけ) の後の木 (3865c1ba3) で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin.rc)。この節の commit は docs だけの差分なので回し直していない。
