@@ -16,7 +16,7 @@ var DiffActorFunctions = []string{
 }
 
 // diffActorConstants は群 AB の Go の表と比べる本家の定数。_ACTOR_SPECIFIC_SET は _ACTOR_SPECIFIC の frozenset、_ACTOR_INDEX_MIN と _ACTOR_FRAME_NAMES は
-// 表示と 2 字の索引のためで、Go は持たない (索引は部分文字列の検索と同じ答え、表示は群 AD)。
+// 表示と 2 字の索引のためで、この突き合わせには入れない (索引は部分文字列の検索と同じ答え。表示の表 actorFrameNames は群 AD の report の記録が守る)。
 var diffActorConstants = []string{
 	"_ACTOR_SPECIFIC", "_ACTOR_GENERIC", "_ACTOR_PERSON", "_ACTOR_READER", "_ACTOR_CHAR", "_ACTOR_PREFIX_CHAR", "_ACTOR_NAME_CHAR", "_ACTOR_PREFIX_MAX",
 	"_ACTOR_HEAD", "_ACTOR_HONORIFIC", "_ACTOR_PERSON_RE", "_ACTOR_TITLE", "_ACTOR_TITLE_BAD", "_ACTOR_NOT_TITLE", "_ACTOR_ORG", "_ACTOR_ORG_END",
