@@ -684,7 +684,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 | P3-1 handback の「最初の run で緑 5 本」は 4 本 | issue の本数 (19/3/2・18/3/1・最終 43/46) は実物と合うので issue は直さない | 数えた値は 9 本目の節のとおり |
 | P3-2 `valueTokens` の行の添字が範囲の外になる分岐は 507 文書で届かない | 採らない (分岐は残す)。届かないことの証明ではなく、本家は IndexError で止まるので、止めずに判定を飛ばす形を残す。理由は `diff/immutable.go` のコメント (0e572668d) | 再提起には、本家の `len(analyses[side]["lines"])` が `len(lines)+1` から外れる入力を示すこと |
 
-直したあとで足りなかった 1 本: 窓の上の端 (`min(high, middle+3)` → `middle+2`) の `q-high` が、最初の組では緑のまま残った (レビューが当てた 45 本の外で、私が足した変異)。かぎかっこの似た先が窓の上の端の文にある入力を python で探し (23 組)、3 組を `review/quote-hand/window-middle-top-1`〜`-3` として足した (f6e31790f。書き足しだけ: 増えた case 3・呼び出し 43)。
+直したあとで足りなかった 1 本: 窓の上の端 (`min(high, middle+3)` → `middle+2`) の `q-high` が、最初の組では緑のまま残った (レビューが当てた 45 本の外で、私が足したわざと壊した形)。かぎかっこの似た先が窓の上の端の文にある入力を python で探し (23 組)、3 組を `review/quote-hand/window-middle-top-1`〜`-3` として足した (f6e31790f。書き足しだけ: 増えた case 3・呼び出し 43)。
 
 壊した形の結果 (`bin/mutate-verify-list`。commit した木 (f6e31790f) で最後に回し、本数はこの run から数えた。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/fix/log。一覧は同じ dir の muts.list): 10 本のうち 8 本が rc 0 (想定の `TestBaseMatchesPythonRecording` で red)、2 本が緑のまま。
 - red: `r-middle-swap`・`q-middle-swap` (分子と分母の入れ替え)・`r-low`・`q-low` (`middle-2` → `middle-1`)・`r-high`・`q-high` (`middle+3` → `middle+2`)・`r-gt`・`q-gt` (`high-low > 5` → `> 6`)
