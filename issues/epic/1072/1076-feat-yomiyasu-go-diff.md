@@ -671,3 +671,33 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 #### 最終の検査 (9 本目)
 
 最後のコードの編集 (0fde9f2f9。以降は docs だけ) の後の木 (3865c1ba3) で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と fin.rc)。この節の commit は docs だけの差分なので回し直していない。
+
+### 9 本目の敵対的レビュー (opus。diff-wf9 の 43f85c700..b86a474c8。群 X・W。直したのは diff-wf9 の修正の係)
+
+壊していない HEAD は、本家を正解にした比べ (5 つの入口を文書の種類ごとに 22,000 組余り。慎重表現・引用・値・宛名・メール・敬語・文末・かぎかっこ・会話の行・Markdown の印・CRLF・見えにくい字) で食い違い 0・panic 0 だった (P1 は 0 件)。
+指摘のうち P2 の 2 本は、本家に同じ入れ替えを当てて答えが変わる入力を自分で再現できた。入力を記録に足して作り直した (書き足しだけ。43f85c700 に対して消えた case 0・変わった case 0。146,414 → 146,425 case・1,297,026 → 1,297,165 呼び出し)。
+
+| 指摘 | 扱い | 結果 |
+|---|---|---|
+| P2-1 `register.go` の窓の中央の式 (`i*len(news)/max(1, len(olds))` の分子と分母の入れ替え) が緑 | 直した。本家で答えが変わる組 5 を `review/register-hand/window-middle-count-1`〜`-5` として足した (230961110) | `r-middle-swap` が red |
+| P2-2 `quote.go` の窓の中央の式 (同じ入れ替え) が緑 | 直した。組 3 を `review/quote-hand/window-middle-count-1`〜`-3` として足した (230961110) | `q-middle-swap` が red |
+| P3-1 handback の「最初の run で緑 5 本」は 4 本 | issue の本数 (19/3/2・18/3/1・最終 43/46) は実物と合うので issue は直さない | 数えた値は 9 本目の節のとおり |
+| P3-2 `valueTokens` の行の添字が範囲の外になる分岐は 507 文書で届かない | 採らない (分岐は残す)。届かないことの証明ではなく、本家は IndexError で止まるので、止めずに判定を飛ばす形を残す。理由は `diff/immutable.go` のコメント (0e572668d) | 再提起には、本家の `len(analyses[side]["lines"])` が `len(lines)+1` から外れる入力を示すこと |
+
+直したあとで足りなかった 1 本: 窓の上の端 (`min(high, middle+3)` → `middle+2`) の `q-high` が、最初の組では緑のまま残った (レビューが当てた 45 本の外で、私が足した変異)。かぎかっこの似た先が窓の上の端の文にある入力を python で探し (23 組)、3 組を `review/quote-hand/window-middle-top-1`〜`-3` として足した (f6e31790f。書き足しだけ: 増えた case 3・呼び出し 43)。
+
+壊した形の結果 (`bin/mutate-verify-list`。commit した木 (f6e31790f) で最後に回し、本数はこの run から数えた。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/fix/log。一覧は同じ dir の muts.list): 10 本のうち 8 本が rc 0 (想定の `TestBaseMatchesPythonRecording` で red)、2 本が緑のまま。
+- red: `r-middle-swap`・`q-middle-swap` (分子と分母の入れ替え)・`r-low`・`q-low` (`middle-2` → `middle-1`)・`r-high`・`q-high` (`middle+3` → `middle+2`)・`r-gt`・`q-gt` (`high-low > 5` → `> 6`)
+- 緑のまま 2 本 (等価と読んだ): `r-min`・`q-min` (`min(len(news)-1, …)` の外し)。`i` は 0 から `len(olds)` (かぎかっこは `oldCount`) 未満なので `i*len(news)/len(olds)` は `len(news)` 未満で、`min` は効かない。再提起するなら、`i >= len(olds)` になる入力か、本家と壊した形の答えが違う入力を示すこと
+
+レビューが壊せなかったところ (報告から): 本家との比べ 22,000 組余り (比べが空振りしていないことは期待値を書き換えた canary で確かめた)。レビュー自身の壊した形 45 本のうち 40 本が red、緑 5 本のうち 2 本が上の P2、3 本は等価 (`r-strip`: masker の body は空白だけの文を返さない・`i-addr-strip`: 宛名の値は前後に空白を含まない・`i-places-overwrite`: 2 つの組が同じ行を持つ例が 0 件)。記録の件数は 3 つの時点を case の名前で突き合わせて issue の数と合った。
+
+所要: `go test -race -json -count=1 ./diff` は手元で 81 秒 (最も重いのは `TestRequestMatchesPythonRecording` 27 秒・`TestCLIMatchesPythonRecording` 26 秒)。入力を足した分の伸びは無く、CI の上限 600 秒の半分に遠いので `NORACE_CHECKS` は増やしていない。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/fix/race.json。
+
+未確認リスク (レビューの報告から):
+- 群 AC で配線するとき、本家の `_meaning_risks` が `_hedges` に渡す確度の恐れは (1) 全部の恐れと引用の候補を見たうえで作った `_certainty_risks`、(2) 状態の候補に写した certainty_review を取り除いた後のもの。`HedgesSection` は `certaintyRisks(groups, marks, nil, docType)` をそのまま渡し、記録も同じ形で比べているので緑。群 AC で本番と揃え、その形の記録を足す
+- 長い文書の所要・単独のサロゲート・不正な UTF-8 は試していない
+
+#### 最終の検査 (9 本目の敵対的レビューの後)
+
+最後のコードと記録の編集 (f6e31790f) の後の木で、`make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-dupscan-gate` の rc は全部 0 (ログは tmp/yomiyasu-gap-2026-11-12/diff-wf9/fix/f-lt.log・f-un.log・f-dup.log と .rc)。この節と README・epic の件数の commit は docs だけの差分で、`make test-lint` を回した結果は報告に書く。
