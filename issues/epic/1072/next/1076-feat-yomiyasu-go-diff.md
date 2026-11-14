@@ -1,1 +1,0 @@
-../1076-feat-yomiyasu-go-diff.md

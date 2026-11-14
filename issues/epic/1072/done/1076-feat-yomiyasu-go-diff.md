@@ -1,7 +1,5 @@
 # 1076 (feat): yomiyasu の diff (推敲の前後の比較) を Go で作り直す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-12〜）
-
 起票日: 2026-11-12
 
 ## 概要
@@ -25,12 +23,12 @@
 ## 対応方針
 
 - `internal/difflib` (Python の `difflib.SequenceMatcher` と、本家の速い照合 `_ExactSequenceMatcher` の写し。本家の `yomiyasu_diff.py` の 1306〜1832 行) は、
-  [1081](done/1081-feat-yomiyasu-go-difflib.md) に切り出した (dotfiles-bb が担当。2026-11-13)。下の 2 項のうち difflib と速い照合の写しは 1081 の範囲で、この issue はそれを使う側を作る
+  [1081](1081-feat-yomiyasu-go-difflib.md) に切り出した (dotfiles-bb が担当。2026-11-13)。下の 2 項のうち difflib と速い照合の写しは 1081 の範囲で、この issue はそれを使う側を作る
   1081 の API (2026-11-13 に master に入った): `difflib.New[T](a, b []T)` (= `SequenceMatcher(None, a, b, autojunk=False)`) と `difflib.NewExact(a, b []rune)` (= 本家の `_ExactSequenceMatcher`)。
   メソッドは `SetSeq1` `SetSeq2` `SetSeqs` `FindLongestMatch` `GetMatchingBlocks` `GetOpcodes` `Ratio` `QuickRatio` `RealQuickRatio`。文字列は `pyunicode.Runes` で `[]rune` にして渡す。
   本家の照合の呼び出しは ast で 15 か所 (`SequenceMatcher` 11・`_ExactSequenceMatcher` 4)。記録は `testdata/golden/difflib.json`
 - 本家の diff は太字の判定 (`yomiyasu_diff.py` の 1923〜2685 行) を lint と同じ中身で自分でも持つ (dotfiles-24 が AST で比べ、答えを変える違いは無かった)。
-  Go では lint と共有の `internal/bold` ([1083](done/1083-feat-ja-writing-lint-bold-not-rendered.md)) を使い、写さない。1083 が本家の lint 側と diff 側の両方の関数を記録に当てて、同じ答えになることを確かめる
+  Go では lint と共有の `internal/bold` ([1083](1083-feat-ja-writing-lint-bold-not-rendered.md)) を使い、写さない。1083 が本家の lint 側と diff 側の両方の関数を記録に当てて、同じ答えになることを確かめる
 - `difflib.SequenceMatcher` (Python 3.15 の `Lib/difflib.py`) を `internal/difflib` に写す。本家が使う API だけでよい。
   autojunk は本家が使わない。引数の形は Python と同じにし、本家と同じく常に `autojunk=False` で呼ぶ
 - 本家の速い照合も写す。「difflib と同じ答え」が本家の前提なので、Go でも 2 つを突き合わせる試験を残す
@@ -97,7 +95,7 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 - 絵文字は lint の `EmojiMatches` (`_FALLBACK_EMOJI` の経路は写さない)。`context.words.path` は cwd に依るので、記録の cwd の実パスは `<<ROOT>>` に置き換える
 - `CLI から届かない 36 個` (`type_marks` `ending_changes` `full_diff` `meaning_risks` `stiffness` `tone` ほか): 関数の記録の入口として残す。どこからも呼ばれないもの (`_addition_old_future_count` ほか 4 個と太字の後方互換 9 個) は写さない (写すと `unused` が落とす)
 
-### 決めたこと (地図 5.6 の 7 点。lint の前例 [1075](done/1075-feat-yomiyasu-go-lint.md)・README の「揃わない範囲」に揃えた)
+### 決めたこと (地図 5.6 の 7 点。lint の前例 [1075](1075-feat-yomiyasu-go-lint.md)・README の「揃わない範囲」に揃えた)
 
 1. **`context.words.path`**: cwd に依る欄。記録の作業フォルダは使い捨てなので、文字列の中の実パスを `<<ROOT>>` に置き換えてから比べる (lint の CLI の記録と同じ。`--words 相対` と cwd から見つける形の両方を記録に入れ、形が食い違えばそのとき表に足す)。新しい行は README の「揃わない範囲」の表に足さない (置き換えは比べ方であって、揃わない範囲ではない)
 2. **`-h`**: 本家が出した文面 (端末の幅 80 桁) を `diff/help.txt` に持ち、`COLUMNS` で幅を変えても Go は変わらない。文面も rc も記録と比べる。lint の `help.txt` と同じ扱い
@@ -110,9 +108,9 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 ## 受け入れ条件
 
 - [x] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (CLI の記録 8,154 件を全件比べて通る。人が読む出力は群 AD (12 本目) で入り、`--json` なしの呼び出しも全件比べる)
-- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U・X・W・V・Y の段は、記録が届く回数を数える検査がある)
-- [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
-- [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
+- [x] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種 (`oracle.DiffDetectionKinds`) の全部を `TestDiffRecordingHasHitAndMissForEveryKind` が見る。群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T・S・U・X・W・V・Y・AB の段は、記録が届く回数を数える検査 (`checkAdditionHits`・`checkActorHits` ほか) がある)
+- [x] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ) (1081 で済み。`internal/difflib/golden_test.go` の `TestMatchesPythonRecording`)
+- [x] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある (1081 で済み。`internal/difflib/exact_test.go` の `TestExactMatchesPlain`)
 - [x] 長い文書の所要を本家と Go の両方で測った数字がある (12 本目の「所要」の表。合否には使わない)
 - [x] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A〜AD の全部が済み。AD は 12 本目で 16 本、12 本目の敵対的レビューの後に 6 本)
 - [x] `make test-dupscan-gate` が通る (12 本目の最終の検査で rc 0)
