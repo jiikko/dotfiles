@@ -64,6 +64,8 @@ type sides struct {
 	allKeys  [2]*keySet
 	docTexts [2]pyre.Text
 	docReady [2]bool
+	// 行ごとに正規化した文 (本家の _Sides.normalized_lines)。初めて使うときに作る
+	normalized [2][]string
 }
 
 // newSides は本家の _Sides。解析は行の分け方を "\n" だけにそろえてかける ("\r" は同じ長さの空白に置き換える。行番号と位置が全文差分の行と 1 対 1 に対応する)。

@@ -71,14 +71,7 @@ func kindHitsValue(list []KindHits) pyjson.Value {
 }
 
 // typeLostValue は種類と印の一覧を [{"kind", "hits"}] にした値 (_type_changes の lost と added)。
-func typeLostValue(list []KindHits) pyjson.Value {
-	return replay.MapList(list, func(e KindHits) pyjson.Value {
-		o := pyjson.NewObject()
-		o.Set("hits", replay.Strings(e.Hits))
-		o.Set("kind", e.Kind)
-		return o
-	})
-}
+func typeLostValue(list []KindHits) pyjson.Value { return replay.SortKeys(kindHitsList(list)) }
 
 func typeChangesValue(changes []TypeChange) pyjson.Value {
 	return replay.MapList(changes, func(c TypeChange) pyjson.Value {
