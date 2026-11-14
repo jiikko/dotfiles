@@ -110,11 +110,11 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 ## 受け入れ条件
 
 - [ ] 入力の集まり (直す前と後の組) で、本家と同じ出力 (stdout・`--json`・rc) を出す (`--endings` と引数の誤りは済み。検査の本体は、群 AC で `diff()` の組み立てと CLI に配線するまで未)
-- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q の段は、記録が届く回数を数える検査がある。P 以降は未)
+- [ ] 検出の種類ごとに、当たる組と当たらない組が入力の集まりにある (1073 の空振りを止める検査) (71 種のうち群 A〜L の分と、群 Z・AA の候補の種類 (硬化 5・勢い 5) と、群 M・N・O・Q・P・T の段は、記録が届く回数を数える検査がある。S 以降は未)
 - [ ] `internal/difflib` が、本家の使う全 API で Python の `difflib.SequenceMatcher` と同じ値を返す (1073 の関数の単位の記録との突き合わせ)
 - [ ] 本家の速い照合を写したものが、`internal/difflib` と同じ答えを返す試験がある
 - [ ] 長い文書の所要を本家と Go の両方で測った数字がある
-- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q は済み。P S T U V W X Y・AB 以降は未)
+- [ ] 検出の群ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`) (群 A・B・C・E・F・G・H・I・R・Z・AA・M・N・O・Q・P・T は済み。S U V W X Y・AB 以降は未)
 - [ ] `make test-dupscan-gate` が通る
 
 ## 関連ファイル
@@ -499,3 +499,41 @@ commit の順: ① A → B → C → E (`--endings` の CLI が端から端ま�
 壊せなかったところ (レビューの報告から): 記録の件数 (71,277 case・312,293 呼び出し。群ごとの case 数) は記録のファイルから数えて issue・README と合った。群 M・N・O・Q の届き方の検査は `TestBaseMatchesPythonRecording` の中から呼ばれ、このテストは `NORACE_CHECKS` に入っていて空振りしない。`x-n-limit`・`x-o-honor-reach`・`x-o-particle-reach`・`x-o-passive`・`x-q-reach`・`x-q-yaku-start`・`x-q-chikaku`・`x-q-splitdec` は記録が red で、本番の関数を通っている。共有の部品の変更の後も、コピーの `go test ./...` は rc 0。`x-q-reach-ge` は等価の見込み。次の 16 本は fuzz 52,002 組でも記録でも緑のままで、本家と違う入力を作れなかった: `x-q-reach-ge`・`q-version`・`q-compound`・`m-follow-8`・`m-units-fit-range`・`m-cancel-sorted`・`m-moved-ratio`・`m-lead-width`・`m-ctx-words`・`m-weak-hasunit`・`m-sentencefinder`・`m-q-single-betsu`・`m-q-extra-subject`・`m-q-text-ratio-limit`・`m-phrase-previous2`・`m-q-keep-before2` (`m-q-text-rest3` は記録で red)。
 
 未確認リスク: 単独のサロゲートと不正な UTF-8 は試していない。所要は測っていない (fuzz の 1 万 5 千組で Go は 4〜12 秒)。int の桁数の上限で止まる形が、まだ写していない P 以降の群にもある見込みだが、確かめていない。
+
+### 7 本目 (diff-wf7。2026-11-14。worktree で作業し、push していない)
+
+- 順は P → T。群 S (否定対比の逆転)・U (確度) と、その後ろの V W X Y・AB・AC・AD は手を付けていない。S は本家 6346〜6874 行 (正規表現 34・関数 20 あまり。逆転の判定が 3 つの語の表と十数個の分岐でできている)、U は 7960〜8354 行 (正規表現 50) で、どちらも半端な群を commit しない方針の中で書き切って、本家と全件比べ、壊した形を当てる量に届かなかったので、ここで止めた。T (本家 6877〜6933 行) は語の一覧 (群 R) と文の組 (群 L) だけに依る小さい群なので、S の前に通した。
+  次の係は S から。S が使う `negativeZu` は群 M が写してあり、`negationWords` は群 M・N にある。S の見出しの行を数える masker は `newMaskerWith(side, skip)` で作れる (`_CONTRAST_SKIP_KINDS` は本文の数えない種類から見出しと表を外したもの)
+- commit:
+  - 1ec6dbb6d feat(ja-writing): diff の問い・変えない箇所・印の候補 (群 P) を作り、本家の記録と突き合わせる
+  - f2fb21a8b test(ja-writing): 群 P の記録に、最後の行だけに変えない箇所がある省いた置き換えの塊の組を足す
+  - f1dde9d4e feat(ja-writing): diff の気持ちの語 (群 T: _feeling_risks) を作り、本家の記録と突き合わせる
+  - fd27e5ea5 test(ja-writing): 群 T の記録に、行の継ぎ目の後読みと run の 2 つ目の hunk の組を足す
+  - この節を足す docs の commit
+  - 1ec6dbb6d と f1dde9d4e は、commit の前の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-dupscan-gate` を通した。1ec6dbb6d は最初の木で dupscan gate (テスト用の入力を作る closure の写し 5 組と helper の写し 1 件) と lint の staticcheck (QF1012) が落ちたので、入力の書式を表にして `diffTemplate` に寄せ、直してから commit した。f1dde9d4e は staticcheck (QF1001) を直してから通した。🚨 f2fb21a8b と fd27e5ea5 は記録の case を足しただけの変更で、単独では `make lint test`・unused・dupscan gate を回していない (回したのは `TestBaseMatchesPythonRecording` と、その commit の木での `mutate-verify`)。`make test-lint` は最後の木だけ (下の「最終の検査 (7 本目)」)
+- 群 P (`diff/question.go`・`diff/protected.go`): `_is_question` `_only_final_period_removed` `_question_risks` (問い。台詞の最後の「。」だけを外した組は出さない)・`_protected_risks` `_protected_spans` `_protected_contents` `_protected_hits` `_is_quote_row` (変えない箇所。文字の対応のある塊・省いた置き換えの塊・追加と削除の塊の 3 通り)・`_find_line` `_marks_risks` `_modality_risks` `_logic_risks` (印・許可・能力・選ぶ範囲と因果の変化を意味が変わる恐れの形にする)。
+  本家の `_protected_risks` は groups を使わず全文差分の hunk だけで決まる。`_marks_risks` などは `type_changes` を受けるので、Go の入口 `ChangeRisksOf(orig, rw)` が本家の `diff()` と同じ順 (`_type_changes` → `_modality_changes` → `_logic_changes`。範囲づくりは 1 回) で作って渡す。`sides` に `normalizedLines` (行ごとに正規化した文。`_find_line` が引く) を足した。群 F〜I の試験が持っていた `kindHitsValue` と別の形の変換 (`kindHitsList`) を production に置き、試験の `typeLostValue` がそれを通る形にした
+- 群 T (`diff/feeling.go`): `_feeling_risks`。語の家族は群 R の `LoadList("feelings")` を読み、原文を調べるのは推敲後の文に当たった家族だけ。3 つ目の欄 (原文の言い方)・原文では表を数え推敲後は数えない違い・コード・先頭の設定・HTML の行を数えない範囲・原文の行をつなぐ字 (改行) を写した。語の家族の正規表現を 1 つにまとめた前置きの検査 (`anyOf`) も写した
+- 記録: `diff-base.json` は 71,290 → 105,525 case・312,340 → 481,116 呼び出し (13.7MB → 17.4MB)。足した呼び出し (関数ごと): `_question_risks` 8,602・`_is_question` 93・`_only_final_period_removed` 16・`_protected_risks` 8,445・`_protected_spans` 16,890・`_find_line` 100・`_marks_risks` `_modality_risks` `_logic_risks` 各 8,203・`_feeling_risks` 8,981・群 P の定数 6 本 (`_QUESTION` `_NOT_QUESTION_KA` `_FINAL_PERIOD_IN_QUOTE` `_SENTENCE_END` `_PROTECTED_SPANS` `_PROTECTED_LINES`)。
+  組は群 F〜I と同じ入れ物 (`diffBags`) に、各群専用の手書きの組と固定の種 (PCG 1076/20 問い 900・21 変えない箇所 700・22 印の候補 500・23 気持ちの語 900) を足したもの。問いの語彙 (形容動詞の語幹と「ほか」の除外・閉じ括弧・台詞の最後の「。」)・変えない箇所の種類ごと (コード・インラインのコード・URL・リンク先・先頭の設定・HTML・引用・画像のパス・リンクの定義)・文字の対応を省く大きさの塊 (合計の上限を超える・2 つ目の塊が残りに入らない・最後の行だけに変えない箇所がある)・語の家族ごとの文 (気持ちの語 178 文と、先読み・後読みで外す形)・原文の言い方の欄を持つ家族の組を手書きで入れた。
+  既存の case は消えず、既存の case の digest も変わらない (記録の作り直しの前後を python で照合し、missing 0・changed 0。足した case を直すたびに作り直した)。作り直しは約 120 秒。`diff-cli.json` は変えていない
+  - 届き方を数える検査を足した (`checkQuestionHits`・`checkFeelingHits`): 問いが出る組と出ない組・変えない箇所の subkind 7 つ (code・inline_code・url・link・frontmatter・html・quote) と出ない組・印・許可 (消えた・増えた)・能力が消えた・選ぶ範囲 (一つ → 全部・全部 → 一つ)・因果と、それぞれ出ない組・気持ちの語が出る組と出ない組のどれにも 20 回以上。最初の記録で先頭の設定が 15 回だったので、固定の種の組の 5 分の 1 に先頭の設定を足した
+- 本家と揃わなかった所: 無い (群 P・T の全記録が最初の記録で一致した。直した所も無い)
+- 4,300 桁を超える数字で本家が ValueError で止まる件 (6 本目の敵対的レビュー P3-1): 群 P・T には数字を int にする処理も int の桁の上限に当たる所も無い (`_find_line` は文字列の位置だけ、`_protected_*` は範囲の位置だけ)。記録にも入れていない。群 AC で CLI に配線するときの扱いは変わらず未決
+- わざと壊して比べた (`bin/mutate-verify-list`。commit した木で回した。ログは tmp/yomiyasu-gap-2026-11-12/diff-wf7/mutlog-p・mutlog-p2・mutlog-t・mutlog-t2。本数は各 run の表から数えた):
+  - 群 P: 20 本のうち 17 本が最初に red・3 本が緑のまま。緑の 1 本 (`qp-high`: 範囲を読む上限を最後の行の終わりまでにしない) は、最後の行だけに変えない箇所がある塊の組 2 本を足して (f2fb21a8b) red にした (その commit の木で当て直して rc 0)。最終は 20 本のうち 18 本が red・2 本が緑
+    - red: 台詞の最後の「。」を外した組の両向き・形容動詞の語幹の一覧・文末の rstrip・問いの片方だけの判定・`_find_line` の 20 字・文の終わりでの切り・modality_review の判定・logic の old_hits・マークの側の取り違え・正規化した行・画像のパスの始まり・リンクの定義の末尾の改行・二分探索の始まり (`bisect_right - 1`)・同じ subkind の最初の行・1 行が 1 行に変わる塊の相手の行・hunk の中の文字の位置の進め方・省いた置き換えの塊の中身の比べ・上の `qp-high`
+    - 緑のまま (2): `qp-quote-break` (引用の行の `break` を外す。同じ subkind の 2 回目以降は `hit` が行番号を上書きしないので、`break` は速くするだけで等価と読んだ。実測はしていない)・`qp-sort-kind` (範囲を並べる最後の鍵 `kind` を逆にする。始まりも終わりも同じ範囲が 2 つの種類で出る入力を作れなかった。13 通りの書き方で `protectedSpansOf` を調べ、どれも 1 つの種類だけだった)。再提起するなら、始まりと終わりが同じで種類が違う範囲が出る文書と、本家・壊した形の答えを示す
+  - 群 T: 11 本のうち 7 本が red (最終の木で。最初は 5 本が red・6 本が緑のまま)・4 本が緑のまま。`qt-join` (原文の行を空でつなぐ。前の行の終わりの「売上が」が次の行の「落ち込」の後読みに掛かる) と `qt-group-index` (risk の hunk の番号を group の最初の hunk にする) は、組 3 本を足して (fd27e5ea5) red にした。red のもの: 3 つ目の欄・推敲後の文で表を数えない・原文で数えない行の種類・原文の伏せ・risk の元の行番号・上の 2 本
+    - 緑のまま (4): `qt-old-texts` (原文と同じ文を飛ばす判定を外す。同じ文は原文にあるので、原文を調べる側で家族が「ある」になり、結果が変わらないと読んだ)・`qt-words-dedupe` (同じ当たりの文字列を 2 回数えない判定を外す。今の一覧の 51 家族は同じ文字列に当たらない。気持ちの語の 178 文で確かめた (python)。一覧を差し替えると食い違いうる)・`qt-pair-first` (同じ後の文に組が 2 つあるときの先・後の取り方。そういう組を作れていない)・`qt-new-masker-skip-frontmatter` (推敲後の masker の数えない種類のうち、コード・先頭の設定・HTML は、そもそも文を作らない行なので、表だけが効く)。いずれも本家と違う答えを返す入力を作っていない。等価かどうかは未確認
+- 確かめていないこと:
+  - 群 S U V W X Y・AB・AC・AD は未着手 (上)。`diff()` の組み立て (群 AC) と CLI への配線までは、検出の群は production から `FeelingRisks` などの入口でしか呼ばれない
+  - 群 P・T の所要 (長い文書・同じ段落の繰り返し・変えない箇所が数万個ある文書) は測っていない。`_protected_hits` は範囲を二分探索で引くので、hunk ごとの費用は範囲の数に依らないが、実測はしていない。`go test -race ./diff` は手元で 82 秒 (最も重い `TestRequestMatchesPythonRecording` が 27 秒) で、CI の上限 600 秒の半分に遠い。`TestBaseMatchesPythonRecording` は前の係のとおり race なしで回す
+  - `ChangeRisksOf` が `o == r` のとき型の変化の入力を空にする (本家の `diff()` と同じ) 点は、記録の本家 (いつも `_ExactSequenceMatcher` の opcodes を渡す) との突き合わせで同じになることを確かめた (同じ文書の組が記録に入っている)。ただし `meaning_risks()` の `finally` で `_LAST_TYPE_RANGES` を空にする所は、群 AC まで未確認
+  - 単独のサロゲートと不正な UTF-8 は記録に入れていない (Go の `encoding/json` が置き換えるので渡せない)
+  - `_find_line` の「見つからない」(None) は記録に入っている (`find-line/` の case)。ただし行が複数の hunk にまたがる組での振る舞いは、`_marks_risks` の組 (印が文の途中で変わる組) 経由でしか見ていない
+
+#### 最終の検査 (7 本目)
+
+最後のコードの編集 (fd27e5ea5) の後の木 (README・epic・この issue の docs の変更を含む) で、`make -C src/ja-writing lint test` (lint 0 issues・`go test -race ./...` 全部 ok)・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` を回し、rc は全部 0
+(ログは tmp/yomiyasu-gap-2026-11-12/diff-wf7/fin-lt.log・fin-un.log・fin-tl.log・fin-dup.log と同じ名前の .rc)。この節を足す docs の commit の後に `make test-lint` をもう一度回した (rc は fin2-tl.rc)。
