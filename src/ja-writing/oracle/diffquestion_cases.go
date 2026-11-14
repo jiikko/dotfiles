@@ -211,7 +211,17 @@ func diffProtectedBudget() []diffFullCase {
 	pair := func(name string, first int, e extra) diffFullCase {
 		return diffFullCase{name: name, old: build(first, 60, false, e), new: build(first, 60, true, e)}
 	}
+	// 最後の行だけに変えない箇所がある塊 (範囲の読む上限は最後の行の終わりまで)
+	lastLine := func(changed bool, mark string) string {
+		r := []rune(kanjiRun(660, 1900))
+		if changed {
+			r[10] = 'あ'
+		}
+		return string(r) + "。" + mark + "\n"
+	}
 	return []diffFullCase{
+		{name: "too-large-last-line-code", old: build(600, 59, false, none) + lastLine(false, "`x`"), new: build(600, 59, true, none) + lastLine(true, "`y`")},
+		{name: "too-large-last-line-link", old: build(600, 59, false, none) + lastLine(false, "[a](https://a.example/1)"), new: build(600, 59, true, none) + lastLine(true, "[a](https://b.example/1)")},
 		pair("too-large-code", 300, code),
 		pair("too-large-link", 400, link),
 		{name: "too-large-quote-lines", old: "> " + build(500, 60, false, none), new: "> " + build(500, 60, true, none)},
