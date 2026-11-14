@@ -6,6 +6,7 @@ import (
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pystr"
+	"ja-writing/visibility"
 )
 
 // 群 Y: 意味が変わる恐れの組み立て (本家の _meaning_risks・meaning_risks)。群 M〜X の各検出を本家と同じ順で集め、
@@ -197,8 +198,25 @@ func meaningInputs(orig, rw string, withChanges bool) (changes []TypeChange, mod
 	return changes, ModalityChanges(o, r, cache), LogicChanges(o, r, cache)
 }
 
+// entryDocType は公開の入口に渡された文書の種類を本家の normalize_doc_type に通す (大文字・前後の空白は寄せ、使えない値は ValueError)。
+// 空は指定なし。入口の型が string なので、本家で ValueError になる空文字列は区別できない (diff() の配線は *string の NormalizeDocType を通す)。
+func entryDocType(docType string) (string, error) {
+	if docType == "" {
+		return "", nil
+	}
+	dt, err := visibility.NormalizeDocType(&docType)
+	if err != nil {
+		return "", err
+	}
+	return *dt, nil
+}
+
 // meaningRisksOf は本家の meaning_risks (JSON の meaning_risks)。withChanges が偽なら type_changes は None。
 func meaningRisksOf(orig, rw string, withChanges bool, docType string) (meaningResult, *sides, []*sentenceGroup, error) {
+	docType, err := entryDocType(docType)
+	if err != nil {
+		return meaningResult{}, nil, nil, err
+	}
 	full, s, err := buildFullDiff(orig, rw, nil)
 	if err != nil {
 		return meaningResult{}, nil, nil, err

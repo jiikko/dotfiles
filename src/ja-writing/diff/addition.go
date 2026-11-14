@@ -1106,6 +1106,10 @@ func typeChangesOf(o, r string, cache *typeCache) []TypeChange {
 // AdditionRisks は元の文と書き直した文の、状態の消え・約束・因果の足しの候補 (risk の並び。JSON の値の形)。docType は文書の種類 (空なら指定なし)。
 // 既存の候補として、本家の _meaning_risks が渡す種類のうちこの検出が読む 3 つ (文の種類の印・確度・否定) を渡す。
 func AdditionRisks(orig, rw, docType string) (pyjson.Value, error) {
+	docType, err := entryDocType(docType)
+	if err != nil {
+		return nil, err
+	}
 	full, s, err := buildFullDiff(orig, rw, nil)
 	if err != nil {
 		return nil, err
