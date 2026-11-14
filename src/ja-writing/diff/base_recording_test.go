@@ -54,6 +54,8 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 				got = qualifierConstantValue(t, call.Function)
 			case slices.Contains(oracle.DiffQualifierFunctions, call.Function):
 				got = invokeQualifier(t, call, build)
+			case slices.Contains(oracle.DiffFeelingFunctions, call.Function):
+				got = invokeFeeling(t, call, build)
 			case call.Get && slices.Contains(oracle.DiffQuestionConstantNames(), call.Function):
 				got = questionConstantValue(t, call.Function)
 			case slices.Contains(oracle.DiffQuestionFunctions, call.Function):
@@ -127,6 +129,7 @@ func TestBaseMatchesPythonRecording(t *testing.T) {
 	checkNegationSwapHits(t)
 	checkQualifierHits(t)
 	checkQuestionHits(t)
+	checkFeelingHits(t)
 	total := 0
 	for _, n := range calls {
 		total += n

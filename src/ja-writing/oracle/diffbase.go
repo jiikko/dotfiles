@@ -43,6 +43,7 @@ func init() {
 	DiffBaseFunctions = append(DiffBaseFunctions, DiffQualifierFunctions...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffQualifierConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, DiffQuestionFunctions...)
+	DiffBaseFunctions = append(DiffBaseFunctions, DiffFeelingFunctions...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffQuestionConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffTypeConstants...)
 	DiffBaseFunctions = append(DiffBaseFunctions, diffRuleConstants...)
@@ -250,7 +251,9 @@ func DiffBaseCases(c Corpus, diffDir string, inputs []DiffInput) ([]VisCase, err
 	// 群 Q (概数と範囲の語)
 	cases = append(cases, diffQualifierCases(pairs)...)
 	// 群 P (問い・変えない箇所・印の候補)
-	return append(cases, diffQuestionCases(pairs)...), nil
+	cases = append(cases, diffQuestionCases(pairs)...)
+	// 群 T (気持ちの創作)
+	return append(cases, diffFeelingCases(pairs)...), nil
 }
 
 // diffEndingStrings は文末の関数に通す手書きの文 (1 つが 1 つの枝を狙う)。
