@@ -85,6 +85,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   - 途中までのレビューの指摘 5 件の修正 (下の表の「扱い」)。commit は「test(ja-writing): check のパスの記録に FIFO・ハードリンク・HOME 無しを足す」と「docs(ja-writing): README の diff の記録の件数と、check の揃わない範囲 (HOME 無し・不正なバイトの読み) を直す」。記録 `check-base.json` は 35 → 37 case で、既存の case の消失・変化は 0 (python で照合)
   - push 前の 4 つの検査 (`make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate`) は、修正の後の木ですべて rc 0
 - **残り (この順に)**
+  0. 止めた時点の push (93c0c72ed とその次の 1 本) の CI を見ていない。再開したら最初に引数なしの `bin/ci-log` を打ち、赤があれば先に直す
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。残り 6 本を当てる
   2. 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
   3. そのレビューの指摘を直す (issue に「### 1 本目の敵対的レビュー (2 回目)」の節を作る)
