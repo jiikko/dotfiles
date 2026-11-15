@@ -7,6 +7,7 @@
 
 - コードを書き始める前に、必ず `git pull` を実行して最新の状態に更新すること
 - 変更を入れる前に、依頼が名指ししていない関連ソース (その領域の issue・`docs/`・周辺の CLAUDE.md) も開いて、見つけた制約を使う。すぐ手を動かす方へ寄りやすく、依頼文にない前提を取りこぼす
+  - **独自の lint の規則を持つ repo で新しいファイルを書く前に、規則の一覧 (名前とメッセージ) を読む**。対象は SwiftLint の `custom_rules` と opt-in の規則、Makefile の lint の target。lint を早く回しても、規則を知らずに書いた分は書き直しになる (vlc-multi-video-player retro 550: 6 種類の規則で 4 回落とした)
   - 🚨 **Bash (python / sed) でファイルを編集するなら、先にそのディレクトリの CLAUDE.md を Read する**。下位の CLAUDE.md は Read ツールで触れたときにしか読み込まれないので、スクリプトだけで編集するとそのディレクトリの規約 (GUI 必須の作業など) を素通りする
 - **起動した cwd の外の repo を触るなら、編集の前にその repo の CLAUDE.md と `.claude/rules/` を Read する**。repo の規約は cwd がその repo に入るまで注入されない
 
