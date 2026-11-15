@@ -103,6 +103,8 @@ func (e *interp) call(c oracle.Call) outcome {
 		return e.builtin(c)
 	case c.Get:
 		return outcome{value: e.constant(c.Function)}
+	case c.Module == "posixpath":
+		return e.posixpath(c)
 	}
 	a := c.Args
 	switch c.Function {
@@ -198,7 +200,28 @@ func (e *interp) call(c oracle.Call) outcome {
 	case "_skill_info":
 		return outcome{value: SkillInfo()}
 	}
-	return e.pathCall(c)
+	out := e.pathCall(c)
+	if out.exc == nil {
+		e.save(c, out.value)
+	}
+	return out
+}
+
+// posixpath は覚えた値 (パス) を機械に依らない形に縮める本家の os.path の呼び出し (HOME が無いときの結果の比べ用)。
+func (e *interp) posixpath(c oracle.Call) outcome {
+	e.t.Helper()
+	path, ok := e.ref(c.Args[0]).(string)
+	if !ok {
+		e.t.Fatalf("posixpath の引数が文字列でない: %T", e.ref(c.Args[0]))
+	}
+	switch c.Function {
+	case "isabs":
+		return outcome{value: strings.HasPrefix(path, "/")}
+	case "basename":
+		return outcome{value: path[strings.LastIndex(path, "/")+1:]}
+	}
+	e.t.Fatalf("Go に持っていない posixpath.%s", c.Function)
+	return outcome{}
 }
 
 func (e *interp) save(c oracle.Call, v any) {
@@ -566,11 +589,16 @@ func TestBaseRecordingCoversEveryFunction(t *testing.T) {
 	for _, f := range g.Functions {
 		byName[f.Name] = f
 	}
-	known := map[string]bool{"_HERE": true, "__import__": true, "setattr": true}
+	known := map[string]bool{"_HERE": true, "__import__": true, "setattr": true, "isabs": true, "basename": true}
 	for _, name := range append(slices.Clone(oracle.CheckBaseFunctions), oracle.CheckBaseConstants...) {
 		known[name] = true
 		if byName[name].Calls == 0 {
 			t.Errorf("%s の記録が 0 件 (空振り)", name)
+		}
+	}
+	for _, name := range []string{"isabs", "basename"} {
+		if byName[name].Calls == 0 {
+			t.Errorf("posixpath.%s の記録が 0 件 (HOME が無いときの記録の比べ用)", name)
 		}
 	}
 	for _, f := range g.Functions {

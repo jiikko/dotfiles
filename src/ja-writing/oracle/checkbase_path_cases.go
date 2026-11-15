@@ -13,7 +13,7 @@ func unsetenv(f *fixtureCase, name string) { f.op(Op{Kind: "unsetenv", Name: nam
 
 func checkPathCases() []VisCase {
 	cases := checkRunIDCaseCases()
-	cases = append(cases, checkAbsPathCase(), checkDiskPathCase(), checkGoneCwdCase(), checkHomePathCase(), checkStateDirCase(), checkStateDirEnvCase())
+	cases = append(cases, checkAbsPathCase(), checkDiskPathCase(), checkGoneCwdCase(), checkHomePathCase(), checkStateDirCase(), checkStateDirEnvCase(), checkSpecialFileCase(), checkHomeUnsetCase())
 	return cases
 }
 
@@ -206,3 +206,54 @@ func checkStateDirEnvCase() VisCase {
 }
 
 const stateDirEnvName = "YOMIYASU_STATE_DIR"
+
+// checkSpecialFileCase は FIFO とハードリンク。書き手のいない FIFO を開くと止まるので _disk_path が O_NONBLOCK で開くこと、
+// 別名のハードリンクは _same_path で違い _same_file で同じになることを守る。
+func checkSpecialFileCase() VisCase {
+	f := newFixtureCase("path-special")
+	f.write("F.txt", "x")
+	f.op(Op{Kind: "hardlink", Path: f.dir("hard.txt"), Target: f.dir("F.txt")})
+	f.op(Op{Kind: "hardlink", Path: f.dir("sub/Deep.TXT"), Target: f.dir("F.txt")})
+	f.op(Op{Kind: "mkfifo", Path: f.dir("Pipe.fifo")})
+	f.op(Op{Kind: "symlink", Path: f.dir("pipe-link"), Target: f.dir("Pipe.fifo")})
+	chdir(f)
+	for _, p := range []string{f.dir("Pipe.fifo"), f.dir("pipe.FIFO"), f.dir("pipe-link"), f.dir("F.txt"), f.dir("hard.txt"), f.dir("sub/Deep.TXT")} {
+		f.call(ckeep(cfold(ccall("_disk_path", p))))
+		f.call(ckeep(cfold(ccall("_place", p))))
+		f.call(ckeep(ccall("_case_insensitive", p)))
+	}
+	pairs := [][2]string{
+		{f.dir("F.txt"), f.dir("hard.txt")}, {f.dir("hard.txt"), f.dir("F.txt")}, {f.dir("hard.txt"), f.dir("sub/Deep.TXT")}, {f.dir("F.txt"), f.dir("f.TXT")},
+		{f.dir("Pipe.fifo"), f.dir("Pipe.fifo")}, {f.dir("Pipe.fifo"), f.dir("pipe-link")}, {f.dir("Pipe.fifo"), f.dir("F.txt")}, {f.dir("hard.txt"), f.dir("missing.txt")},
+	}
+	for _, p := range pairs {
+		f.call(ckeep(ccall("_same_path", p[0], p[1])))
+		f.call(ckeep(ccall("_same_file", p[0], p[1])))
+	}
+	return f.done()
+}
+
+// checkHomeUnsetCase は HOME が無いときの _home_path。ホームは機械の利用者のものなので、結果そのものでなく「絶対パスか・~ で始まるか・~ の後ろの部分が残るか」を比べる。
+func checkHomeUnsetCase() VisCase {
+	f := newFixtureCase("path-home-unset")
+	f.mkdir("repo/.git")
+	chdir(f, "repo")
+	unsetenv(f, "HOME")
+	for i, v := range []string{"~", "~/", "~/x", "~/a/../b", "~user/x"} {
+		name := "home" + string(rune('0'+i))
+		call := ccall("_home_path", v)
+		call.Save, call.Quiet = name, true
+		f.call(call)
+		f.call(ckeep(Call{Module: "posixpath", Function: "isabs", Args: []any{Ref(name)}, Digest: true}))
+		if v != "~" {
+			f.call(ckeep(Call{Module: "posixpath", Function: "basename", Args: []any{Ref(name)}, Digest: true}))
+		}
+	}
+	f.call(ckeep(ccall("_home_path", "plain")))
+	state := ccall("state_dir_for", f.dir("repo"), "~/st")
+	state.Save, state.Quiet = "state", true
+	f.call(state)
+	f.call(ckeep(Call{Module: "posixpath", Function: "isabs", Args: []any{Ref("state")}, Digest: true}))
+	f.call(ckeep(Call{Module: "posixpath", Function: "basename", Args: []any{Ref("state")}, Digest: true}))
+	return f.done()
+}

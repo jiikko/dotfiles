@@ -24,7 +24,7 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 - "folded": true の呼び出しは、結果の文字列の中の「作業フォルダを NFC にして casefold したもの」を "<<ROOT>>" に戻す (ふつうの呼び出しは作業フォルダそのものを戻す)。
   大文字と小文字を区別しない FS で、パスの比較用の綴り (casefold したもの) を返す関数の結果が、作業フォルダの綴りの大小に依らず同じ記録になるようにする。
   付けなければ前と一字も同じ出力。
-- "op" の呼び出しは、作業フォルダに fixture を作る・環境を変える: write・mkdir・symlink・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。結果は null。
+- "op" の呼び出しは、作業フォルダに fixture を作る・環境を変える: write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。結果は null。
 """
 import base64
 import hashlib
@@ -127,6 +127,12 @@ def run_op(op):
     elif kind == "symlink":
         os.makedirs(os.path.dirname(path), exist_ok=True)
         os.symlink(resolve(op["target"]), path)
+    elif kind == "hardlink":
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.link(resolve(op["target"]), path)
+    elif kind == "mkfifo":
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.mkfifo(path, 0o644)
     elif kind == "chdir":
         os.chdir(path)
     elif kind == "chmod":

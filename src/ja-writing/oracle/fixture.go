@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"subproc"
 )
@@ -39,7 +40,7 @@ type Cps []rune
 // MarshalJSON は {"$str": [コードポイント...]} にする。
 func (c Cps) MarshalJSON() ([]byte, error) { return json.Marshal(map[string][]rune{"$str": c}) }
 
-// Op は作業フォルダへの操作。Kind は write・mkdir・symlink・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。
+// Op は作業フォルダへの操作。Kind は write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。
 // パスと値の中の RootToken は作業フォルダに置き換わる。git は Path を cwd にして Args を渡す (引数は subproc.GitArgs を通したもの)。
 // restoreenv は setenv・unsetenv で変えた環境変数を戻し、cwd を作業フォルダに戻す。
 type Op struct {
@@ -162,6 +163,16 @@ func (f *Fixture) Apply(ctx context.Context, op Op) error {
 			return err
 		}
 		return os.Symlink(f.Sub(op.Target), path)
+	case "hardlink":
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		return os.Link(f.Sub(op.Target), path)
+	case "mkfifo":
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		return syscall.Mkfifo(path, 0o644)
 	case "chdir":
 		return os.Chdir(path)
 	case "chmod":
