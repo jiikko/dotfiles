@@ -1,7 +1,7 @@
 package oracle
 
 // CheckBaseFile は本家 yomiyasu_check.py の小道具・パスと状態フォルダの場所・似かた・tools の欄の関数の記録 (testdata/golden/ の中)。
-// 形は visibility.json と同じ (case ごとの呼び出しの digest の列)。issue 1077 の 1 本目 (部品)。
+// 形は visibility.json と同じ (case ごとの呼び出しの digest の列)。
 const CheckBaseFile = "check-base.json"
 
 // CheckModule は記録の対象の本家の module。

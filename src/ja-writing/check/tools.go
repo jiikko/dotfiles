@@ -11,7 +11,7 @@ import (
 	"ja-writing/visibility"
 )
 
-// 記録の tools の欄。互換の決め方 (issue 1077 の (a)): ja-writing の記録を本家の verify が読め、本家の記録を ja-writing の verify が読めるように、
+// 記録の tools の欄。ja-writing の記録を本家の verify が読め、本家の記録を ja-writing の verify が読めるように、
 // 欄には「答えを合わせた本家 3.1.0 のファイル」の SHA-256 を書く。Go の実行ファイルの値ではない。
 // 失うもの: ja-writing の挙動を直しても tools の値は変わらないので、古い記録が tool_changed にならない (本家は .py を直せば古い記録を弾けた)。
 // ja-writing の挙動のバージョンは記録の python.implementation の文字列に入れる。

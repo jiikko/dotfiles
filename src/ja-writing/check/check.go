@@ -1,5 +1,5 @@
 // Package check は ja-writing check (lint と diff をまとめて実行して記録を残す) の Main と、その部品を持つ。
-// Main はまだ stub。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの (issue 1077 の 1 本目)。
+// Main はまだ stub。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの。
 //
 // 本家の名前と Go の名前の対応 (本家の名前は先頭の _ を持つ非公開のもの。state_dir_for だけ公開):
 //

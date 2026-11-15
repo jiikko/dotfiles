@@ -67,7 +67,7 @@
 - `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
 - `src/glogx/tools/width-probe` (`glogx/tools/width-probe`) — width-probe は「端末が各文字に実際に何セル割り当てるか」を端末自身に問い合わせて表示する。 (main)
 - `src/ja-writing` (`ja-writing`) — Command ja-writing は、日本語の文章の読みやすさを点検する本家 yomiyasu (Python) の Go 実装。 (main)
-- `src/ja-writing/check` (`ja-writing/check`) — Package check は ja-writing check (lint と diff をまとめて実行して記録を残す) の Main を持つ。
+- `src/ja-writing/check` (`ja-writing/check`) — Package check は ja-writing check (lint と diff をまとめて実行して記録を残す) の Main と、その部品を持つ。
 - `src/ja-writing/cmdenv` (`ja-writing/cmdenv`) — Package cmdenv は ja-writing の各 subcommand の Main が受け取る実行環境 (引数・標準入出力・cwd・環境変数) を持つ。
 - `src/ja-writing/diff` (`ja-writing/diff`) — Package diff は ja-writing diff (元の文と書き直した文の差分の検査) の Main を持つ。
 - `src/ja-writing/hook` (`ja-writing/hook`) — Package hook は ja-writing hook (エージェントの hook から check へつなぐ入口) の Main を持つ。
