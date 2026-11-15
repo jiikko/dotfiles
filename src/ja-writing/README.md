@@ -5,7 +5,7 @@
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
 lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
-`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,146 件を出力の全体と rc まで全件比べて通る)。`check` は部品 (issue 1077 の 1 本目: 小道具・パスと状態フォルダの場所・似かた・記録の `tools` の欄) だけが入っていて、subcommand はまだ stub。hook は stub (`まだ実装していません` と標準エラーに出して rc 2 を返す)で、1078 で実装する。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,154 件を出力の全体と rc まで全件比べて通る)。`check` は部品 (issue 1077 の 1 本目: 小道具・パスと状態フォルダの場所・似かた・記録の `tools` の欄) だけが入っていて、subcommand はまだ stub。hook は stub (`まだ実装していません` と標準エラーに出して rc 2 を返す)で、1078 で実装する。
 
 ## 構成
 
@@ -146,7 +146,7 @@ digest は結果を正規の JSON (`sort_keys`・`ensure_ascii`・`separators=("
 ### 揃わない範囲
 
 - Windows の分岐 (ドライブ・`USERPROFILE`) は写さない (macOS だけが対象)。
-- `HOME` が未設定のときの `~` の展開 (本家は `pwd.getpwuid(os.getuid()).pw_dir`、Go は `os/user.LookupId`) は記録に入れない: 結果に実行した人のホームのパスが入り、機械ごとに記録が変わる。
+- `HOME` が未設定のときの `~` の展開 (本家は `pwd.getpwuid(os.getuid()).pw_dir`、Go は `os/user.LookupId`) は、結果に実行した人のホームのパスが入り機械ごとに記録が変わるので、結果そのものでなく「絶対パスか・ホームの後ろの部分が残るか」だけを記録 (`path-home-unset`) で比べる。ホームの値そのものが同じかは記録で見ない。
   手元 (macOS・uid 501) では、`HOME` を外して `CGO_ENABLED=1` と `0` のどちらでも、両方が同じホームを返すことを確かめた。環境を作れる範囲 (HOME を変える・空にする) は記録の `option` の case にある。
 - `words_context` と `words_label` に `None` を渡す形は写さない: 本家の注釈は `dict` で (`Optional` ではない)、本家の呼び出し元 (check・lint・diff の 7 か所) は `words is not None` の後にだけ呼ぶ。Python は `TypeError` で落ちるだけで、契約ではない。
 - 関数の引数の型は、本家の注釈どおりの型だけを受ける (`normalize_doc_type` の引数は str か None だけで、`str(value)` で文字列になる int などは受けない。`decode_source` は str か bytes で、bytearray は別に持たない)。
@@ -334,7 +334,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 
 - `_disk_path` に NUL を含むパスを渡したときの本家の `ValueError` は写さない (コマンドラインの引数は NUL を持てない)。`HOME` が無くパスワードデータベースから決める枝は、手元で試していない。
 - 大文字と小文字を区別するファイルシステムは、手元に無いので記録に入らない (`_case_insensitive` が偽を返す枝は、`/` と数字だけのパスで通した)。
-- `_tool_versions` を `DirFiles` (本家と同じ置き場の読み方) で読むときの `decode("utf-8", "replace")` は、バイト列のまま探す (バージョンの値に不正なバイトが入る入力は写していない)。
+- `_tool_versions` を `DirFiles` (本家と同じ置き場の読み方) で読むときの `decode("utf-8", "replace")` は、バイト列のまま探す。バージョンの値に不正なバイトが入る入力は本家と答えが違う (`3.1` + `\xe3\x81` は本家が `3.1` + U+FFFD 1 字、Go が不正なバイト 2 つ。`3.1` + `\xed\xa0\x80` は本家が U+FFFD 3 字、Go が単独のサロゲートのバイト)。使うのは記録の突き合わせだけで、本番の記録を書く経路は `Released` の固定の値を使い、この読みを通らない。
 - 本家の `_getcwd` が `os.getcwd` の失敗の理由 (`strerror`) を文に入れる所は、`ENOENT` の文 (`No such file or directory`) だけを出す (`EACCES` で読めない作業フォルダは試していない)。
 
 ## 標準ライブラリを写す package (`internal/`)
