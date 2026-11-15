@@ -28,6 +28,18 @@ func (c CaseRow) MarshalJSON() ([]byte, error) { return marshalTuple(c.CP, c.To)
 // UnmarshalJSON は [cp, [cp ...]] を読む。
 func (c *CaseRow) UnmarshalJSON(b []byte) error { return unmarshalTuple(b, &c.CP, &c.To) }
 
+// DecimalRow は [cp, 値]。unicodedata.decimal(chr(cp)) が返す 0〜9。
+type DecimalRow struct {
+	CP    rune
+	Value int
+}
+
+// MarshalJSON は [cp, 値] の形にする。
+func (d DecimalRow) MarshalJSON() ([]byte, error) { return marshalTuple(d.CP, d.Value) }
+
+// UnmarshalJSON は [cp, 値] を読む。
+func (d *DecimalRow) UnmarshalJSON(b []byte) error { return unmarshalTuple(b, &d.CP, &d.Value) }
+
 // CaseString は文字列 (cp の列) 1 つに 3 つのメソッドを当てた記録。
 type CaseString struct {
 	S, Casefold, Lower, Swapcase []rune
@@ -51,6 +63,7 @@ type CasemapBody struct {
 	// Cased と CaseIgnorable は語末の Σ の規則に使う字の範囲 (py/record_casemap.py の冒頭に求め方を書いた)。
 	Cased         []CPRange         `json:"cased"`
 	CaseIgnorable []CPRange         `json:"case_ignorable"`
+	Decimal       []DecimalRow      `json:"decimal"`
 	Digests       map[string]string `json:"digests"`
 	Cases         []CaseString      `json:"cases"`
 }
@@ -71,7 +84,7 @@ func MarshalCasemap(g CasemapGolden) ([]byte, error) {
 	for _, f := range []struct {
 		name string
 		v    any
-	}{{"casefold", g.Casefold}, {"lower", g.Lower}, {"swapcase", g.Swapcase}, {"cased", g.Cased}, {"case_ignorable", g.CaseIgnorable}, {"cases", g.Cases}} {
+	}{{"casefold", g.Casefold}, {"lower", g.Lower}, {"swapcase", g.Swapcase}, {"cased", g.Cased}, {"case_ignorable", g.CaseIgnorable}, {"decimal", g.Decimal}, {"cases", g.Cases}} {
 		lines, err := marshalLinesAny(f.v)
 		if err != nil {
 			return nil, err

@@ -330,10 +330,23 @@ type PystrCase struct {
 	RStripChars json.RawMessage   `json:"rstrip_chars,omitempty"`
 }
 
+// FloatCase は float(s) の記録。文字列は cp の列。Result は float.hex() ("inf"・"-inf"・"nan" はそのまま)、float() が ValueError にした文字列は nil。
+type FloatCase struct {
+	S      []rune
+	Result *string
+}
+
+// MarshalJSON は [cp の列, 結果] の形にする。
+func (f FloatCase) MarshalJSON() ([]byte, error) { return marshalTuple(f.S, f.Result) }
+
+// UnmarshalJSON は [cp の列, 結果] を読む。
+func (f *FloatCase) UnmarshalJSON(b []byte) error { return unmarshalTuple(b, &f.S, &f.Result) }
+
 // PystrGolden は pystr.json の中身。
 type PystrGolden struct {
 	Header Header      `json:"header"`
 	Cases  []PystrCase `json:"cases"`
+	Floats []FloatCase `json:"floats"`
 }
 
 // MarshalPystr は PystrGolden を決まったバイト列にする。
@@ -346,7 +359,11 @@ func MarshalPystr(g PystrGolden) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []byte("{\n" + header + ",\n\"cases\": " + cases + "\n}\n"), nil
+	floats, err := marshalLines(g.Floats)
+	if err != nil {
+		return nil, err
+	}
+	return []byte("{\n" + header + ",\n\"cases\": " + cases + ",\n\"floats\": " + floats + "\n}\n"), nil
 }
 
 // RecordPystr は本家の Python の str のメソッドを決まった文字列に当てて記録にする。

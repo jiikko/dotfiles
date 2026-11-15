@@ -74,6 +74,46 @@ def record(s, chars):
     return out
 
 
+def float_hex(s):
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return str(v) if v != v or v in (float("inf"), float("-inf")) else v.hex()
+
+
+def float_cases():
+    """float(str) が受ける形と受けない形 (空白・符号・数字の間の _・指数・inf と nan・アラビア・インドと全角の数字)。"""
+    fixed = ["", " ", "1", "-1", "+1", "--1", "+-1", "1.", ".1", ".", "1.5", "1e5", "1E5", "1e+5", "1e-5", "1e", "e5", ".e5", "1.e5", "1_0", "1__0", "_1", "1_", "1_.5", "1._5", "1e_5", "1_e5", "1e1_0", "0_0",
+             "inf", "Inf", "INF", "-inf", "+inf", "infinity", "Infinity", "-INFINITY", "infinit", "infinityx", "nan", "NaN", "-nan", "+nan", "nan_", "n a n", "0x10", "0b1", "1j", "1d5", "1f", "0.1", "0.30000000000000004", "1e999", "-1e999", "1e-999", "5e-324",
+             "2.2250738585072014e-308", "1.7976931348623157e308", "1.7976931348623159e308", "9007199254740993", "123456789012345678901234567890", "٣", "٣.٥", "١٢٣", "１２３", "１.５", "𝟏𝟐", "1٣", "٣e٢", "٣_٣", "  5  ", "\t5\n", "\x0b5\x0c", "\r5",
+             "\x1c5", "5\x1d", "\x1f5", "\x855", "5\x85", "\xa05", "5\xa0", "\u30005", "5\u3000", "\u20285", "5\u2029", "5 5", "5\u30005", "１ ２", "\u00b2", "②", "½", "Ⅷ", "日", "5日", "e", "E", "+e5", "5e+", "5e-", "+.5", "-.5e-3", "-0", "-0.0", "+0e0",
+             "\ud800", "5\ud800", "\U0001d7ce", "\u0660\u0661", "1\u0660"]
+    pool = ["0", "1", "5", "9", "٣", "１", "𝟓", "_", ".", "e", "E", "+", "-", " ", "\t", "\x1c", "\u3000", "\xa0", "inf", "nan", "i", "N", "x", "a", "日", "\u2029"]
+    rng = Lcg(2026)
+    out = [list(map(ord, s)) for s in fixed]
+    seen = set(fixed)
+    digits = ["0", "1", "5", "9", "\u0663", "\uff11", "\U0001d7d3"]
+
+    def run(n):
+        return "".join(digits[rng.below(len(digits))] for _ in range(n)) if rng.below(5) else ""
+
+    while len(out) < 4000:
+        if rng.below(2):
+            s = "".join(pool[rng.below(len(pool))] for _ in range(rng.below(9)))
+        else:
+            # 形の整った数に、空白・符号・_・指数を足し、1 字を差し替える
+            s = ["", "+", "-", " ", "\u3000"][rng.below(5)] + run(rng.below(4) + 1) + [".", "_", "", "._", "_."][rng.below(5)] + run(rng.below(4))
+            s += ["", "e", "E", "e+", "e-", "e_"][rng.below(6)] + (run(rng.below(3) + 1) if rng.below(3) else "") + [" ", "", "", "\xa0", "\x1c"][rng.below(5)]
+            if s and rng.below(3) == 0:
+                at = rng.below(len(s))
+                s = s[:at] + pool[rng.below(len(pool))] + s[at + 1:]
+        if s not in seen:
+            seen.add(s)
+            out.append([ord(c) for c in s])
+    return [[cps, float_hex("".join(map(chr, cps)))] for cps in out]
+
+
 def main():
     rng = Lcg(31337)
     alpha = alphabet()
@@ -90,7 +130,7 @@ def main():
         s = "".join(alpha[rng.below(len(alpha))] for _ in range(n))
         chars = "".join(alpha[rng.below(len(alpha))] for _ in range(rng.below(5))) if rng.below(3) else None
         cases.append(record(s, chars))
-    json.dump({"cases": cases}, sys.stdout, ensure_ascii=True, separators=(",", ":"))
+    json.dump({"cases": cases, "floats": float_cases()}, sys.stdout, ensure_ascii=True, separators=(",", ":"))
 
 
 main()

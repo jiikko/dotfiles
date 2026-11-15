@@ -6,8 +6,11 @@
 package pystr
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ja-writing/internal/pyunicode"
@@ -165,4 +168,113 @@ func Repr(s string) string {
 // EndsWithAny は s.endswith(suffixes) (str.endswith に tuple を渡す形)。
 func EndsWithAny(s string, suffixes []string) bool {
 	return slices.ContainsFunc(suffixes, func(x string) bool { return strings.HasSuffix(s, x) })
+}
+
+// Float は Python の float(s) が受ける文字列を数にする。受けなければ ok が偽。
+// 前後の空白 (str.isspace の字) を落とし、十進数字は全角やアラビア・インドの数字も読み、数字の間の「_」を許す。
+// 「inf」「infinity」「nan」は大文字小文字を区別せず、符号を付けられる。16 進・桁の途中の空白・「_」の置き場所の誤りは受けない。
+// ASCII の空白は " \t\n\v\f\r" だけを空白とみなす (CPython は ASCII の字を変換せずに先頭と末尾の ASCII の空白だけを落とすので、\x1c〜\x1f は残って誤りになる)。
+// 範囲を超える値は ±Inf になる (Python も float("1e999") が inf)。
+func Float(s string) (float64, bool) {
+	var b strings.Builder
+	for _, r := range pyunicode.Runes(s) {
+		switch {
+		case r < 0x80:
+			b.WriteRune(r)
+		case pyunicode.IsSpace(r):
+			b.WriteByte(' ')
+		default:
+			if v, ok := pyunicode.DecimalValue(r); ok {
+				b.WriteByte(byte('0' + v))
+			} else {
+				return 0, false
+			}
+		}
+	}
+	text := strings.Trim(b.String(), " \t\n\v\f\r")
+	body := strings.TrimLeft(text, "+-")
+	if len(text)-len(body) > 1 {
+		return 0, false
+	}
+	switch strings.ToLower(body) {
+	case "inf", "infinity":
+		if strings.HasPrefix(text, "-") {
+			return math.Inf(-1), true
+		}
+		return math.Inf(1), true
+	case "nan":
+		return math.NaN(), true
+	}
+	clean, ok := floatDigits(body)
+	if !ok {
+		return 0, false
+	}
+	if strings.HasPrefix(text, "-") {
+		clean = "-" + clean
+	}
+	f, err := strconv.ParseFloat(clean, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, false
+	}
+	return f, true
+}
+
+// floatDigits は符号を除いた十進の浮動小数点数 (数字の間の「_」を許す) を、「_」を除いた文字列にする。
+func floatDigits(s string) (string, bool) {
+	var out strings.Builder
+	i := 0
+	digits := func() bool {
+		start := i
+		for i < len(s) {
+			switch {
+			case s[i] >= '0' && s[i] <= '9':
+				out.WriteByte(s[i])
+				i++
+			case s[i] == '_' && i > start && i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '9':
+				i++
+			default:
+				return i > start
+			}
+		}
+		return i > start
+	}
+	intPart := digits()
+	fracPart := false
+	if i < len(s) && s[i] == '.' {
+		out.WriteByte('.')
+		i++
+		fracPart = digits()
+	}
+	if !intPart && !fracPart {
+		return "", false
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		out.WriteByte('e')
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			out.WriteByte(s[i])
+			i++
+		}
+		if !digits() {
+			return "", false
+		}
+	}
+	return out.String(), i == len(s)
+}
+
+// DecimalInt は十進数字 (Unicode の isdecimal の字) だけの文字列を、Python の int(s) と同じ値にする。
+// 符号・空白・「_」・数字でない字を含むと ok が偽 (int() は符号と空白と「_」も受けるが、呼び出し側が正規表現で数字の並びだけを切り出した値にだけ使う)。値が int に収まらなくても ok が偽。
+func DecimalInt(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n := 0
+	for _, r := range pyunicode.Runes(s) {
+		v, ok := pyunicode.DecimalValue(r)
+		if !ok || n > (math.MaxInt-v)/10 {
+			return 0, false
+		}
+		n = n*10 + v
+	}
+	return n, true
 }

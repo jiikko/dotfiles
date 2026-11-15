@@ -2,7 +2,9 @@ package pystr
 
 import (
 	"encoding/json"
+	"math"
 	"slices"
+	"strconv"
 	"testing"
 
 	"ja-writing/internal/pyunicode"
@@ -121,6 +123,67 @@ func TestSplitLinesSeparators(t *testing.T) {
 	} {
 		if got := SplitLines(c.in, false); !slices.Equal(got, c.want) {
 			t.Errorf("SplitLines(%q) = %q、期待 %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestFloatMatchesPythonFloat(t *testing.T) {
+	var g oracle.PystrGolden
+	if err := oracle.ReadGolden(goldenDir, oracle.PystrFile, &g); err != nil {
+		t.Fatalf("make golden で記録を作る: %v", err)
+	}
+	var accepted, rejected, special int
+	for _, c := range g.Floats {
+		s := pyunicode.FromRunes(c.S)
+		got, ok := Float(s)
+		if ok != (c.Result != nil) {
+			t.Fatalf("Float(%q) の受け入れ %v、Python は %v", s, ok, c.Result != nil)
+		}
+		if !ok {
+			rejected++
+			continue
+		}
+		accepted++
+		var want float64
+		switch *c.Result {
+		case "inf":
+			want = math.Inf(1)
+		case "-inf":
+			want = math.Inf(-1)
+		case "nan":
+			if !math.IsNaN(got) {
+				t.Fatalf("Float(%q) = %v、Python は nan", s, got)
+			}
+			special++
+			continue
+		default:
+			v, err := strconv.ParseFloat(*c.Result, 64)
+			if err != nil {
+				t.Fatalf("記録の %q を読めません: %v", *c.Result, err)
+			}
+			want = v
+		}
+		if math.IsInf(want, 0) {
+			special++
+		}
+		if math.Float64bits(got) != math.Float64bits(want) {
+			t.Fatalf("Float(%q) = %v、Python は %v", s, got, want)
+		}
+	}
+	if accepted < 400 || rejected < 1000 || special < 10 {
+		t.Fatalf("記録の偏り: 受けた %d・受けない %d・inf と nan %d (空振り)", accepted, rejected, special)
+	}
+}
+
+func TestDecimalIntReadsOnlyDecimalDigits(t *testing.T) {
+	for in, want := range map[string]int{"0": 0, "12": 12, "٢٠٢٦": 2026, "１０": 10, "𝟏𝟐": 12, "007": 7} {
+		if got, ok := DecimalInt(in); !ok || got != want {
+			t.Errorf("DecimalInt(%q) = %d, %v", in, got, ok)
+		}
+	}
+	for _, in := range []string{"", "-1", "+1", " 1", "1_0", "1.5", "²", "日", "99999999999999999999"} {
+		if _, ok := DecimalInt(in); ok {
+			t.Errorf("DecimalInt(%q) を受けた", in)
 		}
 	}
 }

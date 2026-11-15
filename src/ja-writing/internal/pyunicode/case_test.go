@@ -97,3 +97,21 @@ func TestCaseMapsMatchPythonOnStrings(t *testing.T) {
 		}
 	}
 }
+
+func TestDecimalValueMatchesPythonForEveryCodePoint(t *testing.T) {
+	g := loadCasemap(t)
+	want := map[rune]int{}
+	for _, row := range g.Decimal {
+		want[row.CP] = row.Value
+	}
+	if len(want) < 700 {
+		t.Fatalf("記録の十進数字が %d 字 (空振り)", len(want))
+	}
+	for r := rune(0); r <= MaxRune; r++ {
+		got, ok := DecimalValue(r)
+		w, wok := want[r]
+		if ok != wok || got != w {
+			t.Fatalf("DecimalValue(U+%04X) = %d, %v。Python は %d, %v", r, got, ok, w, wok)
+		}
+	}
+}

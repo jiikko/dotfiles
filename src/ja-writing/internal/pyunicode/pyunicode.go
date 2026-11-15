@@ -95,3 +95,14 @@ func CombiningClass(r rune) uint8 {
 	}
 	return 0
 }
+
+// DecimalValue は Python の unicodedata.decimal(chr(r)) (IsDecimal の字の数字としての値 0〜9)。
+// Unicode は十進数字を 0 から 9 まで連続した 10 字の並びで割り当てるので、範囲の先頭 (0 の字) からの距離を 10 で割った余りになる。
+// 全コードポイントで記録 (casemap.json の decimal) と同じになることは case_test.go が見る。
+func DecimalValue(r rune) (int, bool) {
+	i := sort.Search(len(decimalRanges), func(i int) bool { return decimalRanges[i].hi >= r })
+	if i < len(decimalRanges) && decimalRanges[i].lo <= r {
+		return int(r-decimalRanges[i].lo) % 10, true
+	}
+	return 0, false
+}

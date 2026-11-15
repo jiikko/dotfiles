@@ -5,12 +5,14 @@
   cased / case_ignorable       [[lo, hi], ...]        語末の Σ の規則 (str.lower と swapcase が Σ を ς にする条件) に使う字の範囲。Python は性質を直接出さないので、
                                "<字>Σ" と "a<字>Σ" の小文字化から求める。cased は「語末の Σ の前後で大文字小文字のある字として数えられる字 (case_ignorable でないもの)」、
                                case_ignorable は読み飛ばされる字 (Σ の前後の規則は、読み飛ばした字の cased を見ない)
+  decimal                      [[cp, 値], ...]        unicodedata.decimal(chr(cp)) が 0〜9 の字 (int() と float() が読む数字。re の \\d)
   digests                      {名前: sha256}          サロゲートを除く全 cp の結果を "<cp 16 進>:<結果の cp 16 進を空白区切り>\\n" の列にした SHA-256
   cases                        [[元, casefold, lower, swapcase], ...]  文字列は cp の列 (lower は語末の Σ を含む文字列も入れる)
 """
 import hashlib
 import json
 import sys
+import unicodedata
 
 MAX = 0x110000
 SIGMA = 0x3A3
@@ -51,6 +53,10 @@ def final_sigma(prefix):
     return (prefix + chr(SIGMA)).lower()[-1] == "\u03c2"
 
 
+def decimals():
+    return [[cp, unicodedata.decimal(chr(cp))] for cp in range(MAX) if chr(cp).isdecimal()]
+
+
 def main():
     fns = {"casefold": str.casefold, "lower": str.lower, "swapcase": str.swapcase}
     out, digests = {}, {}
@@ -65,7 +71,7 @@ def main():
         cases.append([cps(s), cps(s.casefold()), cps(s.lower()), cps(s.swapcase())])
     cased = ranges(lambda cp: final_sigma(chr(cp)))
     ignorable = ranges(lambda cp: final_sigma("a" + chr(cp)) and not final_sigma(chr(cp)))
-    json.dump({"cased": cased, "case_ignorable": ignorable, "casefold": out["casefold"], "lower": out["lower"], "swapcase": out["swapcase"], "digests": digests, "cases": cases}, sys.stdout, ensure_ascii=True, separators=(",", ":"))
+    json.dump({"cased": cased, "case_ignorable": ignorable, "decimal": decimals(), "casefold": out["casefold"], "lower": out["lower"], "swapcase": out["swapcase"], "digests": digests, "cases": cases}, sys.stdout, ensure_ascii=True, separators=(",", ":"))
 
 
 main()
