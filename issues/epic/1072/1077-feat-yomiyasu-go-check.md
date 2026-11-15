@@ -67,7 +67,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 - [ ] `run` / `verify` / `start` / `export` / `end` が入力の集まりで本家と同じ出力と rc を返す。違ってよいのは 1073 の表で置き換えた字だけ
 - [ ] `verify --replay` が lint と diff を動かし直し、本家と同じ結果を返す
 - [ ] 状態フォルダの選び方・書けないときの振る舞いが本家と同じ
-- [ ] 上の「決めること」の 3 つを決め、理由をこの issue と README に書く (issue には「決めたこと」に書いた。README は実装の 1 本目で書く)
+- [x] 上の「決めること」の 3 つを決め、理由をこの issue と README に書く (issue には「決めたこと」に、README には check の節に書いた。2026-11-15)
 - [ ] subcommand ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`)
 - [ ] `make test-dupscan-gate` が通る
 
@@ -78,4 +78,30 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 
 ## 進捗
 
-- (未着手)
+### 1 本目 (部品。2026-11-15)
+
+実装の分け方の 1 本目 (部品) だけを入れた。2 本目以降 (diff の群 AE・書き込みと入力・run・verify・start / end / export) は未着手。`ja-writing check` の `Main` はまだ stub。
+
+- commit (5 本。本家の関数の一覧と本家の行は作業の中の `check-wf1/inventory.md`。入れた関数は `check/check.go` の package の冒頭のコメントの対応表と README の check の節にある)
+  - 466928418 str.casefold・lower・swapcase を全コードポイントの記録から作った表で写す (`internal/pyunicode/case.go`・`case_gen.go`・`testdata/golden/casemap.json`。語末の Σ の規則は Python が性質を出さないので「`<字>Σ` と `a<字>Σ` の小文字化」から cased と case_ignorable の範囲を求めた)
+  - 1ef27942c float(str) の受ける形と十進数字の値 (`pystr.Float`・`pystr.DecimalInt`・`pyunicode.DecimalValue`。pystr.json に floats 4,000 文字列、casemap.json に十進数字 770 字を書き足した)
+  - 73af63624 pyjson の名前つきの設定 `Indent1`・`Compact`・`Plain` (本家 check の json.dumps の 3 通り)
+  - 32eeb994b check の部品 (`check/util.go`・`paths.go`・`similar.go`・`tools.go`)・`visibility` の os.path・pathlib の写しの公開 (`pathexport.go`)・記録 `check-base.json`・README の check の節
+  - f8f6578c1 コメントから issue の番号を外し (test-comment-provenance)、`src/PACKAGES.md` を作り直した (test-go-packages-index)。コードは変えていない
+- 記録: `check-base.json` 35 case・1,786 呼び出し (大きさ 150 KB)。小道具 (ハッシュ・実行 ID 80 個・記録の digest 15・状態の行 23・環境の値・時刻 63 と --since 50・--fail-on 37・--timeout 72)・似かた (compact 52・similarity 24・source_like 21。しきい値 0.53 の前後は 2 字組の数を決めた入力)・パス (fixture 6 本・931 呼び出し。実行 ID の比べの fixture は別に 6 本・63 呼び出し。大文字小文字だけ違う綴り・NFD・シンボリックリンクと輪・読めないファイル・消えた作業フォルダ・HOME の値 15 通り・環境変数の値 16 通り・`.git` の置き場)・tools の欄 (`_HERE` を fixture に差し替えた 9 本・本物の 1 本)
+  - 全部 Go が本家の digest と一致 (`TestBaseMatchesPythonRecording`。呼び出し数と例外の数も関数ごとに比べる。手元の race で check パッケージ 1.3 秒)。casemap は 3 つの表 × 全コードポイント (サロゲートを除く 1,112,064 字)・文字列 58 本・十進数字 770 字、floats は 4,000 文字列 (受けた 535・受けない 3,465) を全部比べた。pystr.json と casemap.json は書き足しだけ (git diff の削除行 0)
+  - 手元の race (`go test -race -json`) の所要: check 1.3 秒・internal/pystr 1.5 秒・oracle 11.8 秒・internal/pyunicode 40 秒 (うち全コードポイントの 2 テストが 10 秒と 24 秒)。CI の上限 600 秒の半分を超えないので `NORACE_CHECKS` には足していない
+- わざと壊した形 32 本 (`bin/mutate-verify-list`。全部 commit f8f6578c1 の木で、rc 0 = 期待の red。一覧は作業の `check-wf1/mut/list.sh`・結果は `run3.out`)。壊した所 (群ごと)
+  - 小道具 12: 末尾の改行を全部外すところを `TrimSpace` に・末尾に改行を付けない・実行 ID の長さ 64 → 65・予約名の大文字小文字の区別・`--fail-on` の重複を外さない・`--timeout` の 0 を受ける・`--since` の時差の上限 (+24:00)・秒 60 を受ける・`_stamp` の書式から Z を外す・record_digest を自分自身の欄ごと計算・状態の行の attempt 0 を「-」にしない・環境の値の `${` を断らない
+  - 似かた 4: しきい値を `>=` から `>` に (同点 0.53)・min を max に (比べの向き)・同点で後の資料が勝つ・書式の文字 (Cf) を外さない
+  - パス 8: casefold しない・NFC にしない・大文字小文字の判定で swapcase を使わない・HOME がルートだけのときを断らない・`.git` の名前・環境変数の `${` を断らない・絶対パスを整えない・実行 ID の大文字小文字の比べを casefold から `strings.ToLower` に
+  - tools の欄 4: ENOTDIR を「無い」にしない・キーはあるが dict でない値を「無い」にしない・バージョンの行の検索から MULTILINE を外す・定数の SHA-256 の 1 字違い (upstream.sha256 との検査)
+  - 標準ライブラリ 4: 語末の Σ の判定の向き・swapcase に Σ の規則を使わない・`float()` の ASCII の `\x1c` を空白に数える・十進数字の値の mod 10 → 9
+  - 1 回目は 3 本 (fail-on-dedupe・home-path-root-check・tools-notdir-absent) が構文エラー (使わなくなった import と変数。rc 5) だったので、壊し方を直して当て直し、最後の木で 32 本とも rc 0
+- 本家と揃わなかった所: なし (記録の比べは全部一致。ただし `python.version` と `python.implementation` の欄を揃えない決定は README の「揃わない範囲」の表に足した)
+- 確かめていないこと
+  - 大文字小文字を区別するファイルシステム (手元に無い。`_case_insensitive` が偽を返す枝は `/` と数字だけのパスで通した)・`HOME` が無くパスワードデータベースから決める枝・`EACCES` で読めない作業フォルダの `strerror` の文・`_disk_path` の NUL (本家は ValueError)・`SKILL.md` がある場合の `_skill_info` (ja-writing は常に found=false に決めた)
+  - `DirFiles` の `decode("utf-8", "replace")` (バージョンの値に不正なバイトが入る入力)
+  - まだ写していない関数 (`_materials_format_version`・`_version_line`・`_utc_now`・`_file_sha256`・`_label`) は後の本が足す
+- 検査 (最後のコードの編集 = f8f6578c1 の木。rc は全部 0): `make -C src/ja-writing lint test`・repo の root で `make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` (ログは作業の `check-wf1/fin-*.log` と `testlint2.log`)
+  - commit ごと: 466928418 は lint・test・unused が rc 0 (dupscan gate は赤。`CaseRow` と `caseLookup` の写し 2 件。32eeb994b が直した)。1ef27942c は lint・unused が rc 0 と pystr・pyunicode・oracle のテストだけ (`make test` の全体は回していない)。73af63624 は pyjson のテストだけ。32eeb994b は lint・test・unused・dupscan が rc 0 だが、`make test-lint` が赤 (コメントの issue の番号 3 行と PACKAGES.md。f8f6578c1 が直した)
