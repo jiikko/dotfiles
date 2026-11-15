@@ -69,9 +69,8 @@ func decompose(in []rune, compat bool) []rune {
 		case r < 0xA0:
 			out = append(out, r)
 		default:
-			i := sort.Search(len(table), func(i int) bool { return table[i].cp >= r })
-			if i < len(table) && table[i].cp == r {
-				out = appendRunes(out, table[i].to)
+			if to, ok := lookupDecomp(table, r); ok {
+				out = appendRunes(out, to)
 			} else {
 				out = append(out, r)
 			}

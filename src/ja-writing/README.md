@@ -5,7 +5,7 @@
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
 lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
-`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,146 件を出力の全体と rc まで全件比べて通る)。check と hook は stub (`まだ実装していません` と標準エラーに出して rc 2 を返す)で、1077 で実装する。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,146 件を出力の全体と rc まで全件比べて通る)。`check` は部品 (issue 1077 の 1 本目: 小道具・パスと状態フォルダの場所・似かた・記録の `tools` の欄) だけが入っていて、subcommand はまだ stub。hook は stub (`まだ実装していません` と標準エラーに出して rc 2 を返す)で、1078 で実装する。
 
 ## 構成
 
@@ -13,7 +13,7 @@ lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り�
 |---|---|
 | `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
-| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (check と hook はいまは未実装の stub)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
+| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (check と hook の `Main` はいまは未実装の stub。`check/` には 1077 の 1 本目の部品が入っている。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
 | `internal/pycli/` | lint と diff が共有する CLI の部品: argparse の写し (`Spec.Parse`。位置引数とオプションを混ぜてよい形も同じ答え)・使い方の誤りの文・`--fail-on` の値の正規化・出力先が閉じたときの終了コード・入力 (ファイルか標準入力) の読み。本家の lint・diff・check は同じ `_ArgumentParser` と `_read_input` を写しで持つ (ast が同じ) |
 | `lint/pausecomma/` | lint の群 G13 (規則 `pause_comma`: 短い主語・主題・目的語のすぐあとの読点)。本家の `_pause_comma_hits`・`_pause_comma_object_hits`・`_pause_comma_line_hits` の写しで、記録は `testdata/golden/pause_comma.json` (issue 1084)。骨組みは `Fallback` と `LineHits` を呼び、G16 は `TENotVerb`、G17 は `TEAttrObject` を使う |
 | `visibility/` | 本家の `markdown_visibility.py` (Markdown の読み方・語の一覧・入力の扱い) の Go 実装。本家の名前との対応表は package doc (`visibility/doc.go`)。下の「markdown_visibility の Go 実装」 |
@@ -81,7 +81,8 @@ Go のテストは記録と突き合わせるだけで、**CI でも Python を�
 |---|---|
 | argparse の usage とエラーの文面 | rc だけを揃え、文面は比べない |
 | 本家のコマンド名 (`yomiyasu_lint.py` など) を含む案内の文 | `ja-writing lint` などに置き換えてから比べる |
-| check の記録の時刻・ホスト・パス・`python` の欄 | 置き換えの印にしてから比べる (欄の扱いの中身は 1077 で決める) |
+| check の記録の時刻・ホスト・パス | 置き換えの印にしてから比べる (置き換える欄の一覧は issue 1077 の「決めたこと」(c)) |
+| check の記録の `python.version` と `python.implementation` | 本家は動かした Python の値 (`3.15.0`・`CPython`)、`ja-writing` は Go の値 (`runtime.Version()`・`Go ja-writing <バージョン>`)。誰が書いたかを残す欄なので、揃えずに置き換えてから比べる。`python.unicode_version` は両方 `17.0.0` で、置き換えない |
 | `--version` の文字列 | 本家と同じ `3.1.0` を出す (Go の実装であることは別の欄で出すかを 1078 で決める) |
 
 ## 入力の集まり (`testdata/corpus/`)
@@ -300,12 +301,48 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 - `--fail-on` の値の小文字化は lint と同じ (`strings.ToLower` に İ の分解を足したもの。語末の Σ と Python の Unicode のバージョンとの差は写さない)。
 - 語の一覧は埋め込みを使うので、JSON の `list` はいつも `references/lists/<名前>.txt`、`list_problem` は `null`。本家が隣のファイルを読めないときの内蔵の一覧 (`BUILTIN_LISTS`) と、一覧の注意の節は写さない。絵文字の数え方は lint の `EmojiMatches` で、本家が lint を読めないときの簡単な数え方 (`_FALLBACK_EMOJI`) も写さない。
 
+## check (`check/`。issue 1077 の 1 本目)
+
+本家の `yomiyasu_check.py` (5,639 行) の Go 実装の、部品だけが入っている (subcommand の `Main` はまだ stub)。後の実装 (diff の資料との照合・書き込みと入力・run・verify・start / end / export) が使う。
+本家の名前との対応は `check/check.go` の package の冒頭のコメントに表がある。
+
+決めたこと (理由は issue 1077 の「決めたこと」に詳しい):
+
+- **記録は本家と互換にする**。`tools` の欄には「答えを合わせた本家 3.1.0 のファイル」の SHA-256 (道具の `.py` 4 本と語の一覧 7 本。fact-gaps は `--fact-gaps` のときだけ。`check/tools.go` の `Released`) を書き、`python` の欄には Go の実際の値、`format` は本家と同じにする。
+  理由: 本家の `verify` を ja-writing の記録の判定者にでき、本家が書いた状態フォルダを ja-writing が読めるので、Python を正解にした突き合わせができる。
+  失うもの: `tools` の欄の意味が「実際に動いた道具」から「答えを合わせた本家のファイル」にずれる。ja-writing の挙動を直しても tools の値は変わらないので、古い記録が `tool_changed` にならない (本家は `.py` を直せば古い記録を弾けた)。
+  挙動のバージョンは `python.implementation` の文字列 (`Go ja-writing <バージョン>`) に入れる。本家の `.py` がある環境では `skill_changed` の注記が付く (状態は変わらない)。`SkillInfo` は SKILL.md を持たないので常に `found: false`。
+- **lint と diff は、自分自身 (`os.Executable()`) を `lint --json` / `diff --json` の子として起こし、締め切りで kill する** (後の本で入れる)。本家が子で止めるのは止まらない照合を止めるためで、`lint.Main`・`diff.Main` は ctx を見ず、regexp2 の照合も ctx を見ないので、同じ強さで守れるのはこの形だけ。
+  失うもの: 実行ファイルが ja-writing であることに頼る。check のテストと hook のテストから呼ぶとテストバイナリになるので、子を起こす口を差し込める形にする。
+- **記録の突き合わせは、実行 ID・時刻・ミリ秒・パス・`python.version`・`python.implementation`・案内のコマンド名を置き換えてから比べる**。置き換えないのは `python.unicode_version`・tools の SHA-256・語の一覧を使わない入力の `report_sha256` と `text_sha256`。
+
+入っているもの (本家の関数。Go の名前は `check/` の関数の doc コメントにある):
+
+| 群 | 中身 | ファイル |
+|---|---|---|
+| 小道具 | `_sha256` `_text_sha256` `_iso` `_stamp` `_parse_iso` `_run_id_problem` `_run_id_case_problem` `_record_digest` `_status_line` `_host_value` `_fail_on` `_timeout` `_since` | `util.go` |
+| パスと状態フォルダの場所 | `_getcwd` `_abspath` `_disk_path` (macOS の `F_GETPATH`・NFC・大文字小文字を区別しない FS なら casefold) `_case_insensitive` `_place` `_same_path` `_same_file` `_home_path` `state_dir_for` `_state_dir` `_state_dir_given` | `paths.go` `paths_darwin.go` |
+| 似かた | `_compact` `_similarity` `_source_like` (しきい値 0.53) | `similar.go` |
+| 記録の `tools` の欄 | `_tool_versions` `_list_sha256` `_skill_info`・道具と一覧の SHA-256 の定数 | `tools.go` |
+
+| 記録 | 中身 | 比べるテスト |
+|---|---|---|
+| `check-base.json` (35 case・1,786 呼び出し) | 上の関数を固定の入力で本家に通した digest。時刻・実行 ID・`--fail-on`・`--timeout`・`--since` は受ける形と受けない形 (全角などの数字・空白・`_`・境の値) を、似かたはしきい値 0.53 の前後 (2 字組の数を決めた入力) を、パスは作業フォルダの fixture (大文字小文字だけ違う綴り・NFD の名前・シンボリックリンク (輪を含む)・読めないファイル・消えた作業フォルダ・`.git` の置き場・環境変数) を、tools の欄は `_HERE` を fixture の置き場に差し替えて (ファイルが無い・フォルダ・読めない・バージョンの行の書き方) 通す。casefold した綴りを返す関数 (`_disk_path` `_place`) は、作業フォルダを NFC にして casefold した綴りも作業フォルダの印に戻してから比べる (`call_function.py` の `folded`) | `check/base_recording_test.go` の `TestBaseMatchesPythonRecording` |
+| `casemap.json` | `str.casefold` `lower` `swapcase` を全コードポイント (サロゲートを除く) で。語末の Σ の規則に使う cased と case_ignorable の範囲 (Python は直接出さないので `"<字>Σ"` と `"a<字>Σ"` の小文字化から求めた)・十進数字の値 | `internal/pyunicode/case_test.go`・`oracle/casemap_test.go` (表を作り直した結果と `case_gen.go` が同じ) |
+
+揃わない範囲 (表の外の差は不一致として落とす):
+
+- `_disk_path` に NUL を含むパスを渡したときの本家の `ValueError` は写さない (コマンドラインの引数は NUL を持てない)。`HOME` が無くパスワードデータベースから決める枝は、手元で試していない。
+- 大文字と小文字を区別するファイルシステムは、手元に無いので記録に入らない (`_case_insensitive` が偽を返す枝は、`/` と数字だけのパスで通した)。
+- `_tool_versions` を `DirFiles` (本家と同じ置き場の読み方) で読むときの `decode("utf-8", "replace")` は、バイト列のまま探す (バージョンの値に不正なバイトが入る入力は写していない)。
+- 本家の `_getcwd` が `os.getcwd` の失敗の理由 (`strerror`) を文に入れる所は、`ENOENT` の文 (`No such file or directory`) だけを出す (`EACCES` で読めない作業フォルダは試していない)。
+
 ## 標準ライブラリを写す package (`internal/`)
 
 | package | 写すもの | 記録 | 件数 |
 |---|---|---|---|
-| `pyunicode` | `unicodedata` (17.0.0) の一般カテゴリ・結合クラス・NFC / NFD / NFKC / NFKD、`str` の `isspace` `isalpha` `isdecimal` `isdigit` `isnumeric` と `splitlines` の区切り、WTF-8 (単独のサロゲート) の読み書き | `unicode.json` | カテゴリの区間 4,144・NFD 2,081・NFKD 5,914・主合成 961・正規化の文字列 7,383 |
-| `pystr` | `str` の `splitlines` `strip` `lstrip` `rstrip` (引数あり・なし)・`isspace` などの分類・`len` | `pystr.json` | 1,622 文字列 |
+| `pyunicode` | `unicodedata` (17.0.0) の一般カテゴリ・結合クラス・NFC / NFD / NFKC / NFKD、`str` の `isspace` `isalpha` `isdecimal` `isdigit` `isnumeric` と `splitlines` の区切り、`str.casefold` `lower` `swapcase` (語末の Σ の規則を含む。`case_gen.go`)、`unicodedata.decimal` (十進数字の値)、WTF-8 (単独のサロゲート) の読み書き | `unicode.json` と `casemap.json` (casefold 1,585 行・lower 1,488・swapcase 3,006・cased 151 範囲・case_ignorable 464 範囲・十進数字 770 字) | カテゴリの区間 4,144・NFD 2,081・NFKD 5,914・主合成 961・正規化の文字列 7,383 |
+| `pystr` | `str` の `splitlines` `strip` `lstrip` `rstrip` (引数あり・なし)・`isspace` などの分類・`len`、`float(str)` (`Float`。全角などの数字・数字の間の `_`・`inf` と `nan`・ASCII の `\x1c`〜`\x1f` は空白に数えない)・十進数字だけの `int(str)` (`DecimalInt`) | `pystr.json` | 1,622 文字列・`float(str)` 4,000 文字列 |
 | `pyjson` | `json.dumps` (`ensure_ascii=True`・`indent`・`sort_keys`・`separators`)・`json.loads(bytes.decode("utf-8"))`・`round(x, n)`・`round(x)`・`repr(float)` | `json.json` | dumps 4,140・loads 1,819・round 7,643・round(x) 503 |
 | `pyre` | `re` (str のパターン): `compile` `search` `match` `fullmatch` (`pos` / `endpos`)・`finditer` `findall` `sub` `subn` `split` `escape`・`Match` の `group` `span` `lastindex` `lastgroup` `groupdict`・`Pattern` の `flags` `groups` `groupindex`。regexp2 v2 の上に載せる | `pyre.json` と `patterns.json` | 本家が使った 870 パターン × 33,644 単位・全コードポイントの `\w` `\s` `\d` `\b` と `re.I` の 1 字・関数の入力 3,800 |
 | `difflib` | `difflib.SequenceMatcher(None, a, b, autojunk=False)` (`New[T]`。字の列と文字列のリスト) と本家の `_ExactSequenceMatcher` (`NewExact`。difflib と同じ答えを長い文書で速く出す照合) | `difflib.json` | 559 入力 (字の列 478・リスト 76・使い回し 2。うち本家の速い照合だけを通した大きい入力 6)・本家の照合の呼び出し 15 か所 |
@@ -379,6 +416,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 make -C src/ja-writing lint test    # CI と同じ (Python は動かさない)
 make -C src/ja-writing golden       # 記録を作り直す (Python と ネットワークが要る。UPDATE=1 で環境の違いを許す)
                                     #   TMPDIR は、上に .git・.yomiyasu-words・.yomiyasu が無い場所に向ける (repo の中の tmp/ は使えない)
+go run ./oracle/cmd/golden -only check-base   # check の部品の関数の記録 (check-base.json。約 5 秒)。-only casemap は大文字小文字の表 (internal/pyunicode/case_gen.go) と casemap.json
 go run ./oracle/cmd/golden -only visibility   # markdown_visibility の関数の記録 (visibility.json) だけを作り直す (約 10 秒)
 go run ./oracle/cmd/golden -only lint-cli     # lint の CLI の記録 (lint-cli.json。約 40 秒)。-only lint-raw (検出の生の並び) と -only lint-post (後処理) も同じ形
 go run ./oracle/cmd/golden -only lint-base    # lint の土台の関数の記録 (lint-base.json) と絵文字の表 (lint/emoji_tables_gen.go) だけを作り直す (約 15 秒)

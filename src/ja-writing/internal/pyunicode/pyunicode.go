@@ -106,3 +106,12 @@ func DecimalValue(r rune) (int, bool) {
 	}
 	return 0, false
 }
+
+// lookupDecomp は cp の昇順の表から r の行を二分探索で引く (正規化の分解表と、大文字小文字の表が使う)。
+func lookupDecomp(table []decomposition, r rune) (string, bool) {
+	i := sort.Search(len(table), func(i int) bool { return table[i].cp >= r })
+	if i < len(table) && table[i].cp == r {
+		return table[i].to, true
+	}
+	return "", false
+}

@@ -16,17 +16,8 @@ const (
 	CasemapTablesPath = "internal/pyunicode/case_gen.go"
 )
 
-// CaseRow は [cp, [結果の cp ...]]。結果が元の 1 字と違う字だけを持つ。
-type CaseRow struct {
-	CP rune
-	To []rune
-}
-
-// MarshalJSON は [cp, [cp ...]] の形にする。
-func (c CaseRow) MarshalJSON() ([]byte, error) { return marshalTuple(c.CP, c.To) }
-
-// UnmarshalJSON は [cp, [cp ...]] を読む。
-func (c *CaseRow) UnmarshalJSON(b []byte) error { return unmarshalTuple(b, &c.CP, &c.To) }
+// CaseRow は [cp, [結果の cp ...]]。結果が元の 1 字と違う字だけを持つ (形は unicode.json の分解と同じ)。
+type CaseRow = Decomp
 
 // DecimalRow は [cp, 値]。unicodedata.decimal(chr(cp)) が返す 0〜9。
 type DecimalRow struct {

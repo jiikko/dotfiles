@@ -21,6 +21,9 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 - args の中の {"$bytes_b64": "..."} は bytes、{"$str": [コードポイント...]} は str (単独のサロゲートも持てる)。
 - 文字列の中の "<<ROOT>>" は実行の作業フォルダ (cwd の実パス) に置き換える。結果の文字列の中の作業フォルダは "<<ROOT>>" に戻す。
 - "quiet": true の呼び出し ("digest" も付ける) は、結果の digest を 8 つの 0 にする。覚える値 (save) を作るだけで、結果そのもの (大きな解析の結果など) の記録は要らない呼び出し用。例外になったときは普通の digest と raised。
+- "folded": true の呼び出しは、結果の文字列の中の「作業フォルダを NFC にして casefold したもの」を "<<ROOT>>" に戻す (ふつうの呼び出しは作業フォルダそのものを戻す)。
+  大文字と小文字を区別しない FS で、パスの比較用の綴り (casefold したもの) を返す関数の結果が、作業フォルダの綴りの大小に依らず同じ記録になるようにする。
+  付けなければ前と一字も同じ出力。
 - "op" の呼び出しは、作業フォルダに fixture を作る・環境を変える: write・mkdir・symlink・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。結果は null。
 """
 import base64
@@ -31,12 +34,14 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 
 plan = json.loads(sys.stdin.read())
 sys.path.insert(0, plan["scripts_dir"])
 
 ROOT = os.getcwd()
 ROOT_TOKEN = "<<ROOT>>"
+ROOT_FOLDED = unicodedata.normalize("NFC", ROOT).casefold()
 registry = {}
 saved_env = {}
 
@@ -73,14 +78,15 @@ def resolve(value):
     return value
 
 
-def unroot(value):
-    """結果の文字列の中の作業フォルダを <<ROOT>> に戻す。"""
+def unroot(value, root=None):
+    """結果の文字列の中の作業フォルダ (folded の呼び出しでは、それを NFC にして casefold したもの) を <<ROOT>> に戻す。"""
+    root = ROOT if root is None else root
     if isinstance(value, dict):
-        return {k: unroot(v) for k, v in value.items()}
+        return {k: unroot(v, root) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [unroot(v) for v in value]
+        return [unroot(v, root) for v in value]
     if isinstance(value, str):
-        return value.replace(ROOT, ROOT_TOKEN)
+        return value.replace(root, ROOT_TOKEN)
     return value
 
 
@@ -180,7 +186,7 @@ for call in plan["calls"]:
         except (TypeError, ValueError) as exc:
             record = {"exception": {"type": "Unserializable", "message": type(value).__name__ + ": " + str(exc)}}
         else:
-            record = {"result": unroot(value)}
+            record = {"result": unroot(value, ROOT_FOLDED if call.get("folded") else None)}
     except Exception as exc:  # noqa: BLE001 - 例外も記録する (本家が投げる例外は仕様の一部)
         record = {"exception": {"type": type(exc).__name__, "message": unroot(str(exc))}}
     if call.get("digest"):
