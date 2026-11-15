@@ -255,6 +255,9 @@ var goldens = []golden{
 	{name: "difflib", file: oracle.DifflibFile, what: "difflib の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		return buildDifflib(e.ctx, r, e.header.WithoutCorpus(), e.p.corpus)
 	}},
+	{name: "casemap", file: oracle.CasemapFile, what: "大文字小文字の変換の記録 (casefold・lower・swapcase)", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+		return buildCasemap(e.ctx, r, e.header.WithoutCorpus())
+	}, table: buildCasemapTables, tablePath: oracle.CasemapTablesPath},
 	{name: "pause_comma", file: oracle.PauseCommaFile, what: "pause_comma の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		return buildPauseComma(e.ctx, r, e.header.WithoutCorpus(), e.corpus)
 	}},
@@ -430,6 +433,22 @@ func buildDifflib(ctx context.Context, r oracle.Runner, h oracle.Header, corpusD
 }
 
 // buildPyreTables は書き出す pyre.json のバイト列を読み直して Go の表にする。
+func buildCasemap(ctx context.Context, r oracle.Runner, h oracle.Header) ([]byte, error) {
+	g, err := r.RecordCasemap(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.MarshalCasemap(g)
+}
+
+func buildCasemapTables(casemap []byte) ([]byte, error) {
+	g, err := oracle.ParseCasemap(casemap)
+	if err != nil {
+		return nil, err
+	}
+	return oracle.GenerateCasemapTables(g)
+}
+
 func buildPyreTables(pyre []byte) ([]byte, error) {
 	g, err := oracle.ParsePyre(pyre)
 	if err != nil {
