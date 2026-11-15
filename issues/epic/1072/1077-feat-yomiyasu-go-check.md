@@ -76,21 +76,25 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 - 本家: `skills/yomiyasu/scripts/yomiyasu_check.py`
 - 1075 (lint)・1076 (diff)・1078 (hook が check を読む)
 
-## 再開の手順 (2026-11-15 に 1 本目の途中で止めた)
+## 再開の手順 (2026-11-15 14:40 に止めた。OS の再起動のため)
 
-ユーザーの指示で、1 本目 (部品) の実装を commit・push した所で止めた。1 本目の敵対的レビュー (opus) は途中で止め、修正の係は動かしていない。
+1 本目 (部品) の実装と、途中までのレビューの指摘 5 件の修正を push した所で止めた。
 
-- **済んだもの**: 1 本目の実装 (下の「1 本目」の commit 6 本)。push 前の 4 つの検査 (`make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate`) はすべて rc 0 だった
+- **済んだもの**
+  - 1 本目の実装 (下の「1 本目」の commit 6 本)
+  - 途中までのレビューの指摘 5 件の修正 (下の表の「扱い」)。commit は「test(ja-writing): check のパスの記録に FIFO・ハードリンク・HOME 無しを足す」と「docs(ja-writing): README の diff の記録の件数と、check の揃わない範囲 (HOME 無し・不正なバイトの読み) を直す」。記録 `check-base.json` は 35 → 37 case で、既存の case の消失・変化は 0 (python で照合)
+  - push 前の 4 つの検査 (`make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate`) は、修正の後の木ですべて rc 0
 - **残り (この順に)**
-  1. 下の「1 本目の敵対的レビュー (途中まで)」の指摘を直す。P2 の 3 件は記録に入力を足して red にし、わざと壊した形を当てて確かめる。P3 の 2 件は文書を直す
-  2. 直した差分に、もう一度 opus の敵対的レビューを当てる (途中で止めたので、攻めていない範囲がある。特に lint/・diff/ のテストは回していない)
-  3. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順
-- **進め方** (これまでと同じ): 1 本 = 実装 → opus の敵対的レビュー → 修正。係は 1 体ずつ直列に動かし、動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
+  1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。残り 6 本を当てる
+  2. 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
+  3. そのレビューの指摘を直す (issue に「### 1 本目の敵対的レビュー (2 回目)」の節を作る)
+  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順
+- **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
   - 着手前の調査の地図: `tmp/yomiyasu-gap-2026-11-12/check-survey/map-check.md`
   - 本家の写し: `tmp/yomiyasu-gap-2026-11-12/src/skills/yomiyasu/scripts/` (本家 db78b9bc5)
-  - 1 本目の作業の dir: `tmp/yomiyasu-gap-2026-11-12/check-wf1/` (inventory.md・redteam.md・レビューの道具 `rt.xd1FIg/` (fz/ に fuzz、mut/ に壊した形と結果))
-  - 係への指示の台本: Claude Code の session の `workflows/scripts/ja-writing-1077-check-wf1.js` (diff の 12 本目の台本を写したもの)
+  - 1 本目の作業の dir: `tmp/yomiyasu-gap-2026-11-12/check-wf1/` (inventory.md・redteam.md・レビューの道具 `rt.xd1FIg/`) と、修正の dir `check-wf1b/` (わざと壊す一覧 list.sh と途中の結果 mut.out)
+  - 係への指示の台本: Claude Code の session の `workflows/scripts/ja-writing-1077-check-wf1b.js` (修正 → レビュー → 修正。レビューと修正の係は opus を指定済み)
 
 ### 1 本目の敵対的レビュー (途中まで。opus)
 
@@ -98,11 +102,11 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 
 | 指摘 | 場所 | 中身 | 直し方 | 扱い |
 |---|---|---|---|---|
-| P2-1 | `check/paths_darwin.go` の F_GETPATH の open | `O_NONBLOCK` を外しても緑。記録に FIFO が無い。書き手のいない FIFO を `--final` に渡すと open で止まる (本家は止まらない。FIFO で本家と Go は一致) | path の fixture に `mkfifo` を足し、`_disk_path`・`_place`・`_case_insensitive` を通す | 未 |
-| P2-2 | `check/paths.go` の `SameFile` | `os.SameFile` の枝を `return false` にしても緑。記録にハードリンクが無い (今の Go の答えは本家と同じ) | path の fixture に hardlink を足し、`_same_file(F.txt, hard.txt)` を記録する | 未 |
-| P2-3 | `check/paths.go` の `HomePath` | HOME が無いときの枝を壊しても緑。記録の HOME 15 通りに「無い」が無い (HOME を消して本家と比べた 480 件は一致) | 記録の HOME に unset を足す (結果は利用者のホームなので置き換えるか、`~` で始まらないことだけを比べる) | 未 |
-| P3-1 | `src/ja-writing/README.md` 8 行目 | diff の CLI の記録の件数が 8,146 のまま (正しくは 8,154) | 8,154 に直す | 未 |
-| P3-2 | `check/tools.go` の `DirFiles.Tool` | 不正なバイトの読み方が本家と違う (`"3.1\xe3\x81"` は本家 `3.1�`・Go `3.1��`、`"3.1\xed\xa0\x80"` は本家 `3.1���`・Go は単独のサロゲート)。使うのは base_recording_test.go だけで、本番は `Released` | 本番で使わないなら README の「揃わない範囲」の行に 2 例を書く | 未 |
+| P2-1 | `check/paths_darwin.go` の F_GETPATH の open | `O_NONBLOCK` を外しても緑。記録に FIFO が無い。書き手のいない FIFO を `--final` に渡すと open で止まる (本家は止まらない。FIFO で本家と Go は一致) | path の fixture に `mkfifo` を足し、`_disk_path`・`_place`・`_case_insensitive` を通す | 直した (記録に mkfifo を足し、`O_NONBLOCK` を外す退行は check の単体のテスト (止まりの上限つき) で赤にする。壊した形 `fifo-no-nonblock` で red を確認) |
+| P2-2 | `check/paths.go` の `SameFile` | `os.SameFile` の枝を `return false` にしても緑。記録にハードリンクが無い (今の Go の答えは本家と同じ) | path の fixture に hardlink を足し、`_same_file(F.txt, hard.txt)` を記録する | 直した (記録に hardlink を足した。壊した形は未確認) |
+| P2-3 | `check/paths.go` の `HomePath` | HOME が無いときの枝を壊しても緑。記録の HOME 15 通りに「無い」が無い (HOME を消して本家と比べた 480 件は一致) | 記録の HOME に unset を足す (結果は利用者のホームなので置き換えるか、`~` で始まらないことだけを比べる) | 直した (HOME が無いときは、結果そのものでなく `posixpath.isabs` と basename を比べる。壊した形は未確認) |
+| P3-1 | `src/ja-writing/README.md` 8 行目 | diff の CLI の記録の件数が 8,146 のまま (正しくは 8,154) | 8,154 に直す | 直した |
+| P3-2 | `check/tools.go` の `DirFiles.Tool` | 不正なバイトの読み方が本家と違う (`"3.1\xe3\x81"` は本家 `3.1�`・Go `3.1��`、`"3.1\xed\xa0\x80"` は本家 `3.1���`・Go は単独のサロゲート)。使うのは base_recording_test.go だけで、本番は `Released` | 本番で使わないなら README の「揃わない範囲」の行に 2 例を書く | 直した (README の「揃わない範囲」に 2 例を書いた) |
 
 答えが変わらない書き換え (採らない): `HomePath` の 2 つの `~` の検査はどちらか一方で足りる (本家も同じ二重の形)・`CaseInsensitive(probe)` を `(real)` にしても同じファイルシステムの中では同じ答え。
 未確認リスク: 大文字小文字を区別するファイルシステム・EACCES の getcwd・NUL を含むパス。共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないかは、レビューでは見ていない (push 前の `make -C src/ja-writing lint test` は lint と diff の記録の試験を含めて rc 0)。
