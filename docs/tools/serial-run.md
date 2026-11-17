@@ -105,7 +105,8 @@ tail ~/.local/state/serial-run/repo-*/history.log   # 1 本 1 行: 番号・時�
 - **許可ルール**: Claude Code は hook が書き換えた後のコマンドで許可を判定する。`Bash(make test:*)` のような deny / ask を書いている repo は、
   `Bash(serial-run -- make test:*)` の形も並べて書く
 - **列の範囲**: 既定は repo ごと (別の repo とは同時に走る)。マシンが重くなるのを repo をまたいで避けたいなら `SERIAL_RUN_SCOPE=machine`。
-  同じ repo の中で別に流したいもの (たとえば GPU だけを使うもの) は `serial-run -l <名前> --` で別の列にする
+  同じ repo の中で別に流したいもの (たとえば GPU だけを使うもの) は `serial-run -l <名前> --` で別の列にする。
+  マシンに 1 つしか無い資源 (固定の port・デバイス) を使う入口は `-l <名前>` で並べる。既定の列は git の common dir ごとなので、同じ repo の別の clone・submodule の checkout とは並ばない
 - **止める**: その repo の Makefile の包みだけ外すなら `SERIAL_RUN_MAKE_DISABLE=1`、hook を止めるなら Claude Code の環境に `SERIAL_RUN_HOOK_DISABLE=1`。
   `~/dotfiles` の serial-run がビルドできない状態のとき、Makefile の入口はテストを走らせずに 125 で落ちる。その日は `SERIAL_RUN_MAKE_DISABLE=1` で回す
 - **置き場を差し替えた環境** (`HOME` / `XDG_STATE_HOME` / `SERIAL_RUN_STATE_DIR` を変えたテストなど) は別の置き場の列に並ぶ

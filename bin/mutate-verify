@@ -99,6 +99,10 @@
 #   コマンドに `mkdir -p tmp &&` を含める (無いと「No such file」で構文検査が落ち、全部が判定不能になる)
 #   --syntax / --verify の出力先ディレクトリは素の worktree に無いことがある (ignore されたディレクトリは checkout されない)。
 #   各コマンドの中で `mkdir -p` してから書く (例: `cd macOS && mkdir -p tmp && … > tmp/build.log`。obaket 1083)
+#   🚨 --verify の rc が判定そのもの (0 = 緑・それ以外 = 赤)。`; exit 0`・`|| true`・`; echo …` で終えると、変異の有無に関係なく
+#   緑になり「検査が変異を捕まえない」という逆の結論になる。rc を表示したいなら `cmd; rc=$?; echo "rc=$rc"; exit $rc`
+#   Node のプロジェクトは worktree に node_modules が無い (gitignore)。子プロセスで検査を起こすテストは baseline から落ちるので、
+#   --verify の先頭で本体のものへ張る: `--verify 'ln -sfn <本体の絶対パス>/node_modules node_modules && npm test -- <対象>'`
 #   $MUTATE_FILE に --file の絶対パス (worktree 側) が入る。
 #   終了時に「全体のログ」の置き場を出す (baseline / 変異 / 構文検査の出力と、差の全体 diff.txt)。
 #   worktree と一緒に消えないよう外へ写したもので、**この道具は消さない**。置き場の親は
