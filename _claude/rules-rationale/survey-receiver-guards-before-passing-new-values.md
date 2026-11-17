@@ -131,3 +131,8 @@ Go のテストの待ちを `testwait.Recv` に機械的に寄せたとき、`ca
 - obaket retro 1401: Task の連鎖を helper へ寄せたとき closure を `@Sendable` にして MainActor を離し、actor への到着が旧実装より遅れた。関係する suite だけでは見えず、全体テストの 2 本で分かった
 - obaket retro 1406: 「suite を消した直後の同じ run loop のクリックだけが届く」を受容の理由に書いたが、`ProfileManagementUseCase` は MainActor でなく `removeSuite` は main の外で走っていた。敵対レビューが見つけた
 - obaket retro 1524: Swift Testing の exit test (`#expect(processExitsWith:)`) は host のアプリを子 process として起こし直す。子には `XCTestBundlePath` は渡るが `XCTestConfigurationFilePath` は渡らず、後者だけを見ていた「テストの host か」の判定が子で偽になった。子が本物の profile に対して本番の起動処理を走らせ、テストのたびに Keychain のダイアログが出ていた (exit test を 1 本足した変更から。子の中で判定を確かめるテストを足して直した)
+
+## 受け側が失敗を握って正常に返す形 (2026-11-17, dropbox-player retro 248)
+
+「保存に失敗したら保存済みにしない」修正のテストは fake が throw したが、本番の受け側 (`WorkspacePreferences._safeSet`) は失敗を catch して正常に返していたので、呼び出し元の catch は本番では呼ばれなかった。
+受け側が失敗を boolean で返すように直し、本物の受け側とつないだテストを足した。
