@@ -14,17 +14,24 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
       (2026-11-18 に `awk -F'\t' '{print $2}' issues/audit-log | sort | uniq -c` で数えた)。直近の 1070 (src/slack-bbs の全観点の監査) では
       ci 0 件 (CI の paths の追加あり)・concurrency 0 件 (記録 1) だった。注記を「初回に見ると書いた C1〜C4 / K1〜K4 の分類が使えたか・偽陽性が出たか」の結果に置き換える。
       結果を数えるには audit-log の出力ファイル (issue) を読む必要があり、ここではまだ読んでいない
-- [ ] **error-handling の指針が `~/.claude/rules/warn-log-on-unexpected-behavior.md` (2026-10-30) を見ていない**。今の指針は「握りつぶされたエラー」を探すが、
-      best-effort で続けてよい失敗に warn のログが出ているかを見る観点が無い。rule は「処理を続けてよいが、黙らない」と定めているので、
-      「理由コメントのある best-effort」でも warn が出ていなければ発見に数えるか、偽陽性の除外の書き方を決める (rule の本文は写さず参照する)
+- [ ] **error-handling の指針が `~/.claude/rules/warn-log-on-unexpected-behavior.md` (ユーザー指示 2026-10-30、rule の追加は `c1b6f7da1` 2026-10-31) を見ていない**。今の指針は「握りつぶされたエラー」を探すが、
+      best-effort で続けてよい失敗に warn のログが出ているかを見る観点が無い。rule は「処理を続けてよいが、黙らない」と定めている。
+      error-handling の指針そのものには偽陽性の除外の節が無く、rule とぶつかるのは false-green の除外「理由コメントのある best-effort」と
+      concurrency の除外「理由コメント付きの best-effort な kill・後始末」の方。error-handling に「warn が出ていない握り潰し」を足し、
+      その 2 つの除外が warn の有無を問わないことと矛盾しないよう書き分ける (rule の本文は写さず参照する)
 - [ ] **test-cleanup が「消す前に、そのテストだけが捕まえる壊し方を実装に当てて確かめる」を指示していない**。`~/.claude/rules/mutation-verify-new-tests.md` は「既存の assert を『何も検査していない』として消すときも、消す前に変異を 1 本当てる」
-      「テスト・describe を『重複』として消すときも同じ」と定めている (後者は 2026-11-17 の commit「docs(rules): テストを消す前の変異・…」で足した)。
+      「テスト・describe を『重複』『委譲だけ』として消す・統合するときも同じ」と定めている (後者は 2026-11-17 の commit「docs(rules): テストを消す前の変異・…」で足した)。
       今の test-cleanup の forge のプロンプトと直接実行の指針は `refuse-low-value-coverage.md` の issue 化だけを指す。`bin/mutate-verify` (実装をわざと壊して、残るテストが落ちるかを見る道具) で確かめる段を足す
-- [ ] **タイプの一覧が SKILL.md の中の 4 か所 (表・Step 2 のカテゴリ・forge のプロンプト・直接実行の指針) にあり、揃っていることを守る検査が無い**。
-      2026-11-18 時点では 22 タイプとも 4 か所に揃っている (表の ID ごとに、プロンプトと指針の行を grep で数えた。カテゴリの行は目で数えた)。
-      `tests/` と `scripts/` に `skills/audit` を参照するものは無い (grep で 0 件)。タイプを足す・消すたびに 4 か所を手で直している
-      (concurrency の追加 `d3ba8b866` と issues-done の削除が同じ commit)。案: 表を正本にし、残り 3 か所に全 ID が出ることを `make test-lint` の検査で見る。
-      all-audit-on-diy は表を読むだけなので、検査の対象は audit の SKILL.md だけでよい
+- [ ] **タイプの一覧と発見の型が複数の場所に写されていて、揃っていることを守る検査が一部にしか無い**。写しの場所:
+      - audit の SKILL.md の中の 5 か所: 表・Step 2 のカテゴリ・forge のプロンプト・直接実行の指針・直接実行の「設計系 (design / … / ui-components) をまとめて回すときは」の段落 (型の例 L1〜L7 / E1〜E4 も持つ)
+      - all-audit-on-diy の SKILL.md の冒頭: 「発見の型 (L1〜L7 / E1〜E4 / F1〜F5 / K1〜K4 / C1〜C4)」。型を足すとここが古いまま残る
+      - 2026-11-18 時点では 22 タイプとも最初の 4 か所に揃っている (表の ID ごとに、プロンプトと指針の行を grep で数えた。カテゴリの行は目で数えた)。
+        タイプを足す・消すたびに手で直している (concurrency の追加と issues-done の削除は同じ commit `d3ba8b866`)
+      - 守る検査: `tests/` と `scripts/` に `skills/audit` を参照するものは無い (grep で 0 件)。ただし skill-eval の `_claude/skill-evals/audit/invoked/graders/` の
+        `offers-ci.md`・`offers-concurrency.md` が、一覧に ci と concurrency が出ることを見ている (`bin/skill-eval audit` で回る。CI では回さない)
+      - 案: 表を正本にし、残りの場所に全 ID が出ることを `make test-lint` の検査で見る。all-audit-on-diy の型の写しは、写さずに「audit の発見の型」と参照する形に直す。
+        検査を足すなら、上の 2 本の grader と同じことを見ていないかを決める (CI で回るのは lint の方だけ)。
+        912 が再開して forge の経路を減らすと「forge のプロンプト」の節が変わるので、検査は 912 の結論の後に足すか、節が無くなっても壊れない形にする
 - 局所 (直さない): Step 3 の forge / 直接実行の推奨は 912 (保留) の担当。ここでは触らない
 
 ## 2. 足す観点: 入口の一致 (UI 層のビジネスロジック・debug API と UI の経路の差)
@@ -36,26 +43,31 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 | debug API と UI の差が限りなく小さい | **妥当**。ただし方法は skill `improve-debug-api` に既にある | `improve-debug-api` (2026-11-08、retro 1045 で global に寄せた) が、口ごとに段 (R 読むだけ / A 入力の合成 / B 人の入口と同じ関数 / C debug 専用 / G 安全装置) を決め、人の入口の前段・後段と突き合わせる手順を持つ。audit に同じ手順を写すと 2 本になって片方だけ更新される (`claude-md-maintenance.md` の「同じ規約を複数の場所へ配るときは単一の正本を読み込ませる」)。audit は**差があるかを見つけて improve-debug-api へ渡す**役に留める |
 | debug API が通ればアプリの動作確認が完了する | **そのままの形では満たせない。測れる形に言い換える** | `improve-debug-api` 自身が、View / AppKit の側にあって口の経路では構造的に通らない前段を認め、値の節の「残す場所」に載せる形にしている (手順 3 の「分ける」)。描画・レイアウト・フォーカスと responder chain・IME・hover やドラッグのような合成できない入力・アクセシビリティは、B 段の口が同じ関数を呼んでも確かめられない。「完了」を無条件に言うと監査で反証できない (何が漏れても「debug API は通った」で閉じる)。監査で見る形は「**debug API で確かめられない範囲が列挙されていて、それぞれに別の確かめ方 (XCUITest・目視の human issue など) が割り当てられ、その範囲が小さい**」。UI の確認を XCUITest で行う規範は `~/.claude/rules/no-osascript-for-ui-verification.md` (Swift のファイルを読んだときだけ読み込まれる) |
 | UI 層にビジネスロジックが無い | **妥当**。上の 2 つの前提になる | View に判定 (押せなくする判定・課金のゲート・範囲の検査・状態の遷移) があると、debug API の口はそれを飛ばす (差になる) か、口の側に写す (重複になる) かのどちらかになる。`improve-debug-api` の手順 5 の 2 が「前段・後段を共通の関数へ移す」と言っているのは、この不変条件を後から直す形。ただし今の audit の encapsulation は「表示・整形を View 側が持つこと」を偽陽性に数えているので、**表示のための判断と、操作の可否・状態を変える判断の境界**を書かないと、同じ箇所が encapsulation では除外・新しい観点では発見になる |
-| (適用範囲) debug API がある repo だけ | **広げる**。debug API は「人の入口が複数ある」の一例 | 1070 (2026-11-12) の broken-code の発見は、slack-bbs の購読の画面が断るアーカイブ済みのチャンネルを、CLI の `sub add` 等が入れられた形で、1070 自身が「同じ約束を別の入口が破る形 (画面と CLI・作る側と読む側)」とまとめている。debug API の無い repo (dotfiles の TUI と CLI) でも同じ形の不具合が出ている。debug API に絞ると、この形を拾うタイプが無いままになる |
+| (適用範囲) debug API がある repo だけ | **指示どおり debug API がある repo に絞る。広げるかは数えてからユーザーに聞く** | debug API は「人の入口が複数ある」の一例ではある。1070 (2026-11-12) では、slack-bbs の購読の画面が断るアーカイブ済みのチャンネルを CLI の `sub add` 等が入れられた (画面と CLI の 2 つの入口で約束が食い違う形)。ただしこの 1 件は既存の **broken-code** で見つかり、その場で直っている。既存タイプで拾えた実例 1 件では、広げる根拠にならない。下の「足す前に確かめること」で数えた結果を持って、ユーザーに範囲を確かめる |
 
 ### 足す形の案
 
-新しいタイプ `entry-parity` (カテゴリは設計) を 1 つ足し、発見を次の型に分類させる (分類できないものは報告しない。既存の L / E / F / K / C と同じ書き方):
+新しいタイプ `entry-parity` (カテゴリは設計) を 1 つ足し、debug API がある repo で回す (無い repo では「対象外」と記録して飛ばす。範囲を広げるかは上の表のとおり数えてから聞く)。発見は次の型に分類させる (分類できないものは報告しない。既存の L / E / F / K / C と同じ書き方):
 
 - **P1 UI 層の判断**: View・画面の描画やキー処理の中に、操作の可否・入力の検査・状態の遷移・外部への書き込みを決める判断がある。
   除外: 表示のための判断 (どの色・どの行を出すか・書式化)。境界は「その判断を外すと、人の操作で起きる結果 (状態・外部への書き込み) が変わるか」で決める
 - **P2 入口ごとに約束が食い違う**: 同じ操作の入口 (画面・CLI・メニュー・ショートカット・debug API) の片方だけが前段 (断り・確認・範囲) や後段 (記録・通知) を持つ。
   入口を全部挙げ、各入口から共通の関数までの前段・後段を並べて比べる
-- **P3 debug API の経路の差**: P2 のうち片方が debug API のもの。**中身の突き合わせは skill `improve-debug-api` に任せ**、audit は「その repo の debug API の docs に『improve-debug-api の値』節があるか」
-  「前回の improve-debug-api の点検の issue があり、その後に口が増えていないか」を見て、差がありそうなら improve-debug-api を回すよう issue に書く
-- **P4 debug API で確かめられない範囲が書かれていない**: debug API の docs の「残す場所」(View の側の前段) の一覧が無い・実物より狭い、または載っている前段に別の確かめ方が割り当てられていない
+- **P3 debug API の経路の差・debug API で確かめられない範囲**: P2 のうち片方が debug API のものと、debug API の docs の「残す場所」(View の側の前段) が実物より狭いもの。
+  **中身の突き合わせは skill `improve-debug-api` に任せる** (残す場所の確かめも、improve-debug-api の手順 3 の「分ける」が既に持つ)。audit は
+  「その repo の debug API の docs に『improve-debug-api の値』節があるか」「前回の improve-debug-api の点検の issue があり、その後に口が増えていないか」だけを見て、
+  点検が無い・古いなら improve-debug-api を回すよう issue に書く
+- 「残す場所」に載った前段に、debug API 以外の確かめ方 (XCUITest・human issue) が割り当てられているかは、improve-debug-api の手順 3 は「その前段をテストが見ているかも書く」までで、割り当てまでは求めていない。
+  ここを足すなら audit ではなく improve-debug-api の手順に足す (単一の正本)
 
 各件に必須: 該当 (`file:symbol`) / 入口の一覧と走査した母集合 (入口を数えた方法) / 発火条件 (どの入口から何をすると、人には起きない状態が作れる・人には起きることが確かめられないか) / silent に壊れるか compile error で止まるか。
 
 他のタイプとの寄せ先 (書く前に決める):
 
 - 知識の持ち主が具体的な型 (VM・model) で、View がそこから値を取り出して判定している → P1 で拾い、encapsulation の E1 には数えない。encapsulation の偽陽性の「表示・整形を View 側が持つこと」に「操作の可否・状態を変える判断は entry-parity の P1」と 1 行足す
+  (これは E1 の範囲を狭める変更なので、encapsulation の E1 の説明も同じ commit で直す)
 - 同じ判定が画面と CLI に写されている → P2 で拾い、duplication には数えない
+- 入口の片方だけが断りを持つ形は、今は broken-code の「呼び出し側と受け側で契約が食い違う」で拾われている (1070)。P2 へ移すなら、broken-code の指針から何を外すかを同じ commit で書く。移さずに broken-code に「入口ごとの約束の食い違い」を足すだけで足りるなら、新タイプは要らない
 - debug API の docs と口の数のずれ (docs が古いだけ) → claude-md-refresh の担当で、ここでは数えない
 
 ### 足す前に確かめること
@@ -72,7 +84,7 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 - [ ] 1 節の各項目を直すか、直さない理由を書く
 - [ ] 2 節の「足す前に確かめること」の数えた結果をこの issue に書き、タイプを足すか既存タイプへ追記するかを決める
 - [ ] SKILL.md を変えたら、`~/.claude/CLAUDE.md` のレビュー方針どおり観点を変えた整合チェックを 3 回回し、`bin/skill-eval audit` の結果を commit message に書く
-- [ ] all-audit-on-diy は audit の表を正本として読むので、タイプを足したときに all-audit-on-diy の側を直す所が無いかを確かめる
+- [ ] タイプ・型を足したら、all-audit-on-diy の冒頭の型の写し (L1〜L7 / … / C1〜C4) と skill-eval の graders を同じ commit で直す (1 節の写しの項)
 
 ## 関連ファイル
 
@@ -83,4 +95,6 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 
 ## 進捗
 
-- 2026-11-18: 起票
+- 2026-11-18: 起票。opus の読み取りのみの反証レビューで 7 件の指摘 (タイプの写しの数え漏れ・best-effort の除外の場所・引用の省略・
+  1070 を範囲を広げる根拠にした判断・P4 と improve-debug-api の二重化・broken-code と E1 への影響・912 との依存)。全部を実物で確かめて本文に反映した。
+  反証できなかったもの: audit-log の件数・4 か所の一致・「debug API が通れば完了」をそのままでは満たせないという判断・「UI 層にビジネスロジックが無い」が前提になるという整理
