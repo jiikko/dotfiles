@@ -1,5 +1,7 @@
 # 1094 (refactor): mutate-verify と mutate-verify-list を devtool/bin/ へ移す
 
+> 🚨 **担当中: air5 (glogx)**（2026-11-19〜）
+
 起票日: 2026-11-19
 
 ## 概要
