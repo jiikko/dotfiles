@@ -16,7 +16,7 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
       (2026-11-18 に `awk -F'\t' '{print $2}' issues/audit-log | sort | uniq -c` で数えた)。直近の 1070 (src/slack-bbs の全観点の監査) では
       ci 0 件 (CI の paths の追加あり)・concurrency 0 件 (記録 1) だった。注記を「初回に見ると書いた C1〜C4 / K1〜K4 の分類が使えたか・偽陽性が出たか」の結果に置き換える。
       結果を数えるには audit-log の出力ファイル (issue) を読む必要があり、ここではまだ読んでいない
-- [ ] **error-handling の指針が `~/.claude/rules/warn-log-on-unexpected-behavior.md` (ユーザー指示 2026-10-30、rule の追加は `c1b6f7da1` 2026-10-31) を見ていない**。今の指針は「握りつぶされたエラー」を探すが、
+- [x] **error-handling の指針が `~/.claude/rules/warn-log-on-unexpected-behavior.md` (ユーザー指示 2026-10-30、rule の追加は `c1b6f7da1` 2026-10-31) を見ていない**。今の指針は「握りつぶされたエラー」を探すが、
       best-effort で続けてよい失敗に warn のログが出ているかを見る観点が無い。rule は「処理を続けてよいが、黙らない」と定めている。
       error-handling の指針そのものには偽陽性の除外の節が無く、rule とぶつかるのは false-green の除外「理由コメントのある best-effort」と
       concurrency の除外「理由コメント付きの best-effort な kill・後始末」の方。error-handling に「warn が出ていない握り潰し」を足し、
@@ -106,3 +106,5 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
     C3 = 886 の H1 (setup-go のキャッシュ鍵の共有) / C4 = 844 (test-budget の 10 秒を 842 に添えた)。他の回は 0 件で、多くは C1 の paths と replace の突き合わせだけ (992 は「未実施」)
   - concurrency (18 回): K1 = 749・1070 (記録のみ。lastposts.json の後勝ち) / K3 = 760 (`Reclaim` の子の時間の上限。未確認)・886 の A4・A10・A11 / K4 = 886 の A5・A7・I6 / 697 の data race。K2 は 0
   - どの回も「分類できない」「偽陽性だった」とは書いていない。SKILL.md の注記をこの結果に置き換えた
+- 2026-11-19: 1 節の 2 項目目。error-handling の forge のプロンプトと直接実行の指針に「続けてよい失敗でも warn が理由つきで出ていなければ発見」を足し、rule は参照だけにした。
+  false-green の除外 (プロンプトと指針の 2 か所) と concurrency の除外 (指針だけ) の「理由コメントのある best-effort」には「warn の有無は error-handling が見る」を添え、除外がその型の範囲の話だと分かるようにした
