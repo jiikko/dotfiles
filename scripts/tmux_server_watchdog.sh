@@ -119,6 +119,8 @@ check_health() {
 # 🚨 判定に tmux への問い合わせ (display -p 等) を使わない。固まったサーバへ client を
 #   足すことになり、並んだコマンドを増やすうえ、問い合わせ自体が watchdog の loop を止める。
 # 🚨 sample は背景で起こして待たない。待つと、その間はサーバの死を看取れない。
+# 判定はループの刻み (TT_WATCHDOG_INTERVAL) ごとなので、実際の窓は TT_BUSY_WINDOW を超えた最初の刻み
+# (既定で約 6 秒) になり、検出まで 12〜18 秒かかる。
 TT_BUSY_WINDOW="${TT_BUSY_WINDOW:-5}"
 TT_BUSY_PCT="${TT_BUSY_PCT:-85}"
 TT_BUSY_WINDOWS="${TT_BUSY_WINDOWS:-2}"
@@ -126,6 +128,21 @@ TT_BUSY_COOLDOWN="${TT_BUSY_COOLDOWN:-600}"
 TT_BUSY_KEEP="${TT_BUSY_KEEP:-10}"
 TT_BUSY_SAMPLE_SECS="${TT_BUSY_SAMPLE_SECS:-5}"
 TT_SAMPLE_CMD="${TT_SAMPLE_CMD:-/usr/bin/sample}"
+# 🚨 数でない値 (10m 等) をそのまま算術に通さない。bash は算術エラーで今の while ループごと捨てて
+#   次のコマンドへ進むので、生きているサーバに死亡処理が走り、偽の server-death を書いて watchdog が消える。
+#   値が不正なら撮影だけを止めて、看取りは続ける。
+# shellcheck source=bin/lib/uint.sh
+. "$SCRIPT_DIR/../bin/lib/uint.sh"
+busy_enabled=1
+for v in TT_BUSY_WINDOW TT_BUSY_PCT TT_BUSY_WINDOWS TT_BUSY_COOLDOWN TT_BUSY_KEEP TT_BUSY_SAMPLE_SECS; do
+  val="${!v}"
+  if ! uint_ok "$val" 6; then
+    busy_enabled=0
+    tt_trigger_log "server-busy-disabled reason=bad-value var=$v value=$val pid=$SERVER_PID epoch=$(date +%s)"
+    break
+  fi
+done
+[ "$TT_BUSY_WINDOW" = 0 ] && busy_enabled=0
 
 # 1/100 秒単位の今の時刻。date +%s の 1 秒刻みだと 5 秒の窓で比が ±20% ぶれるので、
 # bash 5 の EPOCHREALTIME があれば使う (小数点はロケールで , になる)。
@@ -139,10 +156,10 @@ now_cs() {
   fi
 }
 # サーバの累積 CPU 時間 (1/100 秒)。macOS の ps の time は「分:秒.百分の一」で、分は桁が増え続ける。
-# 形が違えば空を返し、その窓は判定しない。
+# 小数点はロケールで , になりうる。形が違えば空を返し、その窓は判定しない。
 server_cpu_cs() {
   REPLY="$(ps -o time= -p "$SERVER_PID" 2>/dev/null \
-    | awk -F'[:.]' 'NF == 3 && $1 ~ /^ *[0-9]+$/ { print ($1 * 60 + $2) * 100 + $3 }')"
+    | awk -F'[:.,]' 'NF == 3 && $1 ~ /^ *[0-9]+$/ { print ($1 * 60 + $2) * 100 + $3 }')"
 }
 
 busy_win_start=""; busy_win_cpu=""; busy_streak=0; busy_next_allowed=0
@@ -150,35 +167,42 @@ start_busy_window() {
   now_cs; busy_win_start="$REPLY"
   server_cpu_cs; busy_win_cpu="$REPLY"
 }
-capture_busy() {  # $1=窓の CPU 使用率 (%)
+capture_busy() {  # $1=窓の CPU 使用率 (%) $2=最後の窓の長さ (秒)
   local stamp base now
   now="$(date +%s)"
   stamp="$(date +%Y%m%dT%H%M%S)"
   base="$TT_PSLOG_DIR/tt-server-busy-$stamp-$SERVER_PID"
   "$TT_SAMPLE_CMD" "$SERVER_PID" "$TT_BUSY_SAMPLE_SECS" -file "$base.sample" >/dev/null 2>&1 &
   ps -Ao pid,ppid,stat,etime,%cpu,rss,command -ww > "$base.ps" 2>/dev/null
-  tt_trigger_log "server-busy pid=$SERVER_PID cpu=$1% windows=$busy_streak window=${TT_BUSY_WINDOW}s sample=$base.sample ps=$base.ps epoch=$now"
+  # sample の成否は待たないので分からない。sample= のファイルが無ければ sample が失敗している
+  tt_trigger_log "server-busy pid=$SERVER_PID cpu=$1% windows=$busy_streak window=$2s sample=$base.sample ps=$base.ps epoch=$now"
   # shellcheck disable=SC2012 # mtime 降順が要件で、対象は自前命名 (空白なし) のファイルのみ
   ls -1t "$TT_PSLOG_DIR"/tt-server-busy-*.ps 2>/dev/null | tail -n +"$((TT_BUSY_KEEP + 1))" \
     | while IFS= read -r f; do rm -f "$f" "${f%.ps}.sample" 2>/dev/null; done
 }
 check_busy() {
   local now cpu dt pct
-  [ "$TT_BUSY_WINDOW" -gt 0 ] 2>/dev/null || return 0
+  [ "$busy_enabled" = 1 ] || return 0
   if [ -z "$busy_win_start" ] || [ -z "$busy_win_cpu" ]; then start_busy_window; return 0; fi
   now_cs; now="$REPLY"
   dt=$(( now - busy_win_start ))
   [ "$dt" -ge $(( TT_BUSY_WINDOW * 100 )) ] || return 0
   server_cpu_cs; cpu="$REPLY"
-  if [ -z "$cpu" ]; then start_busy_window; return 0; fi
+  if [ -z "$cpu" ]; then busy_streak=0; start_busy_window; return 0; fi
   pct=$(( (cpu - busy_win_cpu) * 100 / dt ))
   busy_win_start="$now"; busy_win_cpu="$cpu"
   if [ "$pct" -lt "$TT_BUSY_PCT" ]; then busy_streak=0; return 0; fi
+  # 窓が 2 倍以上に伸びた = ループが塞がれていた (固まったサーバへの health の問い合わせ等)。
+  # その間ずっと忙しかったなら、窓が続いたのと同じに数える。数えないと、固まりが解けた次の窓で
+  # 連続が切れ、固まり 1 回を丸ごと撮り逃す
+  if [ "$dt" -ge $(( TT_BUSY_WINDOW * 200 )) ] && [ "$busy_streak" -lt "$TT_BUSY_WINDOWS" ]; then
+    busy_streak=$(( TT_BUSY_WINDOWS - 1 ))
+  fi
   busy_streak=$(( busy_streak + 1 ))
   [ "$busy_streak" -ge "$TT_BUSY_WINDOWS" ] || return 0
   [ "$(( now / 100 ))" -ge "$busy_next_allowed" ] || return 0
   busy_next_allowed=$(( now / 100 + TT_BUSY_COOLDOWN ))
-  capture_busy "$pct"
+  capture_busy "$pct" "$(( dt / 100 ))"
 }
 
 while :; do
@@ -189,8 +213,10 @@ while :; do
     cur="$(ps -o lstart= -p "$SERVER_PID" 2>/dev/null)"
     [ "$cur" = "$lstart0" ] || break   # pid 再利用 = 元のサーバは死んでいる
   fi
-  check_health
+  # 窓の始まりを health の確認より前に置く (health が塞いだ時間を窓に含めるため)。
+  # 忙しい窓が続いている間は health を後回しにする: health は tmux に問い合わせるので、固まったサーバに並ぶ
   check_busy
+  [ "$busy_streak" -gt 0 ] || check_health
   sleep "$TT_WATCHDOG_INTERVAL"
 done
 
