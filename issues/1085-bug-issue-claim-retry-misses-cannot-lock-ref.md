@@ -1,5 +1,7 @@
 # 1085 (bug): issue_claim.sh が push の「cannot lock ref」を再試行せずに失敗で終わる
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-19〜）
+
 起票日: 2026-11-13
 
 ## 概要
