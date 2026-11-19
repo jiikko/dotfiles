@@ -12,7 +12,7 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 
 ## 1. 直す点 (今の SKILL.md と実態のずれ・抜け)
 
-- [ ] **`ci` と `concurrency` の「まだ実走していない」が古い**。Step 2 の下の注記 2 つ。dotfiles の `issues/audit-log` には ci が 16 行、concurrency が 18 行ある
+- [x] **`ci` と `concurrency` の「まだ実走していない」が古い**。Step 2 の下の注記 2 つ。dotfiles の `issues/audit-log` には ci が 16 行、concurrency が 18 行ある
       (2026-11-18 に `awk -F'\t' '{print $2}' issues/audit-log | sort | uniq -c` で数えた)。直近の 1070 (src/slack-bbs の全観点の監査) では
       ci 0 件 (CI の paths の追加あり)・concurrency 0 件 (記録 1) だった。注記を「初回に見ると書いた C1〜C4 / K1〜K4 の分類が使えたか・偽陽性が出たか」の結果に置き換える。
       結果を数えるには audit-log の出力ファイル (issue) を読む必要があり、ここではまだ読んでいない
@@ -100,3 +100,9 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 - 2026-11-18: 起票。opus の読み取りのみの反証レビューで 7 件の指摘 (タイプの写しの数え漏れ・best-effort の除外の場所・引用の省略・
   1070 を範囲を広げる根拠にした判断・P4 と improve-debug-api の二重化・broken-code と E1 への影響・912 との依存)。全部を実物で確かめて本文に反映した。
   反証できなかったもの: audit-log の件数・4 か所の一致・「debug API が通れば完了」をそのままでは満たせないという判断・「UI 層にビジネスロジックが無い」が前提になるという整理
+- 2026-11-19: 1 節の 1 項目目 (ci / concurrency の注記)。audit-log の出力 issue (697・702・737・747・754・760・844・865・886・984・992・1019・1025・1026・1035・1065・1070) の
+  ci / concurrency の行を読んだ。
+  - ci (16 回): C1 = 760 (pty テストの Skip が見えない)・1070 (ctxwait の paths を 7 workflow に足した) / C2 = 886 の I11 (lint の共通部だけの commit で 24 プロジェクトの test が走る。受け入れ) /
+    C3 = 886 の H1 (setup-go のキャッシュ鍵の共有) / C4 = 844 (test-budget の 10 秒を 842 に添えた)。他の回は 0 件で、多くは C1 の paths と replace の突き合わせだけ (992 は「未実施」)
+  - concurrency (18 回): K1 = 749・1070 (記録のみ。lastposts.json の後勝ち) / K3 = 760 (`Reclaim` の子の時間の上限。未確認)・886 の A4・A10・A11 / K4 = 886 の A5・A7・I6 / 697 の data race。K2 は 0
+  - どの回も「分類できない」「偽陽性だった」とは書いていない。SKILL.md の注記をこの結果に置き換えた
