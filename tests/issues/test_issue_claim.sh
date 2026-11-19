@@ -4,8 +4,8 @@
 # 一時ディレクトリに bare の origin と clone を作り、本物の git と bin/issue-claim を通す。確かめること:
 #   - claim が 1 コマンドで origin へ載り (目印の symlink + 本文冒頭のバナー)、手元の checkout は触らない
 #   - 既に claim 済み / done / 直下に無い / 番号の衝突では何も push しない
-#   - origin が先へ進んでいたら (non-fast-forward) 取り直して載せる。上限を超えたら何も push しない
-#   - pre-push で落ちたら何も push しない
+#   - origin が先へ進んでいたら (non-fast-forward・pre-push の間に進んだ cannot lock ref) 取り直して載せる。上限を超えたら何も push しない
+#   - pre-push で落ちたら、同時に origin が進んでいても再試行せずに何も push しない
 #   - どの終わり方でも一時 worktree と一時ディレクトリを残さない
 set -euo pipefail
 unset CDPATH GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -116,6 +116,7 @@ if (cd "$work/exhaust/clone" && ISSUE_CLAIM_ATTEMPTS=2 ISSUE_CLAIM_TEST_BEFORE_P
   fail "上限を超えても成功を返した"
 fi
 grep -q '2 回とも origin が先へ進んでいて' "$work/exhaust.log" || { cat "$work/exhaust.log" >&2; fail "上限: 想定と違う理由で落ちた"; }
+[ "$(grep -c '^!	HEAD:refs/heads/master	' "$work/exhaust.log")" -eq 2 ] || { cat "$work/exhaust.log" >&2; fail "上限: 各回の push の出力を出していない"; }
 if [ -n "$(git -C "$work/exhaust/origin.git" ls-tree master -- issues/next/101-feat-a.md)" ]; then fail "上限: origin に claim が載った"; fi
 no_leftovers exhaust || fail "上限: 一時 worktree / 一時ディレクトリが残った"
 
@@ -229,8 +230,50 @@ origin_has_claim lock 101-feat-a.md next/101-feat-a.md || fail "lock: claim が 
 # run ごとに sha を一意にする印 (同じ秒の二重 claim で commit が丸ごと同じにならない)
 grep -q '^Claim-Id: .' <<< "$(git -C "$work/lock/origin.git" log -1 --format=%B master)" || fail "claim の commit に Claim-Id が無い"
 
+# --- 7.12 pre-push の検査の間に origin が進む (cannot lock ref) も再試行する -----------------------------------
+setup lockref
+git clone -q "$work/lockref/origin.git" "$work/lockref/other"
+printf 'other\n' > "$work/lockref/other/other.txt"
+git -C "$work/lockref/other" add other.txt && git -C "$work/lockref/other" commit -qm other
+mkdir -p "$work/lockref/hooks"
+# 1 回目の pre-push の中でだけ、別の clone から origin を進める (git は hook の前に読んだ先端を期待値にして ref の更新を頼む)
+# 🚨 hook は一時 worktree の GIT_DIR を継承している。外さないと `git -C other push` が claim の repo を push し、同じ hook が再帰する
+printf '#!/bin/sh
+[ -e "%s/lockref/raced" ] && exit 0
+: > "%s/lockref/raced"
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "%s/lockref/other" push -q origin HEAD:master
+' "$work" "$work" "$work" > "$work/lockref/hooks/pre-push"
+chmod +x "$work/lockref/hooks/pre-push"
+git -C "$work/lockref/clone" config core.hooksPath "$work/lockref/hooks"
+(cd "$work/lockref/clone" && "$SCRIPT" 101) > "$work/lockref.log" 2>&1 ||
+  { cat "$work/lockref.log" >&2; fail "pre-push の間に origin が進んだ (cannot lock ref) ときに claim できない"; }
+grep -q '取り直して再試行する (1/3)' "$work/lockref.log" || { cat "$work/lockref.log" >&2; fail "cannot lock ref を経ずに通った (前提が崩れた)"; }
+origin_has_claim lockref 101-feat-a.md next/101-feat-a.md || fail "cannot lock ref の再試行の後に claim が載っていない"
+git -C "$work/lockref/origin.git" cat-file -e master:other.txt || fail "cannot lock ref の再試行で origin の先の commit を消した"
+no_leftovers lockref || fail "cannot lock ref: 一時 worktree / 一時ディレクトリが残った"
+
+# --- 7.13 pre-push で落ちたのと同時に origin が進んでも、検査の失敗として止める (競合と取り違えて再試行しない) ---------
+setup hookrace
+git clone -q "$work/hookrace/origin.git" "$work/hookrace/other"
+printf 'other\n' > "$work/hookrace/other/other.txt"
+git -C "$work/hookrace/other" add other.txt && git -C "$work/hookrace/other" commit -qm other
+mkdir -p "$work/hookrace/hooks"
+printf '#!/bin/sh
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "%s/hookrace/other" push -q origin HEAD:master
+echo "pre-push: 検査が赤い" >&2
+exit 1
+' "$work" > "$work/hookrace/hooks/pre-push"
+chmod +x "$work/hookrace/hooks/pre-push"
+git -C "$work/hookrace/clone" config core.hooksPath "$work/hookrace/hooks"
+if (cd "$work/hookrace/clone" && "$SCRIPT" 101) > "$work/hookrace.log" 2>&1; then fail "pre-push が落ちたのに成功を返した (origin も進んだ場合)"; fi
+git -C "$work/hookrace/origin.git" cat-file -e master:other.txt || fail "前提が崩れた: pre-push の中で origin が進んでいない"
+! grep -q '再試行' "$work/hookrace.log" || { cat "$work/hookrace.log" >&2; fail "pre-push の失敗を、同時に進んだ origin との競合と読んで再試行した"; }
+grep -q 'pre-push: 検査が赤い' "$work/hookrace.log" || { cat "$work/hookrace.log" >&2; fail "pre-push の出力を見せていない (origin も進んだ場合)"; }
+if [ -n "$(git -C "$work/hookrace/origin.git" ls-tree master -- issues/next/101-feat-a.md)" ]; then fail "pre-push が落ちたのに claim が載った"; fi
+no_leftovers hookrace || fail "pre-push と競合: 一時 worktree / 一時ディレクトリが残った"
+
 # --- 8. 引数の誤り ---------------------------------------------------------------------------
 if (cd "$work/ok/clone" && "$SCRIPT" 12) >/dev/null 2>&1; then fail "3 桁未満の番号を受け付けた"; fi
 if (cd "$work" && "$SCRIPT" 101) >/dev/null 2>&1; then fail "git の repo の外で動いた"; fi
 
-printf '✓ issue_claim.sh: 正常系 (手元を触らない) / claim 済み・done・pending・番号の衝突・実体なし・接頭辞つきの ID の拒否 / epic / 再試行 (fetch first・non-fast-forward) と上限 / pre-push の失敗 / commit は本文と目印だけ / pushurl の rc=3 / 継承した GIT_DIR / push 中の SIGTERM / ref の更新後の中断 (push は rc≠0) / 関係の無い ref の lock / Claim-Id / 引数の誤り。どれも一時 worktree と一時ディレクトリを残さない\n'
+printf '✓ issue_claim.sh: 正常系 (手元を触らない) / claim 済み・done・pending・番号の衝突・実体なし・接頭辞つきの ID の拒否 / epic / 再試行 (fetch first・non-fast-forward・pre-push の間の cannot lock ref) と上限 (各回の出力) / pre-push の失敗 (同時に origin が進んでも再試行しない) / commit は本文と目印だけ / pushurl の rc=3 / 継承した GIT_DIR / push 中の SIGTERM / ref の更新後の中断 (push は rc≠0) / 関係の無い ref の lock / Claim-Id / 引数の誤り。どれも一時 worktree と一時ディレクトリを残さない\n'

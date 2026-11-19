@@ -13,7 +13,9 @@
 #   - 手元の checkout の状態 (detached HEAD・未 push の作業 commit・古い本文・他セッションの未コミット変更) に左右されない。
 #     手元の木は触らないので、claim は後から rebase / pull で入る
 #   - 失敗したら worktree を捨てるだけで、手元にも origin にも何も残らない (commit 後の reset が要らない)
-#   - non-fast-forward で弾かれたら取り直して作り直す (上限 ISSUE_CLAIM_ATTEMPTS、既定 3)
+#   - 対象の ref が拒否され、かつ origin の先端が worktree を切った時点から動いていたら、取り直して作り直す
+#     (上限 ISSUE_CLAIM_ATTEMPTS、指定しないと 3)。拒否の形は non-fast-forward / fetch first のほか、pre-push の検査の間に
+#     origin が進んだときの `[remote rejected] (incorrect old value provided)` (stderr は `cannot lock ref … expected`) もある
 #   - pre-push で落ちたら --no-verify は使わずに止める (issue を触る push は、無関係な issue の赤でも止まる)
 #
 # 目印とバナーを置くのは bin/issue-claim (src/glogx/cmd/issue-claim。glogx の viewer の `n` と同じ issues.MoveToSubdir)。
@@ -93,6 +95,9 @@ trap 'sig=130' INT
 trap 'sig=143' TERM
 pushed=0
 nothing_pushed() { if [ "$pushed" -eq 1 ]; then echo "確かめた時点では origin に載っていない"; else echo "何も push していない"; fi; }
+# ref_rejected <porcelain の stdout>: 対象のブランチへの ref の行が拒否 (`!`) か
+ref_rejected() { awk -F'\t' -v dst="refs/heads/$branch" '$1 == "!" && $2 ~ (":" dst "$") { found = 1 } END { exit !found }' "$1"; }
+show_push() { cat "$work/push$1.err" "$work/push$1.out" >&2 2>/dev/null || true; }
 check_signal() { [ -z "$sig" ] || { printf 'issue_claim: 中断した (%s)\n' "$(nothing_pushed)" >&2; exit "$sig"; }; }
 
 for ((i = 1; i <= attempts; i++)); do
@@ -100,6 +105,7 @@ for ((i = 1; i <= attempts; i++)); do
   wt="$work/wt$i"
   git -C "$repo" worktree add -q --detach "$wt" "origin/$branch" >/dev/null 2>"$work/add.err" ||
     { cat "$work/add.err" >&2; wt=""; die "一時 worktree を作れない" 1; }
+  base="$(git -C "$wt" rev-parse HEAD)" || die "一時 worktree の基点を読めない" 1
 
   claim_rc=0
   "$ISSUE_CLAIM" "$wt/issues" "$num" >"$work/claim.out" 2>"$work/claim.err" || claim_rc=$?
@@ -134,7 +140,10 @@ EOF
   check_signal
 
   push_rc=0
-  git -C "$wt" push origin "HEAD:$branch" >"$work/push.log" 2>&1 || push_rc=$?
+  # stdout (--porcelain の ref ごとの結果) と stderr (pre-push の出力・remote の文言) を分けて取る。
+  # git は hook の stdout を stderr へ回すので、stdout には ref の行だけが出る
+  push_out="$work/push$i.out" push_err="$work/push$i.err"
+  git -C "$wt" push --porcelain origin "HEAD:$branch" >"$push_out" 2>"$push_err" || push_rc=$?
   # 🚨 push の rc に関係なく、まず origin の対象のブランチに claim の commit が載ったかを確かめる。rc=0 でも載らない
   # (pushurl が別の repo) ことがあり、rc≠0 でも載っている (ref を更新した後に Ctrl-C や切断で push が死ぬ) ことがある
   # 載ったかで分け、そのあとで中断・再試行・失敗を決める
@@ -153,20 +162,25 @@ EOF
     exit 0
   fi
   if [ "$landed" = unknown ]; then
-    cat "$work/push.log" >&2
+    show_push "$i"
     die "push は rc=$push_rc で終わったが、origin の $branch を fetch できず載ったかを確かめられない (claim が載ったかは未確認: $sha)" 3
   fi
   if [ "$push_rc" -eq 0 ]; then
     die "push は rc=0 だったが origin/$branch に claim の commit ($sha) が見えない (pushurl が別の repo など。claim は push 先に残っているかもしれない)" 3
   fi
   check_signal
-  # non-fast-forward の判定は git の文言だけで見る (この repo の pre-push は通る push でも `pre-push:` の行を出す)
-  if grep -q -e '(non-fast-forward)' -e '(fetch first)' "$work/push.log"; then
+  # 再試行は「対象の ref が拒否された」かつ「origin の先端が基点から動いた」の両方のときだけ。
+  # 拒否の理由の文言 (non-fast-forward / fetch first / incorrect old value provided …) は見ない: 競合の形は文言が増えうる。
+  # origin が動いたかだけで決めない: pre-push の検査で落ちたのと同時に他のセッションが push すると、検査の失敗を競合と取り違える
+  # (pre-push で落ちると ref の行は出ない。git 2.55.0 で実測)
+  if ref_rejected "$push_out" && [ "$(git -C "$repo" rev-parse "refs/remotes/origin/$branch")" != "$base" ]; then
     printf 'issue_claim: origin/%s が先へ進んでいた。取り直して再試行する (%d/%d)\n' "$branch" "$i" "$attempts" >&2
     drop_worktree
     continue
   fi
-  cat "$work/push.log" >&2
+  show_push "$i"
   die "push できなかった (pre-push の検査など。--no-verify は使わない。$(nothing_pushed))" 1
 done
+# 上限で終わるときは各回の出力を全部出す (検査の失敗が「N 回とも先へ進んでいた」に隠れないように)
+for ((j = 1; j <= attempts; j++)); do printf 'issue_claim: --- %d 回目の push ---\n' "$j" >&2; show_push "$j"; done
 die "$attempts 回とも origin が先へ進んでいて push できなかった (何も push していない)" 1
