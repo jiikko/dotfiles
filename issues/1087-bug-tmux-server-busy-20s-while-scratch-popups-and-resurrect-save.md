@@ -57,7 +57,10 @@
   `scripts/tmux_server_watchdog.sh` の `check_busy` が、サーバの累積 CPU 時間の増え方を 5 秒の窓で見て、85% 以上が 2 回続いたら
   `sample <pid> 5` と `ps -ww` を `~/.cache/tt-server-busy-<時刻>-<pid>.{sample,ps}` に撮り、`~/.cache/tt-restore-trigger.log` に `server-busy` 行を書く（600 秒は撮り直さない。直近 10 組を残す）。
   判定に tmux への問い合わせは使わない（固まったサーバへ client を足すため）
-  - [ ] 本番の watchdog を新しいスクリプトで張り直す（動いている watchdog は古いスクリプトのまま。push と本体の pull の後に行う）
+  - [x] 本番の watchdog を新しいスクリプトで張り直す（2026-11-19。古い watchdog は TERM / HUP をスクリプトが無視し、INT も run-shell -b の背景ジョブなので無視するため、pid を名指しで USR1 を送って止め、`tmux run-shell -b` で張り直した。残った lock は新しい watchdog が起動時に掃除した）
   - [ ] 次に固まったら `server-busy` 行と sample を読み、仮説 1〜3 を絞る
   - 未着手: 隔離サーバでの再現（「次に採るもの」の 4）
   - 未確認: 閾値（85% × 2 窓）が誤検知でどれだけ撮るか。637 の popup の描き直しで撮りうる。cooldown で 10 分に 1 組までに抑えている
+- 2026-11-19: 敵対的レビューを 3 周（opus）。直したもの: health の確認が固まったサーバに並んでループを塞ぐと撮り逃す・撮った直後に並ぶ（直前の窓が忙しい間は health を後回し）/ ループが塞がれた窓で撮ると固まりの後のスタックしか写らず cooldown を潰す（撮らずに `server-busy-missed` 行だけ残す）/ 数でない値・先頭が 0 の値（08）の環境変数で算術エラーになり、while ごと捨てられて生きているサーバに偽の server-death を書く（変異で再現。`watchdog_uint_env` で検査して 10 進数に直す。前からある TT_HEALTH_CHECK_INTERVAL・TT_PSLOG_KEEP・TT_VERDICT_WINDOW も同じ仕組みで落ちたので通した）
+  - 受け入れたもの: bash 3.2（`date` の秒刻み）では窓の比が量子化で閾値の近くを外しうる（本番の PATH では brew の bash 5 が先）/ 長く忙しい時間が続くと古い組が押し出されて `sample=` のファイルが消える / sample の成否はログに出ない（ファイルが無ければ失敗）/ cooldown が sample の秒数より短いと `.sample` が取り残される（短くするのはテストだけ）
+  - テストが無いもの: health の後回しの 600 秒の上限
