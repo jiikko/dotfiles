@@ -12,13 +12,7 @@ import (
 // 検出の型付きの値には触れない。ここは Python の dict の読み方 (d.get(key) or {}・真偽・"{}".format) の写し。
 
 // field は o[key] (o が nil か鍵が無ければ nil。本家の d.get(key))。
-func field(o *pyjson.Object, key string) pyjson.Value {
-	if o == nil {
-		return nil
-	}
-	v, _ := o.Get(key)
-	return v
-}
+func field(o *pyjson.Object, key string) pyjson.Value { return o.Field(key) }
 
 func fieldObj(o *pyjson.Object, key string) *pyjson.Object {
 	v, _ := field(o, key).(*pyjson.Object)

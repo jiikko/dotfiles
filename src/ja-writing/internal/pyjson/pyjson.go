@@ -68,6 +68,14 @@ func (o *Object) Get(key string) (Value, bool) {
 	return v, ok
 }
 
+// Field は鍵の値。o が nil か鍵が無ければ nil (dict の欄を辿る読み手が nil の確かめを毎回書かないため)。
+func (o *Object) Field(key string) Value {
+	if o == nil {
+		return nil
+	}
+	return o.vals[key]
+}
+
 // Len は鍵の数。
 func (o *Object) Len() int { return len(o.keys) }
 

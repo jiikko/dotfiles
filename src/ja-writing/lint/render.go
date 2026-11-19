@@ -15,26 +15,18 @@ import (
 // LintFormatVersion は本家の LINT_FORMAT_VERSION (--json の format_version)。
 const LintFormatVersion = formatVersion
 
-func objField(o *pyjson.Object, key string) pyjson.Value {
-	if o == nil {
-		return nil
-	}
-	v, _ := o.Get(key)
-	return v
-}
-
 func objInt(o *pyjson.Object, key string) int {
-	n, _ := objField(o, key).(int64)
+	n, _ := o.Field(key).(int64)
 	return int(n)
 }
 
 func objStr(o *pyjson.Object, key string) string {
-	s, _ := objField(o, key).(string)
+	s, _ := o.Field(key).(string)
 	return s
 }
 
 func objPtr(o *pyjson.Object, key string) *string {
-	s, ok := objField(o, key).(string)
+	s, ok := o.Field(key).(string)
 	if !ok {
 		return nil
 	}
@@ -44,7 +36,7 @@ func objPtr(o *pyjson.Object, key string) *string {
 // RenderReport は本家の render_report (1〜3 行目、種類か読者を指定したときの 4 行目、語の一覧を使ったときの行、候補があれば内訳と候補の並び)。末尾に改行は付けない。
 func RenderReport(d *pyjson.Object) string {
 	header := fmt.Sprintf("表現・書式の検査を実行しました。\n見直し候補: %d件\nこの検査では、意味の保持と読者にとっての分かりやすさは判定していません。", objInt(d, "candidate_count"))
-	context, _ := objField(d, "context").(*pyjson.Object)
+	context, _ := d.Field("context").(*pyjson.Object)
 	for _, line := range []string{contextLine(context), wordsLine(context)} {
 		if line != "" {
 			header += "\n" + line
@@ -67,7 +59,7 @@ func contextLine(context *pyjson.Object) string {
 		panic(err) // 値は CLI が正規化済み
 	}
 	if docType != nil {
-		skipped, _ := objField(context, "skipped_by_doc_type").(*pyjson.Object)
+		skipped, _ := context.Field("skipped_by_doc_type").(*pyjson.Object)
 		if skipped == nil || skipped.Len() == 0 {
 			line += "この種類で外す規則はありません。"
 		} else {
@@ -89,12 +81,12 @@ func contextLine(context *pyjson.Object) string {
 
 // wordsLine は本家の _words_line (語の一覧を使ったときの行。使わないときは空)。
 func wordsLine(context *pyjson.Object) string {
-	words, ok := objField(context, "words").(*pyjson.Object)
+	words, ok := context.Field("words").(*pyjson.Object)
 	if !ok {
 		return ""
 	}
 	total := 0
-	if removed, ok := objField(words, "allow_removed").(*pyjson.Object); ok {
+	if removed, ok := words.Field("allow_removed").(*pyjson.Object); ok {
 		for _, rule := range removed.Keys() {
 			total += objInt(removed, rule)
 		}
@@ -104,11 +96,11 @@ func wordsLine(context *pyjson.Object) string {
 
 // RenderFindings は本家の render_findings (内訳の行と候補の並び。候補が 0 件なら空)。候補は行番号の順に並べ、同じ行の中は検出の順のまま。
 func RenderFindings(d *pyjson.Object) string {
-	findings, _ := objField(d, "findings").([]pyjson.Value)
+	findings, _ := d.Field("findings").([]pyjson.Value)
 	if len(findings) == 0 {
 		return ""
 	}
-	counts, _ := objField(d, "counts").(*pyjson.Object)
+	counts, _ := d.Field("counts").(*pyjson.Object)
 	blocks := []string{fmt.Sprintf("内訳: error %d件、warn %d件、info %d件", objInt(counts, "error"), objInt(counts, "warn"), objInt(counts, "info"))}
 	items := make([]*pyjson.Object, 0, len(findings))
 	for _, f := range findings {
