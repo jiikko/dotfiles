@@ -61,7 +61,7 @@ EOS
 @test "モデルと effort の既定は sol / high (読む run の組)" {
   run "$RUN" -o "$WORK/out" review "$WORK/prompt.md"
   [ "$status" -eq 0 ]
-  grep -q -- "-m gpt-6.1-sol" "$CODEX_STUB_CALLS"
+  grep -q -- "-m gpt-6.2-sol" "$CODEX_STUB_CALLS"
   grep -q "model_reasoning_effort=high" "$CODEX_STUB_CALLS"
 }
 

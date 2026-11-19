@@ -114,7 +114,7 @@ Claude がやるのは:
   **重要な反証を読み落としたまま「指摘なし」と誤判定する**。形は `... > "$log" 2>&1; tail -40 "$log"` にし、
   判断の入力は必ず保存したファイル (下記 merger 経由なら merger がその全文) にする。
 - **集約 (merger) 規約 — 並列 3 本以上のフェーズは digest 化してから Claude が読む**:
-  全本の完了後、merger codex (`codex exec -s read-only`・`gpt-6-astra`・medium) に**保存ログのファイルパス群を
+  全本の完了後、merger codex (`codex exec -s read-only`・`gpt-6.2-astra`・medium) に**保存ログのファイルパス群を
   渡して読ませ**、1 枚の digest を作らせる — 指摘/案ごとに「出典ログパス・file:line・根本原因・発火条件・
   重複マージの結果・severity」を構造化し、**全数勘定を必須にする** (「run X: N 件中 M 件採用、落とした分は
   各 1 行の理由」+ 指摘ゼロの run の明記。merger の黙った取りこぼしを構造的に見えるようにする)。

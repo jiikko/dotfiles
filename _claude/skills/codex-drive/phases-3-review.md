@@ -78,7 +78,7 @@
 # stdout も保存する ($log 群は merger に全文読ませる)。詳細は「並列起動の作法」。
 # --- 観点A (Bash 呼び出し 1・run_in_background)。観点B・C も同形で別呼び出し・別パス ---
 out="<D>/<literal-stamp>.reviewA.md"; log="$out.log"
-command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
+command codex exec review -m gpt-6.2-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null \
   "<観点A の指示。file:line・理由・最小修正案を。要約/称賛不要>" > "$log" 2>&1; tail -40 "$log"
 ```
@@ -95,7 +95,7 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
 丸ごと Claude の精読に乗っており、ここが本数を増やせない律速だった。裏取りを前置することで、Claude の検閲は
 「指摘を一から検証する」から「**構築済みの再現手順をなぞって確定する**」に軽量化される。
 
-- **裏取り codex** (read-only・`gpt-6.1-sol`・high) に指摘リストを渡し、各指摘について:
+- **裏取り codex** (read-only・`gpt-6.2-sol`・high) に指摘リストを渡し、各指摘について:
   - **再現手順を構築させる** (どの入力・順序・環境で発火するか。可能なら最小の再現コード/コマンド)
   - 構築できなければ **「再現手順を構築できず未確認」と明記**させる (「たぶん正しい」と書かせない)
   - 指摘同士の重複 (同一根本原因) をマージさせる
@@ -137,7 +137,7 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
   silent に破れる残り経路を列挙させる (例: 「将来 case 追加で壊れない」が目的なら、実際に case を
   足す開発者を演じて素通りする箇所を挙げる。実測: obaket 635 round 3 で最多の実害を出した lens)
 
-- モデルと effort の既定は読む run の `gpt-6.1-sol` + `high` (モデル表)。
+- モデルと effort の既定は読む run の `gpt-6.2-sol` + `high` (モデル表)。
   未確認の重要な不変条件が残れば、それを攻める lens・実験・外部 oracle を追加する。
   「新規指摘ゼロ」だけで閉じず、下の完了条件で判断する。effort の比較はモデル表の手順による。
 - 各 lens は **別々の Bash 呼び出しで `run_in_background: true`**・出力は別パス (`[3.5]` と同じ並列作法)。
@@ -155,7 +155,7 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
 # 起動は codex-fanout driver が既定 (lens ごとの brief + review-lens-header.md を連結する manifest)。
 # --- fallback の per-call 形: lens ごとに別 Bash 呼び出し・run_in_background。パスは round と lens で一意にする ---
 out="<D>/<literal-stamp>.r<N>-adv-<lens>.md"; log="$out.log"
-command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
+command codex exec review -m gpt-6.2-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null \
   "<codex-review「敵対的モード」テンプレート全文 + この lens の攻め口だけを指定>" > "$log" 2>&1; tail -40 "$log"
 ```
@@ -256,12 +256,12 @@ diff -u "<...>.pre.status" "<...>.post.status"             # ← 新規ファイ
   ミューテーションで別に確認する**。本数と検知力を同じ指標として扱わない。
 - effort は **`medium`** (モデル表の書く run)。「実装を落とす入力」を組み立てるのは構築作業で、
   effort を落とすと常に真になる assert や壊せないヘルパーが出やすい (実測)。
-  モデルは `gpt-6-astra`。テストを自分で回させるので実装と同じ `-s danger-full-access` (外せない環境は `workspace-write`)。
+  モデルは `gpt-6.2-astra`。テストを自分で回させるので実装と同じ `-s danger-full-access` (外せない環境は `workspace-write`)。
 
 ```bash
 # 起動前スナップショット (上の pre.patch / pre.status) をこの呼び出しの冒頭で採る
 out="<D>/<literal-stamp>.harden.md"; log="$out.log"
-command codex exec -s danger-full-access -m gpt-6-astra -c model_reasoning_effort="medium" \
+command codex exec -s danger-full-access -m gpt-6.2-astra -c model_reasoning_effort="medium" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 このマイルストーンの実装を「落とす」テストを書く。git 操作 (commit / pull / checkout / stash 等) はしない。
 
@@ -316,7 +316,7 @@ EOF
   **worktree に patch を持ち込んだら baseline commit を作ってから注入させる**。持ち込んだ直後の worktree でも
   patch は未コミットなので、codex の `git checkout -- .` 復元が seam ごと消してテストがコンパイル不能になる
   (obaket 696 項目 4)。
-- **codex に注入から実行ループまで回させる** (`-s danger-full-access`・`-C <worktree>`・`gpt-6-astra`・medium —
+- **codex に注入から実行ループまで回させる** (`-s danger-full-access`・`-C <worktree>`・`gpt-6.2-astra`・medium —
   機械作業。トークン経済 3)。🚨 **例外: sandbox を外せない環境で、その repo の `swift test` が sandbox で走らないと
   1 度分かったら、以降のマイルストーンでは実行ループを codex に回さない**。変異 patch の生成だけ codex read-only に
   作らせ、適用 → テスト実行 → 復元は最初から Claude のハーネスで当てる (obaket 650 M1: max effort で 15〜40 分の

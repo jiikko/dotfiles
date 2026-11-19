@@ -45,8 +45,8 @@ codex トークンを積極消費したいタスク向け。
 (`subagent-model-tiering.md`) が破れる。節約するのは検閲の**入力の形** (生出力 → digest) であって、
 検閲そのものではない。
 
-**既定は run の種類で 2 組** (下のモデル表が正本): **読む・判断する run (read-only / review。集約役を除く) は `gpt-6.1-sol` + effort `high`**
-(= sol-high)、**書く run (danger-full-access) と集約役は `gpt-6-astra` + effort `medium`** (= astra-mid)。
+**既定は run の種類で 2 組** (下のモデル表が正本): **読む・判断する run (read-only / review。集約役を除く) は `gpt-6.2-sol` + effort `high`**
+(= sol-high)、**書く run (danger-full-access) と集約役は `gpt-6.2-astra` + effort `medium`** (= astra-mid)。
 フェーズ・難易度でこの 2 組から外さず、品質の上積みは本数と観点の数で作る (ユーザー決定 2026-10-02、読む run の effort は 2026-10-03 に medium から high へ。書く run は 2026-10-26 に luna-max から astra-mid へ (ユーザー指示)。それまでは全フェーズ luna-max)。
 ユーザーが「品質全開で」と明示したときだけ v2 運用 (merger を挟まず Claude が生出力を全文精読) に切り替える。
 
@@ -106,12 +106,12 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 - **モデルはスキル側で明示する**: `-m <model> -c model_reasoning_effort=...`。省略すると
   `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる) を拾い、実行ごとにモデルが変わってしまう。
   effort も省かない (モデルだけ指定すると effort は config.toml の値になる。config.toml の値は対話用の都合で変わるので、書く run の effort も省かずに書く)。
-- **モデルと effort は run の種類で 2 組に分ける** (ユーザー決定 2026-10-02。書く run の組は 2026-10-26 に変更):
+- **モデルと effort は run の種類で 2 組に分ける** (ユーザー決定 2026-10-02。書く run の組は 2026-10-26 に変更。2026-11-19 にユーザー指示で両方のモデルを 6.2 へ):
 
   | run | モデル + effort | フェーズ |
   |---|---|---|
-  | 読む・判断する (`-s read-only` / `codex exec review`) | `gpt-6.1-sol` + `high` | `[S]` の 3 本・`[D1]`/`[D1.5]`/`[D2]`/`[D3]`・敗者剖検・`[3.5]`/`[3.55]`/`[3.6]`・`[7]` の敵対照合 |
-  | 書く (`-s danger-full-access`) と集約 | `gpt-6-astra` + `medium` | `[2]`/`[2p]`・`[3.7]`・`[3.8]`・merger・変更マップ |
+  | 読む・判断する (`-s read-only` / `codex exec review`) | `gpt-6.2-sol` + `high` | `[S]` の 3 本・`[D1]`/`[D1.5]`/`[D2]`/`[D3]`・敗者剖検・`[3.5]`/`[3.55]`/`[3.6]`・`[7]` の敵対照合 |
+  | 書く (`-s danger-full-access`) と集約 | `gpt-6.2-astra` + `medium` | `[2]`/`[2p]`・`[3.7]`・`[3.8]`・merger・変更マップ |
 
   - 読む側を sol にするのは、設計の反証と敵対レビューの見落としは後工程で拾えず、1 本あたりの質が結果を左右するため。
     書く側は astra-mid にする (ユーザー指示 2026-10-26。それまでは luna-max)。書く run は長く codex の 5h 枠を食うので、

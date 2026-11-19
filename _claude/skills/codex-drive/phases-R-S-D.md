@@ -27,7 +27,7 @@ RFC / MS-* / API 仕様が正解を決めるタスクでは、**設計より前�
 spec の読み違いは最も高くつく失敗 (実装・テスト・レビューが全部同じ誤読の上に建つ) で、読解を 1 本に
 しておくと `[3.6]` の循環テスト lens でも捕まらないことがある。独立読解 2 本の**相違 = 読み違いの検出器**。
 
-- **独立 2 本** (`codex exec -s read-only`・`gpt-6.1-sol`・high・並列作法どおり) に、実装の存在を前提にせず
+- **独立 2 本** (`codex exec -s read-only`・`gpt-6.2-sol`・high・並列作法どおり) に、実装の存在を前提にせず
   spec 該当節から抽出させる: **要件 (MUST/SHOULD の別)・不変条件・バイトレイアウト/状態機械・公式 test vector・
   spec が曖昧な箇所 (解釈が割れる文)**。2 本には互いの存在を伝えない。
 - 各要件に **要件 ID・原典の URL/パスとバージョン・節番号・根拠となる短い引用・MUST/SHOULD・解釈・外部 vector** を付ける。
@@ -46,7 +46,7 @@ spec の読み違いは最も高くつく失敗 (実装・テスト・レビュ�
 
 - **低い** (spec/RFC が設計をほぼ決める・既存設計 doc がある・大量移植で構造が既定) → **軽量パス**:
   D1 を「設計方針の確認 1 回」に短縮し、Claude が検閲してユーザーに一言確認したら D2 を省略して `[1]` へ。
-  ただし **D3 の敵対観点 1 本 (read-only・`gpt-6.1-sol`・high) だけは省略せず回す**
+  ただし **D3 の敵対観点 1 本 (read-only・`gpt-6.2-sol`・high) だけは省略せず回す**
   (「設計をほぼ決める spec」の読み違い・前提崩れは軽量パスでこそ実装後に高くつく)。
   「設計自由度が低いので軽量パス (+ 敵対 1 本) で進める」と明示する。
 - **ある** (新規ライブラリ・API 境界の新設・複数の実現方式がある) → D1→D2→D3 をフルで回す。
@@ -99,7 +99,7 @@ D3 敵対 1 本が「sheet 経由の対象を Delete 押下時に共有 selectio
 # 以下は fallback の per-call 形。プロンプト内容の見本としてはどちらでも同じ。
 # --- 案A (Bash 呼び出し 1・run_in_background)。案B〜案D も同形で別呼び出し・別パス ---
 out="<D>/<literal-stamp>.designA.md"; log="$out.log"
-command codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="high" \
+command codex exec -s read-only -m gpt-6.2-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 <タスク>の設計壁打ち。コードは書かない (設計検討のみ)。
 
@@ -132,7 +132,7 @@ EOF
   その批評内容を出発点制約に足して D1 をもう 1 巡する (最大 2 巡)。
   🚨 **driver の既定の merger (`templates/merger.md`) は指摘を集める形**で、そのまま使うと digest が「各案のリスクの列挙」になり、
   案の比較にならない (obaket retro 1040: 4 案の原文を全部読み直した)。D1 / D1.5 では上の構造を書いた merger prompt を `-m` で渡す。
-- 設計フェーズは読む run なので `gpt-6.1-sol` + `high` (モデル表)。
+- 設計フェーズは読む run なので `gpt-6.2-sol` + `high` (モデル表)。
 - Claude が検閲し、**ユーザーと方針を選ぶ**。壁打ちの相手は codex だけでなく人間も含む (方針候補と推奨理由を
   要約して提示し、採用方針の合意を取ってから D2 へ)。
 - **丸投げ運用ではタッチポイントを集約してよい**: [R] で曖昧点を取り除いてあることを前提に、Claude が推奨案を

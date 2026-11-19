@@ -417,7 +417,7 @@ EOS
   # merger の起動行 (digest.md を -o に取る行) だけを見る
   merger_call="$(grep "digest.md" "$CODEX_STUB_CALLS")"
   [ -n "$merger_call" ]
-  printf '%s' "$merger_call" | grep -q -- "-m gpt-6-astra"
+  printf '%s' "$merger_call" | grep -q -- "-m gpt-6.2-astra"
   printf '%s' "$merger_call" | grep -q -- "model_reasoning_effort=medium"
   # run 側の指定は merger に漏れない (manifest の model/effort と混ざらない)
   printf '%s' "$merger_call" | grep -qv -- "-m m1"

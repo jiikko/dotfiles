@@ -97,7 +97,7 @@
 # (Storage/ を cwd に起動され macOS/bin を書けず「対応できませんでした」で 30 分ロス: obaket 696 項目 1)。
 ROOT="$(git rev-parse --show-toplevel)"
 last_message="<D>/<タスク>/impl.out.md"; log="<D>/<タスク>/impl.log"; mkdir -p "<D>/<タスク>"
-command codex exec -s danger-full-access -C "$ROOT" -m gpt-6-astra -c model_reasoning_effort="medium" \
+command codex exec -s danger-full-access -C "$ROOT" -m gpt-6.2-astra -c model_reasoning_effort="medium" \
   --json -o "$last_message" </dev/null "$(cat <<'EOF'
 <タスク>。git 操作 (commit / pull / checkout / stash 等) はしない (人間が検証して commit する)。作業根 (この repo root) の外には書かない。
 ファイルを書き、プロジェクト標準の build/test が green になるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
@@ -151,11 +151,11 @@ EOF
   完了イベント・応答があっても実装の正しさは [3] の build/test/diff で検証する。
 
 - **モデルはマイルストーンの性質で振らない** (大原則のモデル振り分け): 機械的移植・boilerplate でも、
-  判断を含む実装・非自明な wire/protocol でも、一律 `gpt-6-astra` + `medium` (モデル表の書く run)。
+  判断を含む実装・非自明な wire/protocol でも、一律 `gpt-6.2-astra` + `medium` (モデル表の書く run)。
   - **唯一の例外は上振れ**: astra-mid の出力の質が低いと `[3]` の検閲で判定したマイルストーン
     (「動くが筋が通っていない」/ 捏造 API / 同じ型エラーを 2 往復しても直らない、等) は、
-    **そのマイルストーンだけ `-m gpt-6.1-sol`** (effort は sol の `high`。モデル表) へ切り替えてよい
-    (ユーザー指示 2026-09-13、dotfiles issue 369 1-3。2026-09-30 に上振れ先を astra から `gpt-6.1-sol` へ変更 (ユーザー指示: コストが安いため)。probe 実測: codex-cli 0.159.1 で rc 0、応答 "GPT-6")。
+    **そのマイルストーンだけ `-m gpt-6.2-sol`** (effort は sol の `high`。モデル表) へ切り替えてよい
+    (ユーザー指示 2026-09-13、dotfiles issue 369 1-3。2026-09-30 に上振れ先を astra から `gpt-6.1-sol` へ変更 (ユーザー指示: コストが安いため)。2026-11-19 にユーザー指示で sol / astra とも 6.2 へ (probe 実測: codex-cli 0.169.0 で `gpt-6.2-sol`・`gpt-6.2-astra` とも rc 0))。
     切り替えは**マイルストーン単位**で、checkpoint に「M<n> は sol へ。理由: …」を 1 行残す (前後比較の材料)。
     下げる方向 (541 の low) は依然禁止。capacity 死はモデルを変えても起きうる (openai/codex #43398) ので回避策にはならない。
     駄目だった質の判定材料は「`[3]` で差し戻した回数と種類」であって印象ではない
@@ -233,7 +233,7 @@ echo "A=$root/../wt-$stamp-a"; echo "B=$root/../wt-$stamp-b"   # ← この 2 �
 ```bash
 # --- 案a (Bash 呼び出し 2・run_in_background)。案b も同形で別呼び出し・別 worktree ---
 wt="/<控えた A の絶対パス>"; out="<D>/<literal-stamp>.implA.md"; log="$out.log"
-command codex exec -s danger-full-access -C "$wt" -m gpt-6-astra \
+command codex exec -s danger-full-access -C "$wt" -m gpt-6.2-astra \
   -c model_reasoning_effort="medium" --ephemeral -o "$out" </dev/null \
   "<[2] と同じプロンプト>" > "$log" 2>&1; tail -40 "$log"
 ```
