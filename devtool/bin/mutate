@@ -74,6 +74,9 @@
 #     取り除いてから照合する。付いたまま照合すると、その行の失敗を取りこぼす
 #   fixture: dotfiles の tests/devtool/testdata/mutate/ (実際の swift test / xcodebuild の出力。生成元の test も同じ場所にある)。
 #   固定: dotfiles の tests/devtool/test_mutate.sh。
+#   obaket の道具が出す行 (complete log:・parallel test cases:・lock の文言・要約に残す行) を読めるかは、obaket の
+#   macOS/libexec/check/check-mutate-format-contract が本物の書き手を通して突き合わせる (dotfiles では tests/devtool/test_mutate_obaket_contract.sh が回す)。
+#   ここで読む形を変えたら、その検査を回してから obaket の書き手と揃える。
 #
 # 未 commit の変更を拒否するのを人の注意に任せない: commit していない実装の上で変異を当てると、
 # `git checkout -- <path>` の復元で実装ごと消える。「変異の前に commit する」を覚えている前提だと 2 回に 1 回は踏む。

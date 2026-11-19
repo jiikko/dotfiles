@@ -11,6 +11,9 @@
 #
 # e2e のケースは一時 git repo に本物の bin/mutate を置き、検証コマンドに偽のランナー (対象ファイルの中身で出力を変える) を使う。
 # 偽のランナーが出す行の形は、fixture の実際の出力の形に合わせてある。
+# obaket の道具が出す行 (`<label>: complete log:`・`<label>: parallel test cases:`・run-with-test-profile-residue の lock の文言) は手で写したもので、
+# 形の正本は obaket の道具。obaket が形を変えてもここは緑のまま通るので、ずれは obaket の check-mutate-format-contract と
+# test_mutate_obaket_contract.sh (この dotfiles の読み手で obaket の検査を回す) が見る。
 #
 # 検出しない形: 実際の swift test / xcodebuild を変異ごとに走らせる経路そのもの (時間がかかるので fixture で代える)。
 #   Swift Testing / xcodebuild の出力の形が版で変わったときは、fixture を採り直して抽出が落ちることで気づく

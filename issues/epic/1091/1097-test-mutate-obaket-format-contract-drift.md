@@ -63,4 +63,63 @@ mutate が「テストを始めなかったので回し直す」と誤って案�
 
 ## 進捗
 
-(未着手)
+### 決めたこと (2026-11-19)
+
+- **どこで走らせるか**: obaket の lint-gates に、self-test ではない通常の gate `check-mutate-format-contract` として置く (`run-gate-selftest` に通さない)。
+  pre-push でも走る (self-test を飛ばす 2026-10-17 のユーザー決定は、self-test の所要が理由。この gate は 4〜5 秒 (手元の実測。素の実行で 3.9〜4.6 秒、red team が bash 3.2・4 本同時で 3〜5 秒))。Xcode Cloud では dotfiles が無いので飛ばしたことを 1 行出す
+- **dotfiles の側だけを直したとき**: `tests/devtool/test_mutate_obaket_contract.sh` が、obaket の checkout (`OBAKET_ROOT`、無ければ `~/src/my-products/apps/obaket`) の gate に
+  この dotfiles の作業ツリーを読み手として渡して回す。checkout が無い・gate が無い (CI もこれ) なら exit 77 で skip
+- `run-logged-command-test` の、要約を `bin/mutate` で読む区間 (①④) は gate へ移した (同じ突き合わせを 2 か所に置かない)
+
+### 受け入れ条件
+
+- [x] ① 並列の要約・④ 集計行と落ちたテストの名前 (移した区間)
+- [x] ④ `Failing tests:` のブロックだけが名前の手がかりになる形 / `** TEST FAILED **` だけが失敗を言う形を本物の書き手に通す
+- [x] ② 本番の `make test` / `test-only` と同じ `run-with-test-profile-residue -- run-logged-command` の連鎖を検証コマンドにして `bin/mutate` を通しでまわし、成功の run (baseline) と失敗の run (対象を壊した run) の全文が run の置き場に写ることを `cmp` で見る
+- [x] ③ 使い捨ての HOME の lock を別の子に持たせ、本物の `run-with-test-profile-residue` が始めずに終わった run を `bin/mutate` が lock 待ちと読む。
+  `run-logged-command` を通った失敗の末尾に行頭から lock の文言があっても lock 待ちと読まず、注記を出す
+- [x] `test_mutate.sh` と `devtool/bin/mutate` の冒頭に、手で写した行の正本は obaket の道具で、ずれは上の 2 つが見ると書く
+- [x] obaket の `OBAKET_GATE_SELFTEST=run make lint-gates` が緑 (71 gates passed)。pre-push (self-test を飛ばす) でも `✓ check-mutate-format-contract` が出た
+- [x] 敵対的レビュー (red team、opus 2 周) の指摘の裏取りと対応 (下節)
+- [x] obaket の push (commit「test(lint): 書き手の出力を本物の bin/mutate に通して形のずれを止める gate を足す」)、umbrella の参照の更新、dotfiles の push。
+  dotfiles の `make test` で `test_mutate_obaket_contract.sh` が skip ではなく `[ok]` で走った (obaket の共有 checkout を fast-forward した後)
+
+### 実装をわざと壊して検査が落ちるかを確かめたもの (mutate-verify。どれも狙った assert が最初に落ちた)
+
+書き手 (obaket): 並列の要約の文言 (`parallel test cases` → `parallel cases`) / 失敗の経路の `complete log:` / 成功の経路の `complete log:` /
+lock の文言 (`another checked run owns` → `another run owns`) / `** TEST FAILED **` を要約から落とす / 末尾の窓を 40 行 → 3 行・20 行 (`Failing tests:` が窓の外) /
+residue が command の出力を飲み込む (要約と `complete log:` が mutate に届かない)。
+読み手 (dotfiles の `devtool/bin/mutate`、`test_mutate_obaket_contract.sh` で): `par_summary` の文言・行頭への固定 (label に空白が無い前提) / `keep_complete_logs` の照合 / `lock_busy_line` の文言。
+
+### 敵対的レビュー (red team、opus 2 周)
+
+1 周目で採った指摘 (どれも再現を確かめてから直した):
+- P2: `--summarize` の区間が label `summary` だけで、読み手が label の形 (空白の有無) に依存する変更が緑で通った → 本番と同じ `"make test-only"` にした
+- P2: residue を lock を取れない経路でしか起こさず、本番の residue → run-logged-command の連鎖で residue が command の出力を飲み込む変更が緑で通った →
+  検証コマンドを本番と同じ連鎖にした (residue は写しを一時 dir に置き、checker は何もしない stub。本物の checker は実ユーザーの保存先を走査するため)
+- P3: lock 待ちの行が、検査が持たせた lock を指すことを見ていない → パスを照合する
+- P3: `Failing tests:` の窓を 8 行の作った入力でしか試していない (窓を 20 行にしても緑) → 本物の xcodebuild の失敗 (306 行) で読めることを見る
+- P3: 落ちたときに読み手の dotfiles の HEAD が分からない → 案内に出す
+
+1 周目で採らなかった指摘: 「要約の行の failed F>0 を run=failed に読む」を gate で固定するケースが無い → 読み手の規則なので
+`tests/devtool/test_mutate.sh` の「要約の行が複数あれば合計し、failed が 1 以上なら run=failed」が既に固定している。gate のコメントにそう書いた。
+
+2 周目 (直した差分に対して): P1 / P2 なし。採った P3: 一時 dir が論理パスのままで、residue が lock のパスを実パスで出すと照合が偽の赤になる
+(`cd -P` で物理パスにした) / HEAD の案内が要約の検査 10 か所に付いていない (EXIT の trap で出すようにした) / 継承した GIT_DIR で
+案内が obaket の HEAD を出す (gate の git と dotfiles のテストで継承した変数を外した)。
+
+### 残る制約 (直していない)
+
+- gate の連鎖 (residue → run-logged-command、label、`--log`) は `macOS/Makefile` の test / test-only の recipe を手で写したもの。recipe の包む順を変えても追わない
+  (gate のコメントに書いた。相対の `--log` を絶対パスにする変換は `run-logged-command-test` が見るが、これは self-test なので pre-push では走らない)
+- 読み手の表示の文言 (`判定: RED`・`出力の置き場:` など) を dotfiles で変えると、各マシンの `~/dotfiles` を pull するまで obaket の pre-push が赤くなる時期がある
+  (2 つの repo を同時には更新できない。落ちたときの案内に読み手の HEAD を出して、pull で直ることを見えるようにした)
+- dotfiles の CI には obaket が無いので `test_mutate_obaket_contract.sh` は常に skip (exit 77)。dotfiles の側だけの変更を見るのは、obaket の checkout がある手元の `make test` だけ。
+  手元でも obaket の共有 checkout が古い・他のセッションの WIP 中なら、その状態の書き手を相手にする
+- gpgsign を有効にしたマシンでは、gate の一時 repo の commit が落ちうる (red team の推測。このマシンでは未設定で、確かめていない)
+
+### 評価
+
+統合の後、書き手と読み手の突き合わせは手で `make lint-gates` を打ったときしか走らず、②③ と ④ の一部は突き合わせ自体が無かった。
+今は obaket の push のたび (pre-push) に ①〜④ と組み合わせの誤りを本物の書き手・読み手で突き合わせ、読み手を dotfiles で直したときも手元の `make test` で掛かる。
+加えたもの: pre-push の所要が 4〜5 秒延びる / gate の約 300 行 / Makefile の recipe の手の写し (上の制約)。
