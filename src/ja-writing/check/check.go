@@ -11,6 +11,8 @@
 //	state_dir_for → StateDirFor / _state_dir → StateDir / _state_dir_given → StateDirGiven
 //	_compact → Compact / _similarity → Similarity / _source_like → SourceLike (しきい値 _SIMILAR_TO_SOURCE → SimilarToSource)
 //	_tool_versions → ToolVersions / _list_sha256 → ListSHA256 / _skill_info → SkillInfo
+//	_write_atomic → WriteAtomic / _ensure_state → EnsureState / _write_problem → WriteProblem / _read_record_status → ReadRecordStatus / _read_record → ReadRecord
+//	_mkstemp・_replace・_touch・_raise_if_hidden・_ensure_dir・_still_placed・_place_new_file・_write_state_files・_add_state_files は同じ名前の非公開の関数 (_raise_if_hidden → hiddenError)
 //	_TOOL_NAMES → ToolNames / _LIST_NAMES → ListNames / _FACT_GAPS_KEY → FactGapsKey / _DEFAULT_TIMEOUT → DefaultTimeout / _GITIGNORE → GitignoreText
 //
 // まだ写していない部品 (後の本が足す): _utc_now・_file_sha256・_label・_skill_version (SKILL.md を持たないので使わない)・_materials_format_version・_version_line。
