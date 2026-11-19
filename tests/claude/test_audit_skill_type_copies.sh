@@ -36,6 +36,9 @@ SKILL_MD="${AUDIT_SKILL_MD:-$ROOT_DIR/_claude/skills/audit/SKILL.md}"
 fail=0
 checked=4
 
+# awk の中で日本語を含む文字列を == で比べない。awk の実装によっては文字列の == を照合 (strcoll) で比べ、
+# 照合の表に無い字 (漢字・かな) を区別しないので、別の見出し・別のカテゴリが一致する (手元の awk では再現せず、CI の awk で起きた)。
+# 一致は「先頭から含み、長さが同じ」で見る
 # $1 の見出し (行全体が一致) から、次の同じ深さ以上の見出しの手前までを出す
 section() {
   awk -v h="$1" '
@@ -45,12 +48,13 @@ section() {
       if (!fence) { fence = 1; fc = substr(m, 1, 1); fl = length(m) }
       else if (substr(m, 1, 1) == fc && length(m) >= fl && rest ~ /^[ \t]*$/) fence = 0
     }
-    !fence && $0 == h { on = 1; n = length($0) - length(substr($0, index($0, " "))); next }
+    !fence && index($0, h) == 1 && length($0) == length(h) { on = 1; n = length($0) - length(substr($0, index($0, " "))); next }
     on && !fence && /^#+ / { d = index($0, " ") - 1; if (d <= n) exit }
     on { print }
   ' "$SKILL_MD"
 }
 
+ids_in_category() { awk -F'\t' -v c="$1" 'index($2, c) == 1 && length($2) == length(c) { print $1 }'; }
 sorted() { awk '{ gsub(/[ ,\/]+/, "\n"); print }' | grep -v '^$' | LC_ALL=C sort; }
 
 # 抽出は `|| true` を付ける (無マッチの grep で set -e が代入ごと落とし、理由の無い失敗になるため)。
@@ -80,7 +84,7 @@ for c in 設計 品質 テスト その他; do
   need "$got" "選択方法の「${c}」の行"
   union=$(printf '%s\n%s\n' "$union" "$got")
   if [ "$c" != その他 ]; then
-    compare "$got" "$(printf '%s\n' "$table" | awk -F'\t' -v c="$c" '$2 == c { print $1 }' | LC_ALL=C sort)" "選択方法の「${c}」の行"
+    compare "$got" "$(printf '%s\n' "$table" | ids_in_category "$c" | LC_ALL=C sort)" "選択方法の「${c}」の行"
   fi
 done
 compare "$(printf '%s\n' "$union" | grep -v '^$' | LC_ALL=C sort)" "$all" "選択方法のカテゴリの行の和"
@@ -108,7 +112,7 @@ compare "$got" "$all" "直接実行の指針の行"
 # 4. 設計系をまとめて回す段落の括弧
 got=$(printf '%s\n' "$direct" | sed -n 's/^\*\*設計系 (\([^)]*\)) を直接実行でまとめて回すとき.*/\1/p' | sorted || true)
 need "$got" "設計系をまとめて回す段落の括弧"
-compare "$got" "$(printf '%s\n' "$table" | awk -F'\t' '$2 == "設計" { print $1 }' | LC_ALL=C sort)" "設計系をまとめて回す段落の括弧"
+compare "$got" "$(printf '%s\n' "$table" | ids_in_category 設計 | LC_ALL=C sort)" "設計系をまとめて回す段落の括弧"
 
 n=$(printf '%s\n' "$all" | wc -l | tr -d ' ')
 if [ "$fail" -ne 0 ]; then

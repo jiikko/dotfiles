@@ -159,3 +159,6 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 - 2026-11-19: `make test` (rc=2) の赤は 2 つ。① 自分のテストの `「$c」` を test-var-multibyte が落とした → `${c}` にして、その検査と契約テストが緑 /
   ② src/restartable の `TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst` (873 の負荷下の flaky の台帳に載っているもの。自分の変更は Go に触れない) → 単独で再実行して ok
 - 2026-11-19: 受け入れ条件を全部満たしたので done へ送る。残課題なし (entry-parity の初回の実走で N1〜N3 の分類と偽陽性を見るのは、audit の SKILL.md の Step 2 の注記に書いた)
+- 2026-11-19 (done の後): CI の Tests で写しの検査が最初の commit から赤だった (run 44430222794・44435677184)。CI の awk は日本語の文字列の `==` を照合 (strcoll) で比べ、
+  en_US.UTF-8 の strcoll は違う漢字の文字列どうしを 0 と返す (`python3 -c "locale.setlocale(LC_COLLATE,'en_US.UTF-8'); strcoll('設計','品質')"` が 0)。手元は ja_JP なので緑だった。
+  見出しの照合とカテゴリの絞り込みを `index` と長さの比較に替えた。`LC_ALL=en_US.UTF-8` で直す前は赤・直した後は緑、変異 15 本の結果も期待どおり。同じ仕組み (awk の中の日本語の `==`) は repo の他の script に無い
