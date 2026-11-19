@@ -21,7 +21,7 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
       error-handling の指針そのものには偽陽性の除外の節が無く、rule とぶつかるのは false-green の除外「理由コメントのある best-effort」と
       concurrency の除外「理由コメント付きの best-effort な kill・後始末」の方。error-handling に「warn が出ていない握り潰し」を足し、
       その 2 つの除外が warn の有無を問わないことと矛盾しないよう書き分ける (rule の本文は写さず参照する)
-- [ ] **test-cleanup が「消す前に、そのテストだけが捕まえる壊し方を実装に当てて確かめる」を指示していない**。`~/.claude/rules/mutation-verify-new-tests.md` は「既存の assert を『何も検査していない』として消すときも、消す前に変異を 1 本当てる」
+- [x] **test-cleanup が「消す前に、そのテストだけが捕まえる壊し方を実装に当てて確かめる」を指示していない**。`~/.claude/rules/mutation-verify-new-tests.md` は「既存の assert を『何も検査していない』として消すときも、消す前に変異を 1 本当てる」
       「テスト・describe を『重複』『委譲だけ』として消す・統合するときも同じ」と定めている (後者は 2026-11-17 の commit「docs(rules): テストを消す前の変異・…」で足した)。
       今の test-cleanup の forge のプロンプトと直接実行の指針は `refuse-low-value-coverage.md` の issue 化だけを指す。`bin/mutate-verify` (実装をわざと壊して、残るテストが落ちるかを見る道具) で確かめる段を足す
 - [ ] **タイプの一覧と発見の型が複数の場所に写されていて、揃っていることを守る検査が一部にしか無い**。写しの場所:
@@ -108,3 +108,4 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
   - どの回も「分類できない」「偽陽性だった」とは書いていない。SKILL.md の注記をこの結果に置き換えた
 - 2026-11-19: 1 節の 2 項目目。error-handling の forge のプロンプトと直接実行の指針に「続けてよい失敗でも warn が理由つきで出ていなければ発見」を足し、rule は参照だけにした。
   false-green の除外 (プロンプトと指針の 2 か所) と concurrency の除外 (指針だけ) の「理由コメントのある best-effort」には「warn の有無は error-handling が見る」を添え、除外がその型の範囲の話だと分かるようにした
+- 2026-11-19: 1 節の 3 項目目。test-cleanup の forge のプロンプトと直接実行の指針の両方に、消す・統合する前に mutate-verify で残るテストが落ちるかを確かめる段を足した (落ちないなら消さない)
