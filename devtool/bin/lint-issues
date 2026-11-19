@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# lint-issues — issues/ の直下の issue のファイル名が `NNN-<type>-<slug>.md` の形で、type が決めた語のどれかであることを確かめる。
+#
+#   lint-issues [<issues のディレクトリ>]   (無ければ cwd の git の root の issues/)
+#
+# 見るのは直下の `*.md` だけ (状態のディレクトリ done/・pending/ などの下は見ない。前からの範囲)。
+# 番号で始まらない `.md` (README・メモ) は issue ではないので飛ばす。
+# type の語は dotfiles の issue 規約 (_claude/issue-rules.md の「type 語彙」の表) と同じ 16 語。
+#   devtool は dotfiles の外を読まないので、ここに写して持つ。ずれは dotfiles の tests/devtool/test_lint_issues.sh が表と比べて落とす。
+# 呼ぶ repo には呼び口 (bin/lint-issues など) を置き、dotfiles の bin/devtool-run 経由で起こす (devtool/README.md)。
+#
+# 終了コード: 0 すべて合う / 1 合わないファイルがある / 2 引数の誤り・ディレクトリが無い (検査できないので緑にしない)
+set -uo pipefail
+unset CDPATH
+
+prog="${0##*/}"
+case "${1:-}" in
+  -h|--help) sed -n '2,/^set -uo pipefail$/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
+esac
+[ "$#" -le 1 ] || { echo "$prog: 引数は issues のディレクトリ 1 つだけ: $*" >&2; exit 2; }
+
+TYPES="feat|bug|refactor|perf|ux|test|docs|chore|cleanup|design|architecture|research|risk|task|human|retro"
+
+if [ "$#" -eq 1 ]; then
+  dir="$1"
+else
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "$prog: git の repo の中でない。issues のディレクトリを引数で渡す" >&2; exit 2; }
+  dir="$top/issues"
+fi
+[ -d "$dir" ] || { echo "$prog: issues のディレクトリが無い: $dir" >&2; exit 2; }
+
+errors=0
+checked=0
+for file in "$dir"/*.md; do
+  [ -e "$file" ] || continue
+  name="${file##*/}"
+  [[ "$name" =~ ^[0-9]+- ]] || continue
+  checked=$((checked + 1))
+  if ! [[ "$name" =~ ^[0-9]+-($TYPES)- ]]; then
+    echo "ERROR: $name — type が要る (${TYPES//|/, })"
+    errors=$((errors + 1))
+  fi
+done
+
+if [ "$errors" -gt 0 ]; then
+  echo ""
+  echo "$errors 件の命名規則違反があります ($checked 件を確認)"
+  echo "正しい形式: NNN-{type}-description.md"
+  exit 1
+fi
+echo "OK: すべてのIssueファイルが命名規則に準拠しています ($checked 件を確認)"

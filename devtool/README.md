@@ -28,6 +28,7 @@ PATH には頼らない (`export PATH` は `_zshrc` にしか無く、非対話�
 | `mutate` | Swift のアプリの実装をわざと壊し (変異)、テストが落ちるかを RED / GREEN / 判定不能で出す。今の作業ツリーで当てて開始時の commit へ戻す (未 commit の変更は拒否)。使い捨ての worktree で当てる `mutate-verify` とは別の道具 | obaket・vlc-multi-video-player (`bin/mutate`) |
 | `mutate-verify` | 使い捨ての worktree で変異を当て、前提の検査 (baseline が緑・当たったか・構文・誤ファイル・`--expect` の帰属・作業ツリーの改変・時間の上限) を機械で強制する。未 commit の変更も持ち込める | どの repo からでも (dotfiles の `bin/mutate-verify` が呼び口。PATH 上) |
 | `mutate-verify-list` | 一覧に書いた変異を `mutate-verify` で 1 本ずつ当てて表にする | 同上 (`bin/mutate-verify-list`) |
+| `lint-issues` | `issues/` の直下の issue のファイル名が `NNN-<type>-<slug>.md` で、type が issue 規約 (`_claude/issue-rules.md`) の語であることを確かめる。語は写して持ち、ずれは `tests/devtool/test_lint_issues.sh` が規約の表と比べて落とす | promiseApp (`bin/lint-issues`)・ThumbnailThumb (`bin/tt-lint-issues`)・project-templates (`bin/lint-issues`。新しい app はこれを写す)。dotfiles の場所は `DEVTOOL_DOTFILES_ROOT` (無ければ `~/dotfiles`) |
 
 ## lib
 
