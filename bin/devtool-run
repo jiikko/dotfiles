@@ -11,6 +11,8 @@
 # runtimeout を解決できなくても道具は起こす (DEVTOOL_RUNTIMEOUT を空にして知らせる)。要らない呼び方 (mutate --summarize) まで止めないため。
 # 要る道具は空なら自分で判定不能にする。
 # 呼ぶ側 (各 repo の wrapper) は、この道具を dotfiles の checkout からの絶対パスで起こす (PATH は _zshrc にしか無く、非対話のシェルは読まない)。
+# 呼ぶ側は "$BASH" でこの道具を起こし、この道具は shebang が bash の道具を同じ "$BASH" で起こす。shebang に任せると、
+# `bash5 bin/mutate-verify` のように bash を選んで起こしても本体が shebang の /bin/bash (3.2) で走る。
 #
 # 終了コード: 道具の rc をそのまま返す。この道具自身の誤り (道具名が不正・道具が無い・実体が devtool/bin の外) は 2。
 set -u
@@ -20,32 +22,47 @@ prog="${0##*/}"
 die() { echo "$prog: $*" >&2; exit 2; }
 
 _self="$(readlink -f "${BASH_SOURCE[0]}")" || die "実体を解決できない: ${BASH_SOURCE[0]}"
-root="$(cd -P "$(dirname "$_self")/.." && pwd -P)" || die "dotfiles の root に入れない"
+dotfiles_root="$(cd -P "$(dirname "$_self")/.." && pwd -P)" || die "dotfiles の root に入れない"
 
-[ $# -ge 1 ] || die "使い方: $prog <道具> [引数…]  (道具は $root/devtool/bin/ の下の名前)"
+[ $# -ge 1 ] || die "使い方: $prog <道具> [引数…]  (道具は $dotfiles_root/devtool/bin/ の下の名前)"
 tool="$1"; shift
 # 名前だけを受ける (`../x` や絶対パスで devtool/bin の外を起こさせない)
 case "$tool" in
   ''|.*|*/*) die "道具の名前が不正: '$tool' (devtool/bin/ の下のファイル名だけを渡す)" ;;
 esac
-target="$root/devtool/bin/$tool"
+target="$dotfiles_root/devtool/bin/$tool"
 [ -f "$target" ] && [ -x "$target" ] || die "道具が無い (実行できない): $target"
 # 名前が正しくても、symlink で devtool/bin の外を指していれば起こさない (実体で比べる)
-bin_real="$(cd -P "$root/devtool/bin" && pwd -P)" || die "devtool/bin に入れない"
+bin_real="$(cd -P "$dotfiles_root/devtool/bin" && pwd -P)" || die "devtool/bin に入れない"
 target_real="$(readlink -f "$target")" || die "道具の実体を解決できない: $target"
 case "$target_real" in
   "$bin_real"/*) ;;
   *) die "道具の実体が devtool/bin の外にある: $target -> $target_real" ;;
 esac
 
+# 解決はサブシェルで行う。道具へ渡す環境 (継承した GIT_DIR など・RUNTIMEOUT) を変えずに、解決にだけ git の場所の変数を外す
+# (不正な GIT_DIR を継承したまま runtimeout をビルドすると、go の VCS の情報の埋め込みが git を呼んで落ちる)。
 # lib を読めないときも、解決できなかったときと同じに扱う (道具の側で判定不能にする。ここで止めると rc が道具の契約からずれる)
-# shellcheck source=bin/lib/runtimeout.sh
-if [ -r "$root/bin/lib/runtimeout.sh" ] && . "$root/bin/lib/runtimeout.sh" && runtimeout_resolve "$root"; then
-  export DEVTOOL_RUNTIMEOUT="$RUNTIMEOUT"
+rt="$(
+  # 外せなければ解決しない (外さないままビルドすると、上の失敗の経路に戻る)
+  # shellcheck source=bin/lib/git_location_env.sh
+  { [ -r "$dotfiles_root/bin/lib/git_location_env.sh" ] && . "$dotfiles_root/bin/lib/git_location_env.sh" && git_location_env_unset; } >/dev/null 2>&1 || exit 1
+  # shellcheck source=bin/lib/runtimeout.sh
+  [ -r "$dotfiles_root/bin/lib/runtimeout.sh" ] && . "$dotfiles_root/bin/lib/runtimeout.sh" && runtimeout_resolve "$dotfiles_root" >&2 && printf '%s' "$RUNTIMEOUT"
+)" || rt=""
+if [ -n "$rt" ]; then
+  export DEVTOOL_RUNTIMEOUT="$rt"
 else
-  echo "$prog: 注意: runtimeout を解決できなかった ($root/bin/lib/runtimeout.sh)。DEVTOOL_RUNTIMEOUT を空で渡す (要る道具は判定不能で止まる)" >&2
+  echo "$prog: 注意: runtimeout を解決できなかった ($dotfiles_root/bin/lib/runtimeout.sh)。DEVTOOL_RUNTIMEOUT を空で渡す (要る道具は判定不能で止まる)" >&2
   export DEVTOOL_RUNTIMEOUT=""
 fi
-export DEVTOOL_SKILL_TMPDIR="$root/bin/skill-tmpdir"
+export DEVTOOL_SKILL_TMPDIR="$dotfiles_root/bin/skill-tmpdir"
 
+# shebang がそのまま bash を指す道具だけを "$BASH" で起こす (引数つきの shebang は引数を落とすので、shebang に任せる)
+# 先頭行は組み込みの read で読む (外部コマンドの有無で bash の選択を落とさない。末尾に改行が無くても読んだ分を比べる)
+first=""
+IFS= read -r first < "$target_real" || true
+case "$first" in
+  '#!/bin/bash'|'#!/usr/bin/env bash') exec "$BASH" "$target" "$@" ;;
+esac
 exec "$target" "$@"

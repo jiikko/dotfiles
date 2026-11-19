@@ -26,4 +26,19 @@ symlink で呼び名を保つので、コマンド名で呼ぶものは変えな
 
 ## 進捗
 
-(未着手。1093 の後)
+- [x] `mutate-verify`・`mutate-verify-list` を `devtool/bin/` へ移した (git mv)。`bin/` には `devtool-run` を `"$BASH"` で起こす呼び口を置いた (名前で呼ぶ 36 ファイルは変えずに済む)
+- [x] lib は **方針を変えた**: `uint.sh`・`git_location_env.sh`・`worktree_scratch.sh` の実体を `devtool/lib/` へ移し、元の `bin/lib/`・`scripts/lib/` に symlink を置いた。
+  利用者 (15 / 21 / 5 ファイル) を書き換えずに済み、向きは dotfiles → devtool のまま。`runtimeout.sh` は Go の `src/runtimeout` に依存するので移さず、本体は `DEVTOOL_RUNTIMEOUT` を使う
+- [x] 本体は devtool の root を `${bin のディレクトリ%/bin}` で決める (`..` を使わない)。skill-tmpdir は `DEVTOOL_SKILL_TMPDIR`、無ければ旧と同じく `$TMPDIR` へ
+- [x] テスト 2 本を `tests/devtool/` へ移した (中身は変えず、呼び口を起こす)。`test_mutate_verify.sh` は移す前の HEAD でも移した後でも 51 ケース。CI の `src_codexevents.yml` の paths filter に `devtool/lib/uint.sh` を足した
+- [x] devtool-run を直した: runtimeout の解決はサブシェルで git の場所の変数を外して行う (外せなければ解決しない。道具には継承した値と、`RUNTIMEOUT` の無い環境を渡す)。
+  shebang が `#!/bin/bash` / `#!/usr/bin/env bash` の道具は `"$BASH"` で起こす (呼び口が選んだ bash を本体まで保つ)。app の呼び口も `"$BASH"` で起こす。
+  変異: `"$BASH"` を外す → bash の選択のケースが RED (dotfiles・vgp)、git の場所の変数を外さない → RED
+
+### codex の敵対的レビュー (2026-11-19、2 周。gpt-6.2-sol)
+
+- 1 周目: 不正な `GIT_DIR` を継承すると冷えた checkout で runtimeout のビルドが落ちる・`bash5 bin/mutate-verify` でも本体が /bin/bash で走る・`RUNTIMEOUT` が LIST に漏れる・CI の paths filter が旧パスだけ → 直した
+- 2 周目: 外せないのに解決する・`head` が無いと選択が落ちる・bash のテストが区別できていない → 直した (この修正は 3 周目に通していない)
+- 受け入れ (記録): `--help` や引数の誤りでも runtimeout の解決が走る (ビルド済みなら何もしない)。`DEVTOOL_*` が LIST・検証コマンドに見える。本体を devtool-run を通さずに起こすと判定不能
+  (README の約束)。別名の symlink で診断の名前が `mutate-verify` になる (rc は同じ)。`core.symlinks=false` の checkout では symlink の lib が読めない (macOS だけの dotfiles では使わない)。
+  list が既定の mutate-verify を直接起こし bash の選択が落ちるのは、移す前と同じ挙動。継承した `GIT_DIR` で別の checkout を対象にするのも、app の旧 `bin/mutate` と同じ挙動

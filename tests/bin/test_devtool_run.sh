@@ -26,6 +26,10 @@ runtimeout_resolve() {
   RUNTIMEOUT="$1/bin/runtimeout-bin"; export RUNTIMEOUT
 }
 EOF
+# 偽の git の場所の変数を外す helper: FAKE_UNSET_FAIL=1 なら失敗する
+cat > "$R/bin/lib/git_location_env.sh" <<'EOF'
+git_location_env_unset() { [ "${FAKE_UNSET_FAIL:-0}" = 1 ] && return 1; unset GIT_DIR; }
+EOF
 cat > "$R/devtool/bin/show-env" <<'EOF'
 #!/bin/bash
 printf 'RT=%s\nST=%s\n' "${DEVTOOL_RUNTIMEOUT-<unset>}" "${DEVTOOL_SKILL_TMPDIR-<unset>}"
@@ -86,6 +90,49 @@ else
   fail "runtimeout.sh が無いときの扱いが違う (rc=$rc): $(cat "$T/out" "$T/err")"
 fi
 mv "$R/bin/lib/runtimeout.sh.off" "$R/bin/lib/runtimeout.sh" || exit 1
+
+# 4d. shebang が bash の道具は、devtool-run を起こした bash で起こす (shebang の /bin/bash に戻さない)
+printf '#!/bin/bash\nprintf "BASH=%%s\\n" "$BASH"\n' > "$R/devtool/bin/which-bash"; chmod +x "$R/devtool/bin/which-bash"
+for b in /bin/bash /opt/homebrew/bin/bash; do
+  [ -x "$b" ] || continue
+  run "$b" "$R/bin/devtool-run" which-bash; rc=$?
+  if [ "$rc" -eq 0 ] && grep -qxF "BASH=$b" "$T/out"; then pass "$b で起こすと道具も $b で走る"; else fail "$b で起こした道具の bash が違う (rc=$rc): $(cat "$T/out" "$T/err")"; fi
+done
+
+# 4e. 解決は git の場所の変数を外して行い、道具には継承した値をそのまま渡す
+cat > "$R/bin/lib/runtimeout.sh" <<'EOF'
+runtimeout_resolve() {
+  [ "${FAKE_RESOLVE_FAIL:-0}" = 1 ] && { echo "✗ 偽: ビルドできない" >&2; return 1; }
+  [ -z "${GIT_DIR+x}" ] || { echo "✗ 偽: GIT_DIR が残ったまま解決した" >&2; return 1; }
+  RUNTIMEOUT="$1/bin/runtimeout-bin"; export RUNTIMEOUT
+}
+EOF
+printf '#!/bin/bash\nprintf "RT=%%s\\nGD=%%s\\nRTO=%%s\\n" "$DEVTOOL_RUNTIMEOUT" "${GIT_DIR-<unset>}" "${RUNTIMEOUT-<unset>}"\n' > "$R/devtool/bin/show-git"; chmod +x "$R/devtool/bin/show-git"
+run env -u RUNTIMEOUT GIT_DIR=/absent/.git "$R/bin/devtool-run" show-git; rc=$?
+if [ "$rc" -eq 0 ] && grep -qxF "RT=$R/bin/runtimeout-bin" "$T/out" && grep -qxF 'GD=/absent/.git' "$T/out" && grep -qxF 'RTO=<unset>' "$T/out"; then
+  pass "解決は GIT_DIR を外して行い、道具には GIT_DIR を残し、RUNTIMEOUT を漏らさない"
+else
+  fail "解決と道具の環境が違う (rc=$rc): $(cat "$T/out" "$T/err")"
+fi
+
+# 4f. git の場所の変数を外せなければ解決しない (DEVTOOL_RUNTIMEOUT を空で渡す)
+run env FAKE_UNSET_FAIL=1 "$R/bin/devtool-run" show-env; rc=$?
+if [ "$rc" -eq 0 ] && grep -qxF 'RT=' "$T/out" && grep -qF 'runtimeout を解決できなかった' "$T/err"; then
+  pass "git の場所の変数を外せなければ解決せず、空で渡す"
+else
+  fail "外せなかったときの扱いが違う (rc=$rc): $(cat "$T/out" "$T/err")"
+fi
+
+# 4g. `#!/usr/bin/env bash` の道具も、devtool-run を起こした bash で起こす (PATH の bash に任せない)。
+#     PATH の bash が /bin/bash と同じなら区別できないので、そのときは飛ばして知らせる
+printf '#!/usr/bin/env bash\nprintf "BASH=%%s\\n" "$BASH"\n' > "$R/devtool/bin/which-env-bash"; chmod +x "$R/devtool/bin/which-env-bash"
+env_bash="$(command -v bash)"
+if [ "$(readlink -f "$env_bash")" != "$(readlink -f /bin/bash)" ]; then
+  run /bin/bash "$R/bin/devtool-run" which-env-bash; rc=$?
+  if [ "$rc" -eq 0 ] && grep -qxF 'BASH=/bin/bash' "$T/out"; then pass "#!/usr/bin/env bash の道具も起こした bash (/bin/bash) で走る"; else fail "env bash の道具の bash が違う (rc=$rc): $(cat "$T/out" "$T/err")"; fi
+else
+  echo "skipped: PATH の bash が /bin/bash と同じなので、env bash の道具の bash の選択を区別できない"
+fi
 
 # 5. 引数なしは rc=2
 run "$R/bin/devtool-run"; rc=$?

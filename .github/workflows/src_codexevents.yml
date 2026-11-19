@@ -14,6 +14,7 @@ on:
       - bin/codex-run          # driver のテストが写して走らせる
       - bin/codex-fanout
       - bin/lib/uint.sh        # driver のテストが本物を写す (issue 775)
+      - devtool/lib/uint.sh    # bin/lib/uint.sh は symlink で、実体はこちら (epic issue 1091)
       - .github/workflows/src_codexevents.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
@@ -28,6 +29,7 @@ on:
       - bin/codex-run          # driver のテストが写して走らせる
       - bin/codex-fanout
       - bin/lib/uint.sh        # driver のテストが本物を写す (issue 775)
+      - devtool/lib/uint.sh    # bin/lib/uint.sh は symlink で、実体はこちら (epic issue 1091)
       - .github/workflows/src_codexevents.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
