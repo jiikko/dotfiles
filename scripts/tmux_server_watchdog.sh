@@ -38,6 +38,8 @@ TT_WATCHDOG_INTERVAL="${TT_WATCHDOG_INTERVAL:-2}"
 # 「保存が 17 日間 silent に止まっていた」の再発を、独立したこのループで見張る (2026-07-30)。
 TT_HEALTH_CHECK_INTERVAL="${TT_HEALTH_CHECK_INTERVAL:-300}"
 TT_HEALTH_SCRIPT="${TT_HEALTH_SCRIPT:-$SCRIPT_DIR/tmux_snapshot_health.sh}"
+# health の 1 回の上限 (秒)。決め方は下の HEALTH_RUNTIMEOUT の解決の前
+TT_HEALTH_TIMEOUT="${TT_HEALTH_TIMEOUT:-5}"
 TT_TOAST="${TT_TOAST:-$SCRIPT_DIR/../bin/tmux-toast}"
 # 死因相関の時間窓 (秒)。kill-cmd/session-closed の epoch がこの範囲内なら「直近」とみなす
 TT_VERDICT_WINDOW="${TT_VERDICT_WINDOW:-120}"
@@ -95,11 +97,20 @@ check_health() {
   [ "$now" -ge "$health_next_check" ] || return 0
   health_next_check=$(( now + TT_HEALTH_CHECK_INTERVAL ))
   [ -x "$TT_HEALTH_SCRIPT" ] || return 0
-  if out="$("$TT_HEALTH_SCRIPT" --quiet 2>/dev/null)"; then
-    state=ok
+  local rc=0
+  if [ -n "$HEALTH_RUNTIMEOUT" ]; then
+    out="$("$HEALTH_RUNTIMEOUT" "$TT_HEALTH_TIMEOUT" "$TT_HEALTH_SCRIPT" --quiet 2>/dev/null)" || rc=$?
   else
-    state=ng
+    out="$("$TT_HEALTH_SCRIPT" --quiet 2>/dev/null)" || rc=$?
   fi
+  case "$rc" in
+    0) state=ok ;;
+    124)
+      # 時間切れは ok / ng のどちらでもない (固まったサーバが答えなかっただけ)。状態は変えず、起きたことだけ残す
+      tt_trigger_log "snapshot-health timeout secs=$TT_HEALTH_TIMEOUT pid=$SERVER_PID epoch=$now"
+      return 0 ;;
+    *) state=ng ;;
+  esac
   [ "$state" = "$health_last_state" ] && return 0
   health_last_state="$state"
   if [ "$state" = ng ]; then
@@ -136,7 +147,7 @@ TT_SAMPLE_CMD="${TT_SAMPLE_CMD:-/usr/bin/sample}"
 # shellcheck source=bin/lib/uint.sh
 . "$SCRIPT_DIR/../bin/lib/uint.sh"
 watchdog_uint_env() {  # $1=変数名 $2=下限 $3=上限 $4=外れたときに使う値
-  local val="${!1}"
+  local val="${!1:-}"  # 未設定でも set -u で落とさない (範囲の外として戻す値を使う)
   if uint_ok "$val" 6 && [ "$((10#$val))" -ge "$2" ] && [ "$((10#$val))" -le "$3" ]; then
     printf -v "$1" '%d' "$((10#$val))"
   else
@@ -145,6 +156,19 @@ watchdog_uint_env() {  # $1=変数名 $2=下限 $3=上限 $4=外れたときに�
   fi
 }
 watchdog_uint_env TT_HEALTH_CHECK_INTERVAL 0 86400 300
+watchdog_uint_env TT_HEALTH_TIMEOUT 1 300 5
+# health は tmux に何度も問い合わせる (lib の関数を含めて 5 回)。サーバが固まっていると返らず、その間このループが
+# 止まって、死の看取りも固まりの撮影も回らない。health 全体に上限を付ける (問い合わせごとに付けると、lib を
+# 共有する他の呼び出し元まで変わる)。上限は実測の所要 (約 0.2 秒) の 25 倍で、窓の 2 倍に届かない長さにする:
+# 塞がれても次の窓で連続を数え続け、固まりの最中に撮れる。
+# runtimeout は起動時に 1 回だけ解決する (bin/lib/go_tool.sh の冒頭)。解決できなければ上限なしで待つ
+HEALTH_RUNTIMEOUT=""
+# shellcheck source=bin/lib/runtimeout.sh
+if . "$SCRIPT_DIR/../bin/lib/runtimeout.sh" && runtimeout_resolve "$SCRIPT_DIR/.."; then
+  HEALTH_RUNTIMEOUT="$RUNTIMEOUT"
+else
+  tt_trigger_log "snapshot-health-unbounded reason=no-runtimeout pid=$SERVER_PID epoch=$(date +%s)"
+fi
 watchdog_uint_env TT_PSLOG_KEEP 1 1000 10
 watchdog_uint_env TT_VERDICT_WINDOW 0 86400 120  # 数でないと [ -le ] が常に偽になり、全部の死を外因死に分類する
 watchdog_uint_env TT_BUSY_WINDOW 0 3600 5   # 0 で撮影を止める
@@ -205,8 +229,9 @@ check_busy() {
   pct=$(( (cpu - busy_win_cpu) * 100 / dt ))
   busy_win_start="$now"; busy_win_cpu="$cpu"
   if [ "$pct" -lt "$TT_BUSY_PCT" ]; then busy_streak=0; return 0; fi
-  # 窓が 2 倍以上に伸びた = ループが塞がれていた (固まったサーバへの health の問い合わせ等)。
-  # 問い合わせが返るのは固まりが解けた後なので、今撮っても固まりの後のスタックしか写らない。
+  # 窓が 2 倍以上に伸びた = ループが塞がれていた (watchdog 自身が止められていた・Mac 全体が詰まっていた等。
+  # health の問い合わせは TT_HEALTH_TIMEOUT で打ち切るので、窓の 2 倍には普通は届かない)。
+  # 塞いでいたものが解けた後なので、今撮っても固まりの後のスタックしか写らないことが多い。
   # 撮らず、cooldown も立てず (10 分以内の次の固まりを撮れるように)、忙しかったことだけを残す
   if [ "$dt" -ge $(( TT_BUSY_WINDOW * 200 )) ]; then
     tt_trigger_log "server-busy-missed pid=$SERVER_PID cpu=$pct% blocked=$(( dt / 100 ))s epoch=$(( now / 100 ))"

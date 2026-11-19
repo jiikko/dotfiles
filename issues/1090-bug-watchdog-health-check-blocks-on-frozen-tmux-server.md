@@ -35,3 +35,8 @@ health スクリプトは tmux に 5 回問い合わせる（`tt_on_default_serv
 ## 進捗
 
 - 2026-11-19: 起票
+- 2026-11-19: watchdog の `check_health` で health 全体を `runtimeout` の 5 秒（`TT_HEALTH_TIMEOUT`）で打ち切るようにした。時間切れ（rc=124）は `snapshot-health timeout` 行を残して状態を変えない。`runtimeout` を解決できなければ `snapshot-health-unbounded` 行を残して上限なしで待つ
+  - 実装中に、新しい変数に初期値の行が無いと `watchdog_uint_env` の `${!1}` が `set -u` で落ち、watchdog が起動直後に消えることを踏んだ。初期値の行を足し、`${!1:-}` にして未設定でも落ちないようにした
+  - [x] テスト (13): 60 秒返らない health を 1 秒で打ち切り、その後も死を看取る。時間切れを ng に数えない
+  - 変異で red を確認: 上限を外す / 時間切れの扱いを外す
+  - [ ] 本番の watchdog を張り直す

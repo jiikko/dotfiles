@@ -309,7 +309,9 @@ boot と reload を区別できない）は upstream 側に残る
 | `kill-cmd cmd=... pid=... save=... issuer=...` | `tmux_log_kill_command.sh`（kill-* の alias shim） | 誰が kill したか（発行元プロセスの ppid chain）と直前セーフティ保存の結果。`save=ok` のみ「実際に保存された」を意味し、`rejected-rc<N>`（ガードで拒否）/ `timeout` / `skipped-hold-only` / `no-save-script` は保存されていない |
 | `server-death pid=... verdict=... pslog=...` | `tmux_server_watchdog.sh` | サーバ死亡の確定記録。verdict は kill-server-command / kill-session-exit-empty / exit-empty / external-signal-or-crash |
 | `server-busy pid=... cpu=...% sample=... ps=...` | `tmux_server_watchdog.sh` | サーバが CPU を使い切っている窓が続いた（client のコマンドが返らない固まりの疑い）。`sample=` がその最中のスタック、`ps=` が並んでいたプロセス。誤検知もありうる（長い処理で本当に忙しいだけ）。撮った後 600 秒は撮らず、直近 10 組だけ残すので、忙しい時間が長く続くと前の組の `sample=` / `ps=` は消えている。`sample=` のファイルが無いときは sample が失敗している（成否を待たずに行を書く）。窓はループの刻みに合わせて約 6 秒で、検出まで 12〜18 秒かかる |
-| `server-busy-missed pid=... cpu=...% blocked=...s` | `tmux_server_watchdog.sh` | watchdog のループが窓の 2 倍以上塞がれていた間（固まったサーバへの health の問い合わせなど）、サーバが忙しかった。問い合わせが返るのは多くの場合固まりが解けた後なので撮らず、cooldown も立てない（まだ忙しければ次の窓で撮る）。固まりがあったことの記録 |
+| `server-busy-missed pid=... cpu=...% blocked=...s` | `tmux_server_watchdog.sh` | watchdog のループが窓の 2 倍以上塞がれていた間（watchdog 自身が止められていた・Mac 全体が詰まっていたなど。health は 5 秒で打ち切るので普通は届かない）、サーバが忙しかった。塞いでいたものが解けた後なので撮らず、cooldown も立てない（まだ忙しければ次の窓で撮る）。固まりがあったことの記録 |
+| `snapshot-health timeout secs=N` | `tmux_server_watchdog.sh` | watchdog が回すスナップショットの health の確認が N 秒で終わらず打ち切った（health は tmux に問い合わせるので、サーバが固まっていると返らない）。異常 (ng) にも正常 (ok) にも数えない |
+| `snapshot-health-unbounded reason=no-runtimeout` | `tmux_server_watchdog.sh` | `bin/runtimeout` を用意できず、health の確認を上限なしで待っている（サーバが固まると watchdog ごと止まる） |
 | `watchdog-bad-env var=... fallback=...` | `tmux_server_watchdog.sh` | 数の環境変数（`TT_BUSY_*` など）が数字だけでないか範囲の外だったので、`fallback` の値で動いている（値そのものは書かない） |
 | `restore-start` / `restore-end` / `restore-aborted` | pre/post-restore-all hook・`tmux_restore_runner.sh` | 復元の開始 / 完了 / 途中死（reason 付き）。自動・手動の両経路が書く |
 | `restore-manual-begin` / `restore-skipped reason=...` | `tmux_restore_runner.sh` | 手動復元の起動と、単一実行ガードによる skip |

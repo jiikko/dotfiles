@@ -22,6 +22,11 @@ trap cleanup EXIT
 
 
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
+# watchdog は health の上限に runtimeout を使う。PATH を絞る前に解決して渡す (bin/lib/go_tool.sh の冒頭。
+# 絞った PATH では go が無くてビルドできず、watchdog は上限なしで待つ形に落ちる)
+# shellcheck source=bin/lib/runtimeout.sh
+. "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || { printf '✗ runtimeout を用意できない\n'; exit 1; }
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/pslogs" "$TMP_DIR/wd"
 . "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
 
@@ -395,4 +400,26 @@ wait_for_death_line "$BUSY" "数でない値でも看取る"
 wait "$WD" 2>/dev/null || true
 printf '✓ 数でない設定値は決めた値に戻し、看取りを続ける\n'
 
+# --- (13) health の確認には時間の上限がある (固まったサーバに並んでも、看取りと撮影を止めない) ----
+# health は tmux に何度も問い合わせるので、固まったサーバでは返らない。上限が無いと、その間は死を看取れない。
+: > "$LOG"
+cat > "$TMP_DIR/bin/hung_health.sh" <<'EOS2'
+#!/bin/sh
+sleep 60  # sleep-ok: stub: 固まったサーバへの問い合わせが返らない
+EOS2
+chmod +x "$TMP_DIR/bin/hung_health.sh"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
+TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
+  TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
+  TT_HEALTH_CHECK_INTERVAL=1 TT_HEALTH_TIMEOUT=1 TT_HEALTH_SCRIPT="$TMP_DIR/bin/hung_health.sh" \
+  PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1234567890" & WD=$!
+wait_log "health の時間切れが残らない (上限なしで待っている)" log_matches "${TT_TAB}snapshot-health timeout secs=1 pid=$FAKE epoch=[0-9]+$"
+kill "$FAKE" 2>/dev/null
+wait_for_death_line "$FAKE" "health の時間切れの後も看取る"
+wait "$WD" 2>/dev/null || true
+! grep -q "snapshot-health ng" "$LOG" || { printf '✗ 時間切れを異常 (ng) に数えた:\n'; cat "$LOG"; exit 1; }
+! grep -q "snapshot-health-unbounded" "$LOG" || { printf '✗ runtimeout を解決できず上限なしで待った:\n'; cat "$LOG"; exit 1; }
+printf '✓ health の確認は上限で打ち切り、時間切れは異常に数えずに残す\n'
+
 printf '\nAll server-watchdog tests passed successfully!\n'
+
