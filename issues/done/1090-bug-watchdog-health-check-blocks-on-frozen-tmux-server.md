@@ -51,3 +51,7 @@ health スクリプトは tmux に 5 回問い合わせる（`tt_on_default_serv
   - テスト: toast を起こしたことを印で確かめる（toast は watchdog から TERM の無視を引き継ぐので、テストは KILL で止める）/ (13b) は上限なしで health が実際に回ることを、無い場合と動かない場合の両方で見る。変異で red を確認: 動くかの確かめを外す / ng-timeout を ng に戻す / toast を起こさない
   - 受け入れたもの: go が無い環境では (13) を飛ばして緑になる（🚨 の行を出す。CI には go がある）/ watchdog が KILL で死ぬと、その時の health が上限まで孤児で残る（変異の run で 1 回見た。上限の秒数で終わる）
   - [x] 本番の watchdog を張り直す（2026-11-19。前の watchdog の pid を名指しで USR1 で止め、`tmux run-shell -b` で張り直した。`src/runtimeout/runtimeout 0 true` は rc=0 で、起動時に unbounded 行も watchdog-bad-env 行も出ていない）
+- 2026-11-19: CI。fix の commit（「fix(tmux): 動かない runtimeout を起動時に見分け…」）の Tests / Lint / Bench は、後の push の concurrency で取り消された（cancelled）。
+  その commit を祖先に持つ e0ffd980d の Tests（run 44511070725）・Lint（44511070737）・Bench は success
+  - 未確認のまま残したもの（起票していない）: `scripts/tmux_snapshot_health.sh` は tmux に繋がらないと `@resurrect-dir` の代わりに `$HOME/.tmux/resurrect` を見るので、
+    `@resurrect-dir` を設定している環境では「last が無い」の偽の異常を出しうる（2 周目のレビューの指摘。手元では確かめていない）
