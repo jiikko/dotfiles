@@ -31,11 +31,19 @@
 
 - ttys102 / ttys103 は Terminal のタブではない（login の親が無く、TERM が `tmux-256color`）。親はどちらも tmux サーバ (pid 2429) で、
   コマンドは `tmux_scratch_popup.sh` の popup の中身そのもの（`zsh -c unset TMUX TMUX_TMPDIR; tmux attach -t scratch …`）
-- `client_discarded` はどれも 0。サーバ (pid 2429) の CPU は 3〜7%。watchdog (1087) の `server-busy` の記録も無し → **1087 (サーバが固まる) とは別の形**
+- Terminal の window id と tty の対応は、18:15 に打った osascript (`tell application "Terminal" to … tty of tabs of windows`) の出力による（生データの dir に保存した方の osascript は `-1700` で失敗していて、残っていない）
+- `client_discarded` はどれも 0。サーバ (pid 2429) の CPU は 7.0 / 2.9 / 2.6%（18:17、`ps -o %cpu=,time=,rss= -p 2429` を 2 秒おき）。
+  watchdog (1087) の `server-busy` の記録も無し（`~/.cache/tt-restore-trigger.log` の 11/19 の最終行は 17:29 の periodic-save）
+- **1087 との関係**: 1087 も「scratch の popup が 2 つのクライアントで開いていた」ときで、前提は同じ。違うのは、今回はサーバが忙しくなかったこと。
+  1087 の「固まった」も、popup が開いたままでキーが外側のペインに届かなかった体感を含んでいた可能性がある（1087 の観測ではサーバが CPU 99.7% だったので、全部がそれではない）
+- 「秒まで一致」は、popup を開いたキーが外側のクライアントの最後のキーだった、というだけのこと。後続のキーが popup へ行ったことの根拠は、
+  外側の最終アクティビティが進まなかったことと、下の観測 2 のペインの文字の方。popup が開いている間のキーで外側の `client_activity` が更新されないことは、
+  tmux の実装では確かめていない（未確認）
 
 ### 2. 打ったキーが scratch のペインに残っていた
 
-`scratch:3.1`（`~/src/working/antena` の zsh。最初に見た 18:09 は nvim、18:18 には zsh に変わっていた）:
+`scratch:3.1`（`~/src/working/antena` の zsh。18:09 の `tmux list-panes -a` では `pane_current_command` が nvim、18:18 には zsh に変わっていた。
+18:09 の値は会話の中で読んだもので、生データの dir には無い）:
 
 ```
 ~/src/working/antena [master]❯❯❯ qqqaaaaaaaaqq my-products:12.1 q
@@ -43,7 +51,7 @@
 ~/src/working/antena [master]❯❯❯  っdっっq
 ```
 
-`scratch:2.1` に `gstqqqqqq`、`scratch:1.1`（dotfiles の Claude Code）の入力欄に `q`。`a` を数回は、調査中にこちらが
+`scratch:2.1` に `gstqqqqqq`、`scratch:1.1`（dotfiles の Claude Code）の入力欄に `q`（1.1 は 18:09 の `capture-pane` で見たもの。生データの dir には無い）。`a` を数回は、調査中にこちらが
 「固まったタブで打ってみて」と頼んだもの。**閉じようとした・切り替えようとしたキーが scratch の作業に入った**
 （nvim が終わったのがこのキーによるかは未確認。保存されていない変更が失われたかも未確認）。
 
@@ -51,14 +59,24 @@
 
 - 外側のクライアント (pid 93085 / 10031) の `sample` は `client_main → proc_loop → select` だけ（入力待ち）。端末は raw モード・`-ixon`
 - ペインに `pane_input_off` / コピーモード / 同期入力は無し
-- Terminal.app (pid 1723) のメインスレッドはイベント待ち。最初に見えた CPU 69.5% は一時的で、測り直すと 2〜4%
-- my-products の各 Claude のペインには、ステータスラインの繰り返しは無かった (`capture-pane` で 2〜3 行)。つまり
-  「同じステータスラインが画面を埋め尽くす」はペインの中身ではなく、**外側のクライアントへの描画（popup の部分を含む）**で起きている
+- Terminal.app (pid 1723) の `sample` (18:17、3 秒) はメインスレッドの大半が `mach_msg` の待ち（イベント待ち）。CPU は 18:11 に 69.5% → 1 秒おきに 39.9 / 2.5 / 3.6%、
+  18:17 に 9.2%（`ps.txt`）
+- my-products の各 Claude のペインには、ステータスラインの繰り返しは無かった (`capture-pane` で 2〜3 行)。
+  「同じステータスラインが画面を埋め尽くす」はペインの中身ではない。外側のクライアントへの描画（popup の部分を含む）か、Terminal 側の描画のどちらかで、
+  外側の画面を実測していないので区別できていない（18:12 に `tmux refresh-client -t /dev/ttys001` を送ったが、その後の見え方は聞いていない）
 
 ### 4. ビープの設定
 
 `bell-action any`・`visual-bell off`・`monitor-bell on`。scratch の zsh の行エディタが受け付けないキーで鳴らした BEL が
 外側まで届いた、と見ているが**未確認**（BEL はペインの grid に残らないので、`capture-pane` では確かめられない）。
+
+### 5. 復旧と、その間の新しいタブ
+
+- ユーザーが新しい Terminal のタブで `tmux attach -t my-products` し、操作が戻った（新しいクライアント ttys101、18:18:42）。
+  18:20 には古いクライアント ttys001 も、その上の scratch の popup の ttys102 も消えていた（古いウィンドウを閉じたと見ているが、閉じたかは聞いていない）
+- 復旧の前、ユーザー報告「新しいタブを開くと zsh が起動せず、何も表示されない」。18:17:19 に開いたタブ (ttys104) では、`login` と `-zsh` がその時刻に起動していた
+  （18:20 の `ps -t ttys104`）。zsh は起動していて、何も表示されなかった理由は分かっていない。少し後に開き直すと表示された
+- 18:20 の時点で、good-chrome-extensions のウィンドウ (ttys000) には scratch の popup (ttys103) がまだ開いていた
 
 ## 原因の仮説（どれも未検証）
 
@@ -74,8 +92,9 @@
 
 - `tmux list-clients -F '#{client_tty} #{client_session} #{t:client_created} #{t:client_activity}'`。外側のクライアントの最終アクティビティと
   同じ時刻に作られた scratch のクライアントがあれば、この issue の形
-- 🚨 **`tmux display -p -c /dev/ttysNNN '#{client_*}'` は指定したクライアントを見ない**（2026-11-19 の調査で、どの tty を指定しても
-  自分のクライアントの値が返った）。クライアントごとの値は `list-clients -F` で取る
+- 🚨 **`tmux display -p -c /dev/ttysNNN '#{client_*}'` では、ほかのクライアントの値は取れない**。`display-message` の `-c` はメッセージを表示する
+  クライアントの指定で、format の値は target-pane（打ったクライアント）から取る（man tmux の display-message）。2026-11-19 の調査でこれを取り違え、
+  どの tty を指定しても自分のクライアントの値を読んでいた。クライアントごとの値は `list-clients -F` で取る
 - そのときユーザーに見えているもの（ピンクと青の枠・「⚡ SCRATCH」のタイトルが見えるか）を聞く。見えていれば仮説 2 は外れ、
   「popup に気づかない」の問題になる
 - 復旧: 固まったウィンドウで **`C-t t`**（popup の中で押すと popup を閉じる）。それで閉じなければ、新しい Terminal のウィンドウで
@@ -98,3 +117,8 @@
   - [ ] ユーザーに見えていたもの（popup の枠が見えたか）を確かめる
   - [ ] 次に起きたら「次に採るもの」で同じ形か確かめる
   - [ ] 対応方針を決める
+- 2026-11-19: 反証レビュー（sonnet 1 体、読み取りのみ）。採ったもの: 1087 と「別の形」を「前提は同じで、サーバが忙しくなかった点が違う」に弱めた /
+  生データの dir に無い観測（window id と tty の対応・18:09 の nvim と scratch:1.1 の `q`・Terminal の CPU の測り直し）に出典を書いた /
+  「秒まで一致」が示す範囲と、`client_activity` の更新の規則が未確認なことを書いた / ステータスラインの繰り返しを、外側の描画か Terminal 側か区別できていないと書いた /
+  `display -c` を「仕様の取り違え」に直した。
+  却下したもの: 「server-cpu.txt の 42960 はサーバと別の pid」— 42960 は `ps -o %cpu=,time=,rss= -p 2429` の RSS (KB) の列で、pid ではない
