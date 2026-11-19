@@ -324,7 +324,7 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 | パスと状態フォルダの場所 | `_getcwd` `_abspath` `_disk_path` (macOS の `F_GETPATH`・NFC・大文字小文字を区別しない FS なら casefold) `_case_insensitive` `_place` `_same_path` `_same_file` `_home_path` `state_dir_for` `_state_dir` `_state_dir_given` | `paths.go` `paths_darwin.go` |
 | 似かた | `_compact` `_similarity` `_source_like` (しきい値 0.53) | `similar.go` |
 | 記録の `tools` の欄 | `_tool_versions` `_list_sha256` `_skill_info`・道具と一覧の SHA-256 の定数 | `tools.go` |
-| 書き込み | `_mkstemp` `_replace` `_write_atomic` `_touch` `_raise_if_hidden` `_ensure_dir` `_still_placed` `_place_new_file` `_write_state_files` `_add_state_files` `_ensure_state` `_write_problem` (Windows の枝は写さない。`src/atomicfile` は一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わるので使わない) | `write.go` |
+| 書き込み | `_mkstemp` `_replace` `_write_atomic` `_raise_if_hidden` `_still_placed` `_place_new_file` `_write_state_files` `_add_state_files` `_ensure_state` `_write_problem` (Windows の枝は写さない。`src/atomicfile` は一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わるので使わない) | `write.go` |
 | 記録の読み | `_read_record_status` `_read_record` (入れ子が深すぎる JSON は、本家が RecursionError で落ちる所を error で返す) | `record_read.go` |
 
 | 記録 | 中身 | 比べるテスト |
