@@ -66,7 +66,10 @@ Swift のアプリでは worktree からのフルビルドは遅すぎるので�
   変異: obaket の helper を渡す行を消す → RED、vgp の継承した値を消す行を消す → RED
 - [x] 自己テストの配線 (vgp `lint-mutate`、obaket `check-mutate-harness`) は残し、`bin/mutate-test` 経由で本体のテストが走ることをログで確認。obaket の `run-logged-command-test` は dotfiles の fixture を読む
 - [x] app の `bin/testdata/mutate/` を消した。文書 (vgp `VLCMultiVideoPlayerTests/CLAUDE.md`、obaket `bin/CLAUDE.md`・`macOS/docs/debug-api.md`・`macOS/Makefile` のコメント) と global の rule を直した
-- [ ] vgp・obaket の本物のテストで、wrapper から変異を 1 本当てて RED / GREEN を見る (push の後に回す)
+- [x] 本物のテストで wrapper から変異を当てた (2026-11-19):
+  - vgp: `playbackRateRange` の上限を 5.0 → 4.0 (`make test-PlaybackRatePresetsTests`) → baseline 2 件 passed、変異で `testMenuRates_spanPlaybackRateRange` だけが落ちて RED。対象は復元
+  - obaket: `BrowserNavigationCursorMemory.remember` の保存を消す (`make -C macOS test-only ONLY=ObaketTests/BrowserNavigationCursorMemoryTests`) → baseline 15 件 passed、変異で 9 件が落ちて RED。対象は復元。孤児の helper の検査は黙って通った (孤児なし)
+  - GREEN は両方の baseline (変異の前の run が passed で件数を読めた) で確かめた。変異を当てた GREEN は当てていない
 
 ### 挙動の差 (受け入れたもの)
 
