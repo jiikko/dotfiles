@@ -74,12 +74,32 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 
 ### 足す前に確かめること
 
-- [ ] SKILL.md の「新しい監査タイプを足す前に、`issues/done/` の bug issue を数えて軸の分布を見る」に従い、done の bug から P1〜P2 の形のものを数える
+- [x] SKILL.md の「新しい監査タイプを足す前に、`issues/done/` の bug issue を数えて軸の分布を見る」に従い、done の bug から P1〜P2 の形のものを数える
       (推測で軸を立てない。1070 の 1 件だけでは足りない)。my-products 側 (vlc-multi-video-player・obaket) の improve-debug-api の点検の issue も数える。
       **このマシンには my-products の checkout が見当たらなかった** (`find ~ -maxdepth 7 -name debug-api.md` で 0 件) ので、数える場所を先に決める
 - [ ] 数えて、既存タイプの指針への追記 (broken-code に P2・encapsulation に P1 の境界) で足りるなら、新しいタイプは作らずそちらにする。
       新しいタイプにするのは、偽陽性の除外の集合が既存タイプと違うと言えるとき (leaky-abstraction と encapsulation を分けた理由と同じ判断)
 - [ ] 足したら、`improve-debug-api` の SKILL.md の冒頭か手順 0 に「audit の entry-parity の P3 から渡される」と 1 行足す (入口の文書。`new-tool-requires-entrypoint-docs.md`)
+
+### 数えた結果 (2026-11-19)
+
+- 母集合: dotfiles の done の bug issue 240 件 (`ls issues/done/*-bug-*.md issues/epic/*/done/*-bug-*.md | wc -l`)。
+  語 (`入口|画面と CLI|CLI と画面|画面では|画面だけ|キーだけ|debug API|View の中|画面の側|片方の入口|別の入口`) の grep で 39 件に絞り、本文を読んで分けた。
+  語で拾えない書き方の issue は数えていない (下限)
+- **P2 (同じ操作の入口の片方だけが前段・後段を持つ): 4 件**
+  - 1070 (research。slack-bbs の CLI `sub add` 等が、購読の画面 (`subs/picker.go`) が断るアーカイブ済みのチャンネルを入れた)。broken-code で見つかった
+  - 860 (lan-manager。キー `s` が組む HostKeyAlias が、初期設定の `setup.Dest.Validate` の検査を通らない)。security で見つかった
+  - 763 (issue を done へ送る入口が glogx の viewer と `scripts/issue_done.sh` の 2 つで、バナーを外すのは viewer だけ)。監査ではなく作業中に見つけた (本文に監査の出典が無い)
+  - 511 (pro-con。画面の issue の一覧から足したカードだけ、依頼の原文と issue の紐づけが無い)。dogfooding で踏んだ
+- **P1 (原因が UI 層の判断): 上の 4 件のうち 2 件** (1070: 断りが画面の picker にあり、CLI の直しは判定を写した / 860: 画面の model の `keyList` がその場で値を組む)。
+  763 の原因は同じ操作の 2 実装 (Go と shell)、511 は backend の入口ごとの組み立てで、UI 層の判断ではない
+- 近いが数えないもの: 664・122 (キーが一部の画面・モードで無言。入口が欠ける形で、前段・後段の差ではない。ui-components / ux で拾われた) /
+  245 (同じ入口の中で確認の表示と実行が食い違う) / 244 (案内と挙動) / 964 (同じ状態を 2 か所が別の判定で読む) / 824 (読めないときの扱い) /
+  193 (データの出所 (snapshot と live) ごとの検査漏れ。人の入口ではない)。残り 28 件は「入口」を別の意味 (入口の文書・入口で無害化) で使っているだけ
+- **debug API の例: 0 件**。dotfiles に debug API を持つ repo は無い (`improve-debug-api の値` の節は dotfiles に無い)。
+  my-products (vlc-multi-video-player・obaket) はこのマシンに checkout が無く、数えていない
+- 読み: P2 の 4 件は見つけ方が broken-code・security・作業中・dogfooding に散り、どの既存タイプも「入口を全部挙げて前段・後段を並べる」走査を持っていない。
+  偽陽性の除外 (表示のための判断・debug 専用の安全装置) は broken-code にも encapsulation にも無い集合
 
 ## 受け入れ条件
 
