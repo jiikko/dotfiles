@@ -24,7 +24,7 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 - [x] **test-cleanup が「消す前に、そのテストだけが捕まえる壊し方を実装に当てて確かめる」を指示していない**。`~/.claude/rules/mutation-verify-new-tests.md` は「既存の assert を『何も検査していない』として消すときも、消す前に変異を 1 本当てる」
       「テスト・describe を『重複』『委譲だけ』として消す・統合するときも同じ」と定めている (後者は 2026-11-17 の commit「docs(rules): テストを消す前の変異・…」で足した)。
       今の test-cleanup の forge のプロンプトと直接実行の指針は `refuse-low-value-coverage.md` の issue 化だけを指す。`bin/mutate-verify` (実装をわざと壊して、残るテストが落ちるかを見る道具) で確かめる段を足す
-- [ ] **タイプの一覧と発見の型が複数の場所に写されていて、揃っていることを守る検査が一部にしか無い**。写しの場所:
+- [x] **タイプの一覧と発見の型が複数の場所に写されていて、揃っていることを守る検査が一部にしか無い**。写しの場所:
       - audit の SKILL.md の中の 5 か所: 表・Step 2 のカテゴリ・forge のプロンプト・直接実行の指針・直接実行の「設計系 (design / … / ui-components) をまとめて回すときは」の段落 (型の例 L1〜L7 / E1〜E4 も持つ)
       - all-audit-on-diy の SKILL.md の冒頭: 「発見の型 (L1〜L7 / E1〜E4 / F1〜F5 / K1〜K4 / C1〜C4)」。型を足すとここが古いまま残る
       - 2026-11-18 時点では 22 タイプとも最初の 4 か所に揃っている (表の ID ごとに、プロンプトと指針の行を grep で数えた。カテゴリの行は目で数えた)。
@@ -109,3 +109,9 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 - 2026-11-19: 1 節の 2 項目目。error-handling の forge のプロンプトと直接実行の指針に「続けてよい失敗でも warn が理由つきで出ていなければ発見」を足し、rule は参照だけにした。
   false-green の除外 (プロンプトと指針の 2 か所) と concurrency の除外 (指針だけ) の「理由コメントのある best-effort」には「warn の有無は error-handling が見る」を添え、除外がその型の範囲の話だと分かるようにした
 - 2026-11-19: 1 節の 3 項目目。test-cleanup の forge のプロンプトと直接実行の指針の両方に、消す・統合する前に mutate-verify で残るテストが落ちるかを確かめる段を足した (落ちないなら消さない)
+- 2026-11-19: 1 節の 4 項目目。
+  - all-audit-on-diy の冒頭の型の写し (L1〜L7 / … / C1〜C4) を「audit skill の直接実行の指針にある」の参照に直した。`_claude/` と `docs/` に他の写しは無い (`grep -rn 'L1〜L7\|K1〜K4\|E1〜E4'`)
+  - `tests/claude/test_audit_skill_type_copies.sh` を足した (`make test` の test-discovered が `find tests -name 'test_*.sh'` で拾う)。表の ID を正本に、カテゴリの行・forge のプロンプト・直接実行の指針・設計系の段落の括弧の 4 つを比べる。
+    forge のプロンプトは `[モード名]` の行がどこにも無いときだけ飛ばす (912 で forge の節が消えても壊れない。見出しを書き換えただけなら落とす)。
+    skill-eval の grader 2 本とは見るものが違う (grader は Claude が一覧を出すかの振る舞い、こちらは文書の写しの一致) ので両方残す
+  - 変異 (コピーを `AUDIT_SKILL_MD` で渡す) で red を確かめた: カテゴリの行から concurrency を抜く / forge の ci の行を崩す / 指針の ci の行を崩す / 設計系の括弧から encapsulation を抜く / 表に行を足す / design のカテゴリを品質に変える / forge の見出しだけを変える → どれも rc=1。forge の節ごと消す → note を出して rc=0 (意図どおり)

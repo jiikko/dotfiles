@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # all-audit-on-diy
 
-audit skill を「全タイプ × 直接実行 × その場で対応」に固定したもの。監査タイプの一覧・各タイプの調べ方・発見の型 (L1〜L7 / E1〜E4 / F1〜F5 / K1〜K4 / C1〜C4)・偽陽性の除外・audit-log の書式は **`~/.claude/skills/audit/SKILL.md` が正本**。始める前に全文を Read し、ここへ写さない (写すと audit 側にタイプが増えたとき置き去りになる)。
+audit skill を「全タイプ × 直接実行 × その場で対応」に固定したもの。監査タイプの一覧・各タイプの調べ方・発見の型 (タイプごとの分類。audit skill の直接実行の指針にある)・偽陽性の除外・audit-log の書式は **`~/.claude/skills/audit/SKILL.md` が正本**。始める前に全文を Read し、ここへ写さない (写すと audit 側にタイプが増えたとき置き去りになる)。
 
 audit skill との違いは 3 つだけ:
 
