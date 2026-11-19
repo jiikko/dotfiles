@@ -92,7 +92,8 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 
 ## 進捗
 
-- (未着手)
+- 2026-11-20 (並列の作業。ユーザー指示: 40 分で並列を最大に): 対応方針の 2 (`bin/ja-textlint` が textlint の後に `ja-writing lint` を掛け、rc を合成する) を worktree `/Users/koji/wt-1072-tl-1120` で実装した。**まだ master に入れていない** (detached。commit 4 本: 22c6efb2a 実装・62740624e この issue の rc の合成の表・bc0a0990a 敵対的レビューの指摘の修正・bd1dc826e この issue の対応表)。rc の合成の表・決めたこと・レビューの指摘ごとの扱いは、その worktree のこの issue の進捗にある。再開するときは worktree で `git rebase origin/master` し (この行と衝突するので、worktree 側の進捗を残してこの行を消す)、main agent が diff を読んでから統合する
+  - opus の敵対的レビュー (1 回): 偽の緑は作れなかった。P2 2 件 (textlint が扱わない拡張子・ignore のファイルにも掛かり rc 0 が 1 になる / 値を取るオプションを飛ばす分岐をテストが守っていない) と P3 3 件。拡張子・テスト・P3 は bc0a0990a で直した (変異 3 本 red・`make test-lint` と 2 本のテストが rc 0)。**残り**: `.textlintignore` と `--ignore-path` に載ったファイルにも ja-writing lint が掛かる・直した差分へのもう 1 周の敵対的レビュー・方針の 3〜6
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
   本家の lint も拾わない語なので、Go の答えは本家と同じ。lint で拾う範囲を本家より広げるかは、組み込みの後に決める (照合の表は done/1075 の「1080 の 40 項目の照合」)。
