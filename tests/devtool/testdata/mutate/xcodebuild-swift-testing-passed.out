@@ -1,0 +1,54 @@
+[debug]   [profile-window] session=4E4249FC-41C8-4CB5-8438-F35CB4249A23 scene task sceneInstanceID=E730A89A-A397-4DD8-A83D-794E3C51592A windowID=nil profileID=CA2FA4AF-C965-4395-AF5C-EFFD5310DCA1 runtime=resolved appKitCount=1
+[debug]   [profile-window] session=4E4249FC-41C8-4CB5-8438-F35CB4249A23 scene onAppear sceneInstanceID=E730A89A-A397-4DD8-A83D-794E3C51592A windowID=nil profileID=CA2FA4AF-C965-4395-AF5C-EFFD5310DCA1 appKitCount=1
+Test Suite 'Selected tests' started at 2026-11-05 09:25:02.530.
+Test Suite 'ObaketTests.xctest' started at 2026-11-05 09:25:02.530.
+Test Suite 'ObaketTests.xctest' passed at 2026-11-05 09:25:02.530.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-11-05 09:25:02.530.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+◇ Test run started.
+↳ Testing Library Version: 2403
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Browser navigation cursor memory" started.
+◇ Test "remember / cursor: path ごとに単一 cursor 位置を保存・取得できる" started.
+✔ Test "remember / cursor: path ごとに単一 cursor 位置を保存・取得できる" passed after 0.001 seconds.
+◇ Test "remember: 同 path への再 remember は最新の cursor 位置で上書き" started.
+✔ Test "remember: 同 path への再 remember は最新の cursor 位置で上書き" passed after 0.001 seconds.
+◇ Test "remember(nil): 選択なしで離脱した場合は記録を削除する (古い項目が蘇らない)" started.
+✔ Test "remember(nil): 選択なしで離脱した場合は記録を削除する (古い項目が蘇らない)" passed after 0.001 seconds.
+◇ Test "remember(nil): 記録の無い path への nil は no-op (順序管理を壊さない)" started.
+✔ Test "remember(nil): 記録の無い path への nil は no-op (順序管理を壊さない)" passed after 0.001 seconds.
+◇ Test "seedAncestorCursors: 祖先 path に「1 つ下の子 directory」を seed する" started.
+✔ Test "seedAncestorCursors: 祖先 path に「1 つ下の子 directory」を seed する" passed after 0.001 seconds.
+◇ Test "seedAncestorCursors keeps a combining-mark component below its parent" started.
+✔ Test "seedAncestorCursors keeps a combining-mark component below its parent" passed after 0.001 seconds.
+◇ Test "NFC and NFD folders keep separate cursor records" started.
+✔ Test "NFC and NFD folders keep separate cursor records" passed after 0.001 seconds.
+◇ Test "forgetting one spelling's record keeps the NFC / NFD sibling folder's record" started.
+✔ Test "forgetting one spelling's record keeps the NFC / NFD sibling folder's record" passed after 0.001 seconds.
+◇ Test "seedAncestorCursors: 単一 component は root だけ seed" started.
+✔ Test "seedAncestorCursors: 単一 component は root だけ seed" passed after 0.001 seconds.
+◇ Test "seedAncestorCursors: root path は何も seed しない" started.
+✔ Test "seedAncestorCursors: root path は何も seed しない" passed after 0.001 seconds.
+◇ Test "reset: 全記録を clear" started.
+✔ Test "reset: 全記録を clear" passed after 0.001 seconds.
+◇ Test "cap: maxEntries を超えた記録は古い path から捨てる" started.
+✔ Test "cap: maxEntries を超えた記録は古い path から捨てる" passed after 0.004 seconds.
+◇ Test "cap: 再 remember は write-LRU で末尾へ移動し、cap で生き残る" started.
+✔ Test "cap: 再 remember は write-LRU で末尾へ移動し、cap で生き残る" passed after 0.001 seconds.
+◇ Test "identical paths on different connections retain separate cursor locations" started.
+✔ Test "identical paths on different connections retain separate cursor locations" passed after 0.001 seconds.
+◇ Test "purge removes matching keys and values without changing surviving write-LRU order" started.
+✔ Test "purge removes matching keys and values without changing surviving write-LRU order" passed after 0.002 seconds.
+✔ Suite "Browser navigation cursor memory" passed after 0.011 seconds.
+✔ Test run with 15 tests in 1 suite passed after 0.011 seconds.
+2026-11-05 09:25:02.854 xcodebuild[82248:453572991] [MT] IDETestOperationsObserverDebug: 6.371 elapsed -- Testing started completed.
+2026-11-05 09:25:02.854 xcodebuild[82248:453572991] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-11-05 09:25:02.854 xcodebuild[82248:453572991] [MT] IDETestOperationsObserverDebug: 6.371 sec, +6.371 sec -- end
+
+Test session results, code coverage, and logs:
+	<WORKTREE>/macOS/tmp/test-only-20261105-091954-72296.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started

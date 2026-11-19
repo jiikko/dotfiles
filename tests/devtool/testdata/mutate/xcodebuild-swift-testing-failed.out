@@ -1,0 +1,306 @@
+[debug]   [profile-window] session=D921DEEB-CFB9-4E60-B198-C57C9F0E4456 scene task sceneInstanceID=86905910-4184-4C12-A9F9-9A4348675C6F windowID=nil profileID=CA2FA4AF-C965-4395-AF5C-EFFD5310DCA1 runtime=resolved appKitCount=1
+[debug]   [profile-window] session=D921DEEB-CFB9-4E60-B198-C57C9F0E4456 scene onAppear sceneInstanceID=86905910-4184-4C12-A9F9-9A4348675C6F windowID=nil profileID=CA2FA4AF-C965-4395-AF5C-EFFD5310DCA1 appKitCount=1
+Test Suite 'Selected tests' started at 2026-11-05 09:51:11.380.
+Test Suite 'ObaketTests.xctest' started at 2026-11-05 09:51:11.380.
+Test Suite 'ObaketTests.xctest' passed at 2026-11-05 09:51:11.380.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-11-05 09:51:11.380.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 2403
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Browser navigation cursor memory" started.
+◇ Test "remember / cursor: path ごとに単一 cursor 位置を保存・取得できる" started.
+✘ Test "remember / cursor: path ごとに単一 cursor 位置を保存・取得できる" recorded an issue at BrowserNavigationCursorMemoryTests.swift:31:9: Expectation failed: memory.cursor(for: Self.location("foo")) == Self.location("foo/bar")
+↳ memory.cursor(for: Self.location("foo")) == Self.location("foo/bar") → false
+↳   memory.cursor(for: Self.location("foo")) → nil
+↳   Self.location("foo/bar") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "foo/bar"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "foo/bar")
+↳       rawValue → "foo/bar"
+✘ Test "remember / cursor: path ごとに単一 cursor 位置を保存・取得できる" recorded an issue at BrowserNavigationCursorMemoryTests.swift:32:9: Expectation failed: memory.cursor(for: Self.location("a")) == Self.location("a/b")
+↳ memory.cursor(for: Self.location("a")) == Self.location("a/b") → false
+↳   memory.cursor(for: Self.location("a")) → nil
+↳   Self.location("a/b") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "a/b"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "a/b")
+↳       rawValue → "a/b"
+✘ Test "remember / cursor: path ごとに単一 cursor 位置を保存・取得できる" failed after 0.003 seconds with 2 issues.
+◇ Test "remember: 同 path への再 remember は最新の cursor 位置で上書き" started.
+✘ Test "remember: 同 path への再 remember は最新の cursor 位置で上書き" recorded an issue at BrowserNavigationCursorMemoryTests.swift:41:9: Expectation failed: memory.cursor(for: Self.location("foo")) == Self.location("foo/qux")
+↳ memory.cursor(for: Self.location("foo")) == Self.location("foo/qux") → false
+↳   memory.cursor(for: Self.location("foo")) → nil
+↳   Self.location("foo/qux") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "foo/qux"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "foo/qux")
+↳       rawValue → "foo/qux"
+✘ Test "remember: 同 path への再 remember は最新の cursor 位置で上書き" failed after 0.002 seconds with 1 issue.
+◇ Test "remember(nil): 選択なしで離脱した場合は記録を削除する (古い項目が蘇らない)" started.
+✔ Test "remember(nil): 選択なしで離脱した場合は記録を削除する (古い項目が蘇らない)" passed after 0.001 seconds.
+◇ Test "remember(nil): 記録の無い path への nil は no-op (順序管理を壊さない)" started.
+✘ Test "remember(nil): 記録の無い path への nil は no-op (順序管理を壊さない)" recorded an issue at BrowserNavigationCursorMemoryTests.swift:60:9: Expectation failed: memory.cursor(for: Self.location("a")) == Self.location("a/b")
+↳ // 既存の別 path 記録には影響しない。
+↳ memory.cursor(for: Self.location("a")) == Self.location("a/b") → false
+↳   memory.cursor(for: Self.location("a")) → nil
+↳   Self.location("a/b") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "a/b"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "a/b")
+↳       rawValue → "a/b"
+✘ Test "remember(nil): 記録の無い path への nil は no-op (順序管理を壊さない)" failed after 0.001 seconds with 1 issue.
+◇ Test "seedAncestorCursors: 祖先 path に「1 つ下の子 directory」を seed する" started.
+✘ Test "seedAncestorCursors: 祖先 path に「1 つ下の子 directory」を seed する" recorded an issue at BrowserNavigationCursorMemoryTests.swift:67:9: Expectation failed: memory.cursor(for: Self.location("")) == Self.location("foo")
+↳ memory.cursor(for: Self.location("")) == Self.location("foo") → false
+↳   memory.cursor(for: Self.location("")) → nil
+↳   Self.location("foo") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "foo"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "foo")
+↳       rawValue → "foo"
+✘ Test "seedAncestorCursors: 祖先 path に「1 つ下の子 directory」を seed する" recorded an issue at BrowserNavigationCursorMemoryTests.swift:68:9: Expectation failed: memory.cursor(for: Self.location("foo")) == Self.location("foo/bar")
+↳ memory.cursor(for: Self.location("foo")) == Self.location("foo/bar") → false
+↳   memory.cursor(for: Self.location("foo")) → nil
+↳   Self.location("foo/bar") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "foo/bar"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "foo/bar")
+↳       rawValue → "foo/bar"
+✘ Test "seedAncestorCursors: 祖先 path に「1 つ下の子 directory」を seed する" recorded an issue at BrowserNavigationCursorMemoryTests.swift:69:9: Expectation failed: memory.cursor(for: Self.location("foo/bar")) == Self.location("foo/bar/baz")
+↳ memory.cursor(for: Self.location("foo/bar")) == Self.location("foo/bar/baz") → false
+↳   memory.cursor(for: Self.location("foo/bar")) → nil
+↳   Self.location("foo/bar/baz") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "foo/bar/baz"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "foo/bar/baz")
+↳       rawValue → "foo/bar/baz"
+✘ Test "seedAncestorCursors: 祖先 path に「1 つ下の子 directory」を seed する" failed after 0.001 seconds with 3 issues.
+◇ Test "seedAncestorCursors keeps a combining-mark component below its parent" started.
+✘ Test "seedAncestorCursors keeps a combining-mark component below its parent" recorded an issue at BrowserNavigationCursorMemoryTests.swift:80:9: Expectation failed: memory.cursor(for: Self.location("")) == Self.location("a")
+↳ memory.cursor(for: Self.location("")) == Self.location("a") → false
+↳   memory.cursor(for: Self.location("")) → nil
+↳   Self.location("a") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "a"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "a")
+↳       rawValue → "a"
+✘ Test "seedAncestorCursors keeps a combining-mark component below its parent" recorded an issue at BrowserNavigationCursorMemoryTests.swift:81:9: Expectation failed: memory.cursor(for: Self.location("a")) == Self.location("a/\u{0301}x")
+↳ memory.cursor(for: Self.location("a")) == Self.location("a/\u{0301}x") → false
+↳   memory.cursor(for: Self.location("a")) → nil
+↳   Self.location("a/\u{0301}x") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "a/́x"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "a/́x")
+↳       rawValue → "a/́x"
+✘ Test "seedAncestorCursors keeps a combining-mark component below its parent" failed after 0.001 seconds with 2 issues.
+◇ Test "NFC and NFD folders keep separate cursor records" started.
+✘ Test "NFC and NFD folders keep separate cursor records" recorded an issue at BrowserNavigationCursorMemoryTests.swift:96:9: Expectation failed: memory.cursor(for: nfcFolder).map(ObjectIdentity.location) == .location(nfcCursor)
+↳ memory.cursor(for: nfcFolder).map(ObjectIdentity.location) == .location(nfcCursor) → false
+↳   memory.cursor(for: nfcFolder).map(ObjectIdentity.location) → nil
+↳   .location(nfcCursor) → .location(ObaketCore.StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/same.txt")))
+↳     some → .location(ObaketCore.StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/same.txt")))
+↳       location → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/same.txt"))
+↳         connectionID → ConnectionID(rawValue: "conn")
+↳           rawValue → "conn"
+↳         namespace → .bucket("bucket")
+↳           bucket → "bucket"
+↳         path → ObjectPath(rawValue: "é/same.txt")
+↳           rawValue → "é/same.txt"
+✘ Test "NFC and NFD folders keep separate cursor records" recorded an issue at BrowserNavigationCursorMemoryTests.swift:97:9: Expectation failed: memory.cursor(for: nfdFolder).map(ObjectIdentity.location) == .location(nfdCursor)
+↳ memory.cursor(for: nfdFolder).map(ObjectIdentity.location) == .location(nfdCursor) → false
+↳   memory.cursor(for: nfdFolder).map(ObjectIdentity.location) → nil
+↳   .location(nfdCursor) → .location(ObaketCore.StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/other.txt")))
+↳     some → .location(ObaketCore.StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/other.txt")))
+↳       location → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/other.txt"))
+↳         connectionID → ConnectionID(rawValue: "conn")
+↳           rawValue → "conn"
+↳         namespace → .bucket("bucket")
+↳           bucket → "bucket"
+↳         path → ObjectPath(rawValue: "é/other.txt")
+↳           rawValue → "é/other.txt"
+✘ Test "NFC and NFD folders keep separate cursor records" failed after 0.001 seconds with 2 issues.
+◇ Test "forgetting one spelling's record keeps the NFC / NFD sibling folder's record" started.
+✘ Test "forgetting one spelling's record keeps the NFC / NFD sibling folder's record" recorded an issue at BrowserNavigationCursorMemoryTests.swift:109:9: Expectation failed: memory.cursor(for: nfdFolder).map(ObjectIdentity.location) == .location(Self.location("e\u{301}/b"))
+↳ memory.cursor(for: nfdFolder).map(ObjectIdentity.location) == .location(Self.location("e\u{301}/b")) → false
+↳   memory.cursor(for: nfdFolder).map(ObjectIdentity.location) → nil
+↳   .location(Self.location("e\u{301}/b")) → .location(ObaketCore.StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/b")))
+↳     some → .location(ObaketCore.StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/b")))
+↳       location → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "é/b"))
+↳         connectionID → ConnectionID(rawValue: "conn")
+↳           rawValue → "conn"
+↳         namespace → .bucket("bucket")
+↳           bucket → "bucket"
+↳         path → ObjectPath(rawValue: "é/b")
+↳           rawValue → "é/b"
+✘ Test "forgetting one spelling's record keeps the NFC / NFD sibling folder's record" failed after 0.001 seconds with 1 issue.
+◇ Test "seedAncestorCursors: 単一 component は root だけ seed" started.
+✘ Test "seedAncestorCursors: 単一 component は root だけ seed" recorded an issue at BrowserNavigationCursorMemoryTests.swift:116:9: Expectation failed: memory.cursor(for: Self.location("")) == Self.location("foo")
+↳ memory.cursor(for: Self.location("")) == Self.location("foo") → false
+↳   memory.cursor(for: Self.location("")) → nil
+↳   Self.location("foo") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "foo"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "foo")
+↳       rawValue → "foo"
+✘ Test "seedAncestorCursors: 単一 component は root だけ seed" failed after 0.001 seconds with 1 issue.
+◇ Test "seedAncestorCursors: root path は何も seed しない" started.
+✔ Test "seedAncestorCursors: root path は何も seed しない" passed after 0.001 seconds.
+◇ Test "reset: 全記録を clear" started.
+✔ Test "reset: 全記録を clear" passed after 0.001 seconds.
+◇ Test "cap: maxEntries を超えた記録は古い path から捨てる" started.
+✘ Test "cap: maxEntries を超えた記録は古い path から捨てる" recorded an issue at BrowserNavigationCursorMemoryTests.swift:145:9: Expectation failed: memory.cursor(for: Self.location("p5")) == Self.location("p5/child")
+↳ memory.cursor(for: Self.location("p5")) == Self.location("p5/child") → false
+↳   memory.cursor(for: Self.location("p5")) → nil
+↳   Self.location("p5/child") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "p5/child"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "p5/child")
+↳       rawValue → "p5/child"
+✘ Test "cap: maxEntries を超えた記録は古い path から捨てる" recorded an issue at BrowserNavigationCursorMemoryTests.swift:146:9: Expectation failed: memory.cursor(for: Self.location("p\(total - 1)")) == Self.location("p\(total - 1)/child")
+↳ memory.cursor(for: Self.location("p\(total - 1)")) == Self.location("p\(total - 1)/child") → false
+↳   memory.cursor(for: Self.location("p\(total - 1)")) → nil
+↳   Self.location("p\(total - 1)/child") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "p204/child"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "p204/child")
+↳       rawValue → "p204/child"
+✘ Test "cap: maxEntries を超えた記録は古い path から捨てる" failed after 0.001 seconds with 2 issues.
+◇ Test "cap: 再 remember は write-LRU で末尾へ移動し、cap で生き残る" started.
+✘ Test "cap: 再 remember は write-LRU で末尾へ移動し、cap で生き残る" recorded an issue at BrowserNavigationCursorMemoryTests.swift:162:9: Expectation failed: memory.cursor(for: Self.location("p0")) == Self.location("p0/updated")
+↳ memory.cursor(for: Self.location("p0")) == Self.location("p0/updated") → false
+↳   memory.cursor(for: Self.location("p0")) → nil
+↳   Self.location("p0/updated") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "p0/updated"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "p0/updated")
+↳       rawValue → "p0/updated"
+✘ Test "cap: 再 remember は write-LRU で末尾へ移動し、cap で生き残る" failed after 0.001 seconds with 1 issue.
+◇ Test "identical paths on different connections retain separate cursor locations" started.
+✘ Test "identical paths on different connections retain separate cursor locations" recorded an issue at BrowserNavigationCursorMemoryTests.swift:185:9: Expectation failed: memory.cursor(for: firstDirectory) == firstConnection
+↳ memory.cursor(for: firstDirectory) == firstConnection → false
+↳   memory.cursor(for: firstDirectory) → nil
+↳   firstConnection → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "foo/bar"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "foo/bar")
+↳       rawValue → "foo/bar"
+✘ Test "identical paths on different connections retain separate cursor locations" recorded an issue at BrowserNavigationCursorMemoryTests.swift:186:9: Expectation failed: memory.cursor(for: secondDirectory) == secondConnection
+↳ memory.cursor(for: secondDirectory) == secondConnection → false
+↳   memory.cursor(for: secondDirectory) → nil
+↳   secondConnection → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "other"), namespace: ObaketCore.StorageNamespace.bucket("other-bucket"), path: ObaketCore.ObjectPath(rawValue: "foo/baz"))
+↳     connectionID → ConnectionID(rawValue: "other")
+↳       rawValue → "other"
+↳     namespace → .bucket("other-bucket")
+↳       bucket → "other-bucket"
+↳     path → ObjectPath(rawValue: "foo/baz")
+↳       rawValue → "foo/baz"
+✘ Test "identical paths on different connections retain separate cursor locations" failed after 0.001 seconds with 2 issues.
+◇ Test "purge removes matching keys and values without changing surviving write-LRU order" started.
+✘ Test "purge removes matching keys and values without changing surviving write-LRU order" recorded an issue at BrowserNavigationCursorMemoryTests.swift:207:9: Expectation failed: memory.cursor(for: Self.location("p1")) == Self.location("p1/child")
+↳ memory.cursor(for: Self.location("p1")) == Self.location("p1/child") → false
+↳   memory.cursor(for: Self.location("p1")) → nil
+↳   Self.location("p1/child") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "p1/child"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "p1/child")
+↳       rawValue → "p1/child"
+✘ Test "purge removes matching keys and values without changing surviving write-LRU order" recorded an issue at BrowserNavigationCursorMemoryTests.swift:210:9: Expectation failed: memory.cursor(for: Self.location("p2")) == Self.location("p2/child")
+↳ memory.cursor(for: Self.location("p2")) == Self.location("p2/child") → false
+↳   memory.cursor(for: Self.location("p2")) → nil
+↳   Self.location("p2/child") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "p2/child"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "p2/child")
+↳       rawValue → "p2/child"
+✘ Test "purge removes matching keys and values without changing surviving write-LRU order" recorded an issue at BrowserNavigationCursorMemoryTests.swift:211:9: Expectation failed: memory.cursor(for: Self.location("p0")) == Self.location("p0/recent")
+↳ memory.cursor(for: Self.location("p0")) == Self.location("p0/recent") → false
+↳   memory.cursor(for: Self.location("p0")) → nil
+↳   Self.location("p0/recent") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "p0/recent"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "p0/recent")
+↳       rawValue → "p0/recent"
+✘ Test "purge removes matching keys and values without changing surviving write-LRU order" recorded an issue at BrowserNavigationCursorMemoryTests.swift:220:9: Expectation failed: memory.cursor(for: Self.location("refill0")) == Self.location("refill0/child")
+↳ memory.cursor(for: Self.location("refill0")) == Self.location("refill0/child") → false
+↳   memory.cursor(for: Self.location("refill0")) → nil
+↳   Self.location("refill0/child") → StorageLocation(connectionID: ObaketCore.ConnectionID(rawValue: "conn"), namespace: ObaketCore.StorageNamespace.bucket("bucket"), path: ObaketCore.ObjectPath(rawValue: "refill0/child"))
+↳     connectionID → ConnectionID(rawValue: "conn")
+↳       rawValue → "conn"
+↳     namespace → .bucket("bucket")
+↳       bucket → "bucket"
+↳     path → ObjectPath(rawValue: "refill0/child")
+↳       rawValue → "refill0/child"
+✘ Test "purge removes matching keys and values without changing surviving write-LRU order" failed after 0.002 seconds with 4 issues.
+✘ Suite "Browser navigation cursor memory" failed after 0.016 seconds with 22 issues.
+↳ /// `BrowserNavigationCursorMemory` の location ごとの cursor 記録と祖先 seed を確認する。
+✘ Test run with 15 tests in 1 suite failed after 0.017 seconds with 22 issues.
+2026-11-05 09:51:23.017 xcodebuild[13822:454059413] [MT] IDETestOperationsObserverDebug: 18.993 elapsed -- Testing started completed.
+2026-11-05 09:51:23.017 xcodebuild[13822:454059413] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-11-05 09:51:23.017 xcodebuild[13822:454059413] [MT] IDETestOperationsObserverDebug: 18.993 sec, +18.993 sec -- end
+
+Test session results, code coverage, and logs:
+	<WORKTREE>/macOS/tmp/test-only-20261105-094526-642.xcresult
+
+Failing tests:
+	BrowserNavigationCursorMemoryTests.rememberAndRead()
+	BrowserNavigationCursorMemoryTests.rememberAndRead()
+	BrowserNavigationCursorMemoryTests.rememberOverwritesLatest()
+	BrowserNavigationCursorMemoryTests.rememberNilOnAbsentPathIsNoop()
+	BrowserNavigationCursorMemoryTests.seedAncestorCursors()
+	BrowserNavigationCursorMemoryTests.seedAncestorCursors()
+	BrowserNavigationCursorMemoryTests.seedAncestorCursors()
+	BrowserNavigationCursorMemoryTests.seedAncestorCursorsSplitsCombiningMarkComponent()
+	BrowserNavigationCursorMemoryTests.seedAncestorCursorsSplitsCombiningMarkComponent()
+	BrowserNavigationCursorMemoryTests.unicodeSiblingFoldersKeepSeparateRecords()
+	BrowserNavigationCursorMemoryTests.unicodeSiblingFoldersKeepSeparateRecords()
+	BrowserNavigationCursorMemoryTests.forgetKeepsUnicodeSiblingFolderRecord()
+	BrowserNavigationCursorMemoryTests.seedAncestorCursorsSingleComponent()
+	BrowserNavigationCursorMemoryTests.capLimitsEntries()
+	BrowserNavigationCursorMemoryTests.capLimitsEntries()
+	BrowserNavigationCursorMemoryTests.reRememberSurvivesCapAsRecent()
+	BrowserNavigationCursorMemoryTests.identicalPathsAcrossConnectionsAreIsolated()
+	BrowserNavigationCursorMemoryTests.identicalPathsAcrossConnectionsAreIsolated()
+	BrowserNavigationCursorMemoryTests.purgePreservesSurvivingLRU()
+	BrowserNavigationCursorMemoryTests.purgePreservesSurvivingLRU()
+	BrowserNavigationCursorMemoryTests.purgePreservesSurvivingLRU()
+	BrowserNavigationCursorMemoryTests.purgePreservesSurvivingLRU()
+
+** TEST FAILED **
+
+Testing started

@@ -1,0 +1,34 @@
+Please file a bug at https://feedbackassistant.apple.com with this warning message and any useful information you can provide.
+2026-11-08 23:22:58.678 xcodebuild[30332:153315503]  DVTAssertions: Warning in IDEFrameworks/IDEFoundation/Execution/LaunchSystem/IDELaunchSession.m:395
+Details:  setRunnablePIDWithDiagnostics:logSection:andCompletionHandler: called without a completion handler - blocking until diagnostics setup completes. Callers should migrate to using a completion handler for better performance.
+Object:   <IDELaunchSession: 0x7965f68a80>
+Method:   -setRunnablePIDWithDiagnostics:logSection:andCompletionHandler:
+Thread:   <NSThread: 0x7967baae80>{number = 490, name = (null)}
+Please file a bug at https://feedbackassistant.apple.com with this warning message and any useful information you can provide.
+2026-11-08 23:22:58.678 xcodebuild[30332:153316653]  DVTAssertions: Warning in IDEFrameworks/IDEFoundation/Execution/LaunchSystem/IDELaunchSession.m:395
+Details:  setRunnablePIDWithDiagnostics:logSection:andCompletionHandler: called without a completion handler - blocking until diagnostics setup completes. Callers should migrate to using a completion handler for better performance.
+Object:   <IDELaunchSession: 0x7965f69380>
+Method:   -setRunnablePIDWithDiagnostics:logSection:andCompletionHandler:
+Thread:   <NSThread: 0x796b039480>{number = 494, name = (null)}
+Please file a bug at https://feedbackassistant.apple.com with this warning message and any useful information you can provide.
+2026-11-08 23:22:59.045 xcodebuild[30332:153295675] [MT] IDETestOperationsObserverDebug: 3.686 elapsed -- Testing started completed.
+2026-11-08 23:22:59.045 xcodebuild[30332:153295675] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-11-08 23:22:59.045 xcodebuild[30332:153295675] [MT] IDETestOperationsObserverDebug: 3.686 sec, +3.686 sec -- end
+
+Test session results, code coverage, and logs:
+	<TMP>/macOS/tmp/test-only-20261108-232027-20466.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started
+Test suite 'BrowserNoticeBarHeightTests' started on 'My Mac - xctest (35437)'
+Test suite 'PreviewScreenDebugObservationTests' started on 'My Mac - xctest (35437)'
+Test case 'PreviewScreenDebugObservationTests/ownerOnly()' passed on 'My Mac - xctest (35437)' (0.001 seconds)
+Test case 'PreviewScreenDebugObservationTests/replaceKeepsOwnerAndRemountTakesActive()' passed on 'My Mac - xctest (35437)' (0.059 seconds)
+Test case 'PreviewScreenDebugObservationTests/operableTransportRequiresVisibleCard()' passed on 'My Mac - xctest (35437)' (0.059 seconds)
+Test case 'PreviewScreenDebugObservationTests/tabSwitchKeepsOwnerUntilUnmount()' passed on 'My Mac - xctest (35437)' (0.059 seconds)
+Test case 'BrowserNoticeBarHeightTests/otherBars()' passed on 'My Mac - xctest (35437)' (0.059 seconds)
+Test case 'BrowserNoticeBarHeightTests/resumableMoveBar(kind:)' passed on 'My Mac - xctest (35437)' (0.059 seconds)
+Test case 'BrowserNoticeBarHeightTests/resumableMoveBar(kind:)' passed on 'My Mac - xctest (35437)' (0.059 seconds)
+Test case 'BrowserNoticeBarHeightTests/resumableMoveBar(kind:)' passed on 'My Mac - xctest (35437)' (0.059 seconds)
+Test case 'BrowserNoticeBarHeightTests/resumableMoveBar(kind:)' passed on 'My Mac - xctest (35437)' (0.059 seconds)

@@ -1,0 +1,506 @@
+#!/usr/bin/env bash
+# mutate — 変異検証のハーネス (今の作業ツリーで変異を当て、開始時の commit へ戻す)。
+# 各 app の repo の bin/mutate (wrapper) から dotfiles の bin/devtool-run 経由で起こされる。直接起こさない
+# (下の「前提」の環境変数を devtool-run が渡す)。使い捨ての worktree で当てる mutate-verify とは別の道具:
+# こちらは Xcode のインクリメンタルビルドが効く代わりに、未 commit の変更があると拒否する。
+#
+# 同じ事故 (未 commit の実装を git checkout で消す) を構造的に防ぎ、
+# 判定 (RED / GREEN / 判定不能) を人の grep に委ねずに出す。
+#
+# 使い方:
+#   bin/mutate [--timeout 秒] [--baseline-count N] <説明> <対象ファイル> <python 置換スクリプト> <検証コマンド...>
+#   bin/mutate --summarize <検証コマンドの出力ファイル>   (抽出だけを行う。self-test と手での確認用)
+#
+# python 置換スクリプト (mutator) の呼び方: 引数は渡さない。cwd は repo root。対象のパスは環境変数 MUTATE_TARGET (第 2 引数の
+#   そのままの文字列。cwd の repo root から解決される) で受け取る。mutator が rc≠0 で終わったら変異を当てる前後を問わず判定不能 (rc 3) にして、
+#   検証コマンドは走らせない (対象は開始時の commit に戻す)。
+#
+# 終了コード: 0 = GREEN (変異を検知できなかった) / 1 = RED (変異を検知した) / 3 = 判定不能 /
+#             129/130/131/143 = HUP/INT/QUIT/TERM による中断 /
+#             70 = 拒否 (下のガード) / 71 = 復元に失敗した / 64 = 使い方の誤り
+#   判定不能は、mutator が失敗した・実行件数を抽出できない・baseline と件数が違う・baseline が green でない・
+#   検証コマンドの rc と落ちたテストの抽出結果が食い違う (rc≠0 なのに落ちたテストが無い 等) とき。
+#   検証コマンドの rc をそのまま返さない: 「0 件実行」「別の suite が落ちた」「途中で止まった」も RED / GREEN に見える。
+#
+# 出力の置き場: 検証コマンドの出力 (baseline.out / mutant.out) は、run ごとに作る場所に置き、冒頭の `出力の置き場:` の行で示す。
+#   場所は dotfiles の `bin/skill-tmpdir mutate` が返す本体 checkout の tmp/mutate/<session>/ の下に mktemp -d で作る。
+#   worktree の中の tmp/ に固定名で書かない (worktree と一緒に消え、次の run が前の run の出力を上書きする)。
+#   名前を日時だけで作らない (全 worktree が同じ場所を使い、同じ秒に始めた 2 本が同じ場所を開く。test の共有 lock はリダイレクトの後に
+#   検証コマンドの中で取られるので、この衝突を防がない)。
+#   検証コマンドの出力に `<label>: complete log: <絶対パス>` (obaket の macOS/bin/run-logged-command の行。他の repo では出ない) があれば、そのファイルも run の場所へ写す
+#   (make test-only / make test の出力は要約で、xcodebuild の全文は worktree の中の macOS/tmp/ にある)。写せなくても判定は変えない。
+#   写すのは repo の中の通常のファイルだけで、同じパスは 1 回だけ (検証コマンドが引用した行で、repo の外や巨大な無関係のファイルを写さない)。
+#   signal・時間切れで終わった run の分も、判定不能で抜ける前に写す (途中まで書かれた全文が、調べる材料として一番要る)。
+# lock 待ち: 判定不能になる分岐でだけ、出力に obaket の macOS/bin/run-with-test-profile-residue の lock の文言があるかを見る (他の repo では出ない)。
+#   rc では見ない (make を通すと rc 75 が 2 に包まれる)。待って再試行するかは呼び出し側に任せる。
+#   理由を lock 待ちに置き換えるのは、実行件数を抽出できなかった (テストが走っていない) ときだけ。件数が出ている run では元の理由を残し、
+#   lock の文言があったことを注記する (テストが文言を引用しただけの run を「回し直せばよい」と誤読させない)。
+# 前提: 環境変数 DEVTOOL_RUNTIMEOUT (runtimeout のバイナリの絶対パス) と DEVTOOL_SKILL_TMPDIR (skill-tmpdir の絶対パス) が要る。
+#   dotfiles の bin/devtool-run が解決して渡す。runtimeout は自動で再ビルドするラッパーではなく、起動の前に 1 回だけ解決したバイナリを使う
+#   (run の途中の再ビルドの失敗 rc=1 を、変異の RED と読ませない)。無ければ判定不能 (rc 3)。
+#   MUTATE_REAP_HELPER: swiftpm-testing-helper の孤児を数える helper の絶対パス (repo の wrapper が渡す。渡されなければ数えない)。
+#   渡されたのに実行できなければ、数えられなかったと知らせる (黙って飛ばさない)。
+# --timeout は正の整数秒 (既定 1800)。時間切れは rc 3。daemon 化して親と group を離れた子は runtimeout の射程外。
+# stdinを消費するコマンドは --baseline-count または再読込可能な入力ファイル引数を使う (baselineと変異後で2回実行する)。
+# baseline: --baseline-count を渡さなければ、変異の前に同じ検証コマンドを 1 回走らせ、green であることと
+#   実行件数を測る (mutation-verify-new-tests.md の手順 0)。件数が分かっていて時間を省きたいときだけ渡す
+#   (そのときは baseline が green かを見ない)。
+#
+# 抽出 (--summarize。正本は下の summarize の python):
+#   - 実行件数: Swift Testing の `Test run with N tests in M suites` と、XCTest の最上位の suite (`Test Suite 'All tests'`。
+#     `-only-testing` で絞ると `'Selected tests'` になる) の直後の
+#     `Executed N tests` を**全部**拾って合計し、内訳も出す (1 回の実行で target ごとに複数出る。1 本だけ拾うと
+#     別の suite の集計行に当たる)。どちらも無ければ抽出できなかったとする (0 件と読ませない)
+#   - 並列で走るテスト (xcodebuild の parallel testing。shared の package の target) は集計行を出さないので、
+#     `Test case '<名前>' passed|failed|skipped|recorded an expected failure on '<worker>'` の行数を件数にする (expected failure は withKnownIssue を通ったテストで、
+#     passed の行は出ない。落ちたテストには数えない)。行は stderr の割り込みで任意の位置で割れるので、行頭の `Test case '` で数える (パラメータつきのテストは引数ごとに同じ名前の行が出るので、名前ではなく行で数える)。macOS/bin/run-logged-command の要約
+#     (make test-only の出力) は、それを数えた `<label>: parallel test cases: N (…)` の行に置き換える。その行があれば、その合計だけを数える
+#     (要約の後ろの末尾 40 行に残った `Test case … on` の行を足さない)。この行を読まないと、shared のテストの変異は毎回判定不能になる
+#   - 落ちたテスト: Swift Testing の `✘ Test <名前> failed …` / `✘ Test <名前> with N test cases failed …`、
+#     XCTest の `Test Case '<名前>' failed`、並列の `Test case '<名前>' failed on`、xcodebuild の `Failing tests:` ブロック
+#   - xcodebuild の出力は行頭にゼロ幅スペース (U+200B) を付けることがある (Xcode 27 で実測 2026-09-27)。
+#     取り除いてから照合する。付いたまま照合すると、その行の失敗を取りこぼす
+#   fixture: dotfiles の tests/devtool/testdata/mutate/ (実際の swift test / xcodebuild の出力。生成元の test も同じ場所にある)。
+#   固定: dotfiles の tests/devtool/test_mutate.sh。
+#
+# 未 commit の変更を拒否するのを人の注意に任せない: commit していない実装の上で変異を当てると、
+# `git checkout -- <path>` の復元で実装ごと消える。「変異の前に commit する」を覚えている前提だと 2 回に 1 回は踏む。
+# 判定を人の grep に任せない: 落ちたテストを tail の窓の外に落として「緑」、実行 0 件 (filter の書き損じ) や
+# テストのレーン違いを「検知漏れ」と読みかける。
+set -euo pipefail
+unset CDPATH
+exec 3>&2
+
+summarize() { # summarize <出力ファイル>: 人向けの行と、最後に `MUTATE_SUMMARY count=<N|-> failed=<M>` を出す
+  python3 - "$1" <<'PYEOF'
+import re, sys
+
+text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+lines = [line.replace("\u200b", "") for line in text.split("\n")]
+
+counts = []  # (kind, n, line)
+st_failed = []
+xc_failed = []
+xcodebuild_failing = []
+
+st_run = re.compile(r"^\s*\S*\s*Test run with (\d+) tests? in \d+ suites? (passed|failed)")
+st_fail = re.compile(r'^\s*✘ Test ("(?:[^"\\]|\\.)*"|\S+) (?:with \d+ test cases? )?failed after')
+xc_fail = re.compile(r"^\s*Test Case '([^']+)' failed")
+xc_all = re.compile(r"^\s*Test Suite '(?:All|Selected) tests' (passed|failed)")
+xc_exec = re.compile(r"^\s*Executed (\d+) tests?, with")
+# 並列で走るテスト (xcodebuild の parallel testing) は集計行を出さず、1 件 1 行の `Test case '…' passed|failed|skipped on '<worker>'` だけを出す。
+# macOS/bin/run-logged-command の要約は、それを数えた `<label>: parallel test cases: N (…)` の行に置き換える
+# 件数は行頭の `Test case '` で 1 件と数え、状態の語は名前と失敗を読むのにだけ使う。xcodebuild の stderr の行が並列の行の任意の位置
+# (名前の途中・状態の途中・` on ` の後ろ) に割り込んで行が割れるため (macOS/bin/run-logged-command の COUNT_LINE_AWK の説明と同じ)
+par_case_start = re.compile(r"^\s*Test case '")
+par_case = re.compile(r"^\s*Test case '([^']+)' (passed|failed|skipped|recorded an expected failure) on ")
+par_summary = re.compile(r": parallel test cases: (\d+) \(passed \d+, failed (\d+), skipped \d+, expected failure \d+, unreadable \d+\)\s*$")
+par_lines = 0
+par_failed = []
+par_summaries = []  # (n, failed, line)
+
+in_failing_block = False
+after_all_tests = False
+run_failed = False  # 集計行・xcodebuild の結果行が「失敗」と言っているか (失敗行が tail の窓の外に落ちても分かる)
+for line in lines:
+    if line.strip() == "** TEST FAILED **":
+        run_failed = True
+    if in_failing_block:
+        if line.strip() == "":
+            in_failing_block = False
+        else:
+            # xcodebuild は同じテストを issue ごとに並べる (15 本中 12 本が落ちた run で 22 行)。テストの数として読むので重複を除く。
+            # 除くのはブロックの中だけ (ブロックは xcodebuild の 1 回の run に 1 つ。別の run の同名のテストを 1 本に潰さない)。
+            # 同じ run の別 target の同名のテストは、この一覧では見分けられないので 1 本になる。
+            # 名前の行 (st_failed / xc_failed) は入力全体で重複を除くので、検証コマンドが xcodebuild を 2 回流して同名のテストが両方で落ちると 1 本に数える。
+            # 判定 (RED / GREEN) は変わらず件数の表示だけなので直していない。run の境界で名前を分ける必要が出たら再評価する
+            if line.strip() not in xcodebuild_failing[-1]:
+                xcodebuild_failing[-1].append(line.strip())
+        continue
+    if line.strip() == "Failing tests:":
+        in_failing_block = True
+        xcodebuild_failing.append([])
+        continue
+    m = par_summary.search(line)
+    if m:
+        par_summaries.append((int(m.group(1)), int(m.group(2)), line.strip()))
+        run_failed = run_failed or int(m.group(2)) > 0
+        continue
+    if par_case_start.match(line):
+        par_lines += 1
+        m = par_case.match(line)
+        if m and m.group(2) == "failed":
+            run_failed = True
+            if m.group(1) not in par_failed:
+                par_failed.append(m.group(1))
+        continue
+    m = st_run.match(line)
+    if m:
+        counts.append(("Swift Testing", int(m.group(1)), line.strip()))
+        run_failed = run_failed or m.group(2) == "failed"
+        continue
+    if after_all_tests:
+        after_all_tests = False
+        m = xc_exec.match(line)
+        if m:
+            counts.append(("XCTest", int(m.group(1)), line.strip()))
+            continue
+    m = xc_all.match(line)
+    if m:
+        after_all_tests = True
+        run_failed = run_failed or m.group(1) == "failed"
+        continue
+    m = st_fail.match(line)
+    if m:
+        if m.group(1) not in st_failed:
+            st_failed.append(m.group(1))
+        continue
+    m = xc_fail.match(line)
+    if m and m.group(1) not in xc_failed:
+        xc_failed.append(m.group(1))
+
+# 件数は行数で数える (パラメータつきのテストは引数ごとに同じ名前の行が出る)。要約の行があれば、その合計だけを数える。
+# run-logged-command は失敗時に末尾 40 行も出し、そこに `Test case … on` の行が残るので、両方を足すと二重に数える。
+# 要約の行と、run-logged-command を通さずに出た `Test case … on` の行が同じ出力に混ざると後者を数えないが、baseline と変異で同じ形なら判定は変わらない
+if par_summaries:
+    for n, _, line in par_summaries:
+        counts.append(("並列の Test case 行の要約", n, line))
+elif par_lines:
+    counts.append(("並列の Test case 行", par_lines, f"行頭が Test case '…' の行 {par_lines} 本"))
+
+if counts:
+    for kind, n, line in counts:
+        print(f"集計行 ({kind}): {n} 件 — {line}")
+    total = sum(n for _, n, _ in counts)
+    print(f"実行件数: {total} (集計行 {len(counts)} 本の合計)")
+else:
+    total = None
+    print("実行件数: 抽出できなかった (Swift Testing の Test run with … / XCTest の All tests の Executed … / 並列の Test case … on … が無い)")
+
+xcodebuild_failing_names = [name for block in xcodebuild_failing for name in block]
+failed = len(st_failed) + len(xc_failed) + len(par_failed)
+# 名前の行が無いときは Failing tests の数を使う。表示もこの数にする (表示と MUTATE_SUMMARY を食い違わせない)
+if failed == 0 and xcodebuild_failing_names:
+    failed = len(xcodebuild_failing_names)
+    print(f"落ちたテスト: {failed} 件 (名前の行が無いので xcodebuild の Failing tests の数)")
+else:
+    print(f"落ちたテスト: {failed} 件")
+for name in st_failed:
+    print(f"  Swift Testing: {name}")
+for name in xc_failed:
+    print(f"  XCTest: {name}")
+for name in par_failed:
+    print(f"  並列: {name}")
+if xcodebuild_failing_names:
+    print(f"xcodebuild の Failing tests ({len(xcodebuild_failing_names)}):")
+    for name in xcodebuild_failing_names:
+        print(f"  {name}")
+print(f"集計行・結果行の判定: {'failed' if run_failed else 'passed'}")
+print(f"MUTATE_SUMMARY count={'-' if total is None else total} failed={failed} run={'failed' if run_failed else 'passed'}")
+PYEOF
+}
+
+# summary_field <summarize の出力> <count|failed>
+summary_field() {
+  local line
+  line="$(grep '^MUTATE_SUMMARY ' <<<"$1" | tail -1 || true)"
+  sed -E "s/.* $2=([^ ]*).*/\1/" <<<"$line"
+}
+
+if [ "${1:-}" = "--summarize" ]; then
+  [ $# -eq 2 ] || { echo "usage: bin/mutate --summarize <出力ファイル>" >&2; exit 64; }
+  out="$(summarize "$2")"
+  printf '%s\n' "$out"
+  [ "$(summary_field "$out" count)" != "-" ] || exit 3
+  exit 0
+fi
+
+baseline_count=""
+timeout=1800
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --baseline-count)
+      [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || { echo "usage: --baseline-count は 1 以上の整数" >&2; exit 64; }
+      baseline_count="$2"; shift 2 ;;
+    --timeout)
+      [[ "${2:-}" =~ ^[1-9][0-9]*$ && ${#2} -le 7 ]] || { echo "usage: --timeout は 1 以上の整数秒 (7 桁まで)" >&2; exit 64; }
+      timeout="$2"; shift 2 ;;
+    *) echo "usage: 不明なオプション: $1" >&2; exit 64 ;;
+  esac
+done
+[ $# -ge 4 ] || { echo "usage: bin/mutate [--timeout 秒] [--baseline-count N] <説明> <対象ファイル> <python 置換スクリプト> <検証コマンド...>" >&2; exit 64; }
+
+desc="$1"; target="$2"; mutator="$3"; shift 3
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+# 🚨 ガード 1: 作業ツリーが汚れていたら拒否する (復元で消える未 commit の変更がある)
+dirty="$(git status --porcelain --untracked-files=no)"
+if [ -n "$dirty" ]; then
+  echo "REFUSED: 未 commit の変更があるため変異を当てない (復元で消える)。先に commit すること:" >&2
+  echo "$dirty" >&2
+  exit 70
+fi
+
+# ガード 2: 対象が tracked な 1 ファイルであること (untracked は checkout で戻せない。`.` やディレクトリを渡すと、
+# 復元が検証中に加わった他のファイルの変更まで HEAD に戻す)
+# git には `:(literal)` で渡す (`*` 等を pathspec として展開させない)。symlink は拒否する (変異は参照先に当たるが、git は symlink 自体しか見ない)
+target_spec=":(literal)$target"
+if [ ! -f "$target" ] || [ -L "$target" ] || [ "$(git ls-files -- "$target_spec" | wc -l | tr -d ' ')" != 1 ]; then
+  echo "REFUSED: $target は tracked な 1 ファイル (symlink でない) ではない (checkout で復元できない / 復元が他のファイルを巻き込む)" >&2
+  exit 70
+fi
+# 復元の基準は開始時の commit に固定する (検証中に HEAD が進むと、変異を含む commit に「戻して」復元 OK と出る)
+start_head="$(git rev-parse HEAD)"
+
+# wrapper の再ビルド失敗を検証の RED と読まないよう、各 run の前に一度だけ binary を解決する。
+[ -n "${DEVTOOL_RUNTIMEOUT:-}" ] || { echo "判定: 判定不能 (DEVTOOL_RUNTIMEOUT が無い。dotfiles の bin/devtool-run から起こす)" >&2; exit 3; }
+[ -x "$DEVTOOL_RUNTIMEOUT" ] || { echo "判定: 判定不能 (runtimeout binary が無い: $DEVTOOL_RUNTIMEOUT)" >&2; exit 3; }
+RUNTIMEOUT="$DEVTOOL_RUNTIMEOUT"
+[ -n "${DEVTOOL_SKILL_TMPDIR:-}" ] && [ -x "$DEVTOOL_SKILL_TMPDIR" ] ||
+  { echo "判定: 判定不能 (出力の置き場を決められない: DEVTOOL_SKILL_TMPDIR=${DEVTOOL_SKILL_TMPDIR:-} が実行できない)" >&2; exit 3; }
+session_dir="$("$DEVTOOL_SKILL_TMPDIR" --if-ignored mutate 3>&-)" && [ -d "$session_dir" ] ||
+  { echo "判定: 判定不能 (出力の置き場を作れない。skill-tmpdir --if-ignored mutate が失敗した)" >&2; exit 3; }
+run_dir="$(mktemp -d "$session_dir/run-$(date +%Y%m%d-%H%M%S)-XXXXXX")" ||
+  { echo "判定: 判定不能 (出力の置き場を作れない: $session_dir)" >&2; exit 3; }
+base_out="$run_dir/baseline.out"
+root_real="$(cd -P "$root" && pwd -P)"
+mut_out="$run_dir/mutant.out"
+echo "出力の置き場: $run_dir"
+
+run_pid=""
+launching=0
+pending_interrupt=0
+timed_out_phase=""
+# shellcheck disable=SC2329  # EXIT trap の on_exit から呼ぶ
+stop_run() {
+  [ -n "$run_pid" ] || return 0
+  kill -TERM "$run_pid" 2>/dev/null || true
+  wait "$run_pid" 2>/dev/null || true
+  run_pid=""
+}
+run_command() {
+  local phase="$1" start=$SECONDS rc=0
+  shift
+  # background の bash が無視する INT / QUIT を payload に持ち込まない。
+  launching=1
+  # shellcheck disable=SC2016  # perl のコードなので展開させない
+  "$RUNTIMEOUT" "$timeout" perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec { $ARGV[0] } @ARGV; warn "exec: $!\n"; exit 127' "$@" <&0 3>&- &
+  run_pid=$!
+  launching=0
+  [ "$pending_interrupt" = 0 ] || interrupt_run "$pending_interrupt"
+  wait "$run_pid" || rc=$?
+  run_pid=""
+  # 検証コマンド自身も 124 を返しうるので、上限前の 124 は時間切れにしない。
+  if [ "$rc" -eq 124 ] && [ $((SECONDS - start)) -ge "$timeout" ]; then
+    timed_out_phase="$phase"
+  fi
+  return "$rc"
+}
+finish_interrupted_run() {
+  local phase="$1" rc="$2"
+  if [ -n "$timed_out_phase" ]; then
+    echo "判定: 判定不能 ($phase が --timeout $timeout 秒を超えた。子孫を停止)" >&2
+    if [ -n "${MUTATE_REAP_HELPER:-}" ] && [ -x "$MUTATE_REAP_HELPER" ]; then
+      "$MUTATE_REAP_HELPER" --kill --prefix "$root" 3>&- || echo "孤児 helper の回収に失敗した" >&2
+    fi
+    exit 3
+  fi
+  if [ "$rc" -ge 125 ]; then
+    echo "判定: 判定不能 ($phase の検証コマンドが起動失敗またはsignalで終了。rc=$rc)" >&2
+    if [ "$phase" = baseline ]; then
+      echo "全文: $base_out" >&2
+    else
+      echo "全文: $mut_out" >&2
+    fi
+    exit 3
+  fi
+}
+
+# keep_complete_logs <出力> <接頭辞>: 出力が指す全文のログ (run-logged-command の `complete log:` の行) を run の場所へ写す
+keep_complete_logs() {
+  local line path dir real dest n=0 seen=$'\n'
+  while IFS= read -r line; do
+    path="${line#*: complete log: }"
+    # repo の中か・同じファイルかは、symlink と .. を解いた実パスで比べる (書き方を変えた同じファイル・repo の外を指す symlink を通さない)
+    real=""
+    if [ "${path#/}" != "$path" ] && dir="$(cd -P "$(dirname "$path")" 2>/dev/null && pwd -P)"; then
+      real="$dir/$(basename "$path")"
+    fi
+    case "$real" in
+      "$root_real"/*) ;;
+      *) echo "注意: 全文のログは repo の外か相対パスなので写さない (判定は変えない): $path" >&2; continue ;;
+    esac
+    case "$seen" in *$'\n'"$real"$'\n'*) continue ;; esac
+    seen="$seen$real"$'\n'
+    path="$real"
+    n=$((n + 1))
+    dest="$run_dir/$2-$n-$(basename "$path")"
+    if [ -f "$path" ] && [ ! -L "$path" ] && cp "$path" "$dest"; then
+      echo "全文のログの写し: $dest"
+    else
+      echo "注意: 全文のログを写せなかった (判定は変えない): $path" >&2
+    fi
+  done < <(grep -E ': complete log: ' "$1" || true)
+}
+# lock_busy_line <出力>: test の lock が空いておらずテストを始めなかった行 (macOS/bin/run-with-test-profile-residue の文言) を 1 行出す。
+# 行頭から wrapper の文言そのものに限る (テストの出力が文言を途中に引用した行を数えない)
+lock_busy_line() {
+  grep -m1 -E '^run-with-test-profile-residue: another checked run owns ' "$1" || true
+}
+# indeterminate <出力> <実行件数|-> <落ちたテストの数> <理由>: 判定不能で抜ける。lock の文言があっても、集計行も落ちたテストの行も無い run
+# だけを lock 待ちと読み、理由を替える。それ以外は元の理由に注記を足す (テストが文言を引用しただけの run を「回し直せばよい」と誤読させない)。
+# baseline の判定は stderr、変異の run の判定は stdout に出す (呼び出し側が読む stream を変えない)
+indeterminate() {
+  local busy msg="$4" note=""
+  busy="$(lock_busy_line "$1")"
+  # complete log: の行は run-logged-command が出す。wrapper (lock) は run-logged-command の外側にあるので、この行があれば lock は取れている
+  if [ -n "$busy" ] && [ "$2" = "-" ] && [ "$3" = 0 ] && ! grep -qE ': complete log: ' "$1"; then
+    msg="判定: 判定不能 (test の lock が空いていない。検証コマンドはテストを始めずに終わった。lock が空いてから回し直す: $busy)"
+  elif [ -n "$busy" ]; then
+    note="  注記: 出力に test の lock の文言がある (集計行か落ちたテストの行があるので、lock 待ちとは読まない): $busy"
+  fi
+  if [ "$1" = "$base_out" ]; then
+    { echo "$msg"; [ -z "$note" ] || echo "$note"; echo "  全文: $1"; } >&2
+  else
+    echo "$msg"
+    [ -z "$note" ] || echo "$note"
+  fi
+  exit 3
+}
+
+# 変異を当てた後は、どの抜け方 (mutator の失敗・検証中の TERM・set -e) でも対象を開始時の commit に戻す。
+# commit を指定して checkout するのは、検証コマンドが対象を git add しても index ごと戻すため。
+mutated=0
+restore_target() {
+  [ "$mutated" = 1 ] || return 0
+  # 復元中にcheckout自身を中断しない。通常終了でもEXIT経由でも同じ保護を使う。
+  trap '' INT TERM HUP QUIT
+  git checkout -q "$start_head" -- "$target_spec" || true
+  if restored_to_start; then mutated=0; fi
+}
+# 作業ツリーと index の両方が開始時の commit と同じか (検証コマンドが git add した変異が index に残っていないか)
+restored_to_start() {
+  git diff --quiet "$start_head" -- "$target_spec" && git diff --cached --quiet "$start_head" -- "$target_spec"
+}
+# shellcheck disable=SC2329  # EXIT trap から呼ぶ
+on_exit() {
+  local rc=$?
+  trap '' INT TERM HUP QUIT
+  stop_run
+  if [ "$mutated" = 1 ]; then
+    restore_target
+    if ! restored_to_start; then
+      echo "復元に失敗した ($target が開始時の commit と違う)" >&3
+      exit 71
+    fi
+  fi
+  exit "$rc"
+}
+# SIGKILL では復元できない。捕まえられる中断では、検証の子孫が止まってから対象を戻す。
+trap on_exit EXIT
+interrupt_run() {
+  pending_interrupt="$1"
+  # PIDを記録する前には抜けない。子がSIG_IGNを継承しないよう、起動中は無視にも切り替えない。
+  [ "$launching" = 0 ] || return 0
+  trap '' INT TERM HUP QUIT
+  exit "$pending_interrupt"
+}
+install_signal_traps() {
+  trap 'interrupt_run 143' TERM
+  trap 'interrupt_run 130' INT
+  trap 'interrupt_run 129' HUP
+  trap 'interrupt_run 131' QUIT
+}
+install_signal_traps
+
+# baseline (変異の前): green であることと実行件数を測る
+if [ -z "$baseline_count" ]; then
+  echo "=== baseline (変異なし) ==="
+  set +e
+  run_command baseline "$@" > "$base_out" 2>&1
+  base_rc=$?
+  set -e
+  keep_complete_logs "$base_out" baseline
+  finish_interrupted_run baseline "$base_rc"
+  base_summary="$(summarize "$base_out")"
+  grep -v '^MUTATE_SUMMARY ' <<<"$base_summary" || true
+  baseline_count="$(summary_field "$base_summary" count)"
+  # rc 0 でも出力に失敗 (`|| true` で隠した別 suite の失敗等) があれば green と見なさない。見なすと、変異の run に同じ失敗が出たときに RED と読む
+  if [ "$base_rc" -ne 0 ] || [ "$baseline_count" = "-" ] || [ "$baseline_count" = 0 ] ||
+    [ "$(summary_field "$base_summary" failed)" != 0 ] || [ "$(summary_field "$base_summary" run)" != passed ]; then
+    indeterminate "$base_out" "$baseline_count" "$(summary_field "$base_summary" failed)" "判定: 判定不能 (baseline が green でない / 実行件数を抽出できない / 0 件。baseline の rc=${base_rc}・件数 ${baseline_count})。変異は当てていない"
+  fi
+fi
+
+echo "=== 変異: $desc ==="
+mutated=1
+# rc を自分で読む。set -e のまま抜けると python の未捕捉の例外 (rc 1) がそのまま返り、RED (rc 1) と同じ値になる
+set +e
+MUTATE_TARGET="$target" python3 "$mutator" 3>&-
+mutator_rc=$?
+set -e
+if [ "$mutator_rc" -ne 0 ]; then
+  echo "判定: 判定不能 (mutator が失敗した。rc=${mutator_rc}。検証コマンドは走らせていない)"
+  exit 3
+fi
+
+# ガード 3: 変異が実際に当たったこと (当たっていない緑を検知結果と読まない)
+if git diff --quiet -- "$target_spec"; then
+  echo "REFUSED: 変異が当たっていない (diff が空)。パターンを見直すこと" >&2
+  exit 70
+fi
+git --no-pager diff --stat -- "$target_spec" | tail -1
+
+set +e
+run_command mutant "$@" > "$mut_out" 2>&1
+rc=$?
+set -e
+keep_complete_logs "$mut_out" mutant
+finish_interrupted_run mutant "$rc"
+echo "検証コマンドの rc=$rc (全文: $mut_out)"
+summary="$(summarize "$mut_out")"
+grep -v '^MUTATE_SUMMARY ' <<<"$summary" || true
+
+restore_target
+if restored_to_start; then
+  echo "復元 OK"
+else
+  echo "復元に失敗した" >&2
+  exit 71
+fi
+install_signal_traps
+
+# 変異で止まった / 打ち切った swift test が残した swiftpm-testing-helper の孤児を知らせる (止めはしない)。
+# 止めるなら MUTATE_REAP_HELPER の helper に --kill (孤児だけを止める。他セッションの実行中のテストは止めない)
+if [ -n "${MUTATE_REAP_HELPER:-}" ]; then
+  if reap_out="$("$MUTATE_REAP_HELPER" 3>&- 2>&1)"; then
+    if grep -q '^孤児 ' <<<"$reap_out"; then
+      echo "注意: swiftpm-testing-helper の孤児が残っている (止めるなら $MUTATE_REAP_HELPER --kill):" >&2
+      printf '%s\n' "$reap_out" >&2
+    fi
+  else
+    echo "注意: $MUTATE_REAP_HELPER が判定できなかった (孤児の有無は未確認): $reap_out" >&2
+  fi
+fi
+
+# 判定: 件数が baseline と一致したときだけ RED / GREEN を読む (mutation-verify-new-tests.md)
+count="$(summary_field "$summary" count)"
+failed="$(summary_field "$summary" failed)"
+run_status="$(summary_field "$summary" run)"
+if [ "$count" = "-" ]; then
+  indeterminate "$mut_out" "$count" "$failed" "判定: 判定不能 (変異の run の実行件数を抽出できない。途中で止まった / 0 件実行の可能性)"
+fi
+if [ "$count" != "$baseline_count" ]; then
+  indeterminate "$mut_out" "$count" "$failed" "判定: 判定不能 (実行 $count / baseline ${baseline_count}。filter の書き損じ・変異による hang や crash で件数が変わった)"
+fi
+if [ "$rc" -eq 0 ] && [ "$failed" -eq 0 ] && [ "$run_status" = passed ]; then
+  echo "判定: GREEN (変異を検知できなかった。実行 $count 件すべて passed)"
+  exit 0
+fi
+if [ "$failed" -gt 0 ] && [ "$run_status" = failed ]; then
+  echo "判定: RED (変異を検知した。落ちたテスト $failed 件は上の一覧。狙ったテストかを確かめること)"
+  exit 1
+fi
+indeterminate "$mut_out" "$count" "$failed" "判定: 判定不能 (検証コマンドの rc=${rc}・集計行の ${run_status}・落ちたテスト $failed 件が食い違う。失敗行が出力から落ちた (| tail 等) 可能性)"

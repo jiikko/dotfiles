@@ -1,0 +1,70 @@
+Building for debugging...
+[Planning deferred tasks]
+[27 / 50]
+[28 / 51] Lib
+[40 / 55] Lib
+[45 / 56] LibTests-product
+[56 / 125]
+[65 / 125]
+[67 / 125]
+[75 / 125]
+[79 / 125]
+[84 / 125]
+[89 / 125]
+[90 / 125]
+[101 / 125]
+[104 / 125]
+[106 / 125]
+[109 / 125]
+[110 / 125]
+[114 / 125] LibTests-product
+[119 / 125] LibTests-product
+[121 / 125] LibTests-product
+Build complete! (5.69秒)
+Test Suite 'All tests' started at 2026-09-27 13:18:17.194.
+Test Suite 'LibTests.xctest' started at 2026-09-27 13:18:17.194.
+Test Suite 'XCLegacyTests' started at 2026-09-27 13:18:17.194.
+Test Case '-[LibTests.XCLegacyTests testFails]' started.
+<TMP>/Pkg/Tests/LibTests/XCTestTests.swift:5: error: -[LibTests.XCLegacyTests testFails] : XCTAssertEqual failed: ("1") is not equal to ("5")
+Test Case '-[LibTests.XCLegacyTests testFails]' failed (0.034 seconds).
+Test Case '-[LibTests.XCLegacyTests testPasses]' started.
+Test Case '-[LibTests.XCLegacyTests testPasses]' passed (0.000 seconds).
+Test Suite 'XCLegacyTests' failed at 2026-09-27 13:18:17.228.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.034 (0.034) seconds
+Test Suite 'LibTests.xctest' failed at 2026-09-27 13:18:17.228.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.034 (0.034) seconds
+Test Suite 'All tests' failed at 2026-09-27 13:18:17.229.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.034 (0.035) seconds
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Named suite" started.
+◇ Suite OtherSuite started.
+◇ Test "表示名つき 成功" started.
+◇ Test "parameterized 失敗" started.
+◇ Test otherPasses() started.
+◇ Test failsUnnamed() started.
+◇ Test "表示名つき 失敗" started.
+◇ Test case passing 1 argument x → 2 to "parameterized 失敗" started.
+◇ Test case passing 1 argument x → 1 to "parameterized 失敗" started.
+✔ Test otherPasses() passed after 0.001 seconds.
+◇ Test case passing 1 argument x → 3 to "parameterized 失敗" started.
+✔ Suite OtherSuite passed after 0.001 seconds.
+✔ Test "表示名つき 成功" passed after 0.001 seconds.
+✘ Test "parameterized 失敗" recorded an issue with 1 argument x → 2 at SwiftTestingTests.swift:9:78: Expectation failed: x != 2
+↳ x != 2 → false
+↳   x → 2
+✘ Test failsUnnamed() recorded an issue at SwiftTestingTests.swift:8:33: Expectation failed: one() == 3
+↳ one() == 3 → false
+↳   one() → 1
+✘ Test "表示名つき 失敗" recorded an issue at SwiftTestingTests.swift:7:57: Expectation failed: one() == 2
+↳ one() == 2 → false
+↳   one() → 1
+✘ Test "表示名つき 失敗" failed after 0.001 seconds with 1 issue.
+✘ Test failsUnnamed() failed after 0.001 seconds with 1 issue.
+✘ Test "parameterized 失敗" with 3 test cases failed after 0.001 seconds with 1 issue.
+✘ Suite "Named suite" failed after 0.001 seconds with 3 issues.
+✘ Test run with 5 tests in 2 suites failed after 0.001 seconds with 3 issues.
+Note: Some test targets reported failures:
+  - LibTests (XCTest)
+  - LibTests (Swift Testing)

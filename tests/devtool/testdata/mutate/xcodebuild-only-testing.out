@@ -1,0 +1,8 @@
+Test Case '-[ObaketUITests.ObaketE2EBrowserEntryTests testGridContextMenuUsesClickedRowOutsideAndSelectionInside]' passed (117.035 seconds).
+Test Suite 'ObaketE2EBrowserEntryTests' passed at 2026-10-01 09:48:04.357.
+	 Executed 1 test, with 0 failures (0 unexpected) in 117.035 (117.036) seconds
+Test Suite 'ObaketUITests.xctest' passed at 2026-10-01 09:48:04.358.
+	 Executed 1 test, with 0 failures (0 unexpected) in 117.035 (117.036) seconds
+Test Suite 'Selected tests' passed at 2026-10-01 09:48:04.358.
+	 Executed 1 test, with 0 failures (0 unexpected) in 117.035 (117.037) seconds
+** TEST SUCCEEDED **

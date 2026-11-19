@@ -57,4 +57,26 @@ Swift のアプリでは worktree からのフルビルドは遅すぎるので�
 
 ## 進捗
 
-(未着手。1092 の後)
+- [x] obaket の `b5ac06bc3` の `bin/mutate` を `devtool/bin/mutate` に、`mutate-test` を `tests/devtool/test_mutate.sh` に、fixture 9 本を `tests/devtool/testdata/mutate/` に移した。
+  変えたのは dotfiles への依存を環境変数 (`DEVTOOL_RUNTIMEOUT`・`DEVTOOL_SKILL_TMPDIR`) で受ける所、reap の helper を `MUTATE_REAP_HELPER` で受ける所、
+  dotfiles の lint に合わせたコメント (経緯の番号を外す) と sleep (テストの本体のポーリング 4 か所を `tt_wait_until` に。上限は元と同じ 10 / 20 秒。偽の runner の中の 3 か所は理由の印)。
+  テストは移す前の obaket と同じ 93 件
+- [x] 各 app の `bin/mutate` は wrapper (dotfiles を `*_MUTATE_DOTFILES_ROOT` で見つけ、`bin/devtool-run mutate` を絶対パスで起こす)。`bin/mutate-test` は、偽の devtool-run で wrapper の配線
+  (道具名・引数の数と並び・rc の透過・REAP・相対の root・dotfiles 不在) を確かめてから本体のテストを起こす (vgp 99 件・obaket 100 件)。
+  変異: obaket の helper を渡す行を消す → RED、vgp の継承した値を消す行を消す → RED
+- [x] 自己テストの配線 (vgp `lint-mutate`、obaket `check-mutate-harness`) は残し、`bin/mutate-test` 経由で本体のテストが走ることをログで確認。obaket の `run-logged-command-test` は dotfiles の fixture を読む
+- [x] app の `bin/testdata/mutate/` を消した。文書 (vgp `VLCMultiVideoPlayerTests/CLAUDE.md`、obaket `bin/CLAUDE.md`・`macOS/docs/debug-api.md`・`macOS/Makefile` のコメント) と global の rule を直した
+- [ ] vgp・obaket の本物のテストで、wrapper から変異を 1 本当てて RED / GREEN を見る (push の後に回す)
+
+### 挙動の差 (受け入れたもの)
+
+- `--summarize` も dotfiles が要る (旧は dotfiles なしで動いた)。本体を dotfiles に置く以上、本体が無いと動かない。dotfiles の無い環境で使う経路は見つかっていない (app の CI は mutate を回さない)
+- `--summarize` のたびに devtool-run が runtimeout を解決する (古ければビルドする)。解決できなくても要約は動く (警告を出す)
+- vgp に並列テストの `Test case … on` の読み取りが入った (obaket の 4 commit。機能が増える向き)
+
+### codex の敵対的レビュー (2026-11-19、3 周。1092 と共通)
+
+- 1 周目: 相対の `*_MUTATE_DOTFILES_ROOT` の基準 (旧は repo root) → wrapper で揃えた。vgp が継承した `MUTATE_REAP_HELPER` を使う → 消してから旧と同じ条件で渡す。
+  wrapper の配線が無検査 → `bin/mutate-test` に配線の検査を足した
+- 2 周目: `mutate-test` だけ相対の root を cwd 基準で読む・引数の数と並びを見ない・exec で一時 dir が残る → 直した
+- 3 周目: 引数の改行を見逃す → `%q` で記録。`rm -rf` の失敗を見ずに exec → 止めるようにした (4 周目に通していない)

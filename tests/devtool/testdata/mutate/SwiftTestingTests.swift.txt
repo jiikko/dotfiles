@@ -1,0 +1,14 @@
+import Testing
+@testable import Lib
+
+@Suite("Named suite")
+struct NamedSuite {
+    @Test("表示名つき 成功") func passes() { #expect(one() == 1) }
+    @Test("表示名つき 失敗") func failsNamed() { #expect(one() == 2) }
+    @Test func failsUnnamed() { #expect(one() == 3) }
+    @Test("parameterized 失敗", arguments: [1, 2, 3]) func param(x: Int) { #expect(x != 2) }
+}
+
+@Suite struct OtherSuite {
+    @Test func otherPasses() { #expect(true) }
+}

@@ -1,0 +1,6 @@
+import XCTest
+@testable import Lib
+final class XCLegacyTests: XCTestCase {
+    func testPasses() { XCTAssertEqual(one(), 1) }
+    func testFails() { XCTAssertEqual(one(), 5) }
+}

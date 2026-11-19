@@ -1,0 +1,557 @@
+2026-09-27 13:18:37.887 xcodebuild[15440:51504324] [MT] DVTPlugInLoading: Failed to load code for plug-in com.apple.dt.DVTCoreDeviceCore (/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework), error = Error Domain=NSCocoaErrorDomain Code=3588 "dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0109): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice" UserInfo={NSLocalizedFailureReason=The bundle couldn’t be loaded., NSLocalizedRecoverySuggestion=Try reinstalling the bundle., NSFilePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, NSDebugDescription=dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0109): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice, NSBundlePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework, NSLocalizedDescription=The bundle “DVTCoreDeviceCore” couldn’t be loaded.}, dyldError = dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0000): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice
+2026-09-27 13:18:37.887 xcodebuild[15440:51504324] [MT] DVTPlugInExtensionFaulting: Failed to fire fault for extension Xcode.Device.CoreDevice: Error Domain=DVTPlugInErrorDomain Code=2 "Loading a plug-in failed." UserInfo={DVTPlugInIdentifierErrorKey=com.apple.dt.DVTCoreDeviceCore, DVTPlugInExecutablePathErrorKey=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, NSLocalizedRecoverySuggestion=The plug-in or one of its prerequisite plug-ins may be missing or damaged and may need to be reinstalled., DVTPlugInDYLDErrorMessageErrorKey=dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0000): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice, NSLocalizedDescription=Loading a plug-in failed., NSFilePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework, NSLocalizedFailureReason=The plug-in “com.apple.dt.DVTCoreDeviceCore” at path “/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework” could not be loaded.  The plug-in or one of its prerequisite plug-ins may be missing or damaged., NSUnderlyingError=0xaff04dcb0 {Error Domain=NSCocoaErrorDomain Code=3588 "dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0109): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice" UserInfo={NSLocalizedFailureReason=The bundle couldn’t be loaded., NSLocalizedRecoverySuggestion=Try reinstalling the bundle., NSFilePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, NSDebugDescription=dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0109): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice, NSBundlePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework, NSLocalizedDescription=The bundle “DVTCoreDeviceCore” couldn’t be loaded.}}}
+2026-09-27 13:18:37.887 xcodebuild[15440:51504324] [MT] DVTAssertions: Warning in DVTFrameworks/DVTFoundation/Devices/DVTDevice.m:381
+Details:  No locator class for device extension 'Xcode.Device.CoreDevice', error: Error Domain=DVTPlugInErrorDomain Code=2 "Loading a plug-in failed." UserInfo={DVTPlugInIdentifierErrorKey=com.apple.dt.DVTCoreDeviceCore, DVTPlugInExecutablePathErrorKey=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, NSLocalizedRecoverySuggestion=The plug-in or one of its prerequisite plug-ins may be missing or damaged and may need to be reinstalled., DVTPlugInDYLDErrorMessageErrorKey=dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0000): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice, NSLocalizedDescription=Loading a plug-in failed., NSFilePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework, NSLocalizedFailureReason=The plug-in “com.apple.dt.DVTCoreDeviceCore” at path “/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework” could not be loaded.  The plug-in or one of its prerequisite plug-ins may be missing or damaged., NSUnderlyingError=0xaff04dcb0 {Error Domain=NSCocoaErrorDomain Code=3588 "dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0109): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice" UserInfo={NSLocalizedFailureReason=The bundle couldn’t be loaded., NSLocalizedRecoverySuggestion=Try reinstalling the bundle., NSFilePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, NSDebugDescription=dlopen(/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/DVTCoreDeviceCore, 0x0109): Symbol not found: _$s10CoreDevice17DetailedOperationC7metricsSDySSAA12CodableValueOGvg
+  Referenced from: <E47C0F61-0399-382B-A241-7222F33F774E> /Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework/Versions/A/DVTCoreDeviceCore
+  Expected in:     <BF770DE4-8425-37CA-99BB-029235010A99> /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/CoreDevice, NSBundlePath=/Applications/Xcode.app/Contents/SharedFrameworks/DVTCoreDeviceCore.framework, NSLocalizedDescription=The bundle “DVTCoreDeviceCore” couldn’t be loaded.}}}
+Object:   <DVTDevice>
+Method:   +_knownDeviceLocators
+Thread:   <_NSMainThread: 0x101c55b90>{number = 1, name = main}
+Please file a bug at https://feedbackassistant.apple.com with this warning message and any useful information you can provide.
+2026-09-27 13:18:37.891 xcodebuild[15440:51504360]  DVTErrorPresenter: Unable to load simulator devices.
+Domain: DVTCoreSimulatorAdditionsErrorDomain
+Code: 3
+Failure Reason: The version of the CoreSimulator framework installed on this Mac is out-of-date and not supported by this version of Xcode.
+Recovery Suggestion: Please ensure that you have installed all available updates to your Mac's software, and that you are running the most recent version of Xcode supported by macOS.
+--
+CoreSimulator is out of date. Current version (1051.55.0) is older than build version (1171.7.0).
+Domain: DVTCoreSimulatorAdditionsErrorDomain
+Code: 3
+--
+
+2026-09-27 13:18:37.891 xcodebuild[15440:51504360]  iOSSimulator: [SimServiceContext sharedServiceContextForDeveloperDir:error:] returned nil (Error Domain=DVTCoreSimulatorAdditionsErrorDomain Code=3 "CoreSimulator is out of date. Current version (1051.55.0) is older than build version (1171.7.0)." UserInfo={NSLocalizedDescription=CoreSimulator is out of date. Current version (1051.55.0) is older than build version (1171.7.0).}). Simulator device support disabled.
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -scheme Pkg-Package -destination platform=macOS -derivedDataPath <TMP>/dd
+
+Resolve Package Graph
+2026-09-27 13:18:37.998 xcodebuild[15440:51504324] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+
+
+Resolved source packages:
+  Pkg: <TMP>/Pkg
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00008142-001608A101C3401C, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00008142-001608A101C3401C, name:My Mac }
+{ platform:macOS, arch:arm64, variant:Mac Catalyst, id:00008142-001608A101C3401C, name:My Mac }
+{ platform:macOS, arch:x86_64, variant:Mac Catalyst, id:00008142-001608A101C3401C, name:My Mac }
+{ platform:macOS, arch:arm64, variant:DriverKit, id:00008142-001608A101C3401C, name:My Mac }
+{ platform:macOS, arch:arm64, variant:Designed for [iPad,iPhone], id:00008142-001608A101C3401C, name:My Mac }
+{ platform:macOS, arch:arm64e.x1, variant:Designed for [iPad,iPhone], id:00008142-001608A101C3401C, name:My Mac }
+{ platform:macOS, arch:arm64_32, variant:Designed for [iPad,iPhone], id:00008142-001608A101C3401C, name:My Mac }
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (2 targets)
+    Target 'LibTests-product' in project 'Pkg'
+        ➜ Explicit dependency on target 'Lib' in project 'Pkg'
+    Target 'Lib' in project 'Pkg' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: 34815b96f9579f42a12e3f4f2c5823a6
+Build description path: <TMP>/dd/Build/Intermediates.noindex/XCBuildData/34815b96f9579f42a12e3f4f2c5823a6.xcbuilddata
+CreateBuildDirectory <TMP>/dd/SDKExplicitPrecompiledModules
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/SDKExplicitPrecompiledModules
+
+CreateBuildDirectory <TMP>/dd/ModuleCache.noindex
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/ModuleCache.noindex
+
+CreateBuildDirectory <TMP>/dd/CompilationCache.noindex
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/CompilationCache.noindex
+
+CreateBuildDirectory <TMP>/dd/Build/Products
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Products
+
+CreateBuildDirectory <TMP>/dd/Build/Intermediates.noindex
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Intermediates.noindex
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+    cd <TMP>/Pkg/.swiftpm/xcode
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -o <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+
+CreateBuildDirectory <TMP>/dd/Build/Intermediates.noindex/PrecompiledHeaders
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Intermediates.noindex/PrecompiledHeaders
+
+CreateBuildDirectory <TMP>/dd/Build/Products/Debug
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Products/Debug
+
+CreateBuildDirectory <TMP>/dd/Build/Intermediates.noindex/ExplicitPrecompiledModules
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+CreateBuildDirectory <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+CreateBuildDirectory <TMP>/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug
+
+CreateBuildDirectory <TMP>/dd/Build/Products/Debug/PackageFrameworks
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-create-build-directory <TMP>/dd/Build/Products/Debug/PackageFrameworks
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/empty-LibTests.plist (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/empty-LibTests.plist
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/LibTests.DependencyMetadataFileList (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/LibTests.DependencyMetadataFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/LibTests.DependencyStaticMetadataFileList (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/LibTests.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-OutputFileMap.json (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-OutputFileMap.json
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_const_extract_protocols.json (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_const_extract_protocols.json
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.LinkFileList (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.LinkFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftConstValuesFileList (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftConstValuesFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftFileList (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_const_extract_protocols.json (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_const_extract_protocols.json
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftFileList (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftConstValuesFileList (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftConstValuesFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.LinkFileList (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.LinkFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-OutputFileMap.json (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-OutputFileMap.json
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.modulemap (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.modulemap
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.DependencyStaticMetadataFileList (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.DependencyMetadataFileList (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    write-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.DependencyMetadataFileList
+
+MkDir <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    /bin/mkdir -p <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents
+
+MkDir <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/MacOS (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    /bin/mkdir -p <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/MacOS
+
+MkDir <TMP>/dd/Build/Products/Debug/LibTests.xctest (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    /bin/mkdir -p <TMP>/dd/Build/Products/Debug/LibTests.xctest
+
+Copy <TMP>/dd/Build/Intermediates.noindex/GeneratedModuleMaps/Lib.modulemap <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.modulemap (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.modulemap <TMP>/dd/Build/Intermediates.noindex/GeneratedModuleMaps
+
+SwiftDriver Lib normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name Lib -Onone @<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path <TMP>/dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path <TMP>/dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I <TMP>/dd/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F <TMP>/dd/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path <TMP>/dd/ModuleCache.noindex -sdk-module-cache-path <TMP>/dd/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file <TMP>/dd/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name pkg -emit-const-values -const-gather-protocols-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_const_extract_protocols.json -Xcc -I<TMP>/dd/Build/Products/Debug/include -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources-normal/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-Swift.h -working-directory <TMP>/Pkg/.swiftpm/xcode -experimental-emit-module-separately -disable-cmo
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_SwiftConcurrencyShims-A1C2X4ZZ51C19Q1JJMRX7S9S4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/SwiftShims-9NPE7844BPRKFWPYM37L898EM.pcm
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Lib (in target 'Lib' from project 'Pkg')
+
+SwiftCompile normal arm64 (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    
+
+SwiftCompile normal arm64 Compiling\ Lib.swift <TMP>/Pkg/Sources/Lib/Lib.swift (in target 'Lib' from project 'Pkg')
+
+SwiftCompile normal arm64 <TMP>/Pkg/Sources/Lib/Lib.swift (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-SwiftPerFileCompile Lib.swift
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for Lib (in target 'Lib' from project 'Pkg')
+
+SwiftDriver\ Compilation\ Requirements Lib normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name Lib -Onone @<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path <TMP>/dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path <TMP>/dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I <TMP>/dd/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F <TMP>/dd/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path <TMP>/dd/ModuleCache.noindex -sdk-module-cache-path <TMP>/dd/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file <TMP>/dd/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name pkg -emit-const-values -const-gather-protocols-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_const_extract_protocols.json -Xcc -I<TMP>/dd/Build/Products/Debug/include -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources-normal/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-Swift.h -working-directory <TMP>/Pkg/.swiftpm/xcode -experimental-emit-module-separately -disable-cmo
+
+SwiftMergeGeneratedHeaders <TMP>/dd/Build/Intermediates.noindex/GeneratedModuleMaps/Lib-Swift.h <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-Swift.h (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-swiftHeaderTool -arch arm64 <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-Swift.h -o <TMP>/dd/Build/Intermediates.noindex/GeneratedModuleMaps/Lib-Swift.h
+
+Copy <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/arm64-apple-macos.abi.json <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.abi.json (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.abi.json <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/arm64-apple-macos.abi.json
+
+Copy <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/arm64-apple-macos.swiftmodule <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftmodule (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftmodule <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/arm64-apple-macos.swiftmodule
+
+Copy <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/arm64-apple-macos.swiftdoc <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftdoc (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftdoc <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/arm64-apple-macos.swiftdoc
+
+Copy <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftsourceinfo (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftsourceinfo <TMP>/dd/Build/Products/Debug/Lib.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo
+
+SwiftDriver LibTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name LibTests -Onone @<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path <TMP>/dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path <TMP>/dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I <TMP>/dd/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F <TMP>/dd/Build/Products/Debug/PackageFrameworks -F <TMP>/dd/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path <TMP>/dd/ModuleCache.noindex -sdk-module-cache-path <TMP>/dd/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file <TMP>/dd/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name pkg -emit-const-values -const-gather-protocols-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_const_extract_protocols.json -Xcc -I<TMP>/dd/Build/Products/Debug/include -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources-normal/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -working-directory <TMP>/Pkg/.swiftpm/xcode -experimental-emit-module-separately -disable-cmo
+
+SwiftDriverJobDiscovery normal arm64 Compiling Lib.swift (in target 'Lib' from project 'Pkg')
+
+SwiftDriver\ Compilation Lib normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name Lib -Onone @<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path <TMP>/dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path <TMP>/dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I <TMP>/dd/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F <TMP>/dd/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path <TMP>/dd/ModuleCache.noindex -sdk-module-cache-path <TMP>/dd/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file <TMP>/dd/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name pkg -emit-const-values -const-gather-protocols-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_const_extract_protocols.json -Xcc -I<TMP>/dd/Build/Products/Debug/include -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources-normal/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib-Swift.h -working-directory <TMP>/Pkg/.swiftpm/xcode -experimental-emit-module-separately -disable-cmo
+
+Ld <TMP>/dd/Build/Products/Debug/Lib.o normal (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-macos14.0 -r -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -O0 -Xlinker -no_warn_duplicate_libraries -F<TMP>/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -F<TMP>/dd/Build/Products/Debug -iframework /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -filelist <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.LinkFileList -nostdlib -Xlinker -object_path_lto -Xlinker <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_lto.o -Xlinker -no_deduplicate -Xlinker -debug_variant -Xlinker -dependency_info -Xlinker <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.swiftmodule -o <TMP>/dd/Build/Products/Debug/Lib.o
+
+ExtractAppIntentsMetadata (in target 'Lib' from project 'Pkg')
+    cd <TMP>/Pkg
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name Lib --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk --xcode-version 27A266a --platform-family macOS --deployment-target 14.0 --bundle-identifier pkg.Lib --output <TMP>/dd/Build/Products/Debug/Lib.appintents --target-triple arm64-apple-macos14.0 --binary-file <TMP>/dd/Build/Products/Debug/Lib.o --dependency-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib_dependency_info.dat --stringsdata-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftFileList --metadata-file-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.DependencyMetadataFileList --static-metadata-file-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Lib.DependencyStaticMetadataFileList --swift-const-vals-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/Lib-t.build/Objects-normal/arm64/Lib.SwiftConstValuesFileList --force --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-09-27 13:18:39.329 appintentsmetadataprocessor[15467:51504515] Starting appintentsmetadataprocessor export
+2026-09-27 13:18:39.373 appintentsmetadataprocessor[15467:51504515] Extracted no relevant App Intents symbols, skipping writing output
+
+ProcessInfoPlistFile <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/Info.plist <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/empty-LibTests.plist (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-infoPlistUtility <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/empty-LibTests.plist -producttype com.apple.product-type.bundle.unit-test -expandbuildsettings -platform macosx -o <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/Info.plist
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_AvailabilityInternal-7UE7LOBJMFG25R7X7PVMZJ6F1.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_stddef-25X6GGODW56XHIK96BN9L8JS6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/ptrcheck-55LFDMHXFZG6NCYAHO9MLCQ3V.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_float-EL4JL2DQ5NFX2EE65QCUKBVC9.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_stdarg-BSKTMK41PEIU8CWSSGIY0PEHT.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/ptrauth-E2HPNLIK2729FMMRO2ZYRPDNP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/DeveloperToolsSupport-4SK7270O6W04YXHR08O4BQPNU.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_stdbool-BM3SLO4RWDN81N2SYE0AY6XKK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_DarwinFoundation1-9XANHLPFTRPR0FLI5NIYYNKK7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_limits-EKSIB4ZE0B4STUKP7EQU57QC2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_DarwinFoundation2-EV4ZUBJ6MH4RPDTOWFYW16XVC.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_tgmath-DSVRPJCKSL2J0FO0N4GED3UPT.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/string_h-AKJET2C4ORUI5DB343MEF4KBZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_stdint-CH36KXUGKGYD56MH5AI61BWZN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/sys_types-26JNF31P2LH274HT8NLATH54Z.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/libDER-5II1E8VQHI1CLE2QMBO0845H3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_stdatomic-7E1R02N4TQM0RYCRHZP2WYCQB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_intrinsics-9ZW6ND0QXXROXU0UOJ11PVG54.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_DarwinFoundation3-DRN4BCJU2V4AYO62GBOQITKZT.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/_Builtin_inttypes-3I0OSJGGGEOR882338DNZ60OE.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Darwin-5I78VN3LBEZSXWIORBA54DQPM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/simd-BCA1C38TW31HC6GPVYZM0A9LG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/launch-2L55CCHTG5HEH5ZI80U38N2BF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/libkern-3IJIRTE7J1UP76NLIEWMUPCVR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CUPS-3EFR6QD85CQZVSVFFBERAVJQ6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/MachO-4L74KXQ3JJR9U620LOG10VYMS.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Spatial-7UCJ6EL2YACX201I8J9DMWYR0.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/ObjectiveC-EI8H7TBPJ2VRXYRQUB39QCH65.pcm
+
+SwiftExplicitDependencyCompileModuleFromInterface arm64 <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/Testing-184DF4QYTZ6A.swiftmodule
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/os_object-37W0GKVIGFLQVCWOVVWJD13RH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/os_workgroup-EF9XJDJPRILGNZ7H9C4HITYW2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Dispatch-6KWNUQEPZHF1OQ8NS03EKZ8G2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreFoundation-9FR7OTVVT0IZEA429C3YQGM42.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/XPC-BA8UPRW39W44HBKZ1Z8PZZOS2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/os-9017TNTSK9FC4G7DCBFC5IG38.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/ColorSync-534VN8X18MRGQSDGQU1770EF7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Security-8GOZS4UHX6D6BIJQD66UU86YH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CFNetwork-5J94ADP2UBFGWF0AYSX4F8VQ9.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/IOKit-7DP6I5RC0WGLK332B2DPPKJW3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreGraphics-13DJ0H99M2HMLCHPQGHGZ04L3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/DiskArbitration-EHV8DEA23U4OB5VKYR0XONK2U.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreServices-9JL05817A7JP9RB3DAMWITEML.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreText-2A7JY4TMO44A232CINE8B0TFR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/ImageIO-DDBSR3YZHH0MU49PF20QJYGQN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Foundation-2RUZDWCI84LX1N8UB59EJZHMG.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreTransferable-3OT3P11I7E9DQUSC95WWPJDPN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreData-5GQ5YI2P36YFLZSYLCRGJAD08.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/UniformTypeIdentifiers-1H3XBJ2V2RBX03L8K4M1UUZS6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/ApplicationServices-AMIUP3TAQSET3A43XXKALBSTM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Accessibility-NL6EPAOBG80SYJU4VJQXL22S.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/IOSurface-6HFG7BGUK794F7TQLXJ0LYU58.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Symbols-7Y6ORFV1B9OGS9N0WVF59EEUC.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/OSLog-F587SEO07YS12H3KKHZEJMEA9.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/DataDetection-EU2WKC1NGM9Z32PLCS5IJYINZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/Metal-2A6NYL3L9EK5XX2HPNFTTCE1L.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/OpenGL-2MVSYSA2P3OBJ6CW9HS1R0X2K.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreVideo-4A4VG09Z6FKQODSHXSNCCXMDS.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/QuartzCore-660FSHFJLR7BVQC8R81XSVUQR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/CoreImage-2ADYB94OOMABG192OL38HMSSK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/SwiftUICore-3IL6OO5RG9NVGMW58ZO376HN6.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/SDKExplicitPrecompiledModules/AppKit-21SR4E8W9P1IMEI70HI20L6L9.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCUIAutomation-WU9IJTS4NHAWMSLG6NEZKUIM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCTest-9CZOLAC5Y9OAE1VQCHZ9MR29B.pcm
+
+SwiftExplicitDependencyCompileModuleFromInterface arm64 <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCUIAutomation-1B1JSTFATNOXE.swiftmodule
+
+SwiftExplicitDependencyCompileModuleFromInterface arm64 <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/XCTest-12GESQBYEIYGF.swiftmodule
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ LibTests (in target 'LibTests-product' from project 'Pkg')
+
+SwiftCompile normal arm64 (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    
+
+SwiftCompile normal arm64 Compiling\ SwiftTestingTests.swift <TMP>/Pkg/Tests/LibTests/SwiftTestingTests.swift (in target 'LibTests-product' from project 'Pkg')
+
+SwiftCompile normal arm64 <TMP>/Pkg/Tests/LibTests/SwiftTestingTests.swift (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-SwiftPerFileCompile SwiftTestingTests.swift
+
+SwiftCompile normal arm64 Compiling\ XCTestTests.swift <TMP>/Pkg/Tests/LibTests/XCTestTests.swift (in target 'LibTests-product' from project 'Pkg')
+
+SwiftCompile normal arm64 <TMP>/Pkg/Tests/LibTests/XCTestTests.swift (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-SwiftPerFileCompile XCTestTests.swift
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for LibTests (in target 'LibTests-product' from project 'Pkg')
+
+SwiftDriver\ Compilation\ Requirements LibTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name LibTests -Onone @<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path <TMP>/dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path <TMP>/dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I <TMP>/dd/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F <TMP>/dd/Build/Products/Debug/PackageFrameworks -F <TMP>/dd/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path <TMP>/dd/ModuleCache.noindex -sdk-module-cache-path <TMP>/dd/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file <TMP>/dd/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name pkg -emit-const-values -const-gather-protocols-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_const_extract_protocols.json -Xcc -I<TMP>/dd/Build/Products/Debug/include -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources-normal/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -working-directory <TMP>/Pkg/.swiftpm/xcode -experimental-emit-module-separately -disable-cmo
+
+Copy <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/arm64-apple-macos.swiftmodule <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftmodule (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftmodule <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/arm64-apple-macos.swiftmodule
+
+Copy <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/arm64-apple-macos.swiftdoc <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftdoc (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftdoc <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/arm64-apple-macos.swiftdoc
+
+Copy <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/arm64-apple-macos.abi.json <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.abi.json (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.abi.json <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/arm64-apple-macos.abi.json
+
+Copy <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftsourceinfo (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftsourceinfo <TMP>/dd/Build/Products/Debug/LibTests.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo
+
+SwiftDriverJobDiscovery normal arm64 Compiling SwiftTestingTests.swift (in target 'LibTests-product' from project 'Pkg')
+
+SwiftDriverJobDiscovery normal arm64 Compiling XCTestTests.swift (in target 'LibTests-product' from project 'Pkg')
+
+SwiftDriver\ Compilation LibTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg/.swiftpm/xcode
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name LibTests -Onone @<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path <TMP>/dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -profile-coverage-mapping -profile-generate -enable-testing -index-store-path <TMP>/dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I <TMP>/dd/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F <TMP>/dd/Build/Products/Debug/PackageFrameworks -F <TMP>/dd/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc <TMP>/dd/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path <TMP>/dd/ModuleCache.noindex -sdk-module-cache-path <TMP>/dd/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file <TMP>/dd/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name pkg -emit-const-values -const-gather-protocols-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_const_extract_protocols.json -Xcc -I<TMP>/dd/Build/Products/Debug/include -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources-normal/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources/arm64 -Xcc -I<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -working-directory <TMP>/Pkg/.swiftpm/xcode -experimental-emit-module-separately -disable-cmo
+
+Ld <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/MacOS/LibTests normal (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -Xlinker -reproducible -target arm64-apple-macos14.0 -Xlinker -bundle -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -Xlinker -no_warn_duplicate_libraries -L<TMP>/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -L<TMP>/dd/Build/Products/Debug -L/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F<TMP>/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -F<TMP>/dd/Build/Products/Debug/PackageFrameworks -F<TMP>/dd/Build/Products/Debug -Fsystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks @<TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path -Xlinker -rpath -Xlinker <TMP>/dd/Build/Products/Debug/PackageFrameworks -Xlinker -rpath -Xlinker @loader_path/../../.. -Xlinker -rpath -Xlinker @loader_path/Frameworks -Xlinker -rpath -Xlinker @loader_path/../Frameworks -Xlinker -object_path_lto -Xlinker <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_lto.o -Xclang-linker -rdynamic -Xlinker -no_deduplicate -Xlinker -debug_variant -Xlinker -dependency_info -Xlinker <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_dependency_info.dat -link-objc-runtime -profile-generate -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.swiftmodule -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport -o <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/MacOS/LibTests -no-stdlib-rpath
+
+CopySwiftLibs <TMP>/dd/Build/Products/Debug/LibTests.xctest (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-swiftStdLibTool --copy --verbose --scan-executable <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/MacOS/LibTests --scan-folder <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/Frameworks --scan-folder <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/PlugIns --scan-folder <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/Library/SystemExtensions --scan-folder <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/Extensions --platform macosx --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+Ignoring --strip-bitcode because --sign was not passed
+
+ExtractAppIntentsMetadata (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name LibTests --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk --xcode-version 27A266a --platform-family macOS --deployment-target 14.0 --bundle-identifier pkg.LibTests --output <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/Resources --target-triple arm64-apple-macos14.0 --binary-file <TMP>/dd/Build/Products/Debug/LibTests.xctest/Contents/MacOS/LibTests --dependency-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests_dependency_info.dat --stringsdata-file <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftFileList --metadata-file-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/LibTests.DependencyMetadataFileList --static-metadata-file-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/LibTests.DependencyStaticMetadataFileList --swift-const-vals-list <TMP>/dd/Build/Intermediates.noindex/Pkg.build/Debug/LibTests-p.build/Objects-normal/arm64/LibTests.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-09-27 13:18:42.724 appintentsmetadataprocessor[15575:51504796] Starting appintentsmetadataprocessor export
+2026-09-27 13:18:42.725 appintentsmetadataprocessor[15575:51504796] warning: Metadata extraction skipped, no AppIntents.framework dependency found
+
+RegisterExecutionPolicyException <TMP>/dd/Build/Products/Debug/LibTests.xctest (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    builtin-RegisterExecutionPolicyException <TMP>/dd/Build/Products/Debug/LibTests.xctest
+
+Touch <TMP>/dd/Build/Products/Debug/LibTests.xctest (in target 'LibTests-product' from project 'Pkg')
+    cd <TMP>/Pkg
+    /usr/bin/touch -c <TMP>/dd/Build/Products/Debug/LibTests.xctest
+
+PruneExplicitPrecompiledModules <TMP>/dd/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules <TMP>/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules <TMP>/dd/SDKExplicitPrecompiledModules
+
+2026-09-27 13:18:42.848 xcodebuild[15440:51504365]  DVTAssertions: Warning in IDEFrameworks/IDEFoundation/Execution/LaunchSystem/IDELaunchSession.m:395
+Details:  setRunnablePIDWithDiagnostics:logSection:andCompletionHandler: called without a completion handler - blocking until diagnostics setup completes. Callers should migrate to using a completion handler for better performance.
+Object:   <IDELaunchSession: 0xafdbb1980>
+Method:   -setRunnablePIDWithDiagnostics:logSection:andCompletionHandler:
+Thread:   <NSThread: 0xafd5e6680>{number = 6, name = (null)}
+Please file a bug at https://feedbackassistant.apple.com with this warning message and any useful information you can provide.
+Test Suite 'All tests' started at 2026-09-27 13:18:43.489.
+Test Suite 'LibTests.xctest' started at 2026-09-27 13:18:43.489.
+Test Suite 'XCLegacyTests' started at 2026-09-27 13:18:43.490.
+Test Case '-[LibTests.XCLegacyTests testFails]' started.
+<TMP>/Pkg/Tests/LibTests/XCTestTests.swift:5: error: -[LibTests.XCLegacyTests testFails] : XCTAssertEqual failed: ("1") is not equal to ("5")
+Test Case '-[LibTests.XCLegacyTests testFails]' failed (0.300 seconds).
+Test Case '-[LibTests.XCLegacyTests testPasses]' started.
+Test Case '-[LibTests.XCLegacyTests testPasses]' passed (0.000 seconds).
+Test Suite 'XCLegacyTests' failed at 2026-09-27 13:18:43.790.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.300 (0.301) seconds
+Test Suite 'LibTests.xctest' failed at 2026-09-27 13:18:43.790.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.300 (0.301) seconds
+Test Suite 'All tests' failed at 2026-09-27 13:18:43.791.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.300 (0.301) seconds
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Named suite" started.
+◇ Suite OtherSuite started.
+◇ Test "表示名つき 失敗" started.
+◇ Test "parameterized 失敗" started.
+◇ Test otherPasses() started.
+◇ Test failsUnnamed() started.
+◇ Test "表示名つき 成功" started.
+◇ Test case passing 1 argument x → 2 to "parameterized 失敗" started.
+◇ Test case passing 1 argument x → 1 to "parameterized 失敗" started.
+◇ Test case passing 1 argument x → 3 to "parameterized 失敗" started.
+✔ Test otherPasses() passed after 0.001 seconds.
+​​✔ Suite OtherSuite passed after 0.001 seconds.
+✘ Test "表示名つき 失敗" recorded an issue at SwiftTestingTests.swift:7:57: Expectation failed: one() == 2
+↳ one() == 2 → false
+↳   one() → 1
+✔ Test "表示名つき 成功" passed after 0.001 seconds.
+✘ Test "parameterized 失敗" recorded an issue with 1 argument x → 2 at SwiftTestingTests.swift:9:78: Expectation failed: x != 2
+↳ x != 2 → false
+↳   x → 2
+✘ Test failsUnnamed() recorded an issue at SwiftTestingTests.swift:8:33: Expectation failed: one() == 3
+↳ one() == 3 → false
+↳   one() → 1
+​✘ Test "表示名つき 失敗" failed after 0.001 seconds with 1 issue.
+✘ Test "parameterized 失敗" with 3 test cases failed after 0.001 seconds with 1 issue.
+✘ Test failsUnnamed() failed after 0.001 seconds with 1 issue.
+✘ Suite "Named suite" failed after 0.001 seconds with 3 issues.
+✘ Test run with 5 tests in 2 suites failed after 0.001 seconds with 3 issues.
+2026-09-27 13:18:53.874 xcodebuild[15440:51504324] [MT] IDETestOperationsObserverDebug: 11.123 elapsed -- Testing started completed.
+2026-09-27 13:18:53.874 xcodebuild[15440:51504324] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-09-27 13:18:53.874 xcodebuild[15440:51504324] [MT] IDETestOperationsObserverDebug: 11.123 sec, +11.123 sec -- end
+
+Test session results, code coverage, and logs:
+	<TMP>/dd/Logs/Test/Test-Pkg-Package-2026.09.27_13-18-38-+0900.xcresult
+
+Failing tests:
+	XCLegacyTests.testFails()
+	NamedSuite.failsNamed()
+	NamedSuite.failsUnnamed()
+	-[NamedSuite param(x:)]
+
+** TEST FAILED **
+
+Testing started
