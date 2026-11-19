@@ -87,8 +87,8 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 - **残り (この順に)**
   0. ~~止めた時点の push の CI を見る~~ 済んだ (2026-11-20。引数なしの `bin/ci-log` で HEAD 0ff48f1be に失敗した run は無かった)
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。→ 済んだ (2026-11-20。残り 6 本 samefile-no-inode・samefile-skip-path-compare・samefile-stat-error-true・home-unset-skip・home-unset-no-set-check・home-unset-no-passwd を `bin/mutate-verify-list` で当て、6 本とも rc 0 = 想定どおり red。P2-2・P2-3 の「壊した形は未確認」もこれで確かめた)
-  2. 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
-  3. そのレビューの指摘を直す (issue に「### 1 本目の敵対的レビュー (2 回目)」の節を作る)
+  2. ~~2 回目の敵対的レビュー~~ 済んだ (2026-11-20。下の「1 本目の敵対的レビュー (2 回目)」)。以下は当てたときの指示の写し: 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
+  3. そのレビューの指摘を直す: P2 は直した。P3 (`FailOnWord`) が残り
   4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順
 - **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
@@ -111,6 +111,18 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 
 答えが変わらない書き換え (採らない): `HomePath` の 2 つの `~` の検査はどちらか一方で足りる (本家も同じ二重の形)・`CaseInsensitive(probe)` を `(real)` にしても同じファイルシステムの中では同じ答え。
 未確認リスク: 大文字小文字を区別するファイルシステム・EACCES の getcwd・NUL を含むパス。共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないかは、レビューでは見ていない (push 前の `make -C src/ja-writing lint test` は lint と diff の記録の試験を含めて rc 0)。
+
+### 1 本目の敵対的レビュー (2 回目。2026-11-20。opus)
+
+攻めた所: 共有の部品 (pyjson の設定・pyunicode の表・pystr.Float / DecimalInt) を変えたことで lint と diff の答えが変わるか・大文字小文字の表の使い所・lint と diff のテストを弱めたか。前回の済んだ範囲は繰り返していない。生存 2 件 (P2 1・P3 1)。
+
+| 指摘 | 場所 | 中身 | 扱い |
+|---|---|---|---|
+| P2 | `internal/pystr/pystr.go` の `Float` | Go 1.26.0 の `strconv.ParseFloat` は、整数部の後ろに 0 が 800 個を超えて並び指数で打ち消す入力を誤る (`"1"+"0"*800+"e-800"` が 0.1、`n=1000` で 1e-201、Python はどれも 1.0)。`check.Timeout` がこの写しを使うので `--timeout` の答えが本家と違った。記録の floats は 4 字程度の数字しか無く、緑のまま通っていた | 直した (commit「fix(ja-writing): float(str) の写しが、仮数の 0 が 800 個を超えて並び指数で打ち消す入力を Python と違う値に読むのを直す」)。仮数を「0.<先頭と末尾の 0 を除いた数字>e<指数>」に書き直してから渡す。pystr.json の floats に長い仮数 36 件 (n = 799・800・801・1000) を書き足した (既存の 4,000 件とほかの欄は変わらないことを python で照合)。壊した形: 書き直しを外す → red。末尾の 0 を残す → 緑 (「0.」で始まる形なら末尾の 0 が 800 個を超えても ParseFloat は正しい。72 件を Python と比べて一致。削るのは数字の並びを短くするためだけで、答えは変わらない) |
+| P3 | `internal/pycli/parse.go` の `FailOnWord` | lint と diff の `--fail-on` の小文字化は `strings.ToLower` + İ の近似のまま。check の `FailOn` は `pyunicode.Lower`。`--fail-on ΑΣ` の誤りの文が本家・check は `ας`、lint・diff は `ασ` (README の「揃わない範囲」に既知の差として書いてある) | 未着手。`FailOnWord` を `pyunicode.Lower` で書き、check の `FailOn` はそれを呼び、README の項を消す。lint と diff の CLI の記録に `ΑΣ` を足して確かめる |
+
+壊せなかった観点: 23f638d6f..HEAD で lint/・diff/ のファイルの変更は 0 件、足した部品は lint と diff から呼ばれていない (grep で 0 件)、既存で変わったのは `normalize.go` の二分探索を関数に出した 1 か所 (同じ処理)。本家の `casefold` / `swapcase` / `lower` の使い所と Go の表は 1 対 1。1 本目で lint と diff のテストの assert の緩和・記録の差し替えは無い。
+未確認: runs/ に UTF-8 でない名前があるときの並び順 (APFS では作れない)。
 
 ## 進捗
 
