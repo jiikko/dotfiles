@@ -128,21 +128,30 @@ TT_BUSY_COOLDOWN="${TT_BUSY_COOLDOWN:-600}"
 TT_BUSY_KEEP="${TT_BUSY_KEEP:-10}"
 TT_BUSY_SAMPLE_SECS="${TT_BUSY_SAMPLE_SECS:-5}"
 TT_SAMPLE_CMD="${TT_SAMPLE_CMD:-/usr/bin/sample}"
-# 🚨 数でない値 (10m 等) をそのまま算術に通さない。bash は算術エラーで今の while ループごと捨てて
-#   次のコマンドへ進むので、生きているサーバに死亡処理が走り、偽の server-death を書いて watchdog が消える。
-#   値が不正なら撮影だけを止めて、看取りは続ける。
+# 🚨 数の環境変数をそのまま算術に通さない。bash は算術エラー (10m・先頭が 0 の 08 は 8 進数として読んで
+#   value too great for base) で今の while ループごと捨てて次のコマンドへ進むので、生きているサーバに
+#   死亡処理が走り、偽の server-death を書いて watchdog が消える。
+#   数字だけで範囲内なら 10 進数に直し、外れたら決めた値に戻して、変数名だけをログに残す
+#   (値はそのまま書かない。改行を含む値は観測ログに偽の行を書ける)。
 # shellcheck source=bin/lib/uint.sh
 . "$SCRIPT_DIR/../bin/lib/uint.sh"
-busy_enabled=1
-for v in TT_BUSY_WINDOW TT_BUSY_PCT TT_BUSY_WINDOWS TT_BUSY_COOLDOWN TT_BUSY_KEEP TT_BUSY_SAMPLE_SECS; do
-  val="${!v}"
-  if ! uint_ok "$val" 6; then
-    busy_enabled=0
-    tt_trigger_log "server-busy-disabled reason=bad-value var=$v value=$val pid=$SERVER_PID epoch=$(date +%s)"
-    break
+watchdog_uint_env() {  # $1=変数名 $2=下限 $3=上限 $4=外れたときに使う値
+  local val="${!1}"
+  if uint_ok "$val" 6 && [ "$((10#$val))" -ge "$2" ] && [ "$((10#$val))" -le "$3" ]; then
+    printf -v "$1" '%d' "$((10#$val))"
+  else
+    tt_trigger_log "watchdog-bad-env var=$1 fallback=$4 pid=$SERVER_PID epoch=$(date +%s)"
+    printf -v "$1" '%s' "$4"
   fi
-done
-[ "$TT_BUSY_WINDOW" = 0 ] && busy_enabled=0
+}
+watchdog_uint_env TT_HEALTH_CHECK_INTERVAL 0 86400 300
+watchdog_uint_env TT_PSLOG_KEEP 1 1000 10
+watchdog_uint_env TT_BUSY_WINDOW 0 3600 5   # 0 で撮影を止める
+watchdog_uint_env TT_BUSY_PCT 1 100 85      # 0 を許すと全部の窓が忙しくなり、health がずっと後回しになる
+watchdog_uint_env TT_BUSY_WINDOWS 1 100 2
+watchdog_uint_env TT_BUSY_COOLDOWN 0 86400 600
+watchdog_uint_env TT_BUSY_KEEP 1 1000 10    # 0 を許すと今撮った .ps まで消え、後から書かれる .sample が残り続ける
+watchdog_uint_env TT_BUSY_SAMPLE_SECS 1 60 5
 
 # 1/100 秒単位の今の時刻。date +%s の 1 秒刻みだと 5 秒の窓で比が ±20% ぶれるので、
 # bash 5 の EPOCHREALTIME があれば使う (小数点はロケールで , になる)。
@@ -162,7 +171,7 @@ server_cpu_cs() {
     | awk -F'[:.,]' 'NF == 3 && $1 ~ /^ *[0-9]+$/ { print ($1 * 60 + $2) * 100 + $3 }')"
 }
 
-busy_win_start=""; busy_win_cpu=""; busy_streak=0; busy_next_allowed=0
+busy_win_start=""; busy_win_cpu=""; busy_streak=0; busy_captured=0; busy_next_allowed=0
 start_busy_window() {
   now_cs; busy_win_start="$REPLY"
   server_cpu_cs; busy_win_cpu="$REPLY"
@@ -182,26 +191,29 @@ capture_busy() {  # $1=窓の CPU 使用率 (%) $2=最後の窓の長さ (秒)
 }
 check_busy() {
   local now cpu dt pct
-  [ "$busy_enabled" = 1 ] || return 0
+  [ "$TT_BUSY_WINDOW" -gt 0 ] || return 0
   if [ -z "$busy_win_start" ] || [ -z "$busy_win_cpu" ]; then start_busy_window; return 0; fi
   now_cs; now="$REPLY"
   dt=$(( now - busy_win_start ))
   [ "$dt" -ge $(( TT_BUSY_WINDOW * 100 )) ] || return 0
   server_cpu_cs; cpu="$REPLY"
-  if [ -z "$cpu" ]; then busy_streak=0; start_busy_window; return 0; fi
+  if [ -z "$cpu" ]; then busy_streak=0; busy_captured=0; start_busy_window; return 0; fi
   pct=$(( (cpu - busy_win_cpu) * 100 / dt ))
   busy_win_start="$now"; busy_win_cpu="$cpu"
-  if [ "$pct" -lt "$TT_BUSY_PCT" ]; then busy_streak=0; return 0; fi
+  if [ "$pct" -lt "$TT_BUSY_PCT" ]; then busy_streak=0; busy_captured=0; return 0; fi
   # 窓が 2 倍以上に伸びた = ループが塞がれていた (固まったサーバへの health の問い合わせ等)。
-  # その間ずっと忙しかったなら、窓が続いたのと同じに数える。数えないと、固まりが解けた次の窓で
-  # 連続が切れ、固まり 1 回を丸ごと撮り逃す
-  if [ "$dt" -ge $(( TT_BUSY_WINDOW * 200 )) ] && [ "$busy_streak" -lt "$TT_BUSY_WINDOWS" ]; then
-    busy_streak=$(( TT_BUSY_WINDOWS - 1 ))
+  # 問い合わせが返るのは固まりが解けた後なので、今撮っても固まりの後のスタックしか写らない。
+  # 撮らず、cooldown も立てず (10 分以内の次の固まりを撮れるように)、忙しかったことだけを残す
+  if [ "$dt" -ge $(( TT_BUSY_WINDOW * 200 )) ]; then
+    tt_trigger_log "server-busy-missed pid=$SERVER_PID cpu=$pct% blocked=$(( dt / 100 ))s epoch=$(( now / 100 ))"
+    busy_streak=1
+    return 0
   fi
   busy_streak=$(( busy_streak + 1 ))
   [ "$busy_streak" -ge "$TT_BUSY_WINDOWS" ] || return 0
   [ "$(( now / 100 ))" -ge "$busy_next_allowed" ] || return 0
   busy_next_allowed=$(( now / 100 + TT_BUSY_COOLDOWN ))
+  busy_captured=1
   capture_busy "$pct" "$(( dt / 100 ))"
 }
 
@@ -214,9 +226,10 @@ while :; do
     [ "$cur" = "$lstart0" ] || break   # pid 再利用 = 元のサーバは死んでいる
   fi
   # 窓の始まりを health の確認より前に置く (health が塞いだ時間を窓に含めるため)。
-  # 忙しい窓が続いている間は health を後回しにする: health は tmux に問い合わせるので、固まったサーバに並ぶ
+  # 忙しい窓が続いていてまだ撮っていない間は health を後回しにする: health は tmux に問い合わせるので、
+  # 固まったサーバに並ぶ。撮った後は後回しにしない (長く忙しいだけのサーバで health が止まり続けないように)
   check_busy
-  [ "$busy_streak" -gt 0 ] || check_health
+  if [ "$busy_streak" -eq 0 ] || [ "$busy_captured" = 1 ]; then check_health; fi
   sleep "$TT_WATCHDOG_INTERVAL"
 done
 
