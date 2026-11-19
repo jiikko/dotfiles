@@ -95,8 +95,12 @@ trap 'sig=130' INT
 trap 'sig=143' TERM
 pushed=0
 nothing_pushed() { if [ "$pushed" -eq 1 ]; then echo "確かめた時点では origin に載っていない"; else echo "何も push していない"; fi; }
-# ref_rejected <porcelain の stdout>: 対象のブランチへの ref の行が拒否 (`!`) か
-ref_rejected() { awk -F'\t' -v dst="refs/heads/$branch" '$1 == "!" && $2 ~ (":" dst "$") { found = 1 } END { exit !found }' "$1"; }
+# ref_rejected <porcelain の stdout>: 対象のブランチへの ref の行が拒否 (`!`) か。拒否なら理由 (`[rejected] (fetch first)` など) を出す
+# 照合は文字列の末尾の比較で行う (正規表現にすると、ブランチ名の `+` `(` などで外れる)
+ref_rejected() {
+  awk -F'\t' -v t=":refs/heads/$branch" \
+    '$1 == "!" && length($2) >= length(t) && substr($2, length($2) - length(t) + 1) == t { print $3; found = 1 } END { exit !found }' "$1"
+}
 show_push() { cat "$work/push$1.err" "$work/push$1.out" >&2 2>/dev/null || true; }
 check_signal() { [ -z "$sig" ] || { printf 'issue_claim: 中断した (%s)\n' "$(nothing_pushed)" >&2; exit "$sig"; }; }
 
@@ -173,8 +177,8 @@ EOF
   # 拒否の理由の文言 (non-fast-forward / fetch first / incorrect old value provided …) は見ない: 競合の形は文言が増えうる。
   # origin が動いたかだけで決めない: pre-push の検査で落ちたのと同時に他のセッションが push すると、検査の失敗を競合と取り違える
   # (pre-push で落ちると ref の行は出ない。git 2.55.0 で実測)
-  if ref_rejected "$push_out" && [ "$(git -C "$repo" rev-parse "refs/remotes/origin/$branch")" != "$base" ]; then
-    printf 'issue_claim: origin/%s が先へ進んでいた。取り直して再試行する (%d/%d)\n' "$branch" "$i" "$attempts" >&2
+  if why="$(ref_rejected "$push_out")" && [ "$(git -C "$repo" rev-parse "refs/remotes/origin/$branch")" != "$base" ]; then
+    printf 'issue_claim: origin/%s が先へ進んでいた (%s)。取り直して再試行する (%d/%d)\n' "$branch" "$why" "$i" "$attempts" >&2
     drop_worktree
     continue
   fi
