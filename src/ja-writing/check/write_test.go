@@ -32,13 +32,22 @@ func (s sandbox) path(parts ...string) string {
 	return p
 }
 
-func readText(t *testing.T, path string) string {
+func requireText(t *testing.T, path, want, what string) {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	if string(data) != want {
+		t.Errorf("%s: %s = %q, want %q", what, filepath.Base(path), data, want)
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func temporaries(t *testing.T, folder string) []string {
@@ -68,12 +77,8 @@ func TestEnsureStateCreatesFolderWithIgnoreAndState(t *testing.T) {
 	if got := mode(t, state); got != 0o700 {
 		t.Errorf("状態フォルダの mode = %o, want 700", got)
 	}
-	if got := readText(t, filepath.Join(state, ".gitignore")); got != GitignoreText {
-		t.Errorf(".gitignore = %q", got)
-	}
-	if got := readText(t, filepath.Join(state, "state.json")); got != "{\"format\": \"yomiyasu-state\", \"format_version\": 1}\n" {
-		t.Errorf("state.json = %q", got)
-	}
+	requireText(t, filepath.Join(state, ".gitignore"), GitignoreText, ".gitignore")
+	requireText(t, filepath.Join(state, "state.json"), "{\"format\": \"yomiyasu-state\", \"format_version\": 1}\n", "作った状態フォルダ")
 	for _, name := range []string{".gitignore", "state.json"} {
 		if got := mode(t, filepath.Join(state, name)); got != 0o600 {
 			t.Errorf("%s の mode = %o, want 600", name, got)
@@ -88,20 +93,20 @@ func TestEnsureStateAddsFilesOnlyToBareDefaultFolder(t *testing.T) {
 	cases := []struct {
 		name         string
 		defaultPlace bool
-		prepare      func(s sandbox, state string)
+		prepare      func(t *testing.T, state string)
 		wantIgnore   bool
 		wantState    bool
 	}{
-		{"既定の場所で空", true, func(sandbox, string) {}, true, true},
-		{"指定した場所", false, func(sandbox, string) {}, false, false},
-		{".gitignore だけある", true, func(_ sandbox, state string) {
-			os.WriteFile(filepath.Join(state, ".gitignore"), []byte("x"), 0o600)
+		{"既定の場所で空", true, func(*testing.T, string) {}, true, true},
+		{"指定した場所", false, func(*testing.T, string) {}, false, false},
+		{".gitignore だけある", true, func(t *testing.T, state string) {
+			must(t, os.WriteFile(filepath.Join(state, ".gitignore"), []byte("x"), 0o600))
 		}, true, false},
-		{"state.json だけある", true, func(_ sandbox, state string) {
-			os.WriteFile(filepath.Join(state, "state.json"), []byte("x"), 0o600)
+		{"state.json だけある", true, func(t *testing.T, state string) {
+			must(t, os.WriteFile(filepath.Join(state, "state.json"), []byte("x"), 0o600))
 		}, false, true},
-		{".gitignore が壊れたリンク", true, func(_ sandbox, state string) {
-			os.Symlink("missing", filepath.Join(state, ".gitignore"))
+		{".gitignore が壊れたリンク", true, func(t *testing.T, state string) {
+			must(t, os.Symlink("missing", filepath.Join(state, ".gitignore")))
 		}, false, false},
 	}
 	for _, c := range cases {
@@ -111,7 +116,7 @@ func TestEnsureStateAddsFilesOnlyToBareDefaultFolder(t *testing.T) {
 			if err := os.Mkdir(state, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			c.prepare(s, state)
+			c.prepare(t, state)
 			if err := EnsureState(state, c.defaultPlace); err != nil {
 				t.Fatal(err)
 			}
@@ -146,7 +151,7 @@ func TestEnsureStateLeavesLinkedFolderAlone(t *testing.T) {
 	if err := EnsureState(state, true); err != nil {
 		t.Fatal(err)
 	}
-	if lexists(filepath.Join(target, ".gitignore")) || lexists(filepath.Join(target, "state.json")) {
+	if fileInfo(filepath.Join(target, ".gitignore"), false) != nil || fileInfo(filepath.Join(target, "state.json"), false) != nil {
 		t.Error("リンクの先のフォルダに書いた")
 	}
 }
@@ -154,35 +159,29 @@ func TestEnsureStateLeavesLinkedFolderAlone(t *testing.T) {
 func TestEnsureStateKeepsIgnoreWhenStateAlreadyPlaced(t *testing.T) {
 	s := newSandbox(t)
 	state := s.path(".yomiyasu")
-	os.Mkdir(state, 0o700)
+	must(t, os.Mkdir(state, 0o700))
 	if err := os.WriteFile(filepath.Join(state, "state.json"), []byte("mine"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeStateFiles(state); err != nil {
 		t.Fatal(err)
 	}
-	if got := readText(t, filepath.Join(state, "state.json")); got != "mine" {
-		t.Errorf("すでにある state.json を書き換えた: %q", got)
-	}
-	if got := readText(t, filepath.Join(state, ".gitignore")); got != GitignoreText {
-		t.Errorf(".gitignore = %q", got)
-	}
+	requireText(t, filepath.Join(state, "state.json"), "mine", "すでにある state.json を書き換えた")
+	requireText(t, filepath.Join(state, ".gitignore"), GitignoreText, ".gitignore")
 }
 
 func TestWriteStateFilesSkipsStateWhenIgnoreTaken(t *testing.T) {
 	s := newSandbox(t)
 	state := s.path(".yomiyasu")
-	os.Mkdir(state, 0o700)
+	must(t, os.Mkdir(state, 0o700))
 	if err := os.WriteFile(filepath.Join(state, ".gitignore"), []byte("theirs"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeStateFiles(state); err != nil {
 		t.Fatal(err)
 	}
-	if got := readText(t, filepath.Join(state, ".gitignore")); got != "theirs" {
-		t.Errorf("先に置かれた .gitignore を書き換えた: %q", got)
-	}
-	if lexists(filepath.Join(state, "state.json")) {
+	requireText(t, filepath.Join(state, ".gitignore"), "theirs", "先に置かれた .gitignore を書き換えた")
+	if fileInfo(filepath.Join(state, "state.json"), false) != nil {
 		t.Error(".gitignore を置けなかったのに state.json を置いた")
 	}
 }
@@ -196,9 +195,7 @@ func TestWriteAtomicReplacesAndCleansUp(t *testing.T) {
 	if err := WriteAtomic(path, []byte("new")); err != nil {
 		t.Fatal(err)
 	}
-	if got := readText(t, path); got != "new" {
-		t.Errorf("中身 = %q", got)
-	}
+	requireText(t, path, "new", "入れ替えた後")
 	if got := mode(t, path); got != 0o600 {
 		t.Errorf("mode = %o, want 600", got)
 	}
@@ -231,7 +228,7 @@ func TestWriteProblemForUnwritableFolder(t *testing.T) {
 	if err := os.Mkdir(folder, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(folder, 0o700) })
+	t.Cleanup(func() { must(t, os.Chmod(folder, 0o700)) })
 	err := WriteAtomic(filepath.Join(folder, "record.json"), []byte("data"))
 	if err == nil {
 		t.Skip("書き込みを拒むフォルダを作れない (root で動いている)")
@@ -261,33 +258,8 @@ func TestPlaceNewFileDoesNotOverwrite(t *testing.T) {
 	if err != nil || placed {
 		t.Fatalf("placeNewFile = %v, %v; want false, nil", placed, err)
 	}
-	if got := readText(t, path); got != "first" {
-		t.Errorf("上書きした: %q", got)
-	}
+	requireText(t, path, "first", "すでにあるファイル")
 	if left := temporaries(t, s.root); len(left) != 0 {
 		t.Errorf("一時ファイルが残った: %v", left)
-	}
-}
-
-func TestEnsureDirAndTouch(t *testing.T) {
-	s := newSandbox(t)
-	path, err := ensureDir(s.root, "runs", "r1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != s.path("runs", "r1") || mode(t, path) != 0o700 {
-		t.Errorf("ensureDir = %s (mode %o)", path, mode(t, path))
-	}
-	if err := os.WriteFile(s.path("file"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ensureDir(s.root, "file"); err == nil {
-		t.Error("ファイルの名前をフォルダとして受けた")
-	}
-	if err := touch(path, "by-path"); err != nil {
-		t.Fatal(err)
-	}
-	if got := mode(t, filepath.Join(path, "by-path")); got != 0o600 {
-		t.Errorf("touch の mode = %o", got)
 	}
 }

@@ -56,14 +56,22 @@ func isPermission(err error) bool {
 	return errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM)
 }
 
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+// fileInfo は stat (follow のとき) か lstat の結果。読めなければ nil (本家の _path_matches と os.path.lexists は読めない名前を「無い」とみなす)。
+func fileInfo(path string, follow bool) os.FileInfo {
+	stat := os.Lstat
+	if follow {
+		stat = os.Stat
+	}
+	info, err := stat(path)
+	if err != nil {
+		return nil
+	}
+	return info
 }
 
-func lexists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil
+func isDir(path string) bool {
+	info := fileInfo(path, true)
+	return info != nil && info.IsDir()
 }
 
 // mkstemp は _mkstemp。folder に .tmp-<16進> を O_EXCL・O_NOFOLLOW・0o600 で作って開く。
@@ -92,7 +100,7 @@ func mkstemp(folder string) (*os.File, string, error) {
 
 func writeAndClose(file *os.File, data []byte) error {
 	if _, err := file.Write(data); err != nil {
-		file.Close()
+		_ = file.Close() // 書けなかった理由を返す。閉じる失敗はその後ろの事情
 		return unpathed(err)
 	}
 	return unpathed(file.Close())
@@ -128,22 +136,9 @@ func WriteAtomic(path string, data []byte) error {
 		err = replace(temporary, path)
 	}
 	if err != nil {
-		os.Remove(temporary)
+		_ = os.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
 	}
 	return err
-}
-
-// touch は _touch。空のファイルを作る (索引。すでにあればそのまま)。
-func touch(folder, name string) error {
-	path := filepath.Join(folder, name)
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return unpathed(err)
-	}
-	return os.Chmod(path, 0o600)
 }
 
 // hiddenError は _raise_if_hidden。mkdir が EEXIST を出したのにフォルダと確かめられない理由が PermissionError なら、それを返す。
@@ -152,27 +147,6 @@ func hiddenError(path string, exists error) error {
 		return err
 	}
 	return exists
-}
-
-// ensureDir は _ensure_dir。base の下にフォルダを 1 段ずつ作る (作ったフォルダだけ 0o700 にする)。
-func ensureDir(base string, parts ...string) (string, error) {
-	path := base
-	for _, part := range parts {
-		path = filepath.Join(path, part)
-		if err := os.Mkdir(path, 0o700); err != nil {
-			if errors.Is(err, fs.ErrExist) && isDir(path) {
-				continue
-			}
-			if errors.Is(err, fs.ErrExist) {
-				return "", hiddenError(path, err)
-			}
-			return "", err
-		}
-		if err := os.Chmod(path, 0o700); err != nil {
-			return "", err
-		}
-	}
-	return path, nil
 }
 
 func stillPlaced(path string, info os.FileInfo) bool {
@@ -192,11 +166,11 @@ func placeNewFile(path string, data []byte) (bool, error) {
 		err = os.Chmod(temporary, 0o600)
 	}
 	if err != nil {
-		os.Remove(temporary)
+		_ = os.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
 		return false, err
 	}
 	linkErr := os.Link(temporary, path)
-	os.Remove(temporary)
+	_ = os.Remove(temporary) // 本家の finally と同じく、消せなくても続ける
 	if linkErr == nil {
 		return true, nil
 	}
@@ -216,7 +190,7 @@ func placeExclusive(path string, data []byte) (bool, error) {
 	}
 	info, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close() // stat の失敗を返す
 		return false, err
 	}
 	err = writeAndClose(file, data)
@@ -225,7 +199,7 @@ func placeExclusive(path string, data []byte) (bool, error) {
 	}
 	if err != nil {
 		if stillPlaced(path, info) {
-			os.Remove(path)
+			_ = os.Remove(path) // 本家も消せなければそのまま元の例外を出す
 		}
 		return false, err
 	}
@@ -251,7 +225,7 @@ func addStateFiles(state string, defaultPlace bool) error {
 	if info, err := os.Lstat(state); err == nil && info.Mode()&fs.ModeSymlink != 0 {
 		return nil
 	}
-	if lexists(filepath.Join(state, ".gitignore")) || lexists(filepath.Join(state, "state.json")) {
+	if fileInfo(filepath.Join(state, ".gitignore"), false) != nil || fileInfo(filepath.Join(state, "state.json"), false) != nil {
 		return nil
 	}
 	return writeStateFiles(state)
@@ -282,7 +256,7 @@ func EnsureState(state string, defaultPlace bool) error {
 		err = writeStateFiles(state)
 	}
 	if err != nil {
-		os.Remove(state)
+		_ = os.Remove(state) // 空でなければ消えない (本家の rmdir と同じ)
 	}
 	return err
 }

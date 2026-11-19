@@ -31,7 +31,7 @@ func ReadRecordStatus(path string) (RecordStatus, *pyjson.Object, error) {
 			return RecordMissing, nil, nil
 		}
 		if err != nil {
-			return RecordBad, nil, nil
+			return RecordBad, nil, nil //nolint:nilerr // 本家は FileNotFoundError 以外の OSError を bad の状態にして返す
 		}
 		data = read
 		if len(data) > 0 {
