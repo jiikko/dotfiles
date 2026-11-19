@@ -1,0 +1,1 @@
+../1098-bug-tmux-scratch-popup-not-drawn-keys-go-to-scratch.md
