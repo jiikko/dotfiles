@@ -304,7 +304,7 @@ func floatMantissa(clean string) string {
 		}
 		// 指数が大きすぎる値は、どの仮数でも 0 か inf になる所で止める (int64 のあふれを避ける)
 		var e int64
-		for i := 0; i < len(expText); i++ {
+		for i := range len(expText) {
 			if e < 1e12 {
 				e = e*10 + int64(expText[i]-'0')
 			}
