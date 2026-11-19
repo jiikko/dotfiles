@@ -70,10 +70,10 @@ cat_ids() { printf '%s\n' "$sel" | sed -n "s/^- $1 (\\(.*\\)) *\$/\\1/p" | sorte
 union=""
 for c in 設計 品質 テスト その他; do
   got=$(cat_ids "$c")
-  need "$got" "選択方法の「$c」の行"
+  need "$got" "選択方法の「${c}」の行"
   union=$(printf '%s\n%s\n' "$union" "$got")
   if [ "$c" != その他 ]; then
-    compare "$got" "$(printf '%s\n' "$table" | awk -F'\t' -v c="$c" '$2 == c { print $1 }' | LC_ALL=C sort)" "選択方法の「$c」の行"
+    compare "$got" "$(printf '%s\n' "$table" | awk -F'\t' -v c="$c" '$2 == c { print $1 }' | LC_ALL=C sort)" "選択方法の「${c}」の行"
   fi
 done
 compare "$(printf '%s\n' "$union" | grep -v '^$' | LC_ALL=C sort)" "$all" "選択方法のカテゴリの行の和"
