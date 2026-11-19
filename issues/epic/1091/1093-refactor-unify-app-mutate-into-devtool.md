@@ -1,5 +1,7 @@
 # 1093 (refactor): obaket と vlc-multi-video-player の bin/mutate の本体を devtool/bin/mutate に統合する
 
+> 🚨 **担当中: Mac (glogx)**（2026-11-19〜）
+
 起票日: 2026-11-19
 
 ## 概要
