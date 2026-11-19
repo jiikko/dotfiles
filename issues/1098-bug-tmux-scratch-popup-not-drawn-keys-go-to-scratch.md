@@ -1,7 +1,5 @@
 # 1098 (bug): scratch の popup が開いたまま見えなくなり、打ったキーが scratch のペインへ入る（表示が壊れ、window も切り替えられず、ビープが鳴り続ける）
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-19〜）
-
 起票日: 2026-11-19
 
 ## 概要
@@ -92,6 +90,10 @@
 
 ## 次に採るもの（また起きたとき）
 
+- **開閉のログを読む**（2026-11-20 から自動で残る）: `grep scratch-popup ~/.cache/tt-restore-trigger.log`。
+  start の `key=` で、誤操作の仮説 1（`C-t C-t` で開いた）を確かめる。start の `tty=` と `list-clients` の scratch のクライアントの `client_tty` を突き合わせる。
+  `size=` `term=` は外側のクライアントの大きさと端末で、仮説 2（描画）を疑うときに使う。end が `signal=` なら Terminal の窓を閉じて終わり、`rc=` なら中で detach して終わった。
+  end の無い start が、開いたままの popup。行の書き方は docs/tmux-plugins.md の「観測ログの読み方」
 - `tmux list-clients -F '#{client_tty} #{client_session} #{t:client_created} #{t:client_activity}'`。外側のクライアントの最終アクティビティと
   同じ時刻に作られた scratch のクライアントがあれば、この issue の形
 - 🚨 **`tmux display -p -c /dev/ttysNNN '#{client_*}'` では、ほかのクライアントの値は取れない**。`display-message` の `-c` はメッセージを表示する
@@ -128,3 +130,24 @@
   仮説 2（描画）は、ユーザーに見えていたものが無いので今は直せない（隔離サーバでの再現も、見え方は人の目でしか判定できない）。
   原因によらず害を止めるものとして、①`_tmux.conf` の `bind C-t` を外す（`unbind C-t` も conf に残す。失うもの: prefix の 2 度押しで開く操作）
   ②popup を開いている外側のクライアントのステータスに印を出す（`scripts/tmux_scratch_popup.sh` で立てて下ろす。異常終了で印が残る経路の検査が要る）を挙げ、①を先に推した。どれを採るかはユーザーの返事待ち
+- 2026-11-20: ユーザー指示「3 をやりますか。体験は変わらず、情報収集して根本解決できると嬉しい」で、開閉を観測ログに残すようにした
+  （commit「feat(tmux): scratch の popup の開閉を観測ログに残す (1098)」）。
+  - 書く行: `scratch-popup-start`（外側のクライアント・セッション・大きさ・端末・中の pty・押したキー）/ `scratch-popup-end`（`rc=` か `signal=HUP|TERM`）/
+    `scratch-popup-close-key`（popup の中の `C-t t`）。書き手は `scripts/tmux_scratch_popup_log.sh`。押したキーは `_tmux.conf` の bind が第 3 引数で渡す
+  - 使い心地を変えないために: 書き手はどれも背景で起こし、開く・閉じるを待たせない（待つと閉じるのが約 40ms 遅れ、その間のキーが消える）。
+    セッション名は display-popup の argv に載せない（`;` で終わる引数を tmux がコマンドの区切りと読む。隔離サーバで `set -g @x 'foo;'` が `foo` になるのを確認）。
+    popup のコマンドは以前と同じく default-shell を通す
+  - 隔離サーバでの実測: 外側のクライアントが消えると、tmux は popup の sh に TERM を送り、pty が閉じて HUP も来る。TERM の trap が無いと sh は HUP の trap より先に死んで end が残らない。
+    背景の書き手は、HUP / TERM を無視させないと popup の片付けで書く前に消える。無視を子の中で入れると、sh（pty のセッションリーダー）の終了の HUP に先を越されることがある
+    （`script` の pty で attach がすぐ返る形を回して、修正前 end の欠けが 1/100・1/300、fork の前に親で無視を入れる形で 0/100・0/300）
+  - 本番のサーバでないと書かない（-L の隔離サーバも同じ bind を持つ）。`$TMUX` の socket の字面を先に比べる（`tt_on_default_server` はサーバに届かないと本番と見なすので、
+    隔離サーバを popup ごと kill した後の end が通っていた）。期待するパスは `scripts/lib/tmux_resurrect_guards.sh` の `tt_default_socket_path` に寄せた
+  - テスト（`tests/tmux/test_scratch_popup.sh`）: 変異で red を確認したもの — 書き手の無視を外す / TERM の trap を外す / HUP の trap を外す / 書き手の既定のパスの書き損じ /
+    セッション名を argv に戻す / 外側の TMUX を渡さない / キー・自分のパスを渡さない / close-key を書かない / 本番の判定を外す / socket の字面の判定を外す / client-gone を書かない /
+    close-key で list-clients を引く / tty の `/dev/` を落とす / 書き手を待つ（開く側・閉じる側）
+  - 敵対的レビュー 3 周（opus）。3 周目は P1・P2 なし。
+    受け入れたもの: 固まったサーバで書き手が返らずに残る（起動から問い合わせまでの約 40ms に固まりが始まったときだけ。理由はコードに）/
+    手で sh だけに TERM を送ると attach が終わるまで popup が残る / 開いて約 40ms 以内に閉じると start が end より後に並ぶ・start の外側が client-gone になりうる（docs に書いた）/
+    無視を子の中で入れる形に戻す変異はテストで決定論に再現できない（根拠は上の `script` の実測だけ）
+  - 仮説 2（描画）の切り分け（隔離サーバで、tmux が popup の枠を外側へ送っているかをバイト列で見る）は未着手
+  - [ ] 次に起きたら、上の「開閉のログを読む」で仮説 1 と見え方を確かめる
