@@ -10,8 +10,8 @@
 #   1. 「### 選択方法」のカテゴリの行 (`- 設計 (design, ...)`) の ID の和 = 表の ID の集合
 #      各カテゴリの行の ID = 表でそのカテゴリに属する ID (設計 / 品質 / テスト。その他は残り全部)
 #   2. 「### forge モードが選択された場合」のプロンプトの行 (`- **<id>**: \``) = 表の ID の集合。
-#      `[モード名]` で始まるプロンプトの行がどこにも無いときは検査しない (forge の経路を減らして節を消すことは追随漏れではない)。
-#      プロンプトの行が残っているのに節の見出しが見つからないときは落とす (見出しの書き換えで写し 2 が黙って外れないように)
+#      `[モード名]` で始まるプロンプトの行も Step 3 の選択肢 `- forge（` もどこにも無いときは検査しない (forge の経路ごと消すのは追随漏れではない)。
+#      どちらかが残っているのに節が見つからないときは落とす (見出しの書き換えや、選択肢を残してプロンプトだけ消す形で写し 2 が黙って外れないように)
 #   3. 「### 直接実行」の指針の行 (`- **<id>**: `) = 表の ID の集合
 #   4. 「設計系 (design / ... ) を直接実行でまとめて回すときは」の括弧の中の ID = 表のカテゴリ「設計」の ID
 #
@@ -19,6 +19,7 @@
 #   - 発見の型 (L1〜L7 / E1〜E4 ...) の写し。型の記号はタイプの中で閉じていて、別の節に並べ直す写しが無い
 #   - 説明・名前の文の食い違い (表と指針で説明が違っても、ID が揃っていれば選べて回せる)
 #   - 散文の中で ID に触れている箇所 (寄せ先の説明など)
+#   - 節を同じ深さの見出し (`###`) で分けること (節がそこで終わり、後ろの行が「無い」として赤になる。分けるなら `####` にする)
 #   - skill-eval の grader (`_claude/skill-evals/audit/`)。CI では回さない別の検査が持つ
 
 set -euo pipefail
@@ -36,8 +37,9 @@ checked=4
 # $1 の見出し (行全体が一致) から、次の同じ深さ以上の見出しの手前までを出す
 section() {
   awk -v h="$1" '
-    $0 == h { on = 1; n = length($0) - length(substr($0, index($0, " "))); next }
-    on && /^#+ / { d = index($0, " ") - 1; if (d <= n) exit }
+    /^```/ { fence = !fence }
+    !fence && $0 == h { on = 1; n = length($0) - length(substr($0, index($0, " "))); next }
+    on && !fence && /^#+ / { d = index($0, " ") - 1; if (d <= n) exit }
     on { print }
   ' "$SKILL_MD"
 }
@@ -56,7 +58,7 @@ compare() {  # $1=写しの ID (改行区切り・整列済み) $2=正本 $3=説
   fi
 }
 
-table=$(section '### 監査タイプ一覧' | awk -F'|' 'NF > 3 { id = $2; c = $3; gsub(/ /, "", id); gsub(/ /, "", c); if (id != "ID" && id !~ /^-+$/) print id "\t" c }' || true)
+table=$(section '### 監査タイプ一覧' | awk -F'|' 'NF > 3 { id = $2; c = $3; gsub(/ /, "", id); gsub(/ /, "", c); if (id != "ID" && id !~ /^:?-+:?$/) print id "\t" c }' || true)
 need "$table" "表の ID とカテゴリ"
 all=$(printf '%s\n' "$table" | cut -f1 | LC_ALL=C sort)
 dups=$(printf '%s\n' "$all" | uniq -d)
@@ -64,7 +66,7 @@ dups=$(printf '%s\n' "$all" | uniq -d)
 
 # 1. カテゴリの行
 sel=$(section '### 選択方法')
-cat_ids() { printf '%s\n' "$sel" | sed -n "s/^- $1 (\\(.*\\))\$/\\1/p" | sorted || true; }
+cat_ids() { printf '%s\n' "$sel" | sed -n "s/^- $1 (\\(.*\\)) *\$/\\1/p" | sorted || true; }
 union=""
 for c in 設計 品質 テスト その他; do
   got=$(cat_ids "$c")
@@ -79,11 +81,11 @@ compare "$(printf '%s\n' "$union" | grep -v '^$' | LC_ALL=C sort)" "$all" "選�
 # 2. forge のプロンプト (節があるときだけ)
 forge=$(section '### forge モードが選択された場合')
 if [ -n "$forge" ]; then
-  got=$(printf '%s\n' "$forge" | sed -n 's/^- \*\*\([a-z-]*\)\*\*: `.*/\1/p' | LC_ALL=C sort || true)
+  got=$(printf '%s\n' "$forge" | sed -n 's/^- \*\*\([A-Za-z0-9_-]*\)\*\*: `.*/\1/p' | LC_ALL=C sort || true)
   need "$got" "forge のプロンプトの行"
   compare "$got" "$all" "forge のプロンプトの行"
-elif grep -q '^- \*\*[a-z-]*\*\*: `\[モード名\]' "$SKILL_MD"; then
-  echo "FAIL: forge のプロンプトの行があるのに「### forge モードが選択された場合」の節が見つからない (見出しを変えた?)" >&2
+elif grep -q '^- \*\*[A-Za-z0-9_-]*\*\*: `\[モード名\]' "$SKILL_MD" || grep -q '^- forge（' "$SKILL_MD"; then
+  echo "FAIL: forge のプロンプトの行か Step 3 の forge の選択肢があるのに「### forge モードが選択された場合」の節が見つからない (見出しを変えた? forge を消すなら選択肢も消す)" >&2
   fail=1
 else
   echo "note: forge のプロンプトが無いので写し 2 は検査しない"
@@ -92,7 +94,7 @@ fi
 
 # 3. 直接実行の指針
 direct=$(section '### 直接実行 (not forge) が選択された場合')
-got=$(printf '%s\n' "$direct" | sed -n 's/^- \*\*\([a-z-]*\)\*\*: .*/\1/p' | LC_ALL=C sort || true)
+got=$(printf '%s\n' "$direct" | sed -n 's/^- \*\*\([A-Za-z0-9_-]*\)\*\*: .*/\1/p' | LC_ALL=C sort || true)
 need "$got" "直接実行の指針の行"
 compare "$got" "$all" "直接実行の指針の行"
 
