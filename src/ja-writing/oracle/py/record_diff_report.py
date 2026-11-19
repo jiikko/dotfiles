@@ -357,6 +357,7 @@ summary("mixed", "hedges", {"candidate_count": 3, "candidates": [{"level": "info
 summary("none-info", "tone", {"candidate_count": 2, "candidates": [{"level": "warn"}, {}]})
 summary("immutable-risky-only", "immutable", {"candidate_count": 0, "meaning_risk_count": 2, "candidates": []})
 summary("immutable-risky-and-count", "immutable", {"candidate_count": 3, "meaning_risk_count": 1, "candidates": []})
+summary("immutable-risky-and-one", "immutable", {"candidate_count": 1, "meaning_risk_count": 1, "candidates": []})
 summary("risky-ignored-not-immutable", "hedges", {"candidate_count": 1, "meaning_risk_count": 4, "candidates": [{"level": "warn"}]})
 
 json.dump({"cases": CASES}, sys.stdout, ensure_ascii=True, separators=(",", ":"))
