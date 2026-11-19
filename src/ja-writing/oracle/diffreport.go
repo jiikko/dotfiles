@@ -18,6 +18,11 @@ type DiffReportCase struct {
 	Report string          `json:"report"`
 	// FailOnLine は本家の _fail_on_line (終了コード 1 の行) に、この dict の件数と恐れを渡した戻り値
 	FailOnLine string `json:"fail_on_line"`
+	// Parts は本家の report_parts(d) (節の名前から文字列)、Summaries は detector_summary(d, key) を key ごとに (null は None)
+	Parts     json.RawMessage    `json:"parts"`
+	Summaries map[string]*string `json:"summaries"`
+	// SummaryOnly は detector_summary だけを記録した case (report と report_parts は呼んでいない)
+	SummaryOnly bool `json:"summary_only,omitempty"`
 }
 
 // DiffReportGolden は diff-report.json の中身。

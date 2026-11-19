@@ -14,11 +14,15 @@ sys.path.insert(0, plan["scripts_dir"])
 import yomiyasu_diff as D  # noqa: E402
 
 CASES = []
+# detector_summary の key (本家の docstring の並び)
+SUMMARY_KEYS = ("stiffness", "tone", "hedges", "immutable", "politeness", "register")
 
 
 def add(name, d):
     CASES.append({"name": name, "d": d, "report": D.report(d),
-                  "fail_on_line": D._fail_on_line(d["meaning_risk_count"], d["fail_on_meaning_risk_count"], d["meaning_risks"])})
+                  "fail_on_line": D._fail_on_line(d["meaning_risk_count"], d["fail_on_meaning_risk_count"], d["meaning_risks"]),
+                  "parts": D.report_parts(d),
+                  "summaries": {key: D.detector_summary(d, key) for key in SUMMARY_KEYS}})
 
 
 def real(name, old, new, **kw):
@@ -328,5 +332,31 @@ real("bom-only-with-candidates", MIXED, "\ufeff" + MIXED)
 real("final-newline-only-with-candidates", MIXED.rstrip("\n"), MIXED)
 real("midline-bom", "設定を変えます。\n", "設定を\ufeff変えます。\n")
 risks("risk-unsupported-both-lines", risk("unsupported", "number", {"text": "42"}, old_line=1, new_line=3))
+
+# ---- detector_summary の分岐 (節が無い・当てはまらない・参考だけ・混ざる・candidates が並びでない・値の恐れ) ----
+def summary(name, key, section):
+    d = copy.deepcopy(BASE)
+    if section is None:
+        d.pop(key, None)
+    else:
+        d[key] = section
+    # 候補の中身は summary が読む欄 (level) だけなので report には通さない
+    CASES.append({"name": "summary/" + name, "d": d, "summary_only": True,
+                  "summaries": {k: D.detector_summary(d, k) for k in SUMMARY_KEYS}})
+
+
+summary("absent", "hedges", None)
+summary("not-applicable", "politeness", {"applicable": False, "candidate_count": 3, "candidates": []})
+summary("applicable-none", "politeness", {"applicable": None, "candidate_count": 0, "candidates": []})
+summary("zero", "register", {"candidate_count": 0, "candidates": []})
+summary("no-list-info", "stiffness", {"candidate_count": 2, "level": "info"})
+summary("no-list-warn", "stiffness", {"candidate_count": 2, "level": "warn"})
+summary("all-info", "hedges", {"candidate_count": 2, "candidates": [{"level": "info"}, {"level": "info"}]})
+summary("more-info-than-count", "hedges", {"candidate_count": 1, "candidates": [{"level": "info"}, {"level": "info"}]})
+summary("mixed", "hedges", {"candidate_count": 3, "candidates": [{"level": "info"}, {"level": "warn"}, "x"]})
+summary("none-info", "tone", {"candidate_count": 2, "candidates": [{"level": "warn"}, {}]})
+summary("immutable-risky-only", "immutable", {"candidate_count": 0, "meaning_risk_count": 2, "candidates": []})
+summary("immutable-risky-and-count", "immutable", {"candidate_count": 3, "meaning_risk_count": 1, "candidates": []})
+summary("risky-ignored-not-immutable", "hedges", {"candidate_count": 1, "meaning_risk_count": 4, "candidates": [{"level": "warn"}]})
 
 json.dump({"cases": CASES}, sys.stdout, ensure_ascii=True, separators=(",", ":"))
