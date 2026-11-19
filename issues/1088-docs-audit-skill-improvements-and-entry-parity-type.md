@@ -103,10 +103,10 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 
 ## 受け入れ条件
 
-- [ ] 1 節の各項目を直すか、直さない理由を書く
-- [ ] 2 節の「足す前に確かめること」の数えた結果をこの issue に書き、タイプを足すか既存タイプへ追記するかを決める
-- [ ] SKILL.md を変えたら、`~/.claude/CLAUDE.md` のレビュー方針どおり観点を変えた整合チェックを 3 回回し、`bin/skill-eval audit` の結果を commit message に書く
-- [ ] タイプ・型を足したら、all-audit-on-diy の冒頭の型の写し (L1〜L7 / … / C1〜C4) と skill-eval の graders を同じ commit で直す (1 節の写しの項)
+- [x] 1 節の各項目を直すか、直さない理由を書く
+- [x] 2 節の「足す前に確かめること」の数えた結果をこの issue に書き、タイプを足すか既存タイプへ追記するかを決める
+- [x] SKILL.md を変えたら、`~/.claude/CLAUDE.md` のレビュー方針どおり観点を変えた整合チェックを 3 回回し、`bin/skill-eval audit` の結果を commit message に書く
+- [x] タイプ・型を足したら、all-audit-on-diy の冒頭の型の写し (L1〜L7 / … / C1〜C4) と skill-eval の graders を同じ commit で直す (1 節の写しの項)
 
 ## 関連ファイル
 
@@ -152,3 +152,12 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
   - improve-debug-api の SKILL.md (1.1.0): 冒頭に「audit の entry-parity の N3 から頼まれる」を 1 行、手順 3 の「分ける」に「テストが見ていない前段は debug API 以外の確かめ方 (XCUITest・human issue) を割り当てる」を足した (起票時の「足すなら improve-debug-api の手順に」)
   - skill-eval の grader `offers-entry-parity.md` を足した
   - 整合チェック 3 回: ① skill の中 (型の記号が重要度と衝突 → N に改めた) ② skill の外 (improve-debug-api の G 段・手順 5・「残す場所」・claude-md-refresh の実在、「22 タイプ」の数を書いた文書は無い) ③ 使う人の目 (N3 の「該当」が何か・debug API があるかの見分け方が無い → 足した)。直した 2 行を読み直して矛盾なし
+- 2026-11-19: 写しの検査の敵対レビュー 2 周目 (opus・読み取りのみ。commit baf03fb19)。今の SKILL.md の上で偽の緑は作れなかった。指摘 6 件:
+  - 直した 2 件: ① Step 3 の選択肢を半角括弧 (`- forge (…)`)・番号付きに書き換えてから forge の節を消すと緑 (直す前 rc=0 → 直した後 rc=1) /
+    ②③ フェンスを開閉の切り替えだけで追っていたので、``` の中の ```` や `~~~` で状態がずれる → CommonMark の規則 (同じ字・同じ長さ以上・情報文字列なし) で閉じる。
+    `~~~` の中の `# 例` の偽の赤は直った。対にならないフェンスと指針の行の移動を組み合わせた偽の緑は、手元で組んだ形では直す前も赤だった (後ろの Step 5 のフェンスで状態が戻った)。直した後は構造上起きない
+  - 記録だけ (検査の冒頭の「検出しない形」に書いた): 型の箇条を字下げせずに書くと ID として数えて赤 / HTML コメント・コードブロックの中の表や写しの行も数える / 表のカテゴリから「その他」が消えると赤 (行を消せばよい)
+  - 前の変異 13 本は結果が変わらない (赤 9・緑 4 のまま)
+- 2026-11-19: `make test` (rc=2) の赤は 2 つ。① 自分のテストの `「$c」` を test-var-multibyte が落とした → `${c}` にして、その検査と契約テストが緑 /
+  ② src/restartable の `TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst` (873 の負荷下の flaky の台帳に載っているもの。自分の変更は Go に触れない) → 単独で再実行して ok
+- 2026-11-19: 受け入れ条件を全部満たしたので done へ送る。残課題なし (entry-parity の初回の実走で N1〜N3 の分類と偽陽性を見るのは、audit の SKILL.md の Step 2 の注記に書いた)
