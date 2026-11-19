@@ -173,12 +173,14 @@ tt_resurrect_dir() {
 # macOS の /tmp は /private/tmp への symlink で、tmux の #{socket_path} は解決済みパスを
 # 返す（実測: /private/tmp/tmux-501/default）ため、期待値側も realpath で解決して比較する。
 # socket_path が取れない環境（古い tmux / テストスタブ）は fail-open で保存を殺さない。
+tt_default_socket_path() {
+  printf '%s/tmux-%s/default\n' "$(realpath /tmp 2>/dev/null || echo /tmp)" "$(id -u)"
+}
 tt_on_default_server() {
-  local actual expected
+  local actual
   actual="$(tmux display-message -p '#{socket_path}' 2>/dev/null)"
   [ -n "$actual" ] || return 0
-  expected="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
-  [ "$actual" = "$expected" ]
+  [ "$actual" = "$(tt_default_socket_path)" ]
 }
 
 # ── lock の取得 ──────────────────────────────────────────────────────────────
