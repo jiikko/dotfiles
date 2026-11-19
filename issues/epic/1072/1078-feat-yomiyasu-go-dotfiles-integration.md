@@ -113,6 +113,10 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
   - Go が無い環境で飛ばして緑にしない: ビルドできなければ rc 3。`test_ja_textlint.sh` は skip せず、`ja-writing lint: <名前>` の行と規則名 (`metaphor_verb`) が出ることを見る。CI の Tests は 2 つのジョブとも setup-go がある
   - 変異 (mutate-verify-list、ログは本体 checkout の `tmp/1072-par-1120/tl/mv/`): rc の合成から ja-writing lint の rc を落とす・textlint の失敗で抜ける・`--fail-on error` を外す・`--version` の確かめを外す・標準入力に掛けない・`--fix` でも掛ける の 6 本は、名指しのテストが red。
     `-f json` でも掛ける変異は、先にある `-f json` の JSON を読むテスト (34 件) が落ちる (rc 7。巻き添えでなく既存の検査が同じ退行を拾う)。検査の見出しの行で「走った」を見分ける分岐は、確かめの後にビルドが壊れる競合でしか通らず、変異で確かめていない
+  - 敵対的レビューの指摘への対応 (2026-11-20): textlint の対象の拡張子 (既定の plugin の text と markdown) だけに ja-writing lint を掛ける・
+    値を取るオプション (`-c` など) の値をファイルと読まないことをテストで見る・`--stdin-filename` の値が無くても落ちない・
+    ja-writing lint の入力の誤り (UTF-8 で読めない) は rc 2 のまま (表の「2 (入力の誤り)」の行に挙動を合わせた)・掛けなかったファイルの件数を標準エラーの最後に出す
+  - レビューの指摘 (未対応): `.textlintignore` (と `--ignore-path`) に載ったファイルにも ja-writing lint が掛かる。textlint の対象一覧を正にする形は未着手
   - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
