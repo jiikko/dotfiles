@@ -92,8 +92,28 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 
 ## 進捗
 
-- 2026-11-20 (並列の作業。ユーザー指示: 40 分で並列を最大に): 対応方針の 2 (`bin/ja-textlint` が textlint の後に `ja-writing lint` を掛け、rc を合成する) を worktree `/Users/koji/wt-1072-tl-1120` で実装した。**まだ master に入れていない** (detached。commit 4 本: 22c6efb2a 実装・62740624e この issue の rc の合成の表・bc0a0990a 敵対的レビューの指摘の修正・bd1dc826e この issue の対応表)。rc の合成の表・決めたこと・レビューの指摘ごとの扱いは、その worktree のこの issue の進捗にある。再開するときは worktree で `git rebase origin/master` し (この行と衝突するので、worktree 側の進捗を残してこの行を消す)、main agent が diff を読んでから統合する
-  - opus の敵対的レビュー (1 回): 偽の緑は作れなかった。P2 2 件 (textlint が扱わない拡張子・ignore のファイルにも掛かり rc 0 が 1 になる / 値を取るオプションを飛ばす分岐をテストが守っていない) と P3 3 件。拡張子・テスト・P3 は bc0a0990a で直した (変異 3 本 red・`make test-lint` と 2 本のテストが rc 0)。**残り**: `.textlintignore` と `--ignore-path` に載ったファイルにも ja-writing lint が掛かる・直した差分へのもう 1 周の敵対的レビュー・方針の 3〜6
+- 方針の 2 (`bin/ja-textlint` に `ja-writing lint` を足す) を入れた (2026-11-20)。
+  - 実測 (stdout / stderr / rc を分けて取った): `ja-writing lint` はファイルを 1 つしか受けず、作業フォルダの外と点で始まる名前のファイルを rc 2 で断る。
+    そこで `ja-textlint` はファイルごとに標準入力 (`-`) で渡し、出力の前に `ja-writing lint: <名前>` の行を出す。`--fail-on error` を付けると、error の候補 (`bold_not_rendered`) で rc 1、warn と info だけなら rc 0。
+    `go_autobuild_exec` はビルドの失敗を rc 1、`--no-build` でビルドが無いときを rc 2 で返し、lint の rc と重なる。そこで先に `lint --version` で起こせるかを確かめ、lint の後も検査の見出しの行が出たかで「走った」を見分ける
+  - rc の合成 (rc は textlint の rc と ja-writing lint の rc の大きい方)
+
+    | textlint | ja-writing lint | rc | テスト (`tests/bin/test_ja_textlint.sh`) |
+    |---|---|---|---|
+    | 0 / 1 (warning だけなら 0) | 0 (warn・info だけ) | textlint のまま | warn だけなら rc 0 で両方の指摘が出る |
+    | 0 / 1 | 1 (error の候補) | 1 | ja-writing lint だけが error を出したときも rc 1・複数のファイル |
+    | 2 (引数や設定の誤り) | 走らせる | 2 以上 | textlint が rc 2 でも ja-writing lint の指摘を出す |
+    | 3 (依存が無い・入れられない) | 走らせる | 3 | textlint の依存が無くても ja-writing lint の指摘を出す |
+    | 走らせる | 3 (ビルドの失敗・`JA_TEXTLINT_NO_INSTALL` でビルドが無いか古い・検査の前に終わった) | 3 | ja-writing を起こせない (build / no-install) |
+    | 走らせる | 2 (入力の誤り) | 2 以上 | (なし。引数は ja-textlint が組むので、届くのは入力の読みの誤りだけ) |
+
+  - textlint だけで終える形 (標準エラーに「ja-writing lint は掛けない」の 1 行を出す): `--fix` / `--dry-run` (ja-writing lint は直さないので、直した後にもう一度打つ)・
+    `-f` / `--format` が stylish 以外・`-o` (機械が読む出力に別の形の文を混ぜない。on-edit の hook は `-f json` を jq で読むので、今の hook の挙動は変わらない)。
+    `-h`・`-v`・`--init`・`--print-config`・`--mcp` は textlint だけで何も出さない。ディレクトリと glob は textlint が展開し、`ja-writing lint` は掛けない (標準エラーに出す)
+  - Go が無い環境で飛ばして緑にしない: ビルドできなければ rc 3。`test_ja_textlint.sh` は skip せず、`ja-writing lint: <名前>` の行と規則名 (`metaphor_verb`) が出ることを見る。CI の Tests は 2 つのジョブとも setup-go がある
+  - 変異 (mutate-verify-list、ログは本体 checkout の `tmp/1072-par-1120/tl/mv/`): rc の合成から ja-writing lint の rc を落とす・textlint の失敗で抜ける・`--fail-on error` を外す・`--version` の確かめを外す・標準入力に掛けない・`--fix` でも掛ける の 6 本は、名指しのテストが red。
+    `-f json` でも掛ける変異は、先にある `-f json` の JSON を読むテスト (34 件) が落ちる (rc 7。巻き添えでなく既存の検査が同じ退行を拾う)。検査の見出しの行で「走った」を見分ける分岐は、確かめの後にビルドが壊れる競合でしか通らず、変異で確かめていない
+  - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
   本家の lint も拾わない語なので、Go の答えは本家と同じ。lint で拾う範囲を本家より広げるかは、組み込みの後に決める (照合の表は done/1075 の「1080 の 40 項目の照合」)。
