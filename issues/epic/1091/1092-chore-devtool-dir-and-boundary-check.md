@@ -49,8 +49,20 @@
 
 ## 進捗
 
-- [ ] devtool/ の骨組み・README (要る環境変数と起動役の約束)
-- [ ] 起動役
-- [ ] テスト・bats・lint・test_changed の発見に devtool/ を足し、出力で確認
-- [ ] 境界の検査 (形ごとに変異で red)
-- [ ] `docs/README.md`・`CLAUDE.md` に 1 行ずつ
+- [x] devtool/ の骨組み・README (要る環境変数と起動役の約束) — `devtool/README.md`
+- [x] 起動役 `bin/devtool-run` (テスト `tests/bin/test_devtool_run.sh` 15 件)。変異: 名前の検査を外す → `../../bin/skill-tmpdir` のケースが RED、PATH の `runtimeout` を渡す形に戻す → RED
+- [x] テストと lint の発見: **方針を変えた**。テストは `devtool/tests/` ではなく `tests/devtool/` に置く。`tests/` だけを走査する検査
+  (`lint_test_scripts.sh`・`check_skip_exit_code.sh`・`check_pipefail_grep_q.sh`・`check_test_sleeps.sh`・`check_handrolled_timeout.sh` ほか) と runner・CI がそのまま対象にするため。
+  切り出すときはテストの基盤 (runner・lint) も toolbox 側で用意し直すので、そのとき `tests/devtool/` ごと移す。
+  `devtool/` 自体は `LINT_DIRS` (shellcheck ほか) と `test_changed.sh` の写像に足した
+- [x] 境界の検査 `scripts/check_devtool_boundary.sh` (`make test-devtool-boundary`、`test-lint` に配線。テスト 24 件)。`mutate-verify-list` で検出の枝 6 本 + リンク先の存在の 1 本を変異 → 全部 RED
+- [x] `docs/README.md`・`CLAUDE.md`・`scripts/CLAUDE.md` の表に 1 行ずつ
+
+### codex の敵対的レビュー (2026-11-19、3 周)
+
+- 1 周目 (1093 と合わせて 7 件): devtool-run が symlink 越しに外を起こせる・lib が無いと rc=2 → 実体の確認と「解決の失敗と同じ扱い」に直した。
+  境界の検査が `<../x`・`${X:-../x}`・`"$HOME"/dotfiles` を通す → `..` の前後の判定を広げ、fixture を足した
+- 2 周目: 中を指す dangling symlink が通る (macOS の `readlink -f` も最後の段が無くてもパスを返す。変異で確認) → リンク先の存在を要求
+- 3 周目: devtool の root 自体を指す symlink を外と判定する → 直した (この 1 行の修正は 4 周目に通していない)
+- 受け入れ (記録): `release-..-notes.txt` のようなファイル名の `..` を落とす (落とす側の誤り。印で逃がす。検査の冒頭に書いた)。
+  devtool-run が確かめた実体と exec する対象の間の差し替え (通常の流れで起きる経路が示されていない)

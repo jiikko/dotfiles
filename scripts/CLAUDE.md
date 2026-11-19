@@ -80,6 +80,7 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | `check_comment_provenance.sh` | コードコメントの変更の経緯・出所の語 (issue / retro の番号・以前は・旧実装・レビューの指摘) がファイルごとの一覧 (`comment_provenance_allowlist.txt`) より増える。規範は CLAUDE.md の「何をどこに書くか」。`--list <path>` で該当行、書き直したら `--update`。`--file <path>` は 1 ファイルだけ (add 前も) を一覧と比べる (編集の直後の hook `comment-provenance-on-edit.sh` が使う) | 印は無い (一覧の件数で受ける。増やすなら `--update --allow-increase` でレビューに見せる) |
 | `check_cdpath_before_cd_capture.sh` | `$(cd …)` でパスを取る前に CDPATH を外していない (`unset CDPATH` か lib なら `$(CDPATH='' cd …)`。export された CDPATH の下で相対パスの cd が解決先を stdout に出し、取ったパスが 2 行になる。zsh も対象) | `cdpath: allow` |
 | `check_var_before_multibyte.sh` | bash / sh で `$var` の直後に ASCII 以外の文字 (bash 3.2 が UTF-8 で全角の先頭バイトまで変数名に読む。`set -u` で死ぬか値が消える。zsh のファイルは除く。末尾で字句の状態が閉じないファイルも落とす。issue 633) | `var-multibyte: allow` |
+| `check_devtool_boundary.sh` | `devtool/` (別の repo へ切り出す前提の道具) の中から外を参照する書き方 (コードの行の `..`・`shellcheck source=` の `..`・`~/dotfiles` などの直書き・外を指す / リンク先の無い symlink)。0 件も落とす。止めない形は script の冒頭 (`make test-devtool-boundary`) | `devtool-boundary: allow <理由>` |
 | `check_instruction_budget.sh` | 毎セッション全文読まれる指示ファイル (CLAUDE.md と `paths:` の無い rule) の合計が Claude Code の上限 150k 字を超える (`make test-instruction-budget`) | — |
 
 `make test-lint` の外から回る check_*.sh が 2 本ある。`check_unused_excluding_tests.sh` は `make test-unused-excluding-tests`

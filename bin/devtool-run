@@ -1,0 +1,51 @@
+#!/bin/bash
+# devtool-run — devtool/bin/<道具> を、dotfiles の道具を解決した環境変数つきで起こす。
+#
+#   devtool-run <道具> [引数…]
+#
+# devtool/ は別の repo へ切り出す前提で、dotfiles の bin/・src/ を参照しない (境界は scripts/check_devtool_boundary.sh)。
+# devtool の道具が dotfiles の道具を要るときは、ここで解決して渡す:
+#   DEVTOOL_RUNTIMEOUT   runtimeout のバイナリの絶対パス (bin/lib/runtimeout.sh の runtimeout_resolve で 1 回だけ解決)
+#   DEVTOOL_SKILL_TMPDIR skill-tmpdir の絶対パス
+# PATH の runtimeout を渡さない: 古ければ同期で再ビルドするラッパーで、ビルドの失敗 rc=1 が道具の rc=1 (mutate の RED) と見分けられない。
+# runtimeout を解決できなくても道具は起こす (DEVTOOL_RUNTIMEOUT を空にして知らせる)。要らない呼び方 (mutate --summarize) まで止めないため。
+# 要る道具は空なら自分で判定不能にする。
+# 呼ぶ側 (各 repo の wrapper) は、この道具を dotfiles の checkout からの絶対パスで起こす (PATH は _zshrc にしか無く、非対話のシェルは読まない)。
+#
+# 終了コード: 道具の rc をそのまま返す。この道具自身の誤り (道具名が不正・道具が無い・実体が devtool/bin の外) は 2。
+set -u
+unset CDPATH
+
+prog="${0##*/}"
+die() { echo "$prog: $*" >&2; exit 2; }
+
+_self="$(readlink -f "${BASH_SOURCE[0]}")" || die "実体を解決できない: ${BASH_SOURCE[0]}"
+root="$(cd -P "$(dirname "$_self")/.." && pwd -P)" || die "dotfiles の root に入れない"
+
+[ $# -ge 1 ] || die "使い方: $prog <道具> [引数…]  (道具は $root/devtool/bin/ の下の名前)"
+tool="$1"; shift
+# 名前だけを受ける (`../x` や絶対パスで devtool/bin の外を起こさせない)
+case "$tool" in
+  ''|.*|*/*) die "道具の名前が不正: '$tool' (devtool/bin/ の下のファイル名だけを渡す)" ;;
+esac
+target="$root/devtool/bin/$tool"
+[ -f "$target" ] && [ -x "$target" ] || die "道具が無い (実行できない): $target"
+# 名前が正しくても、symlink で devtool/bin の外を指していれば起こさない (実体で比べる)
+bin_real="$(cd -P "$root/devtool/bin" && pwd -P)" || die "devtool/bin に入れない"
+target_real="$(readlink -f "$target")" || die "道具の実体を解決できない: $target"
+case "$target_real" in
+  "$bin_real"/*) ;;
+  *) die "道具の実体が devtool/bin の外にある: $target -> $target_real" ;;
+esac
+
+# lib を読めないときも、解決できなかったときと同じに扱う (道具の側で判定不能にする。ここで止めると rc が道具の契約からずれる)
+# shellcheck source=bin/lib/runtimeout.sh
+if [ -r "$root/bin/lib/runtimeout.sh" ] && . "$root/bin/lib/runtimeout.sh" && runtimeout_resolve "$root"; then
+  export DEVTOOL_RUNTIMEOUT="$RUNTIMEOUT"
+else
+  echo "$prog: 注意: runtimeout を解決できなかった ($root/bin/lib/runtimeout.sh)。DEVTOOL_RUNTIMEOUT を空で渡す (要る道具は判定不能で止まる)" >&2
+  export DEVTOOL_RUNTIMEOUT=""
+fi
+export DEVTOOL_SKILL_TMPDIR="$root/bin/skill-tmpdir"
+
+exec "$target" "$@"

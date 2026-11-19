@@ -45,6 +45,7 @@ tests/ の run_tests と同じ repo 既存の前提)。
                               → make test-dir DIR=tests/claude (skill 参照表・symlink 健全性)
   _claude/mods/               → make test-dir DIR=tests/claude (claude plugin validate / test)
   _claude/settings.json       → test-json + make test-dir DIR=tests/claude (hook と mods の配線)
+  devtool/                    → shell 系 lint + make test-dir DIR=tests/devtool + test-devtool-boundary
   bin/ scripts/ zshlib/ と、場所を問わない *.sh / _z*
                               → test-syntax test-shellcheck test-zsh-syntax test-zshrc
   *.md *.txt LICENSE issues/ docs/ vendor/
@@ -241,6 +242,10 @@ for p in "$@"; do
     # shell/zsh ソース。ディレクトリ前方一致に加え、置き場所を問わない *.sh /
     # zsh dotfile (_z*) も拾う (shellcheck/zsh -n の対象は discover_shell_scripts が
     # repo 全体から発見するため、ここも場所で絞らない)
+    # devtool/ (別の repo へ切り出す前提の道具) のテストは tests/devtool/ に置く (tests/ だけを走査する lint をそのまま効かせるため)
+    devtool/*)
+      add_shell_targets; add_test_dir "tests/devtool"; add_target test-devtool-boundary
+      add_test_dirs_referencing "$p" ;;
     bin/*|scripts/*|zshlib/*|*.sh|_z*)
       add_shell_targets
       add_test_dirs_referencing "$p" ;;

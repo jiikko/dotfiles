@@ -19,6 +19,10 @@
   (glogx の bubbletea v2 / テーマ色の定数 / tmux のセッション永続化) と、glogx の画面の契約がここにある。
   **新しく足したら索引に 1 行足す**（載っていない文書は存在を知っている人にしか届かない）
 
+## `devtool/` (別の repo へ切り出す前提の道具)
+
+- repo や CI から呼ばれる開発の道具は `devtool/` に置き、**devtool/ の外を参照しない** (依存は dotfiles → devtool の向きだけ。`make test-devtool-boundary` が止める)。dotfiles の道具は `bin/devtool-run` が環境変数で渡し、テストは `tests/devtool/` に置く。約束の正本は [`devtool/README.md`](devtool/README.md) (epic issue 1091)
+
 ## `src/` の Go を書くとき
 
 - **新しい関数 (helper・値を組み立てる関数・テストの helper) を書く前に `dupscan index` で既にあるものを引き、commit の前に `make test-dupscan-gate` を回す** (skill dupscan の 1・3 節)。
