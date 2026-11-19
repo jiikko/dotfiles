@@ -248,7 +248,8 @@ git -C "$work/lockref/clone" config core.hooksPath "$work/lockref/hooks"
 (cd "$work/lockref/clone" && "$SCRIPT" 101) > "$work/lockref.log" 2>&1 ||
   { cat "$work/lockref.log" >&2; fail "pre-push の間に origin が進んだ (cannot lock ref) ときに claim できない"; }
 grep -q '取り直して再試行する (1/3)' "$work/lockref.log" || { cat "$work/lockref.log" >&2; fail "cannot lock ref を経ずに通った (前提が崩れた)"; }
-grep -q -e 'incorrect old value provided' -e 'cannot lock ref' "$work/lockref.log" ||
+# 再試行の行に出る porcelain の拒否の理由で見る (`cannot lock ref` は remote の stderr にしか出ず、成功した run の log には残らない)
+grep -q 'incorrect old value provided' "$work/lockref.log" ||
   { cat "$work/lockref.log" >&2; fail "前提が崩れた: 1 回目が cannot lock ref で拒否されていない (fetch first など別の経路を見ている)"; }
 origin_has_claim lockref 101-feat-a.md next/101-feat-a.md || fail "cannot lock ref の再試行の後に claim が載っていない"
 git -C "$work/lockref/origin.git" cat-file -e master:other.txt || fail "cannot lock ref の再試行で origin の先の commit を消した"

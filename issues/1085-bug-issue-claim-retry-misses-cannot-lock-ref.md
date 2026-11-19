@@ -74,3 +74,33 @@ P1 なし。P2 1 件を採り、P3 1 件は採らずに記録した。中心の�
 
 - obaket issue 1487 (retro。この issue の出典)
 - 764 (`issue_claim.sh` を作った issue)
+
+## 進捗 (2026-11-20)
+
+- [x] 未実測だった 2 点を測った (git 2.55.0、macOS。bare の origin と 2 つの clone で再現)
+  - pre-push の hook の中で別の clone から origin へ push すると、`--porcelain` の stdout は
+    `!	HEAD:refs/heads/master	[remote rejected] (incorrect old value provided)`、stderr は `remote: error: cannot lock ref … but expected …` になる
+  - pre-push の hook が失敗すると、stdout に ref の行は出ない (= ① は偽)。fetch first のときは `!` の行が出る
+- [x] 再試行の条件を「対象の ref が拒否された (porcelain の `!` 行)」かつ「origin の先端が worktree を切った時点の基点から動いた」にした。
+  上限で終わるときは各回の push の出力を全部出す。再試行の行に拒否の理由を出す
+  (commit「fix(issue_claim): pre-push の間に origin が進んだ cannot lock ref も再試行する (issue 1085)」と
+  「fix(issue_claim): 拒否の ref の照合を文字列の比較にし、再試行の行に拒否の理由を出す (issue 1085)」)
+- [x] テスト: 7.12 (pre-push の中で origin を進める cannot lock ref。前提の `incorrect old value provided` も assert する) /
+  7.13 (pre-push の失敗と origin の前進が同時) / 上限で各回の出力が出ること
+  - 🚨 fixture の pre-push hook は一時 worktree の `GIT_DIR` を継承している。外さずに `git -C other push` を打つと claim の repo を push し、hook が再帰して fork が尽きた
+- [x] 変異 (mutate-verify): 判定を元の文言の grep に戻す → 7.12 だけが red / ref の拒否の条件を外し origin が動いたかだけにする → 7.13 だけが red
+- [x] 敵対レビュー (opus) 2 周。1 周目で採ったもの: ブランチ名の `+` `(` で awk の正規表現の照合が外れる → 末尾の文字列の比較に直した /
+  7.12 が前提 (cannot lock ref の経路を通ったこと) を確かめていない → assert を足した。2 周目 (直した差分) は再現できる誤りなし
+
+## 敵対レビューで記録だけにしたもの (未対応)
+
+- サーバ側の拒否 (pre-receive・保護ブランチの `[remote rejected] (… hook declined)`) と他人の push が同じ回に重なると、競合と読んで再試行する。
+  上限で終わると「N 回とも origin が先へ進んでいて」と出るが、各回の push の出力を出すので原因は見える。旧実装は再試行しなかった。
+  直さない理由: 拒否の理由の文言で分けると、この issue で外した文言の判定に戻る。dotfiles・obaket の既定のブランチに pre-receive の拒否は無い。
+  再提起するなら、サーバ側の拒否で上限まで回った実際の出力を添えること
+- (未実測) push の拒否の直後の fetch が、読み出しの複製の遅れで古い先端を返す remote では、競合でも「origin が動いていない」と読んで rc 1 で止まる。
+  旧実装は文言で再試行していた。GitHub で起きるかは測っていない。起きたら、push の出力 (fetch first の行) と fetch の後の先端を添えて再提起する
+
+## 残タスク
+
+- なし (スコープ外のぼやき: 一時 worktree を短い名前 `origin/$branch` から切っているので、同名のローカルブランチ `origin/master` があるとそちらが優先される。未実測)
