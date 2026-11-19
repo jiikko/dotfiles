@@ -53,3 +53,11 @@
 ## 進捗
 
 - 2026-11-16: 起票（観測 1 回）
+- 2026-11-19: 「次に採るもの」の 1・2 を自動にした（commit「feat(tmux): watchdog がサーバの CPU の使い切りが続いたら sample と ps を撮る」）。
+  `scripts/tmux_server_watchdog.sh` の `check_busy` が、サーバの累積 CPU 時間の増え方を 5 秒の窓で見て、85% 以上が 2 回続いたら
+  `sample <pid> 5` と `ps -ww` を `~/.cache/tt-server-busy-<時刻>-<pid>.{sample,ps}` に撮り、`~/.cache/tt-restore-trigger.log` に `server-busy` 行を書く（600 秒は撮り直さない。直近 10 組を残す）。
+  判定に tmux への問い合わせは使わない（固まったサーバへ client を足すため）
+  - [ ] 本番の watchdog を新しいスクリプトで張り直す（動いている watchdog は古いスクリプトのまま。push と本体の pull の後に行う）
+  - [ ] 次に固まったら `server-busy` 行と sample を読み、仮説 1〜3 を絞る
+  - 未着手: 隔離サーバでの再現（「次に採るもの」の 4）
+  - 未確認: 閾値（85% × 2 窓）が誤検知でどれだけ撮るか。637 の popup の描き直しで撮りうる。cooldown で 10 分に 1 組までに抑えている
