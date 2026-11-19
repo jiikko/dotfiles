@@ -151,3 +151,7 @@
     無視を子の中で入れる形に戻す変異はテストで決定論に再現できない（根拠は上の `script` の実測だけ）
   - 仮説 2（描画）の切り分け（隔離サーバで、tmux が popup の枠を外側へ送っているかをバイト列で見る）は未着手
   - [ ] 次に起きたら、上の「開閉のログを読む」で仮説 1 と見え方を確かめる
+  - 本番への反映（2026-11-20）: `~/dotfiles` へ pull し、本番の tmux に `source-file ~/.tmux.conf` で conf を読み直させた（起動から 39 日で、continuum の発火窓の外）。
+    `list-keys` で bind が押したキーを第 3 引数で渡す形になったことを確かめた。本番で popup を開いて行が書かれるところはまだ見ていない（ユーザーの画面に popup が開くので、こちらからは開いていない）
+  - CI: push した先端の Tests・Lint・Bench・Issues がすべて success。開発機では skip される `tests/tmux/test_fork_scratch.sh` も CI の Tests で通った
+  - [ ] 次に `C-t t` を使ったとき、`grep scratch-popup ~/.cache/tt-restore-trigger.log` に start / end の行が出るかを確かめる

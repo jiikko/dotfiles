@@ -65,3 +65,5 @@
   - 受け入れたもの: bash 3.2（`date` の秒刻み）では窓の比が量子化で閾値の近くを外しうる（本番の PATH では brew の bash 5 が先）/ 長く忙しい時間が続くと古い組が押し出されて `sample=` のファイルが消える / sample の成否はログに出ない（ファイルが無ければ失敗）/ cooldown が sample の秒数より短いと `.sample` が取り残される（短くするのはテストだけ）
   - テストが無いもの: health の後回しの 600 秒の上限
 - 2026-11-19: health の確認が固まったサーバに並ぶ形は 1090 で解消（watchdog が health 全体を 5 秒で打ち切る）
+- 2026-11-20: 1098 で scratch の popup の開閉が `~/.cache/tt-restore-trigger.log` に `scratch-popup-start` / `-end` として残るようになった。
+  次に固まったら、`server-busy` 行の時刻と、そのとき開いていた popup（end の無い start）・開いた外側のクライアントを同じログで突き合わせる
