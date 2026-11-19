@@ -75,6 +75,7 @@ ssh-keygen -t ed25519 -C "jiikko"
 ### textlint (任意)
 
 入れなくてよい。`bin/ja-textlint <file>` がバージョンと規則を固定した textlint (`_claude/skills/ja-writing/textlint/` の lock・textlintrc.json・自作の規則の rules/) を初回にキャッシュへ入れて使う。
+続けて `ja-writing lint` (Go。`bin/ja-writing` が初回にビルドする) も掛けるので、`go` も要る (無いと rc 3)。
 
 ## 手で設定するもの
 

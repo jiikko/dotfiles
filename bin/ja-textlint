@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ja-textlint — 日本語の文章を textlint (preset-ja-technical-writing) で検査する (skill ja-writing の機械の検査)。
+# ja-textlint — 日本語の文章を textlint (preset-ja-technical-writing) で検査し、続けて同じ文に `ja-writing lint` を掛ける (skill ja-writing の機械の検査)。
 #
 # usage:
 #   ja-textlint <file>...                  # Markdown / テキストのファイルを検査する
@@ -10,47 +10,172 @@
 # 依存は ${XDG_CACHE_HOME:-~/.cache}/ja-textlint/<lock の hash>/ に npm ci で入れる。dotfiles の作業ツリーに node_modules を作らない
 # (worktree ごとに入れ直さずに済み、gitignore の漏れで巨大な差分が出ることもない)。lock が変わると hash が変わり、入れ直す。
 #
+# ja-writing lint (src/ja-writing。bin/ja-writing が初回と入力の変化のたびに go build する):
+#   textlint の出力の後に、ファイルごとに「ja-writing lint: <名前>」の行と ja-writing lint の出力を標準出力へ足す。
+#   ファイルは標準入力で渡す (ja-writing lint は作業フォルダの外と点で始まる名前のファイルを断る。ja-textlint はどこのファイルにも掛ける)。
+#   `--fail-on error` を付けて起こすので、warn と info だけなら rc 0 (textlint の warning と同じ扱い)。
+#   textlint の出力だけを返し ja-writing lint を掛けない形 (標準エラーに 1 行出す): --fix / --dry-run・-f / --format が stylish 以外・-o。
+#     --fix は ja-writing lint が直さないので、直した後にもう一度打つ。整形の指定は機械が読む出力で、別の形の文を混ぜると読めなくなる
+#     (_claude/hooks/ja-textlint-on-edit.sh は -f json を jq で読む)。
+#   -h・-v・--init・--print-config・--mcp は textlint だけで、何も足さない。
+#   JA_TEXTLINT_NO_INSTALL を付けると、ビルド済みで入力と合うバイナリだけを使い (go_autobuild_exec --no-build)、無ければ掛けずに rc 3。
+#
 # 見ないもの: 主語・目的語の抜け、語が機能を言い表しているか、直訳の硬さ (構文として整った文は素通りする)。
 # そこは skill ja-writing の手順 (人と Claude が読んで直す) が受け持つ。
 #
-# 終了コード: textlint のまま (0 = 指摘なし / 1 = 指摘あり / 2 = 設定や引数の誤り)。依存を入れられないとき・JA_TEXTLINT_NO_INSTALL を付けて
-# 依存が入っていないときは 3。
+# 終了コード: textlint の rc と ja-writing lint の rc の大きい方。
+#   textlint: 0 = 指摘なし / 1 = 指摘あり / 2 = 設定や引数の誤り / 3 = 依存を入れられない・JA_TEXTLINT_NO_INSTALL で依存が無い。
+#   ja-writing lint: 0 = error の候補なし / 1 = error の候補あり / 2 = 入力や引数の誤り / 3 = ビルドできない・ビルドが無い (掛けられない)。
+#   片方が 2 / 3 で終わっても、もう片方は走らせて指摘を出す。
 set -euo pipefail
 
 self="$(readlink -f "$0")"
 root="$(dirname "$(dirname "$self")")"
 src="$root/_claude/skills/ja-writing/textlint"
-for f in package.json package-lock.json textlintrc.json; do
-  [ -f "$src/$f" ] || { echo "ja-textlint: $src/$f が無い" >&2; exit 3; }
+
+# textlint の依存を確かめ、無ければ入れる。入れられなければ rc 3 を返す (呼び出し元が ja-writing lint を続けるかを決める)
+ensure_textlint() {
+  for f in package.json package-lock.json textlintrc.json; do
+    [ -f "$src/$f" ] || { echo "ja-textlint: $src/$f が無い" >&2; return 3; }
+  done
+  [ -d "$src/rules" ] || { echo "ja-textlint: $src/rules が無い" >&2; return 3; }
+
+  hash="$(shasum -a 256 "$src/package-lock.json" | cut -c1-16)"
+  base="${XDG_CACHE_HOME:-$HOME/.cache}/ja-textlint"
+  cache="$base/$hash"
+  bin="$cache/node_modules/.bin/textlint"
+
+  if [ ! -x "$bin" ]; then
+    # 入っていなければ入れずに止める (hook のように、編集のたびに npm を走らせたくない呼び出し元が付ける)
+    [ -z "${JA_TEXTLINT_NO_INSTALL:-}" ] || { echo "ja-textlint: textlint が入っていない (JA_TEXTLINT_NO_INSTALL なので入れない)" >&2; return 3; }
+    command -v npm >/dev/null || { echo "ja-textlint: npm が無い (node を入れる)" >&2; return 3; }
+    mkdir -p "$base"
+    # 入れ終えてから名前を変えて公開する。途中で止まった入れかけを、次の起動が「入っている」と読まない
+    staging="$(mktemp -d "$base/.staging.XXXXXX")"
+    cp "$src/package.json" "$src/package-lock.json" "$staging/"
+    echo "ja-textlint: textlint を入れる ($cache)" >&2
+    if ! (cd "$staging" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2); then
+      rm -rf "$staging"
+      echo "ja-textlint: npm ci に失敗した" >&2
+      return 3
+    fi
+    # 並行して入れた別の起動が先に公開していたら、こちらは捨てる。`mv` に任せない: 公開先のディレクトリが在ると失敗せず、
+    # その中へ入れ子で移す。有無を見てから移すまでの間に別の起動が公開すると入れ子が 1 つ残るが、使う側 ($bin) は壊れない
+    if [ -d "$cache" ]; then
+      rm -rf "$staging"
+    else
+      mv "$staging" "$cache"
+    fi
+  fi
+
+  return 0
+}
+
+textlint_args=(--config "$src/textlintrc.json" --rulesdir "$src/rules")
+
+# 引数を読み、ja-writing lint に渡すファイルと、textlint だけで終える形を決める。値を取る textlint のオプションは textlint --help (15.8) の一覧
+files=()
+use_stdin=0
+only=""      # 空でなければ textlint だけで終える。中身は標準エラーに出す理由 (quiet なら出さない)
+quiet_only=0
+i=1
+while [ "$i" -le "$#" ]; do
+  a="${!i}"
+  case "$a" in
+    -h|--help|-v|--version|--init|--print-config|--mcp) quiet_only=1 ;;
+    --fix|--dry-run) only="$a を付けたとき" ;;
+    -o|--output-file|--output-file=*) only="出力をファイルへ書くとき ($a)" ;;
+    -f|--format)
+      i=$((i + 1)); v="${!i:-}"
+      [ "$v" = stylish ] || only="出力の形を指定したとき ($a $v)" ;;
+    --format=*) [ "${a#--format=}" = stylish ] || only="出力の形を指定したとき ($a)" ;;
+    -c|--config|--ignore-path|--stdin-filename|--plugin|--rule|--preset|--rulesdir|--cache-location|--rules-base-directory)
+      i=$((i + 1)) ;;
+    --stdin) use_stdin=1 ;;
+    -*) ;;
+    *) files+=("$a") ;;
+  esac
+  i=$((i + 1))
 done
-[ -d "$src/rules" ] || { echo "ja-textlint: $src/rules が無い" >&2; exit 3; }
 
-hash="$(shasum -a 256 "$src/package-lock.json" | cut -c1-16)"
-base="${XDG_CACHE_HOME:-$HOME/.cache}/ja-textlint"
-cache="$base/$hash"
-bin="$cache/node_modules/.bin/textlint"
-
-if [ ! -x "$bin" ]; then
-  # 入っていなければ入れずに止める (hook のように、編集のたびに npm を走らせたくない呼び出し元が付ける)
-  [ -z "${JA_TEXTLINT_NO_INSTALL:-}" ] || exit 3
-  command -v npm >/dev/null || { echo "ja-textlint: npm が無い (node を入れる)" >&2; exit 3; }
-  mkdir -p "$base"
-  # 入れ終えてから名前を変えて公開する。途中で止まった入れかけを、次の起動が「入っている」と読まない
-  staging="$(mktemp -d "$base/.staging.XXXXXX")"
-  cp "$src/package.json" "$src/package-lock.json" "$staging/"
-  echo "ja-textlint: textlint を入れる ($cache)" >&2
-  if ! (cd "$staging" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2); then
-    rm -rf "$staging"
-    echo "ja-textlint: npm ci に失敗した" >&2
-    exit 3
-  fi
-  # 並行して入れた別の起動が先に公開していたら、こちらは捨てる。`mv` に任せない: 公開先のディレクトリが在ると失敗せず、
-  # その中へ入れ子で移す。有無を見てから移すまでの間に別の起動が公開すると入れ子が 1 つ残るが、使う側 ($bin) は壊れない
-  if [ -d "$cache" ]; then
-    rm -rf "$staging"
-  else
-    mv "$staging" "$cache"
-  fi
+if [ "$quiet_only" -eq 1 ] || [ -n "$only" ]; then
+  [ -z "$only" ] || [ "$quiet_only" -eq 1 ] || echo "ja-textlint: ${only}は textlint だけを掛け、ja-writing lint は掛けない" >&2
+  ensure_textlint || exit $?
+  exec "$bin" "${textlint_args[@]}" "$@"
 fi
 
-exec "$bin" --config "$src/textlintrc.json" --rulesdir "$src/rules" "$@"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+stdin_file=""
+if [ "$use_stdin" -eq 1 ]; then
+  # 標準入力は 1 度しか読めないので、textlint と ja-writing lint の両方へ渡すためにいったんファイルに受ける
+  stdin_file="$work/stdin"
+  cat >"$stdin_file"
+fi
+
+trc=0
+if ensure_textlint; then
+  if [ -n "$stdin_file" ]; then
+    "$bin" "${textlint_args[@]}" "$@" <"$stdin_file" || trc=$?
+  else
+    "$bin" "${textlint_args[@]}" "$@" || trc=$?
+  fi
+else
+  trc=$?
+fi
+
+# ja-writing を起こす。JA_TEXTLINT_NO_INSTALL ならビルドせず (go_autobuild_exec --no-build)、無ければ bin/ja-writing が同期でビルドする。
+# 先に --version で起こせるかを確かめる。lint の rc 1 (error の候補) とビルドの失敗 (go_autobuild_exec の rc 1) は rc では分けられないので、
+# lint の後も、検査の見出しの行が標準出力に出たかで「走った」を見分ける。
+# 確かめと lint で起こし方を揃える: 同期のビルドの直後に --no-build で起こすと「バイナリが古い」で rc 2 になることがある (実測 2026-11-20、新しい worktree の初回)
+jw() {
+  if [ -n "${JA_TEXTLINT_NO_INSTALL:-}" ]; then
+    zsh -c 'source "$1"; shift; go_autobuild_exec --no-build "$1" ja-writing -- "${@:2}"' _ "$root/bin/lib/go_autobuild.zsh" "$root/src/ja-writing" "$@"
+  else
+    "$root/bin/ja-writing" "$@"
+  fi
+}
+wrc=0
+if [ -n "${JA_TEXTLINT_NO_INSTALL:-}" ]; then
+  jw lint --version >/dev/null 2>&1 || wrc=3
+  [ "$wrc" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けられない (ビルドが無いか古い。JA_TEXTLINT_NO_INSTALL なのでビルドしない。bin/ja-writing を一度打つとビルドする)" >&2
+else
+  jw lint --version >/dev/null || wrc=3
+  [ "$wrc" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けられない (bin/ja-writing のビルドに失敗した。理由は上の行)" >&2
+fi
+
+lint_one() { # <表示の名前> <中身のファイル>
+  local r=0
+  printf '\nja-writing lint: %s\n' "$1"
+  jw lint --fail-on error - <"$2" >"$work/jw.out" || r=$?
+  cat "$work/jw.out"
+  if [ "$r" -ne 0 ] && ! grep -qF '表現・書式の検査を実行しました' "$work/jw.out"; then
+    echo "ja-textlint: ja-writing lint が検査の前に終わった (rc=$r)" >&2
+    r=3
+  fi
+  case "$r" in 0|1|3) ;; *) r=2 ;; esac
+  [ "$r" -le "$wrc" ] || wrc=$r
+}
+if [ "$wrc" -eq 0 ]; then
+  if [ -n "$stdin_file" ]; then
+    name=""
+    j=1
+    while [ "$j" -le "$#" ]; do
+      if [ "${!j}" = --stdin-filename ]; then j=$((j + 1)); name="${!j:-}"; fi
+      case "${!j}" in --stdin-filename=*) name="${!j#--stdin-filename=}" ;; esac
+      j=$((j + 1))
+    done
+    lint_one "${name:-(標準入力)}" "$stdin_file"
+  fi
+  for f in ${files[@]+"${files[@]}"}; do
+    if [ -f "$f" ]; then
+      lint_one "$f" "$f"
+    else
+      # ディレクトリと glob は textlint が展開する。ja-writing lint はファイルを 1 つずつしか受けないので掛けない
+      echo "ja-textlint: $f はファイルでないので ja-writing lint は掛けない" >&2
+    fi
+  done
+fi
+
+[ "$trc" -ge "$wrc" ] && exit "$trc"
+exit "$wrc"

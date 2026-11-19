@@ -6,6 +6,9 @@
 # - 語彙は warning で、warning だけのファイルは rc 0 (textlintrc の severity は --rulesdir の規則に届かないので、規則の中で決めている)
 # - 語彙の規則は書き換えない (--fix でファイルが変わらない)
 # - ja-bold-not-rendered: 表示されない ** だけを指摘し、表示される太字とコードの中は見ない
+# - textlint の後に ja-writing lint を掛け、rc は両方の大きい方 (表は bin/ja-textlint の冒頭)。
+#   Go のある環境で ja-writing lint を飛ばして緑にならないよう、出力に ja-writing lint の行と規則名が出ることを見る
+#   (go が無くビルドも無い環境では rc 3 で赤くなる。skip にはしない)
 set -euo pipefail
 unset CDPATH
 
@@ -180,6 +183,106 @@ if [ "$rc" -eq 0 ] && ! grep -qF 'ja-ai-vocabulary' "$work/d.out"; then
   ok "無効化のコメントで語彙の規則を止められる"
 else
   fail "無効化のコメントが効かない (rc=$rc): $(cat "$work/d.out")"
+fi
+
+# --- ja-writing lint を合わせた形 (rc の合成の表の各行) ---
+jw_ran() { grep -qF "ja-writing lint: $2" "$1" && grep -qF '表現・書式の検査を実行しました' "$1"; }
+
+# 両方とも warn だけ → rc 0。両方の指摘が出る
+rc=0
+"$BIN" "$work/w.md" >"$work/jw0.out" 2>"$work/jw0.err" || rc=$?
+if [ "$rc" -eq 0 ] && grep -qF 'ja-ai-vocabulary' "$work/jw0.out" && jw_ran "$work/jw0.out" "$work/w.md" && grep -qF 'metaphor_verb' "$work/jw0.out"; then
+  ok "warn だけなら rc 0 で、textlint と ja-writing lint の両方の指摘が出る"
+else
+  fail "warn だけ: rc=$rc (期待 0 で両方の指摘): $(cat "$work/jw0.out" "$work/jw0.err")"
+fi
+
+# ja-writing lint の error (bold_not_rendered) → rc 1 に入る。textlint は語彙の warning だけになるよう太字の規則を止める
+cat >"$work/jb.md" <<'EOF'
+<!-- textlint-disable ja-bold-not-rendered -->
+ただし**「x」**と書く。
+<!-- textlint-enable ja-bold-not-rendered -->
+EOF
+rc=0
+"$BIN" "$work/jb.md" >"$work/jb.out" 2>"$work/jb.err" || rc=$?
+if [ "$rc" -eq 1 ] && ! grep -qF 'ja-bold-not-rendered' "$work/jb.out" && jw_ran "$work/jb.out" "$work/jb.md" && grep -qF '[ERROR] bold_not_rendered' "$work/jb.out"; then
+  ok "ja-writing lint だけが error を出したときも rc 1"
+else
+  fail "ja-writing lint の error: rc=$rc (期待 1): $(cat "$work/jb.out" "$work/jb.err")"
+fi
+
+# ファイルを複数渡すと、ファイルごとに掛ける (作業フォルダの外のファイルにも掛ける)
+rc=0
+"$BIN" "$work/w.md" "$work/jb.md" >"$work/jm.out" 2>"$work/jm.err" || rc=$?
+if [ "$rc" -eq 1 ] && jw_ran "$work/jm.out" "$work/w.md" && jw_ran "$work/jm.out" "$work/jb.md"; then
+  ok "複数のファイルにファイルごとに ja-writing lint を掛け、rc は大きい方"
+else
+  fail "複数のファイル: rc=$rc (期待 1): $(cat "$work/jm.out" "$work/jm.err")"
+fi
+
+# 標準入力: textlint と ja-writing lint の両方が同じ文を読む
+rc=0
+printf '黙って無視される。\n' | "$BIN" --stdin --stdin-filename y.md >"$work/js.out" 2>"$work/js.err" || rc=$?
+if [ "$rc" -eq 0 ] && grep -qF 'ja-ai-vocabulary' "$work/js.out" && jw_ran "$work/js.out" y.md && grep -qF 'metaphor_verb' "$work/js.out"; then
+  ok "標準入力の文に textlint と ja-writing lint の両方を掛ける"
+else
+  fail "標準入力: rc=$rc: $(cat "$work/js.out" "$work/js.err")"
+fi
+
+# textlint が rc 2 (引数の誤り) でも ja-writing lint は走り、rc は 2
+rc=0
+"$BIN" --rule ja-textlint-no-such-rule "$work/w.md" >"$work/j2.out" 2>"$work/j2.err" || rc=$?
+if [ "$rc" -eq 2 ] && jw_ran "$work/j2.out" "$work/w.md"; then
+  ok "textlint が rc 2 でも ja-writing lint の指摘を出し、rc 2"
+else
+  fail "textlint rc 2: rc=$rc (期待 2): $(cat "$work/j2.out" "$work/j2.err")"
+fi
+
+# textlint の依存が無い (rc 3) でも ja-writing lint は走り、rc は 3
+mkdir -p "$work/nocache"
+rc=0
+XDG_CACHE_HOME="$work/nocache" JA_TEXTLINT_NO_INSTALL=1 "$BIN" "$work/w.md" >"$work/j3.out" 2>"$work/j3.err" || rc=$?
+if [ "$rc" -eq 3 ] && jw_ran "$work/j3.out" "$work/w.md" && grep -qF 'metaphor_verb' "$work/j3.out"; then
+  ok "textlint の依存が無くても ja-writing lint の指摘を出し、rc 3"
+else
+  fail "textlint rc 3: rc=$rc (期待 3): $(cat "$work/j3.out" "$work/j3.err")"
+fi
+
+# ja-writing を起こせない (ビルドの失敗・JA_TEXTLINT_NO_INSTALL でビルドが無い) → textlint の指摘は出し、rc 3。
+# go.mod の無い src/ja-writing を持つ木に ja-textlint を写して起こす (textlint の依存は本物の置き場を使う)
+fake="$work/fake"
+mkdir -p "$fake/bin/lib" "$fake/_claude/skills/ja-writing" "$fake/src/ja-writing"
+cp "$ROOT_DIR/bin/ja-textlint" "$ROOT_DIR/bin/ja-writing" "$fake/bin/"
+cp "$ROOT_DIR/bin/lib/go_autobuild.zsh" "$fake/bin/lib/"
+ln -s "$ROOT_DIR/_claude/skills/ja-writing/textlint" "$fake/_claude/skills/ja-writing/textlint"
+for mode in build no-install; do
+  rc=0
+  if [ "$mode" = build ]; then
+    "$fake/bin/ja-textlint" "$work/w.md" >"$work/jf.out" 2>"$work/jf.err" || rc=$?
+  else
+    JA_TEXTLINT_NO_INSTALL=1 "$fake/bin/ja-textlint" "$work/w.md" >"$work/jf.out" 2>"$work/jf.err" || rc=$?
+  fi
+  if [ "$rc" -eq 3 ] && grep -qF 'ja-ai-vocabulary' "$work/jf.out" && ! grep -qF 'ja-writing lint: ' "$work/jf.out" \
+    && grep -qF 'ja-writing lint を掛けられない' "$work/jf.err"; then
+    ok "ja-writing を起こせない ($mode) ときは textlint の指摘を出して rc 3"
+  else
+    fail "ja-writing を起こせない ($mode): rc=$rc (期待 3): $(cat "$work/jf.out" "$work/jf.err")"
+  fi
+done
+
+# textlint だけで終える形: 出力の形の指定 (-f json) と --fix。標準出力に ja-writing lint を混ぜず、標準エラーに理由を出す
+rc=0
+"$BIN" -f json "$work/w.md" >"$work/jj.out" 2>"$work/jj.err" || rc=$?
+if [ "$rc" -eq 0 ] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$work/jj.out" && ! grep -qF 'ja-writing lint: ' "$work/jj.out" \
+  && grep -qF 'ja-writing lint は掛けない' "$work/jj.err"; then
+  ok "-f json の出力は textlint の JSON だけで、ja-writing lint を掛けない旨を標準エラーに出す"
+else
+  fail "-f json: rc=$rc: $(cat "$work/jj.out" "$work/jj.err")"
+fi
+if ! grep -qF 'ja-writing lint: ' "$work/fix.out" && grep -qF 'ja-writing lint は掛けない' "$work/fix.out"; then
+  ok "--fix では ja-writing lint を掛けない旨を出す"
+else
+  fail "--fix の出力: $(cat "$work/fix.out")"
 fi
 
 [ "$fails" -eq 0 ] || { printf '✗ %d 件失敗\n' "$fails" >&2; exit 1; }
