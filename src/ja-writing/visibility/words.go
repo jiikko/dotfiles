@@ -511,6 +511,28 @@ func (c WordsContext) Value() *pyjson.Object {
 	return o
 }
 
+// WordsContextFromValue は context.words の dict (Value の形) から words_label に渡す値を作る (本家の words_label は dict を読む)。
+func WordsContextFromValue(words *pyjson.Object) WordsContext {
+	str := func(key string) string {
+		v, _ := words.Get(key)
+		s, _ := v.(string)
+		return s
+	}
+	num := func(key string) int {
+		v, _ := words.Get(key)
+		n, _ := v.(int64)
+		return int(n)
+	}
+	c := WordsContext{Path: str("path"), AllowLines: num("allow_lines"), FlagLines: num("flag_lines")}
+	if v, _ := words.Get("flag_patterns_sha256"); v != nil {
+		if sha, ok := v.(string); ok {
+			c.PatternsSHA256 = &sha
+		}
+		c.PatternsLines = num("flag_patterns_lines")
+	}
+	return c
+}
+
 // WordsLabel は words_label (人が読む出力の「語の一覧: <パス>（allow N語、flag N語）。」。flag-patterns.txt があれば「、flag-patterns N行」を足す)。
 func WordsLabel(c WordsContext) string {
 	patterns := ""

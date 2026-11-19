@@ -1,12 +1,7 @@
 package lint
 
 import (
-	"fmt"
-	"slices"
-	"strings"
-
 	"ja-writing/internal/pyjson"
-	"ja-writing/internal/pystr"
 	"ja-writing/visibility"
 )
 
@@ -63,77 +58,8 @@ func (w *wordsReport) value() pyjson.Value {
 	return o
 }
 
-// renderReport は通常の出力の全体 (1〜3 行目、種類か読者を指定したときの 4 行目、語の一覧を使ったときの行、候補があれば内訳と候補の並び)。末尾に改行は付けない。
-func renderReport(r *result) string {
-	header := fmt.Sprintf("表現・書式の検査を実行しました。\n見直し候補: %d件\nこの検査では、意味の保持と読者にとっての分かりやすさは判定していません。", r.candidateCount)
-	for _, line := range []string{r.contextLine(), r.wordsLine()} {
-		if line != "" {
-			header += "\n" + line
-		}
-	}
-	if body := renderFindings(r); body != "" {
-		return header + "\n\n" + body
-	}
-	return header
-}
-
-// contextLine は種類か読者を指定したときの 4 行目。指定しないときは空。
-func (r *result) contextLine() string {
-	if r.docType == nil && r.reader == nil {
-		return ""
-	}
-	line, err := visibility.ContextLabel(r.docType, r.reader)
-	if err != nil {
-		panic(err) // 値は CLI が正規化済み
-	}
-	if r.docType != nil {
-		if len(r.skipped) == 0 {
-			line += "この種類で外す規則はありません。"
-		} else {
-			total := 0
-			parts := make([]string, len(r.skipped))
-			for i, s := range r.skipped {
-				total += s.count
-				parts[i] = fmt.Sprintf("%s %d件", s.rule, s.count)
-			}
-			line += fmt.Sprintf("種類に合わせて外した候補 %d件（%s）。", total, strings.Join(parts, "、"))
-		}
-	}
-	if r.reader != nil {
-		line += "読者では候補を変えていません。"
-	}
-	return line
-}
-
-// wordsLine は語の一覧を使ったときの行。使わないときは空。
-func (r *result) wordsLine() string {
-	if r.words == nil {
-		return ""
-	}
-	total := 0
-	for _, s := range r.words.allowRemoved {
-		total += s.count
-	}
-	return visibility.WordsLabel(r.words.context) + fmt.Sprintf("allow で外した候補 %d件。", total)
-}
-
-// renderFindings は内訳の行と候補の並び (候補が 0 件なら空)。候補は行番号の順に並べ、同じ行の中は検出の順のまま。
-func renderFindings(r *result) string {
-	if len(r.findings) == 0 {
-		return ""
-	}
-	blocks := []string{fmt.Sprintf("内訳: error %d件、warn %d件、info %d件", r.counts[0], r.counts[1], r.counts[2])}
-	for _, f := range slices.SortedStableFunc(slices.Values(r.findings), func(a, b finding) int { return a.Line - b.Line }) {
-		lines := []string{fmt.Sprintf("L%d [%s] %s: %s", f.Line, strings.ToUpper(f.Severity), f.Rule, f.Message)}
-		for _, snippetLine := range strings.Split(f.Snippet, "\n") {
-			if snippetLine = pystr.RStrip(snippetLine); snippetLine != "" {
-				lines = append(lines, "  > "+snippetLine)
-			}
-		}
-		blocks = append(blocks, strings.Join(lines, "\n"))
-	}
-	return strings.Join(blocks, "\n\n")
-}
+// renderReport は通常の出力の全体。--json の dict と同じ値を RenderReport に通す (check が子の lint --json を読んで使う口と同じ実装)。
+func renderReport(r *result) string { return RenderReport(r.value().(*pyjson.Object)) }
 
 // dumpResult は json.dumps(result, ensure_ascii=True, indent=2)。
 func dumpResult(r *result) (string, error) {

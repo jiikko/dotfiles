@@ -68,16 +68,6 @@ func stringPtr(v pyjson.Value) *string {
 	return &s
 }
 
-// wordsContextOf は context.words の dict から words_label に渡す値を作る (本家の words_label は dict を読む)。
-func wordsContextOf(words *pyjson.Object) visibility.WordsContext {
-	c := visibility.WordsContext{Path: fieldStr(words, "path"), AllowLines: fieldInt(words, "allow_lines"), FlagLines: fieldInt(words, "flag_lines")}
-	if sha := field(words, "flag_patterns_sha256"); sha != nil {
-		c.PatternsSHA256 = stringPtr(sha)
-		c.PatternsLines = fieldInt(words, "flag_patterns_lines")
-	}
-	return c
-}
-
 // report は人が読むレポート。1 行目、状態の行、断り、意味が変わる恐れ、規則の見直し候補、足した人や担当、見出しの形、読点の増加、硬化、勢い、
 // 慎重表現・値・敬語・文体の切り替え、全文差分、状態の行の順。末尾に改行は付けない。
 func report(d *pyjson.Object) (string, error) {
@@ -109,7 +99,7 @@ func report(d *pyjson.Object) (string, error) {
 	}
 	if words := fieldObj(context, "words"); words != nil {
 		// 語の一覧を使ったときだけ (種類と読者の行のあと)
-		head = append(head, visibility.WordsLabel(wordsContextOf(words)))
+		head = append(head, visibility.WordsLabel(visibility.WordsContextFromValue(words)))
 	}
 	return strings.Join(head, "\n") + "\n\n" + strings.Join(body, "\n\n") + "\n\n" + statusLine(d, true), nil
 }
