@@ -69,6 +69,14 @@ Swift のアプリでは worktree からのフルビルドは遅すぎるので�
   - obaket: `BrowserNavigationCursorMemory.remember` の保存を消す (`make -C macOS test-only ONLY=ObaketTests/BrowserNavigationCursorMemoryTests`) → baseline 15 件 passed、変異で 9 件が落ちて RED。対象は復元。孤児の helper の検査は黙って通った (孤児なし)
   - GREEN は両方の baseline (変異の前の run が passed で件数を読めた) で確かめた。変異を当てた GREEN は当てていない
 
+### 統合の後に見つけた退行と修正 (2026-11-19)
+
+- obaket の Xcode Cloud (`ci_pre_xcodebuild.sh` が `make lint-gates` を回す) で、`check-mutate-harness` と `check-run-logged-command` が
+  `~/dotfiles` を要するようになり落ちる形になっていた (旧はどちらも dotfiles なしで動いた)。obaket `c86ba946f` で、Xcode Cloud では
+  dotfiles に頼る区間を飛ばすように直した (判定は `bin/lib/xcode-cloud.bash` の `in_xcode_cloud` に寄せた)。
+  飛ばした分、書き手と読み手の突き合わせが自動で走る場所が無くなったので 1097 を起票した
+- `bin/mutate --help` が「不明なオプション」で rc=64 だった (統合の前から)。dotfiles `f91012e05` で `--help` と案内を足した
+
 ### 挙動の差 (受け入れたもの)
 
 - `--summarize` も dotfiles が要る (旧は dotfiles なしで動いた)。本体を dotfiles に置く以上、本体が無いと動かない。dotfiles の無い環境で使う経路は見つかっていない (app の CI は mutate を回さない)

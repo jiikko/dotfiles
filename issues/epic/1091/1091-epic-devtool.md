@@ -15,6 +15,7 @@ repo や CI から呼ばれる開発の道具を、この Mac の設定 (zsh・t
 - [1092](done/1092-chore-devtool-dir-and-boundary-check.md): 置き場・PATH・境界の検査 (最初にやる)
 - [1093](done/1093-refactor-unify-app-mutate-into-devtool.md): app の `bin/mutate` の統合 (最初に入る道具)
 - [1094](done/1094-refactor-move-mutate-verify-into-devtool.md): `mutate-verify` / `mutate-verify-list` の移設
+- [1097](1097-test-mutate-obaket-format-contract-drift.md): mutate が読む obaket の出力の形のずれの検出 (統合で弱くなった検出を取り戻す)
 - [1095](pending/1095-task-split-devtool-into-own-repo.md): 別の repo への切り出し (pending)
 
 ## 反証レビュー (2026-11-19、観点を分けた read-only のサブエージェント 2 体: 事実 / 計画の穴)
