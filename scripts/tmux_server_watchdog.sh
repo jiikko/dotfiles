@@ -91,7 +91,7 @@ health_next_check=0
 check_health() {
   local now out state
   now="$(date +%s)"
-  [ "$TT_HEALTH_CHECK_INTERVAL" -gt 0 ] 2>/dev/null || return 0
+  [ "$TT_HEALTH_CHECK_INTERVAL" -gt 0 ] || return 0
   [ "$now" -ge "$health_next_check" ] || return 0
   health_next_check=$(( now + TT_HEALTH_CHECK_INTERVAL ))
   [ -x "$TT_HEALTH_SCRIPT" ] || return 0
@@ -146,11 +146,14 @@ watchdog_uint_env() {  # $1=変数名 $2=下限 $3=上限 $4=外れたときに�
 }
 watchdog_uint_env TT_HEALTH_CHECK_INTERVAL 0 86400 300
 watchdog_uint_env TT_PSLOG_KEEP 1 1000 10
+watchdog_uint_env TT_VERDICT_WINDOW 0 86400 120  # 数でないと [ -le ] が常に偽になり、全部の死を外因死に分類する
 watchdog_uint_env TT_BUSY_WINDOW 0 3600 5   # 0 で撮影を止める
 watchdog_uint_env TT_BUSY_PCT 1 100 85      # 0 を許すと全部の窓が忙しくなり、health がずっと後回しになる
 watchdog_uint_env TT_BUSY_WINDOWS 1 100 2
 watchdog_uint_env TT_BUSY_COOLDOWN 0 86400 600
 watchdog_uint_env TT_BUSY_KEEP 1 1000 10    # 0 を許すと今撮った .ps まで消え、後から書かれる .sample が残り続ける
+# 同じ取り残しは、cooldown が sample の秒数より短く連続して撮るときにも起きる (古い組を消した後に、走っている
+# sample が .sample を書く)。cooldown を短くするのはテストだけなので、ここでは塞がない
 watchdog_uint_env TT_BUSY_SAMPLE_SECS 1 60 5
 
 # 1/100 秒単位の今の時刻。date +%s の 1 秒刻みだと 5 秒の窓で比が ±20% ぶれるので、
@@ -171,7 +174,8 @@ server_cpu_cs() {
     | awk -F'[:.,]' 'NF == 3 && $1 ~ /^ *[0-9]+$/ { print ($1 * 60 + $2) * 100 + $3 }')"
 }
 
-busy_win_start=""; busy_win_cpu=""; busy_streak=0; busy_captured=0; busy_next_allowed=0
+busy_win_start=""; busy_win_cpu=""; busy_streak=0; busy_next_allowed=0
+HEALTH_MAX_DEFER=600
 start_busy_window() {
   now_cs; busy_win_start="$REPLY"
   server_cpu_cs; busy_win_cpu="$REPLY"
@@ -197,10 +201,10 @@ check_busy() {
   dt=$(( now - busy_win_start ))
   [ "$dt" -ge $(( TT_BUSY_WINDOW * 100 )) ] || return 0
   server_cpu_cs; cpu="$REPLY"
-  if [ -z "$cpu" ]; then busy_streak=0; busy_captured=0; start_busy_window; return 0; fi
+  if [ -z "$cpu" ]; then busy_streak=0; start_busy_window; return 0; fi
   pct=$(( (cpu - busy_win_cpu) * 100 / dt ))
   busy_win_start="$now"; busy_win_cpu="$cpu"
-  if [ "$pct" -lt "$TT_BUSY_PCT" ]; then busy_streak=0; busy_captured=0; return 0; fi
+  if [ "$pct" -lt "$TT_BUSY_PCT" ]; then busy_streak=0; return 0; fi
   # 窓が 2 倍以上に伸びた = ループが塞がれていた (固まったサーバへの health の問い合わせ等)。
   # 問い合わせが返るのは固まりが解けた後なので、今撮っても固まりの後のスタックしか写らない。
   # 撮らず、cooldown も立てず (10 分以内の次の固まりを撮れるように)、忙しかったことだけを残す
@@ -213,7 +217,6 @@ check_busy() {
   [ "$busy_streak" -ge "$TT_BUSY_WINDOWS" ] || return 0
   [ "$(( now / 100 ))" -ge "$busy_next_allowed" ] || return 0
   busy_next_allowed=$(( now / 100 + TT_BUSY_COOLDOWN ))
-  busy_captured=1
   capture_busy "$pct" "$(( dt / 100 ))"
 }
 
@@ -226,10 +229,13 @@ while :; do
     [ "$cur" = "$lstart0" ] || break   # pid 再利用 = 元のサーバは死んでいる
   fi
   # 窓の始まりを health の確認より前に置く (health が塞いだ時間を窓に含めるため)。
-  # 忙しい窓が続いていてまだ撮っていない間は health を後回しにする: health は tmux に問い合わせるので、
-  # 固まったサーバに並ぶ。撮った後は後回しにしない (長く忙しいだけのサーバで health が止まり続けないように)
+  # 直前の窓が忙しい間は health を後回しにする: health は tmux に問い合わせるので、固まったサーバに並び、
+  # 撮った直後なら sample を撮っている最中のサーバに並ぶ。ただし予定から HEALTH_MAX_DEFER 秒過ぎたら走らせる
+  # (長く忙しいだけのサーバで、スナップショット異常の通知が止まり続けないように)
   check_busy
-  if [ "$busy_streak" -eq 0 ] || [ "$busy_captured" = 1 ]; then check_health; fi
+  if [ "$busy_streak" -eq 0 ] || [ "$(date +%s)" -ge $(( health_next_check + HEALTH_MAX_DEFER )) ]; then
+    check_health
+  fi
   sleep "$TT_WATCHDOG_INTERVAL"
 done
 

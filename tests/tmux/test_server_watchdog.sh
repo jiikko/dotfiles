@@ -347,18 +347,19 @@ printf '✓ 古い組は .ps と .sample の両方を消す (残り .ps %s / .sa
 # --- (11) ループが固まりの間ずっと塞がれたら、撮らずに「塞がれた間に忙しかった」とだけ残す ----
 # health の確認は tmux に問い合わせるので、固まったサーバに並んで固まりが解けるまで返らない。返った後に撮っても
 # 固まりの後のスタックしか写らず、cooldown を立てると 10 分以内の次の固まりを撮れなくなる。
-# 偽サーバは 3〜4 秒だけ CPU を使い切ってから暇になり、health の stub は 5 秒塞ぐ。
+# 偽サーバは 4〜5 秒だけ CPU を使い切ってから暇になり、health の stub は 6 秒塞ぐ。
+# 閾値を 20% に下げて、CI の負荷で CPU を半分しかもらえない実行でも塞がれた窓を忙しいと読む。
 reset_busy
 cat > "$TMP_DIR/bin/slow_health.sh" <<'EOS2'
 #!/bin/sh
-sleep 5  # sleep-ok: stub: 固まったサーバへの問い合わせが返らない時間を演じる
+sleep 6  # sleep-ok: stub: 固まったサーバへの問い合わせが返らない時間を演じる
 exit 0
 EOS2
 chmod +x "$TMP_DIR/bin/slow_health.sh"
 # 組み込みだけで回す ($(date) を回すと CPU を使うのは子の date で、偽サーバ自身は暇に見える)
-( trap - EXIT; end=$(( SECONDS + 4 )); while [ "$SECONDS" -lt "$end" ]; do :; done; exec sleep 300 ) &  # sleep-ok: dummy: kill される前提の常駐プロセス
+( trap - EXIT; end=$(( SECONDS + 5 )); while [ "$SECONDS" -lt "$end" ]; do :; done; exec sleep 300 ) &  # sleep-ok: dummy: kill される前提の常駐プロセス
 BURST="$!"; FAKE_PIDS+=("$BURST")
-busy_env /bin/bash "$BURST" TT_BUSY_PCT=25 TT_HEALTH_CHECK_INTERVAL=100 TT_HEALTH_SCRIPT="$TMP_DIR/bin/slow_health.sh" & WD=$!
+busy_env /bin/bash "$BURST" TT_BUSY_PCT=20 TT_HEALTH_CHECK_INTERVAL=100 TT_HEALTH_SCRIPT="$TMP_DIR/bin/slow_health.sh" & WD=$!
 wait_log "塞がれた間に忙しかったことが残らない" log_matches "${TT_TAB}server-busy-missed pid=$BURST cpu=[0-9]+% blocked=[0-9]+s epoch=[0-9]+$"
 sleep 1  # sleep-ok: negative: 撮らないことには成立条件が無い。撮るなら missed 行と同じ判定の直後 (0.1 秒以内) に撮る
 ! busy_line_present "$BURST" || { printf '✗ 固まりが解けた後に撮った:\n'; cat "$LOG"; exit 1; }
@@ -379,15 +380,15 @@ kill "$BUSY" 2>/dev/null
 wait_for_death_line "$BUSY" "先頭が 0 の値でも看取る"
 wait "$WD" 2>/dev/null || true
 printf '✓ 先頭が 0 の設定値は 10 進数に直して撮る\n'
-# (12b) 数でない値は決めた値に戻し、変数名だけを残す (窓の計算は最初の判定で走るので、壊れていれば 0.1 秒で落ちる)
+# (12b) 数でない値は決めた値に戻し、変数名だけを残す。cooldown は撮る直前の算術に入るので、戻さなければ
+#   撮る前に while ごと捨てられて、撮れずに偽の server-death を書く
 reset_busy
 spawn_busy; BUSY="$REPLY_PID"
-busy_env /bin/bash "$BUSY" TT_BUSY_WINDOW=10m & WD=$!
-wait_lock "数でない値: 監視が張られない" lock_dir_exists "$BUSY"
-sleep 1  # sleep-ok: negative: 生きているサーバに偽の死亡記録を書かないことには成立条件が無い。壊れていれば最初の判定 (約 0.1 秒) で落ちる
+busy_env /bin/bash "$BUSY" TT_BUSY_COOLDOWN=10m & WD=$!
+wait_log "数でない cooldown で撮れない" busy_line_present "$BUSY"
 ! grep -q "server-death pid=$BUSY " "$LOG" || { printf '✗ 生きているサーバに server-death を書いた (10m):\n'; cat "$LOG"; exit 1; }
 kill -0 "$WD" 2>/dev/null || { printf '✗ 数でない値で watchdog が消えた:\n'; cat "$LOG"; exit 1; }
-grep -qE "${TT_TAB}watchdog-bad-env var=TT_BUSY_WINDOW fallback=5 pid=$BUSY epoch=[0-9]+$" "$LOG" \
+grep -qE "${TT_TAB}watchdog-bad-env var=TT_BUSY_COOLDOWN fallback=600 pid=$BUSY epoch=[0-9]+$" "$LOG" \
   || { printf '✗ 数でない値を戻した理由が観測ログに無い (値は書かない):\n'; cat "$LOG"; exit 1; }
 kill "$BUSY" 2>/dev/null
 wait_for_death_line "$BUSY" "数でない値でも看取る"
