@@ -77,9 +77,9 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
 - [x] SKILL.md の「新しい監査タイプを足す前に、`issues/done/` の bug issue を数えて軸の分布を見る」に従い、done の bug から P1〜P2 の形のものを数える
       (推測で軸を立てない。1070 の 1 件だけでは足りない)。my-products 側 (vlc-multi-video-player・obaket) の improve-debug-api の点検の issue も数える。
       **このマシンには my-products の checkout が見当たらなかった** (`find ~ -maxdepth 7 -name debug-api.md` で 0 件) ので、数える場所を先に決める
-- [ ] 数えて、既存タイプの指針への追記 (broken-code に P2・encapsulation に P1 の境界) で足りるなら、新しいタイプは作らずそちらにする。
+- [x] 数えて、既存タイプの指針への追記 (broken-code に P2・encapsulation に P1 の境界) で足りるなら、新しいタイプは作らずそちらにする。
       新しいタイプにするのは、偽陽性の除外の集合が既存タイプと違うと言えるとき (leaky-abstraction と encapsulation を分けた理由と同じ判断)
-- [ ] 足したら、`improve-debug-api` の SKILL.md の冒頭か手順 0 に「audit の entry-parity の P3 から渡される」と 1 行足す (入口の文書。`new-tool-requires-entrypoint-docs.md`)
+- [x] 足したら、`improve-debug-api` の SKILL.md の冒頭か手順 0 に「audit の entry-parity の P3 から渡される」と 1 行足す (入口の文書。`new-tool-requires-entrypoint-docs.md`)
 
 ### 数えた結果 (2026-11-19)
 
@@ -140,3 +140,15 @@ debug API が通れば動作確認が済む」「UI 層にビジネスロジッ�
     ② 表の区切り行を `|:---|` にすると `:---` を ID に数える / ③ 数字・大文字・`_` を含む ID を抽出しない / ④ 節の中のコードブロックの `# ` 行で節が切れる / ⑤ カテゴリの行の末尾の空白で抽出できない
   - 記録だけ: ⑥ 指針を `###` の子見出しに分けると赤になる (赤なので見逃しにはならない。検査の冒頭の「検出しない形」に書いた) / ⑦ 写しの中身 (説明の文) は比べない (設計どおり)
   - 壊せなかった観点 (レビューの報告): 1 つの写しの直し忘れ・同じ ID を 2 カテゴリに書く・新しいカテゴリの入れ忘れ・見出しだけの書き換え・`set -e` と `|| true` の組み合わせ・CI での実行 (Tests の workflow が拾う)
+- 2026-11-19: 2 節の決定 (ユーザーに確認。数えた結果を添えて聞いた):
+  - 範囲: **入口が複数ある repo 全部** (debug API に限らない)。debug API の点検 (N3) だけ debug API がある repo に限る
+  - 形: **新タイプ `entry-parity`** (設計カテゴリ。23 タイプ目)。P2 の 4 件の見つけ方が broken-code・security・作業中・dogfooding に散り、
+    入口を全部挙げる走査をどのタイプも持たないこと、偽陽性の除外 (表示のための判断・debug 専用の安全装置・仕様に理由のある入口ごとの差) が既存タイプと別の集合であることから
+  - my-products (debug API の repo) は数えずに進めた (このマシンに checkout が無い)。初回の実走で N3 を見る
+- 2026-11-19: 2 節の実装。
+  - 型の記号は起票時の案の P1〜P3 を **N1〜N3** に改めた (P1/P2/P3 はレビュー・監査の重要度と同じ字面で、886 でも重要度に使っている)
+  - audit の SKILL.md (1.6.0): 表・カテゴリの行・forge のプロンプト・直接実行の指針・設計系の段落に entry-parity を足し、Step 2 の注記に「まだ実走していない」を書いた。
+    寄せ先: encapsulation の E1 と偽陽性の除外 (プロンプトと指針の 2 か所) に「操作の可否・状態を変える判断を View が持つものは N1」、duplication に「入口に写された判定は N2」、broken-code に「入口ごとの食い違いは entry-parity」
+  - improve-debug-api の SKILL.md (1.1.0): 冒頭に「audit の entry-parity の N3 から頼まれる」を 1 行、手順 3 の「分ける」に「テストが見ていない前段は debug API 以外の確かめ方 (XCUITest・human issue) を割り当てる」を足した (起票時の「足すなら improve-debug-api の手順に」)
+  - skill-eval の grader `offers-entry-parity.md` を足した
+  - 整合チェック 3 回: ① skill の中 (型の記号が重要度と衝突 → N に改めた) ② skill の外 (improve-debug-api の G 段・手順 5・「残す場所」・claude-md-refresh の実在、「22 タイプ」の数を書いた文書は無い) ③ 使う人の目 (N3 の「該当」が何か・debug API があるかの見分け方が無い → 足した)。直した 2 行を読み直して矛盾なし

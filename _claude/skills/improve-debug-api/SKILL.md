@@ -1,6 +1,6 @@
 ---
 name: improve-debug-api
-version: 1.0.0
+version: 1.1.0
 description: アプリの debug API (Claude や CLI がアプリを操作する in-app HTTP API) の口が、人がアプリを操作したときと同じ処理を通っているかを口ごとに調べ、差 (口だけが飛ばす前段・後段・debug 専用の処理) を issue に書き出して、人の入口へ寄せる形で直す。repo ごとの値 (口の一覧の場所・client・道具) は各 repo の debug API の docs の「improve-debug-api の値」節から読む。「debug API と人の操作の経路の差を調べて」「debug API 専用の処理を減らして」「debug API が人と同じ処理を動かしているか」「improve-debug-api」「debug-api-parity」で発火。口を新しく足すだけの作業には使わない (足した後の点検には使う)。
 ---
 
@@ -13,6 +13,8 @@ debug API では動くのに人の操作ではクラッシュする・人には�
 この skill は方法だけを持つ。**repo ごとの値は、対象 repo の debug API の docs の「improve-debug-api の値」節が正本**
 (今ある repo: my-products の `apps/vlc-multi-video-player/docs/debug-api.md` と `apps/obaket/macOS/docs/debug-api.md`)。
 その節が無い repo で使うときは、手順 0 で節を書いてから始める (値の項目は下の「値の節に書くもの」)。
+
+audit skill の `entry-parity` の N3 (debug API の点検が無い・古い) から回すよう頼まれることがある。そのときは audit の issue に書かれた範囲 (増えた口) から始める。
 
 ## 不変条件
 
@@ -71,7 +73,8 @@ debug API では動くのに人の操作ではクラッシュする・人には�
    (2026-11-08: 一時の保存先を「最後のダウンロード」として記録した)
 3. 分ける:
    - 口が飛ばしている前段・後段のうち、人の入口と口が共有できる層 (VM・coordinator・dispatcher) にあるもの → 差 (直す)
-   - View / AppKit の側にあって、口の経路では構造的に通らないもの → 値の節の「残す場所」に載っているかを見て、無ければ足す。その前段をテストが見ているかも書く
+   - View / AppKit の側にあって、口の経路では構造的に通らないもの → 値の節の「残す場所」に載っているかを見て、無ければ足す。その前段をテストが見ているかも書く。
+     見ていないなら、debug API 以外の確かめ方 (XCUITest・目視の human issue) を割り当てて残す場所に書く (debug API が通っても、この前段は確かめられていない)
 4. 人の入口が上の層 (dispatcher など) を通るのに、口が下の層を直接呼ぶ形も差に数える
 
 ### 4. issue に書き出す
