@@ -89,7 +89,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。→ 済んだ (2026-11-20。残り 6 本 samefile-no-inode・samefile-skip-path-compare・samefile-stat-error-true・home-unset-skip・home-unset-no-set-check・home-unset-no-passwd を `bin/mutate-verify-list` で当て、6 本とも rc 0 = 想定どおり red。P2-2・P2-3 の「壊した形は未確認」もこれで確かめた)
   2. ~~2 回目の敵対的レビュー~~ 済んだ (2026-11-20。下の「1 本目の敵対的レビュー (2 回目)」)。以下は当てたときの指示の写し: 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
   3. そのレビューの指摘を直す: P2 は直した。P3 (`FailOnWord`) が残り
-  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順
+  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは下の「まだ統合していないもの」の worktree にある
 - **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
   - 着手前の調査の地図: `tmp/yomiyasu-gap-2026-11-12/check-survey/map-check.md`
@@ -111,6 +111,26 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 
 答えが変わらない書き換え (採らない): `HomePath` の 2 つの `~` の検査はどちらか一方で足りる (本家も同じ二重の形)・`CaseInsensitive(probe)` を `(real)` にしても同じファイルシステムの中では同じ答え。
 未確認リスク: 大文字小文字を区別するファイルシステム・EACCES の getcwd・NUL を含むパス。共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないかは、レビューでは見ていない (push 前の `make -C src/ja-writing lint test` は lint と diff の記録の試験を含めて rc 0)。
+
+### 2026-11-20 の並列の作業で、まだ統合していないもの (worktree に commit がある。push していない)
+
+2 本目と 3 本目を別の worktree で同時に進めた (ユーザー指示 2026-11-20: 40 分で並列を最大にして weekly の枠を使い切る。それまでの「opus で 1 体ずつ直列」はこの回だけ外した)。
+どちらも敵対的レビューを通していないので master に入れていない。worktree は消さずに残した (detached。commit は下の hash)。再開するときは、各 worktree で `git rebase origin/master` してから続ける。
+
+- **2 本目** (`/Users/koji/wt-1072-ae-1120`。commit 5 本: 03b2d601d・9c2e87aa1・eff3f6622・39059cf1a・95a67a4ee)
+  - 入れた口: diff の `DetectorSummary`・`ReportParts`・`Report`・`ShowsRewrittenOnly`・`HunkHeading`・`FailOnCount`・`Stances()`・`ListProblems()` (Go は語の一覧を埋め込むので常に空)・`DiffFormatVersion`・`MaterialsFormatVersion`・`DetectorKeys`。lint の `RenderReport`・`RenderFindings`・`LintFormatVersion` (CLI の出力も同じ実装を通す)。`visibility.WordsContextFromValue`・`pyjson.Object.Field`
+  - 記録: `diff-report.json` 164 → 178 case (`report_parts` と `detector_summary`。既存の case の値は python で照合して変化 0)
+  - 検査: 最後の木 95a67a4ee で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0
+  - 変異: diff 側 7 本は red。lint 側 5 本は red 3・構文エラー 2 (`lint-findings-unsorted`・`lint-allow-removed-zero`。当て直しが要る)
+  - 残り: `ground` (本家 7844〜。約 400 行)・`fact_gaps` (9430〜) の写しと記録・`diff("", "")` の公開口・`extract_numbers` の dict の口・敵対的レビュー。本家は `detector_summary` に dict でない節や `candidate_count: null` を渡すと例外で止まるので、その入力は記録に無い (Go の答えは未確認)
+- **3 本目** (`/Users/koji/wt-1072-s3-1120`。commit 5 本: abb62bc52・ca6a9cdaf・cd85062ce・e3953b77b・6beefaa5c)
+  - 入れた関数: 書き込み (本家 465〜800・2859 の `_mkstemp`・`_replace`・`_write_atomic`・`_raise_if_hidden`・`_still_placed`・`_place_new_file`・`_write_state_files`・`_add_state_files`・`_ensure_state`・`_write_problem`) と記録の読み (864〜890 の `_read_record_status`・`_read_record`)
+  - 決めたこと: `src/atomicfile` は使わない (一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わる)。`os.Rename` でなく `syscall.Rename` (宛先がフォルダのとき Go は EEXIST を返し、本家の EISDIR と文が変わる)
+  - 本家との突き合わせは手で 1 回呼んだだけ (状態フォルダの mode と中身・書けないときの文 2 通り・記録の読み 11 ファイル。全部一致)。oracle の記録は 0 件。揃わない所: 入れ子が深すぎる JSON (本家は RecursionError、Go は error)
+  - 検査: 最後の木 6beefaa5c で `make test-dupscan-gate` だけ rc 2 (`write_test.go` の helper `must` が codexevents・zundamon-kaisetsu の `must` と同じ形)。ほか 3 つは rc 0
+  - 変異: red 10 本。`missing-any-error` は red を確かめていない (1 回目は変異中に README を編集して rc 9、2 回目は構文エラーで rc 5)
+  - 残り: 入力の読み (`_read_stdin_bytes` など 5 関数)・記録の形の検査 (表 1 つの検査器)・verify (replay 以外)・oracle の記録 (状態フォルダの木・本家が書いた状態フォルダを Go の verify に読ませる)・`_touch`・`_ensure_dir` を `_save` と一緒に戻す・`EnsureState` の作りかけを消す枝のテスト・敵対的レビュー
+  - 気づいたこと: `visibility/paths.go` の `strerror` の表に EEXIST (17) が無く、macOS の "File exists" が "Unknown error: 17" になる (未修正)
 
 ### 1 本目の敵対的レビュー (2 回目。2026-11-20。opus)
 
