@@ -1,5 +1,7 @@
 # 1097 (test): devtool の mutate が読む obaket の出力の形と、dotfiles の fixture・テストのずれを検出する
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-19〜）
+
 起票日: 2026-11-19
 
 ## 概要
