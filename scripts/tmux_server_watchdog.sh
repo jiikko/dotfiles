@@ -114,14 +114,17 @@ check_health() {
       health_timeouts=$(( health_timeouts + 1 ))
       tt_trigger_log "snapshot-health timeout secs=$TT_HEALTH_TIMEOUT count=$health_timeouts pid=$SERVER_PID epoch=$now"
       [ "$health_timeouts" -ge "$HEALTH_TIMEOUTS_AS_NG" ] || return 0
-      state=ng
+      state=ng-timeout
       out="スナップショット異常: health の確認が $health_timeouts 回続けて ${TT_HEALTH_TIMEOUT} 秒で終わらない" ;;
     *) state=ng ;;
   esac
   [ "$rc" = 124 ] || health_timeouts=0
+  # 状態は ok / ng / ng-timeout (時間切れが続いた) の 3 つで、変わったときだけ書く。ng と ng-timeout を分けるのは、
+  # 時間切れの ng の後に固まりが解けて本物の異常が見えたとき、その理由を書くため。文言では比べない
+  # (「最後の保存が N 分前」のように毎回変わる数が入り、確認のたびに通知が出る)
   [ "$state" = "$health_last_state" ] && return 0
   health_last_state="$state"
-  if [ "$state" = ng ]; then
+  if [ "$state" != ok ]; then
     tt_trigger_log "snapshot-health ng epoch=$now detail=$out"
     # 見える通知 (フォーカスを奪わない toast)。落ちても監視は続ける
     # 背景で起こして待たない: toast も tmux に問い合わせるので、サーバが固まると返らずループが止まる
@@ -173,10 +176,19 @@ watchdog_uint_env TT_HEALTH_TIMEOUT 1 300 5
 # 🚨 runtimeout を bin/lib/runtimeout.sh (runtimeout_resolve) で解決しない。ラッパーはバイナリが古ければ同期で
 #   go build し (GOTOOLCHAIN の取得まで走りうる)、その間はループに入れず、サーバの死を看取れない。打ち切りに使う
 #   だけなら古いバイナリで足りるので、作ってあるバイナリをそのまま使い、無ければ上限なしで待って 1 行残す。
+# 置いてあっても動くとは限らない (別アーキテクチャ・壊れたファイル) ので、何もしない呼び方で 1 回確かめる。
+# 確かめずに使うと、毎回 126 などで落ちて ng に読まれ、本物の health が二度と見られない
 HEALTH_RUNTIMEOUT="${TT_RUNTIMEOUT_BIN:-$SCRIPT_DIR/../src/runtimeout/runtimeout}"
+health_unbounded_reason=""
 if [ ! -x "$HEALTH_RUNTIMEOUT" ]; then
+  health_unbounded_reason=no-runtimeout
+elif ! "$HEALTH_RUNTIMEOUT" 0 true; then
+  health_unbounded_reason=runtimeout-broken
+fi
+if [ -n "$health_unbounded_reason" ]; then
   HEALTH_RUNTIMEOUT=""
-  tt_trigger_log "snapshot-health-unbounded reason=no-runtimeout pid=$SERVER_PID epoch=$(date +%s)"
+  [ "$TT_HEALTH_CHECK_INTERVAL" -gt 0 ] \
+    && tt_trigger_log "snapshot-health-unbounded reason=$health_unbounded_reason pid=$SERVER_PID epoch=$(date +%s)"
 fi
 watchdog_uint_env TT_PSLOG_KEEP 1 1000 10
 watchdog_uint_env TT_VERDICT_WINDOW 0 86400 120  # 数でないと [ -le ] が常に偽になり、全部の死を外因死に分類する

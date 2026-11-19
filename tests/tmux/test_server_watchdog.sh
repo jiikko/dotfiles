@@ -277,6 +277,7 @@ spawn_busy() {  # CPU を使い切る偽サーバ
 busy_line_present() { grep -q "server-busy pid=$1 " "$LOG" 2>/dev/null; }
 busy_line_count()   { grep -c "server-busy pid=$1 " "$LOG" 2>/dev/null; }
 file_written()      { [ -s "$1" ]; }
+file_written_or_empty() { [ -e "$1" ]; }
 reset_busy() { : > "$LOG"; rm -rf "$BUSY_DIR"; mkdir -p "$BUSY_DIR"; }
 
 BASHES=(/bin/bash)
@@ -404,50 +405,75 @@ printf '✓ 数でない設定値は決めた値に戻し、看取りを続け�
 # --- (13) health の確認には時間の上限がある (固まったサーバに並んでも、看取りと撮影を止めない) ----
 # health は tmux に何度も問い合わせるので、固まったサーバでは返らない。上限が無いと、その間は死を看取れない。
 # 1 回の時間切れは異常に数えないが、続いたら異常として知らせる (黙って流し続けると保存経路の停止に気づけない)。
+# health の stub は、印のファイルが無い間は返らず (固まり)、印があれば本物の異常を返す (固まりが解けた後)。
 cat > "$TMP_DIR/bin/hung_health.sh" <<'EOS2'
 #!/bin/sh
+if [ -f "$HEALTH_REAL_NG_FLAG" ]; then echo "スナップショット異常: 本物の異常"; exit 1; fi
+[ -n "${HEALTH_RAN_MARK:-}" ] && : > "$HEALTH_RAN_MARK"
+[ -n "${HEALTH_RAN_MARK:-}" ] && exit 0
 sleep 60  # sleep-ok: stub: 固まったサーバへの問い合わせが返らない
 EOS2
 chmod +x "$TMP_DIR/bin/hung_health.sh"
-# toast も tmux に問い合わせるので、固まったサーバでは返らない。返らない toast を渡し、異常を知らせた後も看取れることを見る
+# toast も tmux に問い合わせるので、固まったサーバでは返らない。返らない toast を渡し、異常を知らせた後も看取れることを見る。
+# 起こされたら pid を印に書く (起こしたことを確かめ、テストの終わりに止めるため)
 cat > "$TMP_DIR/bin/hung_toast.sh" <<'EOS2'
 #!/bin/sh
-sleep 20  # sleep-ok: stub: 固まったサーバに並んだ toast が返らない
+echo $$ >> "$TOAST_MARK"
+exec sleep 20  # sleep-ok: stub: 固まったサーバに並んだ toast が返らない
 EOS2
 chmod +x "$TMP_DIR/bin/hung_toast.sh"
+TOAST_MARK="$TMP_DIR/toast.pids"; export TOAST_MARK
 health_env() {  # $1=fake pid、残り=追加の env
   local pid="$1"; shift
   env TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
     TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
     TT_HEALTH_CHECK_INTERVAL=1 TT_HEALTH_TIMEOUT=1 TT_HEALTH_SCRIPT="$TMP_DIR/bin/hung_health.sh" \
-    TT_TOAST="$TMP_DIR/bin/hung_toast.sh" PATH="$STUB_PATH" "$@" \
+    HEALTH_REAL_NG_FLAG="$TMP_DIR/health_real_ng" TT_TOAST="$TMP_DIR/bin/hung_toast.sh" PATH="$STUB_PATH" "$@" \
     "$SCRIPT" "$pid" "/fake/socket" "1234567890"
 }
+# toast は watchdog から TERM の無視を引き継ぐので KILL で止める
+stop_toasts() { [ -f "$TOAST_MARK" ] && while read -r p; do kill -KILL "$p" 2>/dev/null; done < "$TOAST_MARK"; rm -f "$TOAST_MARK"; }
+toast_started() { [ -s "$TOAST_MARK" ]; }
 if [ "$HAVE_RUNTIMEOUT" = 1 ]; then
-  : > "$LOG"
+  : > "$LOG"; rm -f "$TMP_DIR/health_real_ng"
   tt_spawn_fake_proc; FAKE="$REPLY_PID"
   health_env "$FAKE" & WD=$!
   wait_log "health の時間切れが残らない (上限なしで待っている)" log_matches "${TT_TAB}snapshot-health timeout secs=1 count=1 pid=$FAKE epoch=[0-9]+$"
   ! grep -q "snapshot-health ng" "$LOG" || { printf '✗ 1 回の時間切れを異常 (ng) に数えた:\n'; cat "$LOG"; exit 1; }
   wait_log "時間切れが 3 回続いても異常に数えない" log_matches "${TT_TAB}snapshot-health ng epoch=[0-9]+ detail=.*3 回続けて 1 秒で終わらない"
+  tt_wait_until toast_started || { printf '✗ 異常を知らせる toast を起こしていない\n'; exit 1; }
+  : > "$TMP_DIR/health_real_ng"
+  wait_log "時間切れの異常の後、本物の異常の理由が書かれない" log_matches "${TT_TAB}snapshot-health ng epoch=[0-9]+ detail=スナップショット異常: 本物の異常$"
   kill "$FAKE" 2>/dev/null
-  wait_for_death_line "$FAKE" "health の時間切れの後も看取る"
+  wait_for_death_line "$FAKE" "health の時間切れと返らない toast の後も看取る"
   wait "$WD" 2>/dev/null || true
+  stop_toasts
   ! grep -q "snapshot-health-unbounded" "$LOG" || { printf '✗ runtimeout があるのに上限なしで待った:\n'; cat "$LOG"; exit 1; }
-  printf '✓ health の確認は上限で打ち切り、1 回の時間切れは異常に数えず、3 回続いたら異常として知らせる\n'
+  printf '✓ health の確認は上限で打ち切り、3 回続いたら異常として知らせ、固まりが解けた後の本物の異常も書く\n'
 else
   printf '🚨 runtimeout を作れない (go が無い) ので (13) を飛ばした\n'
 fi
 
-# --- (13b) runtimeout が無ければ上限なしで待ち、そのことを残す (watchdog はビルドしない) ----------
-: > "$LOG"
-tt_spawn_fake_proc; FAKE="$REPLY_PID"
-health_env "$FAKE" TT_HEALTH_CHECK_INTERVAL=0 TT_RUNTIMEOUT_BIN="$TMP_DIR/nonexistent-runtimeout" & WD=$!
-wait_log "runtimeout が無いことが残らない" log_matches "${TT_TAB}snapshot-health-unbounded reason=no-runtimeout pid=$FAKE epoch=[0-9]+$"
-kill "$FAKE" 2>/dev/null
-wait_for_death_line "$FAKE" "runtimeout が無くても看取る"
-wait "$WD" 2>/dev/null || true
-printf '✓ runtimeout が無ければ、上限なしで待つことを観測ログに残す\n'
+# --- (13b) runtimeout が無い・動かなければ、上限なしで health を回し、そのことを残す (watchdog はビルドしない) ----
+cat > "$TMP_DIR/bin/broken_runtimeout.sh" <<'EOS2'
+#!/bin/sh
+exit 126
+EOS2
+chmod +x "$TMP_DIR/bin/broken_runtimeout.sh"
+for case_ in "no-runtimeout:$TMP_DIR/nonexistent-runtimeout" "runtimeout-broken:$TMP_DIR/bin/broken_runtimeout.sh"; do
+  reason="${case_%%:*}"; rt="${case_#*:}"
+  : > "$LOG"; rm -f "$TMP_DIR/health_ran" "$TMP_DIR/health_real_ng"
+  tt_spawn_fake_proc; FAKE="$REPLY_PID"
+  health_env "$FAKE" TT_RUNTIMEOUT_BIN="$rt" HEALTH_RAN_MARK="$TMP_DIR/health_ran" & WD=$!
+  wait_log "[$reason] 上限なしで待つことが残らない" log_matches "${TT_TAB}snapshot-health-unbounded reason=$reason pid=$FAKE epoch=[0-9]+$"
+  wait_log "[$reason] health を上限なしで回していない" file_written_or_empty "$TMP_DIR/health_ran"
+  kill "$FAKE" 2>/dev/null
+  wait_for_death_line "$FAKE" "[$reason] runtimeout が使えなくても看取る"
+  wait "$WD" 2>/dev/null || true
+  stop_toasts
+  ! grep -q "snapshot-health ng" "$LOG" || { printf '✗ [%s] 使えない runtimeout の失敗を異常 (ng) に読んだ:\n' "$reason"; cat "$LOG"; exit 1; }
+  printf '✓ [%s] 上限なしで health を回し、そのことを観測ログに残す\n' "$reason"
+done
 
 printf '\nAll server-watchdog tests passed successfully!\n'
 

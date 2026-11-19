@@ -46,4 +46,10 @@ health スクリプトは tmux に 5 回問い合わせる（`tt_on_default_serv
   - 打ち切りの猶予（何も渡さないと 5 秒）で窓の 2 倍に届きうる → `-k 1`
   - テスト: go が無ければ (13) だけを飛ばす / 上限なしの経路 (13b) / 返らない toast でも看取る。変異で red を確認: 3 回で ng に上げる分岐を外す / toast を待つ形に戻す
   - 受け入れたもの: `TT_HEALTH_TIMEOUT` と `TT_BUSY_WINDOW` の組み合わせは照合しない（設定値で、本番では設定していない）/ tmux がサーバの終了時に run-shell のジョブのプロセスグループ全体へ TERM を送るなら、health の最中の死で偽の ng を 1 行書きうる（未確認。tmux のソースで確かめていない）
+- 2026-11-19: 敵対的レビューの 2 周目（opus）。P1 なし。直したもの:
+  - 置いてあるが動かない runtimeout（別アーキテクチャ・壊れたファイル）を使うと、毎回 126 などで ng に読まれ、本物の health が二度と見られない → 起動時に `runtimeout 0 true` で確かめ、だめなら上限なしで回して `reason=runtimeout-broken` を残す
+  - 時間切れが続いた ng の後、固まりが解けて本物の異常が見えても、ng のままなので理由が書かれない → 状態を ok / ng / ng-timeout の 3 つにし、変わったら書く（文言では比べない。「最後の保存が N 分前」のように毎回変わる数が入る）
+  - health を止めている（`TT_HEALTH_CHECK_INTERVAL=0`）ときは unbounded 行を出さない / docs の作り方の誤り（素の `make` は runtimeout を作らない）
+  - テスト: toast を起こしたことを印で確かめる（toast は watchdog から TERM の無視を引き継ぐので、テストは KILL で止める）/ (13b) は上限なしで health が実際に回ることを、無い場合と動かない場合の両方で見る。変異で red を確認: 動くかの確かめを外す / ng-timeout を ng に戻す / toast を起こさない
+  - 受け入れたもの: go が無い環境では (13) を飛ばして緑になる（🚨 の行を出す。CI には go がある）/ watchdog が KILL で死ぬと、その時の health が上限まで孤児で残る（変異の run で 1 回見た。上限の秒数で終わる）
   - [ ] 本番の watchdog を張り直す
