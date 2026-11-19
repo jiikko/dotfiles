@@ -25,7 +25,7 @@
 #
 # 終了コード: textlint の rc と ja-writing lint の rc の大きい方。
 #   textlint: 0 = 指摘なし / 1 = 指摘あり / 2 = 設定や引数の誤り / 3 = 依存を入れられない・JA_TEXTLINT_NO_INSTALL で依存が無い。
-#   ja-writing lint: 0 = error の候補なし / 1 = error の候補あり / 2 = 入力や引数の誤り / 3 = ビルドできない・ビルドが無い (掛けられない)。
+#   ja-writing lint: 0 = error の候補なし / 1 = error の候補あり / 2 = 入力の誤り (UTF-8 で読めない等) / 3 = ビルドできない・ビルドが無い (掛けられない)。
 #   片方が 2 / 3 で終わっても、もう片方は走らせて指摘を出す。
 set -euo pipefail
 
@@ -149,7 +149,8 @@ lint_one() { # <表示の名前> <中身のファイル>
   printf '\nja-writing lint: %s\n' "$1"
   jw lint --fail-on error - <"$2" >"$work/jw.out" || r=$?
   cat "$work/jw.out"
-  if [ "$r" -ne 0 ] && ! grep -qF '表現・書式の検査を実行しました' "$work/jw.out"; then
+  # rc 1 で見出しが無いのはビルドの失敗 (go_autobuild_exec)。rc 2 は入力の誤り (UTF-8 で読めない等) のまま 2 にする
+  if [ "$r" -eq 1 ] && ! grep -qF '表現・書式の検査を実行しました' "$work/jw.out"; then
     echo "ja-textlint: ja-writing lint が検査の前に終わった (rc=$r)" >&2
     r=3
   fi
@@ -161,20 +162,27 @@ if [ "$wrc" -eq 0 ]; then
     name=""
     j=1
     while [ "$j" -le "$#" ]; do
-      if [ "${!j}" = --stdin-filename ]; then j=$((j + 1)); name="${!j:-}"; fi
-      case "${!j}" in --stdin-filename=*) name="${!j#--stdin-filename=}" ;; esac
+      if [ "${!j:-}" = --stdin-filename ]; then j=$((j + 1)); name="${!j:-}"; fi
+      case "${!j:-}" in --stdin-filename=*) name="${!j#--stdin-filename=}" ;; esac
       j=$((j + 1))
     done
     lint_one "${name:-(標準入力)}" "$stdin_file"
   fi
+  skipped=0
   for f in ${files[@]+"${files[@]}"}; do
-    if [ -f "$f" ]; then
-      lint_one "$f" "$f"
-    else
+    if [ ! -f "$f" ]; then
       # ディレクトリと glob は textlint が展開する。ja-writing lint はファイルを 1 つずつしか受けないので掛けない
       echo "ja-textlint: $f はファイルでないので ja-writing lint は掛けない" >&2
+      skipped=$((skipped + 1))
+      continue
     fi
+    # textlint が読む拡張子 (既定の plugin の text と markdown) だけに掛ける。ほかの拡張子は textlint も見ないので、ja-writing lint だけが当たって rc が変わる
+    case "$f" in
+      *.md|*.markdown|*.mdown|*.mkdn|*.mkd|*.mdwn|*.mkdown|*.ron|*.txt) lint_one "$f" "$f" ;;
+      *) echo "ja-textlint: $f は textlint の対象の拡張子でないので ja-writing lint は掛けない" >&2; skipped=$((skipped + 1)) ;;
+    esac
   done
+  [ "$skipped" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けなかったファイル: ${skipped} 件" >&2
 fi
 
 [ "$trc" -ge "$wrc" ] && exit "$trc"

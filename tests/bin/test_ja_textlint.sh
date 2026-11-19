@@ -285,5 +285,58 @@ else
   fail "--fix の出力: $(cat "$work/fix.out")"
 fi
 
+# textlint の対象でない拡張子には ja-writing lint を掛けない (textlint も見ないので rc 0 のまま)。掛けなかった件数を出す
+printf '// ただし**「x」**と書く。\n' >"$work/m.go"
+rc=0
+"$BIN" "$work/m.go" >"$work/jg.out" 2>"$work/jg.err" || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -qF 'ja-writing lint: ' "$work/jg.out" && grep -qF '掛けなかったファイル: 1 件' "$work/jg.err"; then
+  ok "textlint の対象でない拡張子 (.go) には ja-writing lint を掛けず rc 0"
+else
+  fail ".go: rc=$rc (期待 0): $(cat "$work/jg.out" "$work/jg.err")"
+fi
+
+# 値を取る textlint のオプションの値をファイルと読まない
+printf 'これは普通の文です。\n' >"$work/ok.md"
+rc=0
+"$BIN" -c "$ROOT_DIR/_claude/skills/ja-writing/textlint/textlintrc.json" "$work/ok.md" >"$work/jc.out" 2>"$work/jc.err" || rc=$?
+if [ "$(grep -c '^ja-writing lint: ' "$work/jc.out")" -eq 1 ] && jw_ran "$work/jc.out" "$work/ok.md" && ! grep -qF '掛けなかった' "$work/jc.err"; then
+  ok "-c の値は ja-writing lint に渡さず、ok.md だけに掛ける"
+else
+  fail "-c: rc=$rc: $(cat "$work/jc.out" "$work/jc.err")"
+fi
+rc=0
+"$BIN" -f stylish "$work/w.md" >"$work/jst.out" 2>"$work/jst.err" || rc=$?
+if [ "$rc" -eq 0 ] && grep -qF 'ja-ai-vocabulary' "$work/jst.out" && jw_ran "$work/jst.out" "$work/w.md"; then
+  ok "-f stylish は両方を掛ける"
+else
+  fail "-f stylish: rc=$rc: $(cat "$work/jst.out" "$work/jst.err")"
+fi
+rc=0
+"$BIN" --format=json "$work/w.md" >"$work/jfj.out" 2>"$work/jfj.err" || rc=$?
+if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$work/jfj.out" && grep -qF 'ja-writing lint は掛けない' "$work/jfj.err"; then
+  ok "--format=json は textlint だけ"
+else
+  fail "--format=json: rc=$rc: $(cat "$work/jfj.out" "$work/jfj.err")"
+fi
+
+# ja-writing lint の入力の誤り (UTF-8 で読めない) は rc 2 (掛けられない 3 ではない)
+printf '\xff\xfe\x00bin' >"$work/bin.md"
+rc=0
+"$BIN" "$work/bin.md" >"$work/jbin.out" 2>"$work/jbin.err" || rc=$?
+if [ "$rc" -eq 2 ]; then
+  ok "ja-writing lint の入力の誤りは rc 2"
+else
+  fail "入力の誤り: rc=$rc (期待 2): $(cat "$work/jbin.out" "$work/jbin.err")"
+fi
+
+# --stdin-filename が最後で値が無くても未定義の変数で落ちない
+rc=0
+"$BIN" --stdin --stdin-filename </dev/null >"$work/jsn.out" 2>"$work/jsn.err" || rc=$?
+if ! grep -qF 'unbound variable' "$work/jsn.err"; then
+  ok "--stdin-filename の値が無くても unbound で落ちない (rc=$rc)"
+else
+  fail "--stdin-filename 値なし: $(cat "$work/jsn.err")"
+fi
+
 [ "$fails" -eq 0 ] || { printf '✗ %d 件失敗\n' "$fails" >&2; exit 1; }
 echo "OK: ja-textlint"
