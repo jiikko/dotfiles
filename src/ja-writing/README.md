@@ -269,7 +269,6 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 - 揃わない範囲:
   - `-h` の文面は本家が出したもの (端末の幅が 80 桁のとき) を `lint/help.txt` に持つ。`COLUMNS` で幅を変えても Go は変わらない。
   - argparse の写しは、本家の記録にある形 (`--opt=値`・`--`・`-` ・負の数 (Python 3.15 の `-\.?\d` の前方一致。Unicode の数字を含む)・空白を含む引数・`-h` の連結・省略形の拒否・値の欠け・知らないオプション・無視した値の repr の引用) を確かめている。ほかの形 (`-hx` 以外の短い名前の連結など) は未確認。
-  - `--fail-on` の値の小文字化は `strings.ToLower` に İ の分解を足したもの。語末の Σ を ς にする規則と、Python の Unicode のバージョンとの差は写さない (使えない値の文に出る字だけに現れる)。
   - 本家の rc 3 のうち、トレースバックの文面と、Windows の閉じたパイプ (`EINVAL`) は写さない。
   - 読む側が閉じたパイプ: 本文の出力は本家と同じ rc 3 と 1 行。`-h`・`--version`・使い方の誤りは、本家では書き込みが Python の終わり際の flush まで遅れるので、
     同じく rc 120 (標準出力なら「Exception ignored while flushing sys.stdout:」の 2 行) にする (Python 3.15.0 で実測)。EPIPE を受けるため、入口 (`main.go`) が SIGPIPE を `signal.Notify` で受ける。
@@ -298,7 +297,6 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 - `-h` の文面は本家が出したもの (端末の幅が 80 桁のとき) を `diff/help.txt` に持つ。`COLUMNS` で幅を変えても Go は変わらない。
 - 本家の rc 3 のうち、トレースバックの文面は写さない (1 行目 `yomiyasu_diff.py: 内部エラー: <型>: <文>` のうち、`<型>` は `visibility` の誤りのときだけ本家の型の名前を出す。ほかの内部エラーは型の名前が無く、<文> も Go の文)。
 - 標準エラーの案内の文のコマンド名は本家の `yomiyasu_diff.py` のまま (1078 で lint とまとめて決める)。
-- `--fail-on` の値の小文字化は lint と同じ (`strings.ToLower` に İ の分解を足したもの。語末の Σ と Python の Unicode のバージョンとの差は写さない)。
 - 語の一覧は埋め込みを使うので、JSON の `list` はいつも `references/lists/<名前>.txt`、`list_problem` は `null`。本家が隣のファイルを読めないときの内蔵の一覧 (`BUILTIN_LISTS`) と、一覧の注意の節は写さない。絵文字の数え方は lint の `EmojiMatches` で、本家が lint を読めないときの簡単な数え方 (`_FALLBACK_EMOJI`) も写さない。
 
 ## check (`check/`。issue 1077 の 1 本目)

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"ja-writing/internal/pycli"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
@@ -204,7 +205,7 @@ func FailOn(values []string) (found []string, problem string) {
 		var pieces []string
 		for _, piece := range strings.Split(value, ",") {
 			if pystr.Strip(piece) != "" {
-				pieces = append(pieces, strings.ReplaceAll(pyunicode.Lower(pystr.Strip(piece)), "_", "-"))
+				pieces = append(pieces, pycli.FailOnWord(piece))
 			}
 		}
 		if len(pieces) == 0 {

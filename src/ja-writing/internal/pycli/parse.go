@@ -9,6 +9,7 @@ import (
 
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
+	"ja-writing/internal/pyunicode"
 )
 
 // Spec は parser の定義。Values は値を 1 つ取るオプション、Flags は値を取らないオプション (-h と --help を含める)。
@@ -157,6 +158,5 @@ func UsageError(usage, prog, message string) string {
 // FailOnWord は --fail-on の値の 1 要素の正規化 (`piece.strip().lower().replace("_", "-")`)。使える値は ASCII の語だけなので、小文字化の違いは使えない値の文に出る字だけに現れる。
 // 小文字化は 1 字ごとの対応 (strings.ToLower) に İ の分解 (i と U+0307) を足したもの。語末の Σ を ς にする文脈の規則と、Python の Unicode のバージョンとの差は写さない (README の「揃わない範囲」)。
 func FailOnWord(piece string) string {
-	lower := strings.ToLower(strings.ReplaceAll(pystr.Strip(piece), "İ", "i̇"))
-	return strings.ReplaceAll(lower, "_", "-")
+	return strings.ReplaceAll(pyunicode.Lower(pystr.Strip(piece)), "_", "-")
 }
