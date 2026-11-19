@@ -12,8 +12,8 @@ repo や CI から呼ばれる開発の道具を、この Mac の設定 (zsh・t
 
 ## 子 issue
 
-- [1092](1092-chore-devtool-dir-and-boundary-check.md): 置き場・PATH・境界の検査 (最初にやる)
-- [1093](1093-refactor-unify-app-mutate-into-devtool.md): app の `bin/mutate` の統合 (最初に入る道具)
+- [1092](done/1092-chore-devtool-dir-and-boundary-check.md): 置き場・PATH・境界の検査 (最初にやる)
+- [1093](done/1093-refactor-unify-app-mutate-into-devtool.md): app の `bin/mutate` の統合 (最初に入る道具)
 - [1094](1094-refactor-move-mutate-verify-into-devtool.md): `mutate-verify` / `mutate-verify-list` の移設
 - [1095](pending/1095-task-split-devtool-into-own-repo.md): 別の repo への切り出し (pending)
 
