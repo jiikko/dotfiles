@@ -52,4 +52,4 @@ health スクリプトは tmux に 5 回問い合わせる（`tt_on_default_serv
   - health を止めている（`TT_HEALTH_CHECK_INTERVAL=0`）ときは unbounded 行を出さない / docs の作り方の誤り（素の `make` は runtimeout を作らない）
   - テスト: toast を起こしたことを印で確かめる（toast は watchdog から TERM の無視を引き継ぐので、テストは KILL で止める）/ (13b) は上限なしで health が実際に回ることを、無い場合と動かない場合の両方で見る。変異で red を確認: 動くかの確かめを外す / ng-timeout を ng に戻す / toast を起こさない
   - 受け入れたもの: go が無い環境では (13) を飛ばして緑になる（🚨 の行を出す。CI には go がある）/ watchdog が KILL で死ぬと、その時の health が上限まで孤児で残る（変異の run で 1 回見た。上限の秒数で終わる）
-  - [ ] 本番の watchdog を張り直す
+  - [x] 本番の watchdog を張り直す（2026-11-19。前の watchdog の pid を名指しで USR1 で止め、`tmux run-shell -b` で張り直した。`src/runtimeout/runtimeout 0 true` は rc=0 で、起動時に unbounded 行も watchdog-bad-env 行も出ていない）
