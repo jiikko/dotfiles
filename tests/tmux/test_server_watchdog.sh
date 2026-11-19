@@ -243,4 +243,57 @@ printf '✓ 回復したときも観測ログに記録する (状態遷移だけ
 kill "$FAKE" 2>/dev/null
 wait "$WD" 2>/dev/null || true
 
+# --- (8) サーバが CPU を使い切り続けたら、その最中の sample と ps を撮る -------------------
+# 「サーバ」を CPU を使い切るプロセス (yes) にし、sample は呼ばれた引数を -file の先へ書く stub にする。
+cat > "$TMP_DIR/bin/fake_sample.sh" <<'EOS'
+#!/bin/sh
+# 本物の引数の形: <pid> <秒> -file <path>
+[ "$3" = "-file" ] || exit 2
+echo "sampled pid=$1 secs=$2" > "$4"
+EOS
+chmod +x "$TMP_DIR/bin/fake_sample.sh"
+busy_env() {  # $1=fake pid。窓を短くして撮影の判定を速く回す
+  TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
+  TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" TT_HEALTH_CHECK_INTERVAL=0 \
+  TT_BUSY_WINDOW=1 TT_BUSY_PCT=50 TT_BUSY_WINDOWS=2 TT_BUSY_SAMPLE_SECS=1 \
+  TT_SAMPLE_CMD="$TMP_DIR/bin/fake_sample.sh" \
+  PATH="$STUB_PATH" "$SCRIPT" "$1" "/fake/socket" "1234567890"
+}
+busy_line_present() { grep -q "server-busy pid=$1 " "$LOG" 2>/dev/null; }
+sample_written()    { [ -s "$1" ]; }
+
+: > "$LOG"
+( trap - EXIT; exec yes ) > /dev/null &
+BUSY="$!"; FAKE_PIDS+=("$BUSY")
+busy_env "$BUSY" & WD=$!
+wait_log "CPU を使い切るサーバで server-busy 行が書かれない" busy_line_present "$BUSY"
+grep -qE "${TT_TAB}server-busy pid=$BUSY cpu=[0-9]+% windows=2 window=1s sample=[^ ]+\.sample ps=[^ ]+\.ps epoch=[0-9]+$" "$LOG" \
+  || { printf '✗ server-busy 行の書式が想定と違う:\n'; cat "$LOG"; exit 1; }
+sample_path="$(sed -n "s/.*server-busy pid=$BUSY .* sample=\([^ ]*\) ps=.*/\1/p" "$LOG" | head -1)"
+ps_path="$(sed -n "s/.*server-busy pid=$BUSY .* ps=\([^ ]*\) epoch=.*/\1/p" "$LOG" | head -1)"
+wait_log "sample の出力 ($sample_path) が書かれない" sample_written "$sample_path"
+grep -q "sampled pid=$BUSY secs=1" "$sample_path" \
+  || { printf '✗ sample にサーバの pid と秒数が渡っていない:\n'; cat "$sample_path"; exit 1; }
+grep -q "yes" "$ps_path" \
+  || { printf '✗ ps の出力 (%s) にサーバのプロセスが写っていない\n' "$ps_path"; exit 1; }
+sleep 2  # sleep-ok: negative: cooldown の間に撮り直さないことには成立条件が無い。窓 1 秒が 1 回は回る長さ
+kill "$BUSY" 2>/dev/null
+wait_for_death_line "$BUSY" "撮影の後もサーバの死を看取る"
+wait "$WD" 2>/dev/null || true
+[ "$(grep -c "server-busy pid=$BUSY " "$LOG")" -eq 1 ] \
+  || { printf '✗ cooldown の間に 2 回以上撮った:\n'; cat "$LOG"; exit 1; }
+printf '✓ CPU を使い切る窓が続いたら sample と ps を撮り、cooldown の間は撮り直さない\n'
+
+# --- (9) 暇なサーバでは撮らない ------------------------------------------------------------
+: > "$LOG"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
+busy_env "$FAKE" & WD=$!
+wait_lock "暇なサーバ: 監視が張られない" lock_dir_exists "$FAKE"
+sleep 3  # sleep-ok: negative: 撮らないことには待つべき成立条件が無い。窓 1 秒 × 2 回の判定が 1 回は回る長さ
+kill "$FAKE" 2>/dev/null
+wait_for_death_line "$FAKE" "暇なサーバ"
+wait "$WD" 2>/dev/null || true
+! grep -q "server-busy" "$LOG" || { printf '✗ CPU を使っていないサーバで撮った:\n'; cat "$LOG"; exit 1; }
+printf '✓ CPU を使っていないサーバでは撮らない\n'
+
 printf '\nAll server-watchdog tests passed successfully!\n'

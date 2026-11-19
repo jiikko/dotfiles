@@ -308,6 +308,7 @@ boot と reload を区別できない）は upstream 側に残る
 | `session-closed pid=... remaining=N epoch=...` | `tmux_log_session_closed.sh`（同期 hook） | セッションが閉じた。remaining=0 が直近にあれば exit-empty の連鎖 |
 | `kill-cmd cmd=... pid=... save=... issuer=...` | `tmux_log_kill_command.sh`（kill-* の alias shim） | 誰が kill したか（発行元プロセスの ppid chain）と直前セーフティ保存の結果。`save=ok` のみ「実際に保存された」を意味し、`rejected-rc<N>`（ガードで拒否）/ `timeout` / `skipped-hold-only` / `no-save-script` は保存されていない |
 | `server-death pid=... verdict=... pslog=...` | `tmux_server_watchdog.sh` | サーバ死亡の確定記録。verdict は kill-server-command / kill-session-exit-empty / exit-empty / external-signal-or-crash |
+| `server-busy pid=... cpu=...% sample=... ps=...` | `tmux_server_watchdog.sh` | サーバが CPU を使い切っている窓が続いた（client のコマンドが返らない固まりの疑い）。`sample=` がその最中のスタック、`ps=` が並んでいたプロセス。誤検知もありうる（長い処理で本当に忙しいだけ）。撮った後 600 秒は撮らない |
 | `restore-start` / `restore-end` / `restore-aborted` | pre/post-restore-all hook・`tmux_restore_runner.sh` | 復元の開始 / 完了 / 途中死（reason 付き）。自動・手動の両経路が書く |
 | `restore-manual-begin` / `restore-skipped reason=...` | `tmux_restore_runner.sh` | 手動復元の起動と、単一実行ガードによる skip |
 | `periodic-save-begin` / `periodic-save rc=...` | `tmux_periodic_save.sh` | 周期スナップショットの駆動開始と各回の結果 |
