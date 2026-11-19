@@ -89,6 +89,8 @@ lstart0="$(ps -o lstart= -p "$SERVER_PID" 2>/dev/null)"
 # スナップショット健全性チェック。異常が続いている間、毎回 toast を出すと騒がしいので
 # 「状態が変わったときだけ」通知する (異常になった瞬間と、回復した瞬間)。
 health_last_state=ok
+health_timeouts=0
+HEALTH_TIMEOUTS_AS_NG=3
 health_next_check=0
 check_health() {
   local now out state
@@ -99,24 +101,31 @@ check_health() {
   [ -x "$TT_HEALTH_SCRIPT" ] || return 0
   local rc=0
   if [ -n "$HEALTH_RUNTIMEOUT" ]; then
-    out="$("$HEALTH_RUNTIMEOUT" "$TT_HEALTH_TIMEOUT" "$TT_HEALTH_SCRIPT" --quiet 2>/dev/null)" || rc=$?
+    # -k 1: 時間切れの後、TERM で止まらない子孫を待つ猶予 (何も渡さないと 5 秒) を詰め、打ち切り全体を窓の 2 倍に届かせない
+    out="$("$HEALTH_RUNTIMEOUT" -k 1 "$TT_HEALTH_TIMEOUT" "$TT_HEALTH_SCRIPT" --quiet 2>/dev/null)" || rc=$?
   else
     out="$("$TT_HEALTH_SCRIPT" --quiet 2>/dev/null)" || rc=$?
   fi
   case "$rc" in
     0) state=ok ;;
     124)
-      # 時間切れは ok / ng のどちらでもない (固まったサーバが答えなかっただけ)。状態は変えず、起きたことだけ残す
-      tt_trigger_log "snapshot-health timeout secs=$TT_HEALTH_TIMEOUT pid=$SERVER_PID epoch=$now"
-      return 0 ;;
+      # 1 回の時間切れは ok / ng のどちらでもない (固まったサーバが答えなかっただけ)。状態は変えず、起きたことだけ残す。
+      # ただし続くなら異常に数える: 時間切れを黙って流し続けると、保存経路が止まっていても誰も気づかない
+      health_timeouts=$(( health_timeouts + 1 ))
+      tt_trigger_log "snapshot-health timeout secs=$TT_HEALTH_TIMEOUT count=$health_timeouts pid=$SERVER_PID epoch=$now"
+      [ "$health_timeouts" -ge "$HEALTH_TIMEOUTS_AS_NG" ] || return 0
+      state=ng
+      out="スナップショット異常: health の確認が $health_timeouts 回続けて ${TT_HEALTH_TIMEOUT} 秒で終わらない" ;;
     *) state=ng ;;
   esac
+  [ "$rc" = 124 ] || health_timeouts=0
   [ "$state" = "$health_last_state" ] && return 0
   health_last_state="$state"
   if [ "$state" = ng ]; then
     tt_trigger_log "snapshot-health ng epoch=$now detail=$out"
     # 見える通知 (フォーカスを奪わない toast)。落ちても監視は続ける
-    [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 "🚨 スナップショット異常: ${out#スナップショット異常: }" 2>/dev/null || true
+    # 背景で起こして待たない: toast も tmux に問い合わせるので、サーバが固まると返らずループが止まる
+    [ -x "$TT_TOAST" ] && { "$TT_TOAST" -d 8 -b 52 "🚨 スナップショット異常: ${out#スナップショット異常: }" >/dev/null 2>&1 & }
   else
     tt_trigger_log "snapshot-health ok epoch=$now"
   fi
@@ -161,12 +170,12 @@ watchdog_uint_env TT_HEALTH_TIMEOUT 1 300 5
 # 止まって、死の看取りも固まりの撮影も回らない。health 全体に上限を付ける (問い合わせごとに付けると、lib を
 # 共有する他の呼び出し元まで変わる)。上限は実測の所要 (約 0.2 秒) の 25 倍で、窓の 2 倍に届かない長さにする:
 # 塞がれても次の窓で連続を数え続け、固まりの最中に撮れる。
-# runtimeout は起動時に 1 回だけ解決する (bin/lib/go_tool.sh の冒頭)。解決できなければ上限なしで待つ
-HEALTH_RUNTIMEOUT=""
-# shellcheck source=bin/lib/runtimeout.sh
-if . "$SCRIPT_DIR/../bin/lib/runtimeout.sh" && runtimeout_resolve "$SCRIPT_DIR/.."; then
-  HEALTH_RUNTIMEOUT="$RUNTIMEOUT"
-else
+# 🚨 runtimeout を bin/lib/runtimeout.sh (runtimeout_resolve) で解決しない。ラッパーはバイナリが古ければ同期で
+#   go build し (GOTOOLCHAIN の取得まで走りうる)、その間はループに入れず、サーバの死を看取れない。打ち切りに使う
+#   だけなら古いバイナリで足りるので、作ってあるバイナリをそのまま使い、無ければ上限なしで待って 1 行残す。
+HEALTH_RUNTIMEOUT="${TT_RUNTIMEOUT_BIN:-$SCRIPT_DIR/../src/runtimeout/runtimeout}"
+if [ ! -x "$HEALTH_RUNTIMEOUT" ]; then
+  HEALTH_RUNTIMEOUT=""
   tt_trigger_log "snapshot-health-unbounded reason=no-runtimeout pid=$SERVER_PID epoch=$(date +%s)"
 fi
 watchdog_uint_env TT_PSLOG_KEEP 1 1000 10
