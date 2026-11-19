@@ -10,6 +10,18 @@
 # 使い方:
 #   bin/mutate [--timeout 秒] [--baseline-count N] <説明> <対象ファイル> <python 置換スクリプト> <検証コマンド...>
 #   bin/mutate --summarize <検証コマンドの出力ファイル>   (抽出だけを行う。self-test と手での確認用)
+#   bin/mutate --help                                      (この説明を出す)
+#
+# 例 (未 commit の変更が無い状態で、repo のどこからでも):
+#   bin/mutate --timeout 1500 "再生速度の上限を下げる" \
+#     VLCMultiVideoPlayer/Common/AppConfiguration.swift tmp/<作業名>/mutator.py make test-PlaybackRatePresetsTests
+#   tmp/<作業名>/mutator.py (対象を 1 か所だけ書き換える。当たらなければ rc≠0 で終わる):
+#     import os, sys
+#     p = os.environ["MUTATE_TARGET"]; s = open(p, encoding="utf-8").read()
+#     a = "1.0...5.0"
+#     if s.count(a) != 1: sys.exit("置換の対象が 1 か所でない")
+#     open(p, "w", encoding="utf-8").write(s.replace(a, "1.0...4.0"))
+#   RED なら落ちたテストの名前が出るので、狙ったテストかを読む。変異は退行を戻す形にする (期待値を直接埋めない)
 #
 # python 置換スクリプト (mutator) の呼び方: 引数は渡さない。cwd は repo root。対象のパスは環境変数 MUTATE_TARGET (第 2 引数の
 #   そのままの文字列。cwd の repo root から解決される) で受け取る。mutator が rc≠0 で終わったら変異を当てる前後を問わず判定不能 (rc 3) にして、
@@ -207,8 +219,14 @@ summary_field() {
   sed -E "s/.* $2=([^ ]*).*/\1/" <<<"$line"
 }
 
+case "${1:-}" in
+  -h|--help) # 冒頭のコメント (shebang の次から set の前まで) を説明として出す
+    sed -n '2,/^set -euo pipefail$/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'
+    exit 0 ;;
+esac
+
 if [ "${1:-}" = "--summarize" ]; then
-  [ $# -eq 2 ] || { echo "usage: bin/mutate --summarize <出力ファイル>" >&2; exit 64; }
+  [ $# -eq 2 ] || { echo "usage: bin/mutate --summarize <出力ファイル>  (詳しくは bin/mutate --help)" >&2; exit 64; }
   out="$(summarize "$2")"
   printf '%s\n' "$out"
   [ "$(summary_field "$out" count)" != "-" ] || exit 3
@@ -225,10 +243,10 @@ while [[ "${1:-}" == --* ]]; do
     --timeout)
       [[ "${2:-}" =~ ^[1-9][0-9]*$ && ${#2} -le 7 ]] || { echo "usage: --timeout は 1 以上の整数秒 (7 桁まで)" >&2; exit 64; }
       timeout="$2"; shift 2 ;;
-    *) echo "usage: 不明なオプション: $1" >&2; exit 64 ;;
+    *) echo "usage: 不明なオプション: $1  (使い方は bin/mutate --help)" >&2; exit 64 ;;
   esac
 done
-[ $# -ge 4 ] || { echo "usage: bin/mutate [--timeout 秒] [--baseline-count N] <説明> <対象ファイル> <python 置換スクリプト> <検証コマンド...>" >&2; exit 64; }
+[ $# -ge 4 ] || { echo "usage: bin/mutate [--timeout 秒] [--baseline-count N] <説明> <対象ファイル> <python 置換スクリプト> <検証コマンド...>  (詳しくは bin/mutate --help)" >&2; exit 64; }
 
 desc="$1"; target="$2"; mutator="$3"; shift 3
 

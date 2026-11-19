@@ -134,9 +134,17 @@ else
   echo "skipped: PATH の bash が /bin/bash と同じなので、env bash の道具の bash の選択を区別できない"
 fi
 
+# 4h. --help は使い方と道具の一覧を rc=0 で出す (--help を道具の名前と取り違えない)
+run "$R/bin/devtool-run" --help; rc=$?
+if [ "$rc" -eq 0 ] && grep -qF '使い方: devtool-run <道具>' "$T/out" && grep -qxF '  show-env' "$T/out" && ! grep -qxF '  plain' "$T/out"; then
+  pass "--help は使い方と、実行できる道具の一覧を出す"
+else
+  fail "--help の出力が違う (rc=$rc): $(cat "$T/out" "$T/err")"
+fi
+
 # 5. 引数なしは rc=2
 run "$R/bin/devtool-run"; rc=$?
-[ "$rc" -eq 2 ] && pass "引数なしは rc=2" || fail "引数なしが rc=$rc"
+[ "$rc" -eq 2 ] && grep -qF '使い方: devtool-run' "$T/err" && pass "引数なしは rc=2 で使い方を出す" || fail "引数なしが rc=$rc: $(cat "$T/err")"
 
 # 6. symlink 越しに起こしても、実体の root の devtool を見る
 ln -s "$R/bin/devtool-run" "$T/link-run" || exit 1

@@ -98,6 +98,12 @@ expect() {
 }
 
 echo "[mutate-test] running"
+"$MUTATE" --help > "$WORK/last.out" 2>&1
+expect "--help: 使い方・例・置換スクリプトの呼ばれ方・終了コードを rc 0 で出す" 0 $? "使い方:" "例 (" "MUTATE_TARGET" "終了コード:"
+"$MUTATE" --bogus a b c d > "$WORK/last.out" 2>&1
+expect "不明なオプション: rc 64 で --help へ案内する" 64 $? "使い方は bin/mutate --help"
+"$MUTATE" > "$WORK/last.out" 2>&1
+expect "引数が足りない: rc 64 で --help へ案内する" 64 $? "詳しくは bin/mutate --help"
 
 # --- 抽出: 実際の出力 ---
 # 前提: xcodebuild の fixture にゼロ幅スペース付きの失敗行があること (無いと下の assert が何も検査しない)

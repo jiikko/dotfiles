@@ -73,6 +73,9 @@
 #
 # ## 使い方
 #
+#   dotfiles の bin/mutate-verify (呼び口。PATH 上) から起こす。呼び口が bin/devtool-run を通して runtimeout と skill-tmpdir を渡す
+#   (devtool/bin/mutate-verify を直接起こすと、runtimeout が無いので判定不能 (rc=3) で止まる)
+#
 #   変異を何本も当てるなら bin/mutate-verify-list (一覧から 1 本ずつこの道具を起動し、結果を表にする)
 #
 #   mutate-verify --file src/x/main.go \
@@ -121,7 +124,7 @@
 #
 #   0  変異が想定どおり red になった (テストは効いている)
 #   2  使い方の誤り
-#   3  判定不能: baseline が red / 検証コマンドが走っていない / worktree を作れない
+#   3  判定不能: baseline が red / 検証コマンドが走っていない / worktree を作れない / runtimeout を用意できない
 #   4  変異が当たっていない (--file が変わらなかった)
 #   5  変異が構文エラー (第 3 の結果。当て直すこと)
 #   6  変異が緑のまま通った (そのテストは何も守っていない)
@@ -135,7 +138,7 @@ unset CDPATH  # export された CDPATH の下では、相対パスの cd が解
 
 prog="${0##*/}"
 die() { echo "$prog: $*" >&2; exit 2; }
-# 🚨 helper は $root (検査対象の repo) ではなく、この道具の実体の隣から読む。dotfiles 以外の repo の
+# 🚨 helper は $root (検査対象の repo) ではなく、この道具の実体の置き場 (devtool/) の lib/ から読む。dotfiles 以外の repo の
 # $root にこの helper は無い。PATH / symlink 経由の起動でも実体まで辿る
 _self="$(readlink -f "${BASH_SOURCE[0]}")" || die "mutate-verify の実体を解決できない: ${BASH_SOURCE[0]}"
 # devtool の root は実体の置き場 (devtool/bin) から決める。`..` で辿らない (devtool/ の外へ出る書き方と見分けられない)
@@ -170,9 +173,9 @@ while [ $# -gt 0 ]; do
     *)                 die "未知の引数: $1" ;;
   esac
 done
-[ -n "$file" ]            || die "--file は必須"
-[ -n "$apply" ]           || die "--apply は必須"
-[ -n "$verify" ]          || die "--verify は必須"
+[ -n "$file" ]            || die "--file は必須 (使い方は mutate-verify --help)"
+[ -n "$apply" ]           || die "--apply は必須 (使い方は mutate-verify --help)"
+[ -n "$verify" ]          || die "--verify は必須 (使い方は mutate-verify --help)"
 [ -n "$expect" ]          || die "--expect は必須 (red の帰属を確かめないと、既存の assert が先に落ちても気づけない)"
 [ -n "$baseline_expect" ] || die "--baseline-expect は必須 (rc=0 だけでは zero execution と全 pass を区別できない)"
 [ -n "$name" ] || name="$file"

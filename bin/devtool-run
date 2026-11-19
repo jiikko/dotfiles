@@ -24,7 +24,16 @@ die() { echo "$prog: $*" >&2; exit 2; }
 _self="$(readlink -f "${BASH_SOURCE[0]}")" || die "実体を解決できない: ${BASH_SOURCE[0]}"
 dotfiles_root="$(cd -P "$(dirname "$_self")/.." && pwd -P)" || die "dotfiles の root に入れない"
 
-[ $# -ge 1 ] || die "使い方: $prog <道具> [引数…]  (道具は $dotfiles_root/devtool/bin/ の下の名前)"
+usage() {
+  echo "使い方: $prog <道具> [引数…]   (道具の使い方は各道具の --help。普段は各 repo の呼び口から起こされる)"
+  echo "道具 ($dotfiles_root/devtool/bin/):"
+  local f
+  for f in "$dotfiles_root"/devtool/bin/*; do [ -f "$f" ] && [ -x "$f" ] && echo "  ${f##*/}"; done
+}
+case "${1:-}" in
+  -h|--help|help) usage; exit 0 ;;
+  '') usage >&2; exit 2 ;;
+esac
 tool="$1"; shift
 # 名前だけを受ける (`../x` や絶対パスで devtool/bin の外を起こさせない)
 case "$tool" in

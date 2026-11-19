@@ -1,11 +1,11 @@
 #!/bin/bash
 # 使い捨て worktree の作成・後始末。source して使う。
 #
-# なぜ lib か: `with_fresh_worktree.sh` と `bin/mutate-verify` が同じ「作って・壊れても消す」を
+# なぜ lib か: dotfiles の `scripts/with_fresh_worktree.sh` と `devtool/bin/mutate-verify` が同じ「作って・壊れても消す」を
 # 要る。掃除の規律 (下の 🚨) は事故から学んだものばかりで、2 箇所に書けば片方が必ず腐る。
 #
 # 使い方:
-#   . "$root/scripts/lib/worktree_scratch.sh"
+#   . "$root/scripts/lib/worktree_scratch.sh"   (dotfiles から。実体は devtool/lib/ で、scripts/lib/ は symlink)
 #   wts_init <repo root> <prefix>      # $WTS_PATH が決まり、EXIT trap が張られる
 #   wts_create [<commit-ish>]          # 既定 HEAD。作成に失敗したら非 0
 #   ... $WTS_PATH で作業 ...
