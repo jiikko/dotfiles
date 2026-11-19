@@ -111,6 +111,11 @@ def float_cases():
         if s not in seen:
             seen.add(s)
             out.append([ord(c) for c in s])
+    # 仮数の前後に 0 が 800 個を超えて並び、指数で打ち消す形。乱数の形は 4 字程度までなので、ここで別に足す
+    for n in (799, 800, 801, 1000):
+        for s in ("1" + "0" * n + "e-" + str(n), "12" + "0" * n + "e-" + str(n), "1_" + "0" * n + "e-" + str(n), "0" * n + "1e0", "1." + "0" * n + "e0",
+                  "1" + "0" * n + "." + "0" * n + "e-" + str(n), "123456789012345678901" + "0" * n + "e-" + str(n), "0." + "0" * n + "1e" + str(n + 1), "-1" + "0" * n + "e-" + str(n + 400)):
+            out.append([ord(c) for c in s])
     return [[cps, float_hex("".join(map(chr, cps)))] for cps in out]
 
 

@@ -209,6 +209,7 @@ func Float(s string) (float64, bool) {
 	if !ok {
 		return 0, false
 	}
+	clean = floatMantissa(clean)
 	if strings.HasPrefix(text, "-") {
 		clean = "-" + clean
 	}
@@ -277,4 +278,38 @@ func DecimalInt(s string) (int, bool) {
 		n = n*10 + v
 	}
 	return n, true
+}
+
+// floatMantissa は floatDigits の出力を「0.<先頭と末尾の 0 を除いた数字>e<指数>」に書き直す。
+// strconv.ParseFloat にそのまま渡さない: Go 1.26.0 の ParseFloat は、仮数の 0 が 800 個を超えて並び指数で打ち消す入力
+// ("1" + "0"*800 + "e-800") を 0.1 と読む (Python の float は 1.0)。数字の並びを先に縮めると、この経路を通らない。
+func floatMantissa(clean string) string {
+	mant, expText, _ := strings.Cut(clean, "e")
+	intPart, frac, _ := strings.Cut(mant, ".")
+	digits := intPart + frac
+	lead := len(digits) - len(strings.TrimLeft(digits, "0"))
+	digits = strings.Trim(digits, "0")
+	if digits == "" {
+		return "0"
+	}
+	exp := int64(len(intPart) - lead)
+	if expText != "" {
+		sign := int64(1)
+		switch expText[0] {
+		case '-':
+			sign = -1
+			expText = expText[1:]
+		case '+':
+			expText = expText[1:]
+		}
+		// 指数が大きすぎる値は、どの仮数でも 0 か inf になる所で止める (int64 のあふれを避ける)
+		var e int64
+		for i := 0; i < len(expText); i++ {
+			if e < 1e12 {
+				e = e*10 + int64(expText[i]-'0')
+			}
+		}
+		exp += sign * e
+	}
+	return "0." + digits + "e" + strconv.FormatInt(exp, 10)
 }
