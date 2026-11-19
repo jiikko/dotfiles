@@ -8,8 +8,16 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HOOK="$ROOT_DIR/_claude/hooks/warn-invisible-chars-in-tool-input.sh"
-# 本番の配線と同じ上限 (timeout に殺されると無出力 = 知らせが消える)
-HOOK_TIMEOUT=10
+# 本番の配線の上限は壁時計 10 秒 (timeout に殺されると無出力 = 知らせが消える)。テストは壁時計でなく hook の CPU 時間を
+# 10 秒より十分小さい予算と比べる: 壁時計は並列の make test の負荷で伸び、単独で 0.15 秒の hook が 10 秒を越えて落ちた。
+# 壁時計の上限は止まったときに打ち切るためだけに置く。
+# 検出しない形: CPU を使わずに 10〜60 秒待つ退行 (lock・遅い FS を待つ) は緑で通る (本番では 10 秒で殺されて知らせが消える)。
+#   hook は stdin を jq で読むだけで待つ相手を持たないので受ける。壁時計が本番の上限を越えた run は落とさずに stderr へ出す
+#   (並列の make test で 10 秒を越えたことがあり、CPU の負荷だけでは再現しなかった。make test の並列の runner は緑のテストの出力を
+#   捨てるので、この行が見えるのはテストを直接回したときと、同じ run で別の assert が落ちたときだけ)
+HOOK_HANG_GUARD=60
+HOOK_CPU_BUDGET=3
+HOOK_PROD_TIMEOUT=10
 # shellcheck source=bin/lib/runtimeout.sh
 . "$ROOT_DIR/bin/lib/runtimeout.sh"
 runtimeout_resolve "$ROOT_DIR" || exit 1
@@ -30,14 +38,17 @@ ok=0; fail=0
 TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
 
 # 🚨 rc と stderr を捨てない: 知らせだけの hook は、どの入力でも rc=0・stderr は空でなければならない
-run() { # stdin=hook の入力 → stdout
+run() { # stdin=hook の入力 → stdout。hook (と jq) の CPU 時間を $TMP_ROOT/cpu に書く
   local rc
-  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err"
+  rm -f "$TMP_ROOT/cpu"
+  "$RUNTIMEOUT" "$HOOK_HANG_GUARD" /usr/bin/time -p -o "$TMP_ROOT/cpu" "$HOOK" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err"
   rc=$?
   if [ "$rc" -ne 0 ] || [ -s "$TMP_ROOT/err" ]; then
     printf 'HOOK-FAILED rc=%s stderr=%s\n' "$rc" "$(head -c 200 "$TMP_ROOT/err")"
     return 0
   fi
+  awk -v t="$HOOK_PROD_TIMEOUT" '$1 == "real" && $2 + 0 >= t { slow = 1 } END { exit !slow }' "$TMP_ROOT/cpu" 2>/dev/null &&
+    echo "🚨 hook の壁時計が本番の上限 ${HOOK_PROD_TIMEOUT} 秒を越えた (落とさない): $(tr '\n' ' ' < "$TMP_ROOT/cpu")" >&2
   cat "$TMP_ROOT/out"
 }
 bash_in() { jq -n --arg c "$1" '{tool_name: "Bash", session_id: "s", tool_input: {command: $c}}'; }
@@ -67,12 +78,20 @@ expect_line() { # $1=説明 $2=stdout $3=「該当」の行として完全一致
     echo "✗ 「該当」に行「$3」が無い: $1: $(printf '%s' "$2" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null | tail -5)"; fail=$((fail+1))
   fi
 }
+expect_cpu_under_budget() { # $1=説明。直前の run の user + sys が予算の内か
+  local cpu
+  cpu=$(awk '$1 == "user" || $1 == "sys" { t += $2; n++ } END { if (n == 2) printf "%.2f", t }' "$TMP_ROOT/cpu" 2>/dev/null)
+  if [ -z "$cpu" ]; then echo "✗ CPU 時間を測れない: $1"; fail=$((fail+1)); return; fi
+  # 壁時計 (real) も併せて出す: 落ちたとき、hook が CPU を使ったのか待たされたのかを区別する
+  if awk -v c="$cpu" -v b="$HOOK_CPU_BUDGET" 'BEGIN { exit !(c < b) }'; then ok=$((ok+1)); else echo "✗ hook の CPU 時間が予算 ${HOOK_CPU_BUDGET} 秒を越えた: $1: ${cpu} 秒 (壁時計 $(awk '$1 == "real" { print $2 }' "$TMP_ROOT/cpu") 秒)"; fail=$((fail+1)); fi
+}
 rep() { local s=""; local i; for ((i = 0; i < $2; i++)); do s+="$1"; done; printf '%s' "$s"; }
 ch_of() { jq -rn --argjson c "$1" '[$c] | implode'; }
 
 LIST_CPS="160 173 847 4447 4448 6158 $(seq 8192 8207 | tr '\n' ' ') 8232 8233 $(seq 8234 8239 | tr '\n' ' ') 8287 $(seq 8288 8292 | tr '\n' ' ') $(seq 8294 8297 | tr '\n' ' ') 12288 12644 65279 65440"
 ALL_CHARS=""; for cp in $LIST_CPS; do ALL_CHARS+=$(ch_of "$cp"); done
-# 行ごとに全部の字を探す形 (変異 per-line-scan) は、この入力で 10 秒の上限の 2 倍を越える (約 23 秒)。今の形は約 0.5 秒 (2026-11-10 に jq 1.7.1 / 1.8.2 で測った)
+# 字ごとに行を全部見る形 (変異: p を求める前に `$s | split("\n") | map(select(contains($ch)))` を足す) は、この入力で CPU 時間 21〜26 秒。
+# 今の形は 0.15 秒 (2026-11-19 に jq 1.7.1 / 1.8.2 で測った)。予算 3 秒はどちらからも 1 桁近く離れる
 MANY_LINES=$(head -c 1500000 /dev/zero | tr '\0' '\n'; printf x)
 
 cases() {
@@ -140,11 +159,13 @@ expect_silent "壊れた入力" "$(printf 'not json' | run)"
 expect_silent "空の入力" "$(printf '' | run)"
 expect_silent "絵文字の異体字セレクタ U+FE0F は一覧に無い" "$(write_in "$(ch_of 9764)$(ch_of 65039)" | run)"
 
-# --- 大きな入力でも timeout の内に返る ---
+# --- 大きな入力でも CPU 時間が予算の内 ---
 big=$(head -c 1000000 /dev/zero | tr '\0' 'a')
 expect_notice "1 MB の 1 行の末尾に 1 字" "$(write_in "${big}${ZWSP}" | run)" "U+200B (ZWSP) x1"
+expect_cpu_under_budget "1 MB の 1 行の末尾に 1 字"
 # 字の無い行が多い入力の末尾に一覧の全部の字 (行ごとに字を探す形は「行数 × 字の種類」に比例し、10 秒を越えて知らせが出ない)
 expect_notice "150 万行の末尾に全部の字" "$(write_in "${MANY_LINES}${ALL_CHARS}" | run)" "U+3000 (全角空白) x1" "U+FFA0 (ハングルの埋め字) x1"
+expect_cpu_under_budget "150 万行の末尾に全部の字"
 }
 
 # jq の版ごとに回す: jq 1.7 は文字列の index がバイトの位置を返すなど、版で結果が変わる関数がある。macOS の /usr/bin/jq は 1.7.1、
