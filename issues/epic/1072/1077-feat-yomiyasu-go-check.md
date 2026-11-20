@@ -126,14 +126,14 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   - 4 周目の後は、記録を全件にして代表を選ぶ処理を無くした直しなので、5 周目のレビューは当てていない (直しの後に 2〜4 周目の変異 `tone-lookup-default`・`stiffness-sentence-linewhere`・`hunkheading-delete-oldend-or` が全部 red)
   - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は赤 2 本 (`tests/githooks/test_pre_push.sh` は master でも同じく赤・`tests/zshrc/av1ify/test_av1ify_vfr_e2e.sh` は bin の道具を PATH から呼んだ検査。どちらも src/ja-writing の外で、この変更は触っていない)
   - 残り: `ground` (本家 7844〜。約 400 行)・`fact_gaps` (9430〜) の写しと記録・`diff("", "")` の公開口・`extract_numbers` の dict の口。記録は 1 か所ずつの書き換えで、2 か所以上を同時に壊す形と list の 2 番目以降の要素は試していない
-- **3 本目** (`/Users/koji/wt-1072-s3-1120`。commit 5 本: abb62bc52・ca6a9cdaf・cd85062ce・e3953b77b・6beefaa5c)
+- **3 本目 (書き込みと記録の読みまでを master に入れた。2026-11-20)**
   - 入れた関数: 書き込み (本家 465〜800・2859 の `_mkstemp`・`_replace`・`_write_atomic`・`_raise_if_hidden`・`_still_placed`・`_place_new_file`・`_write_state_files`・`_add_state_files`・`_ensure_state`・`_write_problem`) と記録の読み (864〜890 の `_read_record_status`・`_read_record`)
-  - 決めたこと: `src/atomicfile` は使わない (一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わる)。`os.Rename` でなく `syscall.Rename` (宛先がフォルダのとき Go は EEXIST を返し、本家の EISDIR と文が変わる)
-  - 本家との突き合わせは手で 1 回呼んだだけ (状態フォルダの mode と中身・書けないときの文 2 通り・記録の読み 11 ファイル。全部一致)。oracle の記録は 0 件。揃わない所: 入れ子が深すぎる JSON (本家は RecursionError、Go は error)
-  - 検査: 最後の木 6beefaa5c で `make test-dupscan-gate` だけ rc 2 (`write_test.go` の helper `must` が codexevents・zundamon-kaisetsu の `must` と同じ形)。ほか 3 つは rc 0
-  - 変異: red 10 本。`missing-any-error` は red を確かめていない (1 回目は変異中に README を編集して rc 9、2 回目は構文エラーで rc 5)
-  - 残り: 入力の読み (`_read_stdin_bytes` など 5 関数)・記録の形の検査 (表 1 つの検査器)・verify (replay 以外)・oracle の記録 (状態フォルダの木・本家が書いた状態フォルダを Go の verify に読ませる)・`_touch`・`_ensure_dir` を `_save` と一緒に戻す・`EnsureState` の作りかけを消す枝のテスト・敵対的レビュー
-  - 気づいたこと: `visibility/paths.go` の `strerror` の表に EEXIST (17) が無く、macOS の "File exists" が "Unknown error: 17" になる (未修正)
+  - 決めたこと: `src/atomicfile` は使わない (一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わる)。`os.Rename` でなく `syscall.Rename` (宛先がフォルダのとき Go は EEXIST を返し、本家の EISDIR と文が変わる)。状態フォルダの親は `os.MkdirAll` でなく pathlib と同じ手順で作る (親の途中がファイルのとき、`MkdirAll` は ENOTDIR・本家は FileExistsError で文が違う)
+  - 記録 `check-base.json` を 37 → 42 case・2,172 呼び出しにした (呼んだ後の状態フォルダの木を取る op `tree`・記録の読みのファイルの集まり・`os.strerror(0〜120)`)。記録で見つかった違い 2 つを直した: 上の `MkdirAll` と、`visibility/paths.go` の `strerror` の手書きの表 (EEXIST が無く "Unknown error: 17"・EOPNOTSUPP の文・0 の文の誤り。lint と diff の誤りの文も直る) を Python の `os.strerror` を写した配列にした。比べはテストの中で umask を 022 に固定する (記録の mode は 022 のもの)
+  - 敵対的レビュー (opus): P1・P2 なし。本家と並べた書き込み 37 通り (リンク・読めないフォルダ・大文字小文字・NFD・uchg・umask 000/022/027/077)・FAT のボリューム (hard link を作れない FS で O_EXCL に回る経路)・8 プロセスの同時の用意 40 回・記録の読みの壊れた入力 (サロゲート・BOM・NaN・5000 桁・入れ子 5 万段) は全部一致。P3 5 件を直した: 記録の比べが umask に依存 (固定した。`S_IMODE` と同じく 0o7777 を見る)・空の記録の読み直しと EACCES の読み直しと Chmod の分岐にテストが無い (待ちを差し替え口にしてテストを足した)・`hiddenError` と相対パスの `AbsPath` は macOS / 本番から届かない (コメントに書いた)。`stillPlaced` は本物の FS で決まって起こせないので、テストせず理由を `placeExclusive` に書いた
+  - 揃わない範囲 (README): 入れ子が 20 万段の JSON は本家が RecursionError・Go が error
+  - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じく赤。この変更は触っていない)
+  - 残り: 入力の読み (`_read_stdin_bytes`・`_read_named`・`_path_problem`・`_read_inputs`・`_read_target`)・記録の形の検査 (`_record_shape`・`_fact_gaps_shape`・`_words_shape` を表 1 つの検査器にする)・verify (replay 以外)・本家が書いた状態フォルダを Go の verify に読ませる記録・`_touch`・`_ensure_dir` を `_save` と一緒に戻す
 
 ### 1 本目の敵対的レビュー (2 回目。2026-11-20。opus)
 
