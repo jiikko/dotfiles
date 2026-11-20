@@ -1,6 +1,7 @@
 # devtool/
 
 repo や CI から呼ばれる開発の道具の置き場。いずれ別の repo (仮称 toolbox) へ切り出す前提で、dotfiles の設定と分けて置く (epic issue 1091)。
+ここには概要と参照だけを置き、道具ごとの使い方と呼び出し例は [`docs/`](docs/) に置く。
 
 ## 約束
 
@@ -8,29 +9,27 @@ repo や CI から呼ばれる開発の道具の置き場。いずれ別の repo
   dotfiles の `bin/`・`src/`・`scripts/`・`_claude/` をパスで指さない (`make test-devtool-boundary` が止める。止める形と検出しない形は `scripts/check_devtool_boundary.sh` の冒頭)
 - dotfiles の道具が要るときは、dotfiles の `bin/devtool-run` が解決して環境変数で渡す。devtool の道具は PATH を探さない
 - テストは dotfiles の `tests/devtool/` に置く (`tests/` だけを走査する lint と runner の対象にそのまま入れるため)。切り出すときに一緒に移す
-
-## 起こし方
-
-各 repo の wrapper (例: app の `bin/mutate`) が、dotfiles の checkout からの絶対パスで `bin/devtool-run <道具> [引数…]` を起こす。
-PATH には頼らない (`export PATH` は `_zshrc` にしか無く、非対話のシェルは読まない)。
-
-## 環境変数 (devtool-run が渡す)
-
-| 名前 | 中身 |
-|---|---|
-| `DEVTOOL_RUNTIMEOUT` | runtimeout のバイナリの絶対パス。起動の前に 1 回だけ解決する (自動で再ビルドするラッパーを run の途中で通さない)。解決できなければ空 |
-| `DEVTOOL_SKILL_TMPDIR` | skill-tmpdir の絶対パス |
+- 文書 (この README と `docs/`) には、道具を呼ぶ個別の repo の名前を書かない。呼ぶ側は `<repo>` のような置き換えの名前で書く
 
 ## 道具
 
-| 道具 | 何をするか | 呼ぶ repo |
+| 道具 | 概要 | 文書 |
 |---|---|---|
-| `mutate` | Swift のアプリの実装をわざと壊し (変異)、テストが落ちるかを RED / GREEN / 判定不能で出す。今の作業ツリーで当てて開始時の commit へ戻す (未 commit の変更は拒否)。使い捨ての worktree で当てる `mutate-verify` とは別の道具 | obaket・vlc-multi-video-player (`bin/mutate`) |
-| `mutate-verify` | 使い捨ての worktree で変異を当て、前提の検査 (baseline が緑・当たったか・構文・誤ファイル・`--expect` の帰属・作業ツリーの改変・時間の上限) を機械で強制する。未 commit の変更も持ち込める | どの repo からでも (dotfiles の `bin/mutate-verify` が呼び口。PATH 上) |
-| `mutate-verify-list` | 一覧に書いた変異を `mutate-verify` で 1 本ずつ当てて表にする | 同上 (`bin/mutate-verify-list`) |
-| `restartable-run` | restartable (`src/restartable`) を決めたバージョンで `--bin-dir` に go install し (印 `restartable.version` で入れ直しを決める)、残りの引数で起こす。app に固有の引数 (build・停止・起動の確認・pull・起動するもの) は呼び口が渡す。バージョンを上げるのはここだけ | obaket (`macOS/bin/dev-fg-loop`)・vlc-multi-video-player・dropbox-multi-video-player-electron (`bin/dev-fg-loop`) |
-| `comment-provenance` | Swift のコメントに変更の経緯・レビューの出所 (codex・敵対レビュー・P1-C など) を書いていないかを、文字列リテラルの外の `//` から見る。`--root` の repo の追跡している *.swift か、渡したパス。`--label` は出力の名前 | obaket (`macOS/libexec/check/check-comment-provenance`。Xcode Cloud でも走る)・ThumbnailThumb (`bin/tt-check-comment-provenance`) |
-| `lint-issues` | `issues/` の直下の issue のファイル名が `NNN-<type>-<slug>.md` で、type が issue 規約 (`_claude/issue-rules.md`) の語であることを確かめる。語は写して持ち、ずれは `tests/devtool/test_lint_issues.sh` が規約の表と比べて落とす | promiseApp (`bin/lint-issues`)・ThumbnailThumb (`bin/tt-lint-issues`)・project-templates (`bin/lint-issues`。新しい app はこれを写す)。dotfiles の場所は `DEVTOOL_DOTFILES_ROOT` (無ければ `~/dotfiles`) |
+| `mutate` | 今の作業ツリーで実装をわざと壊し (変異)、テストが落ちるかを RED / GREEN / 判定不能で出す | [docs/mutation.md](docs/mutation.md) |
+| `mutate-verify` | 使い捨ての worktree で変異を当て、前提の検査 (baseline が緑・当たったか・帰属など) を機械で強制する | [docs/mutation.md](docs/mutation.md) |
+| `mutate-verify-list` | 一覧に書いた変異を `mutate-verify` で 1 本ずつ当てて表にする | [docs/mutation.md](docs/mutation.md) |
+| `lint-issues` | `issues/` の直下の issue のファイル名と type の語を確かめる | [docs/lint.md](docs/lint.md) |
+| `comment-provenance` | Swift のコメントに変更の経緯・レビューの出所を書いていないかを見る | [docs/lint.md](docs/lint.md) |
+| `restartable-run` | restartable を決めたバージョンで入れて起こす (開発中のアプリの build と再起動のループ) | [docs/dev-loop.md](docs/dev-loop.md) |
+
+## 文書
+
+| 文書 | 中身 |
+|---|---|
+| [docs/calling-from-repos.md](docs/calling-from-repos.md) | repo から呼ぶ形 (呼び口の書き方・dotfiles の見つけ方・Makefile・CI で決めた commit の dotfiles を取る・終了コード・`devtool-run` が渡す環境変数) |
+| [docs/mutation.md](docs/mutation.md) | 変異検証の 3 つの道具の使い分けと呼び出し例 |
+| [docs/lint.md](docs/lint.md) | issue のファイル名とコメントの検査の呼び出し例 |
+| [docs/dev-loop.md](docs/dev-loop.md) | restartable で build と再起動を回す呼び出し例 |
 
 ## lib
 
