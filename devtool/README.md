@@ -29,6 +29,7 @@ PATH には頼らない (`export PATH` は `_zshrc` にしか無く、非対話�
 | `mutate-verify` | 使い捨ての worktree で変異を当て、前提の検査 (baseline が緑・当たったか・構文・誤ファイル・`--expect` の帰属・作業ツリーの改変・時間の上限) を機械で強制する。未 commit の変更も持ち込める | どの repo からでも (dotfiles の `bin/mutate-verify` が呼び口。PATH 上) |
 | `mutate-verify-list` | 一覧に書いた変異を `mutate-verify` で 1 本ずつ当てて表にする | 同上 (`bin/mutate-verify-list`) |
 | `restartable-run` | restartable (`src/restartable`) を決めたバージョンで `--bin-dir` に go install し (印 `restartable.version` で入れ直しを決める)、残りの引数で起こす。app に固有の引数 (build・停止・起動の確認・pull・起動するもの) は呼び口が渡す。バージョンを上げるのはここだけ | obaket (`macOS/bin/dev-fg-loop`)・vlc-multi-video-player・dropbox-multi-video-player-electron (`bin/dev-fg-loop`) |
+| `comment-provenance` | Swift のコメントに変更の経緯・レビューの出所 (codex・敵対レビュー・P1-C など) を書いていないかを、文字列リテラルの外の `//` から見る。`--root` の repo の追跡している *.swift か、渡したパス。`--label` は出力の名前 | obaket (`macOS/libexec/check/check-comment-provenance`。Xcode Cloud でも走る)・ThumbnailThumb (`bin/tt-check-comment-provenance`) |
 | `lint-issues` | `issues/` の直下の issue のファイル名が `NNN-<type>-<slug>.md` で、type が issue 規約 (`_claude/issue-rules.md`) の語であることを確かめる。語は写して持ち、ずれは `tests/devtool/test_lint_issues.sh` が規約の表と比べて落とす | promiseApp (`bin/lint-issues`)・ThumbnailThumb (`bin/tt-lint-issues`)・project-templates (`bin/lint-issues`。新しい app はこれを写す)。dotfiles の場所は `DEVTOOL_DOTFILES_ROOT` (無ければ `~/dotfiles`) |
 
 ## lib

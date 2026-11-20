@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# comment-provenance: Swift のコメントに、変更の経緯やレビュー指摘の出所を書いていないか検査する。
+# obaket (macOS/libexec/check/check-comment-provenance) と ThumbnailThumb (bin/tt-check-comment-provenance) が呼び口から起こす
+# (vlc-multi-video-player issue 588 の A。前は ThumbnailThumb に写して「直すなら両方を直す」で揃えていた)。
+#
+# なぜ (各 repo の CLAUDE.md「何をどこに書くか」):
+#   コメントに書くのは Why not (なぜ素直な別の書き方をしないか) だけで、経緯 (「以前は X だった」) と
+#   出所 (「codex review P2」「敵対レビュー指摘」「P1-C」) はコミットログと issue の役目。2026-10-08 に
+#   1000 行超を書き直した。SwiftLint の custom rule にしないのは、plugin が production の target にしか
+#   掛かっておらず、出所ラベルの大半があるテストコードを見ないため (ThumbnailThumb もテストは別の lane の config で、同じ regex を 2 か所に置くことになる)。
+#
+# 脅威モデル:
+#   止めるのは、レビューの指摘を直したついでに出所をコメントへ書き足す、いつもの書き癖。意図的な迂回
+#   (語を崩す・別の言い回しにする) は止めない。
+#
+# 検出しない形:
+#   - `/* ... */` のブロックコメント (この repo は `//` と `///` だけを使う)
+#   - 下の語彙に無い言い回し (「指摘を受けて」「レビューで分かった」など)。語彙を広げるなら fixture も足す
+#   - `"""` の複数行文字列の中の行と、区切りの無い正規表現リテラル (`/.../`) は字句を追わない。中に `//` があると、
+#     その後ろをコメントとして読む (偽陽性側に倒れる)
+#   - 行内で閉じない文字列リテラルの後ろのコメント (コメント無しと読む)
+#   - 文字列補間 `\(...)` の中の引用符と、raw literal の中で escape した閉じ記号 (`\#"#`)。字句を正しく追えず、
+#     どちら向きにも外れる。直すなら近似を足さず、SourceKit が字句を取る SwiftLint の custom rule
+#     (`match_kinds: comment`) をテストコードにも当てる形へ移す (`check-test-realtime-wait` が既にその呼び方を持つ)。
+#     2026-10-08 時点のツリーには該当が無い (字句を無視して全 `//` の後ろを見る素朴な走査でも違反 0 件)
+#
+# Usage: comment-provenance --root <repo root> [--label <名前>] [path ...]
+#   path を省くと <repo root> で git が追跡している *.swift 全部。path を渡すと、その file / dir 配下の *.swift
+#   (self-test の fixture 用)。--label は出力の先頭の名前 (呼び口の名前を渡す。無ければ comment-provenance)。
+# exit 0 = 違反なし / 1 = 違反あり / 2 = 判定不能 (対象 0 件・読めない file・git の失敗)
+
+set -euo pipefail
+unset CDPATH
+# pre-push hook が export する GIT_DIR を継承すると、git -C を付けても push 元の index を読む
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars) GIT_NAMESPACE GIT_QUARANTINE_PATH
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "${1:-}" == "help" ]]; then
+  echo "Usage: comment-provenance --root <repo root> [--label <名前>] [path ...]"
+  exit 0
+fi
+
+ROOT="" LABEL="comment-provenance"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --root) [ "$#" -ge 2 ] || { echo "comment-provenance: --root に値が要る" >&2; exit 2; }; ROOT="$2"; shift 2 ;;
+    --label) [ "$#" -ge 2 ] || { echo "comment-provenance: --label に値が要る" >&2; exit 2; }; LABEL="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+[ -n "$ROOT" ] || { echo "$LABEL: 判定不能: --root が要る" >&2; exit 2; }
+[ -d "$ROOT" ] || { echo "$LABEL: 判定不能: --root のディレクトリが無い ($ROOT)" >&2; exit 2; }
+
+list_file="$(mktemp "${TMPDIR:-/tmp}/comment-provenance.XXXXXX")"
+trap 'rm -f "$list_file"' EXIT
+
+if [ "$#" -eq 0 ]; then
+  if ! git -C "$ROOT" ls-files -z -- '*.swift' > "$list_file"; then
+    echo "$LABEL: 判定不能: git ls-files が失敗した ($ROOT)" >&2
+    exit 2
+  fi
+  base="$ROOT"
+else
+  base=""
+  for p in "$@"; do
+    if [ -d "$p" ]; then
+      if ! find "$p" -type f -name '*.swift' -print0 >> "$list_file"; then
+        echo "$LABEL: 判定不能: find が失敗した ($p)" >&2
+        exit 2
+      fi
+    elif [ -f "$p" ]; then
+      printf '%s\0' "$p" >> "$list_file"
+    else
+      echo "$LABEL: 判定不能: 対象が無い ($p)" >&2
+      exit 2
+    fi
+  done
+fi
+
+# 語彙。`以前は` は版の比較 (「macOS 26 以前は」) を除くため、直前が「数字 + 空白」のときは見ない。
+# 英字の語の境界は `\b` で取らない: 日本語も単語文字なので「P1-Cの指摘」「design reviewで」で境界が立たない。
+# perl の本体は bash の single quote の中にあるので、本体に single quote を書かない。
+BASE="$base" LABEL="$LABEL" perl -e '
+  use strict; use warnings; use utf8; use Encode ();
+  binmode STDOUT, ":encoding(UTF-8)"; binmode STDERR, ":encoding(UTF-8)";
+  my $re = qr{
+      (?i: codex | red[ -]?team
+         | (?<![A-Za-z])(?:design|plan|impl|implementation|code|issue|diff|cross|adversarial|architecture|opus|final|value|addition)[ ]review(?![A-Za-z]) )
+    | 敵対的?レビュー
+    | (?:設計|実装|最終|再|全体|セルフ|多視点|設計適合|自己敵対)レビュー
+    | レビュー(?:指摘|発見)
+    | (?<![A-Za-z0-9])P[123]-[A-Z0-9]+(?![A-Za-z0-9])
+    | (?<![0-9][ ])以前は
+  }x;
+
+  # 行頭から字句を追い、文字列リテラルの外で最初に出る `//` 以降をコメントとして返す。
+  # 行全体から先に文字列を消すと、コメントの中の引用 (// "codex review") まで消える。
+  # 扱う字句: "..." (escape あり) / #"..."# と #/.../# (# の数で閉じる)。行内で閉じない文字列はコメント無しと読む。
+  sub comment_of {
+    my ($l) = @_;
+    my ($i, $n) = (0, length $l);
+    while ($i < $n) {
+      my $c = substr($l, $i, 1);
+      if ($c eq "/" && substr($l, $i + 1, 1) eq "/") { return substr($l, $i); }
+      if ($c eq "#") {
+        my $j = $i;
+        $j++ while $j < $n && substr($l, $j, 1) eq "#";
+        my $d = substr($l, $j, 1);
+        if ($d eq "\"" || $d eq "/") {
+          my $close = $d . ("#" x ($j - $i));
+          my $k = index($l, $close, $j + 1);
+          return undef if $k < 0;
+          $i = $k + length $close;
+          next;
+        }
+        $i = $j;
+        next;
+      }
+      if ($c eq "\"") {
+        my $j = $i + 1;
+        while ($j < $n) {
+          my $d = substr($l, $j, 1);
+          if ($d eq "\\") { $j += 2; next; }
+          last if $d eq "\"";
+          $j++;
+        }
+        return undef if $j >= $n;
+        $i = $j + 1;
+        next;
+      }
+      $i++;
+    }
+    return undef;
+  }
+
+  my $list = do { local $/; <STDIN> };
+  my @files = grep { length } split /\0/, $list;
+  my ($scanned, $violations, $unreadable) = (0, 0, 0);
+  for my $rel (@files) {
+    my $path = length($ENV{BASE}) ? "$ENV{BASE}/$rel" : $rel;
+    my ($fh, $bytes, $text);
+    unless (open($fh, "<:raw", $path)) {
+      print STDERR "READ-FAIL: $rel ($!)\n"; $unreadable++; next;
+    }
+    { local $/; $bytes = <$fh>; }
+    my $read_ok = close($fh);
+    unless ($read_ok && defined $bytes) {
+      print STDERR "READ-FAIL: $rel (読み取りの途中で失敗)\n"; $unreadable++; next;
+    }
+    # 読めない byte を置換文字で読み進めると、その行を見ないまま「違反 0 件」になる
+    unless (eval { $text = Encode::decode("UTF-8", $bytes, Encode::FB_CROAK); 1 }) {
+      print STDERR "READ-FAIL: $rel (UTF-8 として読めない)\n"; $unreadable++; next;
+    }
+    $scanned++;
+    my $no = 0;
+    # Swift は CR だけの改行も行の区切りに数える
+    for my $line (split /\r\n|\r|\n/, $text, -1) {
+      $no++;
+      my $comment = comment_of($line);
+      next unless defined $comment;
+      if ($comment =~ $re) {
+        $violations++;
+        my $hit = $&;
+        (my $shown = $line) =~ s/^\s+//;
+        print "$rel:$no: [$hit] $shown\n";
+      }
+    }
+  }
+  if ($violations) {
+    print "\nコメントに経緯・レビューの出所を書かない (CLAUDE.md「何をどこに書くか」)。\n";
+    print "出所はコミットログと issue へ。コメントには何を避けているか (Why not) だけを残す。\n";
+  }
+  print "$ENV{LABEL}: Swift file ${scanned} 件 / 読み取り失敗 ${unreadable} 件 / 違反 ${violations} 件\n";
+  exit 2 if $unreadable || $scanned == 0;
+  exit($violations ? 1 : 0);
+' < "$list_file"
