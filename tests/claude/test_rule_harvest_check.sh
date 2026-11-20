@@ -20,6 +20,8 @@ unset CLAUDE_RULE_HARVEST
 repo="$WORK/repo"; other="$WORK/other"
 mkdir -p "$repo/src" "$repo/issues" "$repo/docs" "$other"
 git -C "$repo" init -q . && git -C "$repo" config user.email t@t && git -C "$repo" config user.name t
+# 準備の commit は reflog の時刻を過去にする (-q の commit を時刻の窓で引く 4f で、窓の外の commit を拾わないことを見るため)
+export GIT_COMMITTER_DATE="@1000000000 +0000"
 echo base >"$repo/src/a.go"
 git -C "$repo" add -A && git -C "$repo" commit -qm "init"
 
@@ -35,19 +37,20 @@ git -C "$repo" update-index --force-remove sub && git -C "$repo" commit -qm "cho
 echo x >"$repo/src/b.go"; ctl=$(commit "feat: x$(printf '\001')y の件名")
 echo y >"$repo/docs/設計.md"; jadoc=$(commit "docs: 日本語名の md だけ")
 mkdir -p "$repo/Sources/issues"; echo x >"$repo/Sources/issues/Foo.swift"; nested=$(commit "feat: issues という名前の dir の下のコード")
+unset GIT_COMMITTER_DATE
 
 # transcript を作る。引数は「コマンド<TAB>結果<TAB>is_error」の行。cwd は $tcwd
 tcwd="$repo"
-transcript() { # $1=ファイル名 stdin=行
+transcript() { # $1=ファイル名 stdin=行。TS0 / TS1 (ISO 8601) があれば、tool_use / tool_result の行の時刻にする
   local f="$WORK/$1.jsonl" i=0 cmd out err
   : >"$f"
   printf '{"type":"user","cwd":"%s","message":{"role":"user","content":"go"}}\n' "$tcwd" >>"$f"
   while IFS=$'\t' read -r cmd out err; do
     i=$((i+1))
-    jq -cn --arg cwd "$tcwd" --arg cmd "$cmd" --arg id "t$i" \
-      '{type:"assistant",cwd:$cwd,message:{role:"assistant",content:[{type:"tool_use",id:$id,name:"Bash",input:{command:$cmd}}]}}' >>"$f"
-    jq -cn --arg cwd "$tcwd" --arg out "$out" --arg id "t$i" --argjson err "${err:-false}" \
-      '{type:"user",cwd:$cwd,message:{role:"user",content:[{type:"tool_result",tool_use_id:$id,content:$out,is_error:$err}]}}' >>"$f"
+    jq -cn --arg cwd "$tcwd" --arg cmd "$cmd" --arg id "t$i" --arg ts "${TS0:-}" \
+      '{type:"assistant",cwd:$cwd,message:{role:"assistant",content:[{type:"tool_use",id:$id,name:"Bash",input:{command:$cmd}}]}} + (if $ts != "" then {timestamp:$ts} else {} end)' >>"$f"
+    jq -cn --arg cwd "$tcwd" --arg out "$out" --arg id "t$i" --argjson err "${err:-false}" --arg ts "${TS1:-}" \
+      '{type:"user",cwd:$cwd,message:{role:"user",content:[{type:"tool_result",tool_use_id:$id,content:$out,is_error:$err}]}} + (if $ts != "" then {timestamp:$ts} else {} end)' >>"$f"
   done
   printf '%s' "$f"
 }
@@ -101,6 +104,19 @@ t4d=$(line "git commit -m c" "[master $ctl] feat: 制御文字" | transcript t4d
 check "件名に \\x01 がある実装の commit も数える" "$ctl" "$(reason s14 "$t4d")"
 t4e=$(line "git commit -m j" "[master $jadoc] docs: 日本語名の md だけ" | transcript t4e)
 check "日本語名の md だけの commit は数えない" "" "$(git -C "$repo" config core.quotepath true; reason s15 "$t4e")"
+
+# 4f. -q で打った commit (出力に [branch sha] の行が無い) も、打った時刻の窓の reflog から拾う。窓の外の commit は拾わない
+ts0=$(date -u +%Y-%m-%dT%H:%M:%SZ); echo q >>"$repo/src/a.go"; quiet=$(commit "feat: -q で打った実装"); ts1=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+t4f=$(line "git commit -q -m q" "" | TS0=$ts0 TS1=$ts1 transcript t4f)
+got=$(reason s16 "$t4f")
+check "-q の commit を reflog から拾う" "${quiet}[0-9a-f]* feat: -q で打った実装" "$got"
+check "窓の外の commit は拾わない" "" "$(grep -F -- "$impl" <<<"$got" || true)"
+check "-q の commit も 1 回だけ" "" "$(reason s16 "$t4f")"
+# 出力の短い sha と reflog の完全な sha が同じ commit を指しても、1 行だけ挙げる
+t4g=$(line "git commit -m q" "[master $quiet] feat: -q で打った実装" | TS0=$ts0 TS1=$ts1 transcript t4g)
+check "同じ commit は 1 行だけ" "^1$" "$(reason s17 "$t4g" | grep -c -- "$quiet" || true)"
+t4h=$(line "git commit -q -m q" "" | transcript t4h)
+check "4f の対照: 時刻の無い transcript では reflog を引かない" "" "$(reason s18 "$t4h")"
 
 # 5. 失敗した commit・commit でないコマンドの出力は数えない
 t5=$( { line "git commit -m x" "[master $impl] feat: 実装を変える" true

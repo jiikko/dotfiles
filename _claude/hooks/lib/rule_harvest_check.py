@@ -5,13 +5,16 @@
 (2026-11-20 ユーザー指示。vlc-multi-video-player の issue 580 の仕組みは、聞かれるまで rule にしていなかった)。
 何を rule にするか・既存の rule との比較・5 つの観点のレビューは skill rule-harvest の手順で、この hook は出口で促すだけ。
 
-数える commit: このセッションの transcript で、Bash の tool_use の入力が `git commit` を含み、その結果に `[branch sha]` の行が出たもの。
+数える commit: このセッションの transcript で、Bash の tool_use の入力が `git commit` を含み、失敗しなかったもの。sha は 2 通りで取る:
+結果に出た `[branch sha]` の行と、そのコマンドの dir の HEAD の reflog のうち、コマンドを打った時刻から結果が返った時刻までの `commit` の行
+(`-q` や出力のリダイレクトで `[branch sha]` の行が出ない commit が大半なので。2026-11-20 に直近 40 の transcript で数えると 248 件中 191 件が `-q`)。
 そのうち、変えたファイルが md (issue・rule・skill・文書)・tmp/ の下・submodule の参照 (mode 160000) だけの commit は数えない
 (rule を足す commit 自身で止め直さないため。issue の目印の symlink も .md の名前。dir の名前で issues を外すと、`Sources/issues/` のようなコードも外す)。merge は 1 つ目の親との差で見る。
 commit の repo が分からない sha (worktree を消した等) は、中身を見られないので数える (止める側に倒す。手間は「候補なし」の 1 行)。
 
 検出しないもの (承知の上): サブエージェント・workflow・別の道具 (bin/bump-submodule・issue_done.sh) が作った commit、未 commit の変更、
-`git commit` を変数や別名・絶対パスの git で打った commit、cherry-pick・merge・revert・rebase が作った commit。
+`git commit` を変数や別名・絶対パスの git で打った commit、cherry-pick・merge・revert・rebase が作った commit、
+`-q` で打ち、その dir を `cd $VAR` のように変数で指した commit と、reflog ごと消えた worktree で `-q` で打った commit。
 
 止める: 新しい sha が 1 つでもあれば {"decision":"block","reason":...}。同じ sha では 1 セッション 1 回 (印は session_marks)。
 止めない: 環境変数 CLAUDE_RULE_HARVEST=off (無人で回す session で止めたいとき)。stop_hook_active (block からの続き) では印だけを書く:
@@ -22,6 +25,7 @@ git は repo ごとにまとめて呼ぶ (sha ごと・dir ごとに呼ぶと、
 🚨 どの失敗も hook を止めない (exit 0)。transcript を読めたのに assistant の行が 1 つも無いときは、形式が変わった疑いとして warn を残す
 (黙って死ぬのを見えるようにする。session_marks の claude-hook-marks.log)。
 """
+import datetime
 import json
 import os
 import re
@@ -35,6 +39,7 @@ MARKS = "claude-rule-harvest.marks"
 KIND = "sha"
 COMMIT_CMD = re.compile(r"(^|[\s;&|(])git(\s+-[Cc]\s+\S+)*\s+commit\b")
 COMMIT_LINE = re.compile(r"^\[[^\]\n]*?\s([0-9a-f]{7,40})\]\s", re.M)
+REFLOG_SLACK = 2  # 秒。transcript の時刻と reflog の時刻 (秒の単位) の丸めの差
 DIR_IN_CMD = re.compile(r"(?:\bcd|\bgit\s+-C|\bwt\s+-C)\s+[\"']?(~?/[^\s\"';&|)]+)")
 MAX_LISTED = 10
 
@@ -47,8 +52,16 @@ def result_text(content):
     return ""
 
 
+def epoch(ts):
+    try:
+        return datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def read_transcript(path):
-    """(commit の列 [(sha, その commit を打った所の dir の列)], transcript に出た全部の dir, assistant の行の数)。読めなければ None"""
+    """(commit のコマンドの列, transcript に出た全部の dir, assistant の行の数)。読めなければ None。
+    commit のコマンドは (出力の sha の列, そのコマンドを打った所の dir の列, 打った時刻, 結果が返った時刻)"""
     commands, all_dirs, commits, assistants = {}, [], [], 0
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -76,7 +89,7 @@ def read_transcript(path):
                     cmd = str((c.get("input") or {}).get("command", ""))
                     here = [os.path.expanduser(d) for d in DIR_IN_CMD.findall(cmd)]
                     all_dirs.extend(here)
-                    commands[c.get("id")] = (cmd, here + ([cwd] if cwd else []))
+                    commands[c.get("id")] = (cmd, here + ([cwd] if cwd else []), epoch(entry.get("timestamp")))
         elif entry.get("type") == "user":
             for c in content:
                 if not (isinstance(c, dict) and c.get("type") == "tool_result"):
@@ -84,8 +97,7 @@ def read_transcript(path):
                 found = commands.get(c.get("tool_use_id"))
                 if found is None or c.get("is_error") or not COMMIT_CMD.search(found[0]):
                     continue
-                for sha in COMMIT_LINE.findall(result_text(c.get("content"))):
-                    commits.append((sha, found[1]))
+                commits.append((COMMIT_LINE.findall(result_text(c.get("content"))), found[1], found[2], epoch(entry.get("timestamp"))))
     return commits, all_dirs, assistants
 
 
@@ -117,6 +129,25 @@ def repos_of(dirs):
         if common and common not in repos:
             repos[common] = d
     return repos
+
+
+_REFLOG = {}
+
+
+def reflog_commits(d, t0, t1):
+    """dir の HEAD の reflog のうち、t0〜t1 (秒) の commit の行の完全な sha。dir ごとに 1 回だけ git を呼ぶ"""
+    if t0 is None or t1 is None or not os.path.isdir(d):
+        return []
+    if d not in _REFLOG:
+        out = git(d, ["log", "-g", "-n", "500", "--date=unix", "--format=%H%x09%gd%x09%gs", "HEAD"]) or ""
+        rows = []
+        for line in out.splitlines():
+            parts = line.split("\t", 2)
+            m = re.search(r"@\{(\d+)\}$", parts[1]) if len(parts) == 3 else None
+            if m and parts[2].startswith("commit"):
+                rows.append((parts[0], int(m.group(1))))
+        _REFLOG[d] = rows
+    return [h for h, t in _REFLOG[d] if t0 - REFLOG_SLACK <= t <= t1 + REFLOG_SLACK]
 
 
 def lookup(rep, shas):
@@ -178,12 +209,16 @@ def main():
         return 0
     marks_path = session_marks.path_of(MARKS)
     seen = {v for k, v in session_marks.load(marks_path, session) if k == KIND}
-    shas = [s for s in dict.fromkeys(sha for sha, _ in commits) if s not in seen]
+    home = {}
+    for printed, dirs, t0, t1 in commits:
+        for d in dirs:
+            for full in reflog_commits(d, t0, t1):
+                home.setdefault(full, []).append(d)
+        for sha in printed:
+            home.setdefault(sha, []).extend(dirs)
+    shas = [s for s in home if s not in seen]
     if not shas:
         return 0
-    home = {}
-    for sha, dirs in commits:
-        home.setdefault(sha, []).extend(dirs)
     repos = repos_of(list(dict.fromkeys(sum((home[s] for s in shas), []) + ([data["cwd"]] if data.get("cwd") else []) + all_dirs)))
     # sha ごとに、その commit を打った所の repo を先に当てる (短い sha が別の repo の commit と重なっても、打った所を正にする)
     home_repos = {s: list(repos_of(home[s]).keys()) for s in shas}
@@ -196,14 +231,15 @@ def main():
             unresolved.append(sha)
         else:
             resolved.setdefault(hit, []).append((sha, found_in[hit][sha]))
-    lines, marks = [], []
+    lines, marks, done = [], [], set()
     for common, pairs in resolved.items():
         rep = repos[common]
         info = summaries(rep, [full for _, full in pairs])
         top = (git(rep, ["rev-parse", "--show-toplevel"]) or rep).strip()
         for sha, full in pairs:
-            if full in seen:
+            if full in seen or full in done:
                 continue  # 報告済み。印を書き足さない (書き足すと印のファイルが Stop のたびに伸び、上限で他の session の印を押し出す)
+            done.add(full)  # 出力の短い sha と reflog の完全な sha は同じ commit を指しうる
             marks.append(full)
             subject, impl = info.get(full, ("", True))
             if not impl:
