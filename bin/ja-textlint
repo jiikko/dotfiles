@@ -13,6 +13,7 @@
 # ja-writing lint (src/ja-writing。bin/ja-writing が初回と入力の変化のたびに go build する):
 #   textlint の出力の後に、ファイルごとに「ja-writing lint: <名前>」の行と ja-writing lint の出力を標準出力へ足す。
 #   ファイルは標準入力で渡す (ja-writing lint は作業フォルダの外と点で始まる名前のファイルを断る。ja-textlint はどこのファイルにも掛ける)。
+#   掛けるのは textlint が読むファイルだけ (.textlintignore・--ignore-path に載ったものと、対象でない拡張子には掛けない)。
 #   `--fail-on error` を付けて起こすので、warn と info だけなら rc 0 (textlint の warning と同じ扱い)。
 #   textlint の出力だけを返し ja-writing lint を掛けない形 (標準エラーに 1 行出す): --fix / --dry-run・-f / --format が stylish 以外・-o。
 #     --fix は ja-writing lint が直さないので、直した後にもう一度打つ。整形の指定は機械が読む出力で、別の形の文を混ぜると読めなくなる
@@ -114,7 +115,9 @@ if [ "$use_stdin" -eq 1 ]; then
 fi
 
 trc=0
+have_textlint=0
 if ensure_textlint; then
+  have_textlint=1
   if [ -n "$stdin_file" ]; then
     "$bin" "${textlint_args[@]}" "$@" <"$stdin_file" || trc=$?
   else
@@ -169,19 +172,46 @@ if [ "$wrc" -eq 0 ]; then
     lint_one "${name:-(標準入力)}" "$stdin_file"
   fi
   skipped=0
+  regular=()
   for f in ${files[@]+"${files[@]}"}; do
-    if [ ! -f "$f" ]; then
+    if [ -f "$f" ]; then
+      regular+=("$f")
+    else
       # ディレクトリと glob は textlint が展開する。ja-writing lint はファイルを 1 つずつしか受けないので掛けない
       echo "ja-textlint: $f はファイルでないので ja-writing lint は掛けない" >&2
       skipped=$((skipped + 1))
-      continue
     fi
-    # textlint が読む拡張子 (既定の plugin の text と markdown) だけに掛ける。ほかの拡張子は textlint も見ないので、ja-writing lint だけが当たって rc が変わる
-    case "$f" in
-      *.md|*.markdown|*.mdown|*.mkdn|*.mkd|*.mdwn|*.mkdown|*.ron|*.txt) lint_one "$f" "$f" ;;
-      *) echo "ja-textlint: $f は textlint の対象の拡張子でないので ja-writing lint は掛けない" >&2; skipped=$((skipped + 1)) ;;
-    esac
   done
+  # 掛けるのは textlint が読むファイルだけ (ignore に載ったものと対象でない拡張子を外す。外さないと textlint が見ないファイルで rc が変わる)。
+  # 判定は textlint の CLI と同じ関数に任せる (bin/lib/ja_textlint_targets.cjs)。ignore の書式は gitignore と違い、写すと外れる
+  targets=()
+  if [ "${#regular[@]}" -gt 0 ]; then
+    if [ "$have_textlint" -eq 1 ]; then
+      if node "$root/bin/lib/ja_textlint_targets.cjs" "$cache/node_modules" -- "${textlint_args[@]}" "$@" >"$work/targets"; then
+        while IFS= read -r -d '' t; do targets+=("$t"); done <"$work/targets"
+      else
+        echo "ja-textlint: textlint の対象のファイルを判定できないので ja-writing lint は掛けない (理由は上の行)" >&2
+        wrc=3
+      fi
+    else
+      # textlint の依存が無いので ignore は判定できない。rc は 3 に決まっているので、textlint の既定の plugin (text と markdown) の拡張子で選んで指摘は出す
+      echo "ja-textlint: textlint が無いので .textlintignore を見ずに拡張子だけで ja-writing lint の対象を選ぶ" >&2
+      for f in "${regular[@]}"; do
+        case "$f" in *.md|*.markdown|*.mdown|*.mkdn|*.mkd|*.mdwn|*.mkdown|*.ron|*.txt) targets+=("$f") ;; esac
+      done
+    fi
+  fi
+  if [ "$wrc" -eq 0 ]; then
+    for f in ${regular[@]+"${regular[@]}"}; do
+      hit=0
+      for t in ${targets[@]+"${targets[@]}"}; do [ "$t" != "$f" ] || { hit=1; break; }; done
+      if [ "$hit" -eq 0 ]; then
+        echo "ja-textlint: $f は textlint の対象でない (ignore に載っているか拡張子が違う) ので ja-writing lint は掛けない" >&2
+        skipped=$((skipped + 1))
+      fi
+    done
+    for t in ${targets[@]+"${targets[@]}"}; do lint_one "$t" "$t"; done
+  fi
   [ "$skipped" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けなかったファイル: ${skipped} 件" >&2
 fi
 

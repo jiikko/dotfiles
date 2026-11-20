@@ -253,7 +253,7 @@ fi
 fake="$work/fake"
 mkdir -p "$fake/bin/lib" "$fake/_claude/skills/ja-writing" "$fake/src/ja-writing"
 cp "$ROOT_DIR/bin/ja-textlint" "$ROOT_DIR/bin/ja-writing" "$fake/bin/"
-cp "$ROOT_DIR/bin/lib/go_autobuild.zsh" "$fake/bin/lib/"
+cp "$ROOT_DIR/bin/lib/go_autobuild.zsh" "$ROOT_DIR/bin/lib/ja_textlint_targets.cjs" "$fake/bin/lib/"
 ln -s "$ROOT_DIR/_claude/skills/ja-writing/textlint" "$fake/_claude/skills/ja-writing/textlint"
 for mode in build no-install; do
   rc=0
@@ -293,6 +293,38 @@ if [ "$rc" -eq 0 ] && ! grep -qF 'ja-writing lint: ' "$work/jg.out" && grep -qF 
   ok "textlint の対象でない拡張子 (.go) には ja-writing lint を掛けず rc 0"
 else
   fail ".go: rc=$rc (期待 0): $(cat "$work/jg.out" "$work/jg.err")"
+fi
+
+# textlint が ignore するファイル (cwd の .textlintignore・--ignore-path) には ja-writing lint を掛けない (textlint だけなら rc 0 のまま)。
+# 同じ起動で ignore されないファイルには掛ける。中身は jb.md と同じ (textlint は何も言わず、ja-writing lint だけが error を出す)
+ig="$work/ig"
+mkdir -p "$ig"
+cp "$work/jb.md" "$ig/cwdig.md"
+cp "$work/jb.md" "$ig/pathig.md"
+cp "$work/jb.md" "$ig/kept.md"
+printf 'cwdig.md\n' >"$ig/.textlintignore"
+printf 'pathig.md\n' >"$ig/listed"
+rc=0
+(cd "$ig" && "$BIN" cwdig.md) >"$work/ji1.out" 2>"$work/ji1.err" || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -qF 'ja-writing lint: ' "$work/ji1.out" && grep -qF 'cwdig.md は textlint の対象でない' "$work/ji1.err"; then
+  ok "cwd の .textlintignore に載ったファイルには ja-writing lint を掛けず rc 0"
+else
+  fail ".textlintignore: rc=$rc (期待 0): $(cat "$work/ji1.out" "$work/ji1.err")"
+fi
+rc=0
+(cd "$ig" && "$BIN" --ignore-path listed pathig.md kept.md) >"$work/ji2.out" 2>"$work/ji2.err" || rc=$?
+if [ "$rc" -eq 1 ] && ! grep -qF 'ja-writing lint: pathig.md' "$work/ji2.out" && grep -qF 'pathig.md は textlint の対象でない' "$work/ji2.err" \
+  && jw_ran "$work/ji2.out" kept.md && [ "$(grep -c '^ja-writing lint: ' "$work/ji2.out")" -eq 1 ]; then
+  ok "--ignore-path に載ったファイルには掛けず、載っていない kept.md には掛ける (rc 1)"
+else
+  fail "--ignore-path: rc=$rc (期待 1): $(cat "$work/ji2.out" "$work/ji2.err")"
+fi
+rc=0
+(cd "$ig" && "$BIN" --ignore-path listed cwdig.md) >"$work/ji3.out" 2>"$work/ji3.err" || rc=$?
+if [ "$rc" -eq 1 ] && jw_ran "$work/ji3.out" cwdig.md; then
+  ok "--ignore-path を渡すと cwd の .textlintignore は読まず、cwdig.md に掛ける (textlint と同じ)"
+else
+  fail "--ignore-path で .textlintignore を読まない: rc=$rc (期待 1): $(cat "$work/ji3.out" "$work/ji3.err")"
 fi
 
 # 値を取る textlint のオプションの値をファイルと読まない
