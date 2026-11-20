@@ -12,7 +12,7 @@ lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り�
 | 場所 | 中身 |
 |---|---|
 | `main.go` `entry/` | プロセスの入口。`entry.Main` が subcommand を振り分け、`entry.Run` が subcommand ごとのシグナルの受け方と `Env` を整える (check のテストの子も同じ `entry.Run` を通る) |
-| `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数 (`Getenv`・空と無いを分ける `LookupEnv`・全部の `Environ`))。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
+| `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数 (全部を `Environ` の 1 つの並びで持ち、`Lookup`・`Getenv`・`Environment` はそこだけから読む。`Lookup` は本家の `os.environ` と同じく空の値と無いを分け、同じ名前が 2 つあれば先のもの。`Environ` が nil の `Env` は環境変数を 1 つも持たない))。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
 | `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (hook の `Main` はいまは未実装の stub。check の `Main` は `verify` と `--version` だけ。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
 | `internal/pycli/` | lint と diff が共有する CLI の部品: argparse の写し (`Spec.Parse`。位置引数とオプションを混ぜてよい形も同じ答え)・使い方の誤りの文・`--fail-on` の値の正規化・出力先が閉じたときの終了コード・入力 (ファイルか標準入力) の読み。本家の lint・diff・check は同じ `_ArgumentParser` と `_read_input` を写しで持つ (ast が同じ) |
 | `lint/pausecomma/` | lint の群 G13 (規則 `pause_comma`: 短い主語・主題・目的語のすぐあとの読点)。本家の `_pause_comma_hits`・`_pause_comma_object_hits`・`_pause_comma_line_hits` の写しで、記録は `testdata/golden/pause_comma.json` (issue 1084)。骨組みは `Fallback` と `LineHits` を呼び、G16 は `TENotVerb`、G17 は `TEAttrObject` を使う |
@@ -356,7 +356,8 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - 状態フォルダに `armed/` (start の登録) がある run は、本家が登録を探しにいく場面 (原文があって `--new-run` でない・原文と最終稿が同じファイル) で、`yomiyasu_check.py: 内部エラー: start の登録（armed/）を使う run はまだ実装していません（ja-writing）` と出して rc 3 にする (start・end と一緒に 5 本目で写す。`armed/` が無ければ本家も登録を見ないので、run の答えは同じ)。
 - 子を起動できないときの文は、起動の errno (ENOENT・EACCES・EPERM・ほか) を本家の Popen が出す `FileNotFoundError`・`PermissionError`・`OSError` と `[Errno 番号] 理由: 'パス'` に写す。ほかの起動の失敗 (本家では起きない、Go の出力の写しが終わらないなど) は Go の誤りの型と文になる。
 - 資料との照合 (`ground`) が例外になったときの記録の `stderr` は、本家のトレースバックの末尾 2000 字でなく、Go の誤りの文 (本家の例外の型と文)。入力の集まりでは `ground` を例外にする入力を作れていない (5000 桁の数でも例外にならない)。
-- 止められた run: 本家はシグナルのハンドラが例外を投げ、どの行でも止まる。Go は標準入力を読む間 (`--stdin`・`-`。読み終わりを待たずに止まり、状態フォルダに何も書かない)・子を待つ間・子が終わった後・記録を書いた後に ctx を見て止まる。資料との照合 (`ground`) の途中と記録を書く途中のシグナルは、それが終わってから止まる (記録を書き終えた後に止まったときは、本家と同じく記録を残して 128+番号)。verify は、戻った後に ctx を見て止まる (戻る前に届いたシグナルは、出力の後でも 128+番号にする)。
+- 止められた run・verify: 本家はシグナルのハンドラが例外を投げ、どの行でも止まる (ブロックしている open・read の途中でも)。Go は、入力を開く・読む間 (標準入力・`--final`・`--source`・`--material`・`--words` の一覧・状態フォルダの記録と写し。全部を `untilStopped` の 1 つの口で読み、FIFO の open や read が戻らなくても、読み終わりを待たずに止まる。状態フォルダに何も書かず、何も出さない)・子を待つ間・子が終わった後・記録を書いた後・verify の結果を出す直前と、subcommand が戻った後に ctx を見て止まる。資料との照合 (`ground`) の途中と記録を書く途中のシグナルは、それが終わってから止まる (記録を書き終えた後に止まったときは、本家と同じく記録を残して 128+番号)。出力の後に届いたシグナルも 128+番号にする (本家も同じ)。止めたときに読んでいた goroutine は残す (プロセスはすぐ終わる)。
+- 一時フォルダの片付け (`removeTemporary`) は本家の `shutil.rmtree(path, onexc=again)` を写し、消せない・読めないものごとに、それと親のフラグと権限を戻して 1 度だけやり直す。本家の `again` は、読めない入れ子のフォルダを開き直す所で `os.open` の引数が足りず TypeError で落ちる (Python 3.15 で実測)。Go は開き直して続ける (一時フォルダは check の写しだけを持ち、読めないフォルダを作らないので、本番では分かれない)。
 - シグナルの受け方の差: 本家の lint・diff は SIGINT で KeyboardInterrupt のトレースバックを標準エラーに出してから SIGINT で終わる。Go の lint・diff は何も出さずに SIGINT で終わる (終わり方は同じ)。
   無視して起動された SIGTERM を、本家の check はそのまま無視し、本家の lint・diff は無視したまま走る。Go は起動時の無視を SIGINT と SIGHUP しか覚えないので、check は受けて 143 で終わり、lint・diff は SIGTERM で終わる。
 - subcommand の前の引数は、`-h`・`--help` で始まるときと `--version` 1 つだけのときを写した。`--version` にほかの引数を続けた形と `start`・`export`・`end` は、まだ `ja-writing check …: まだ実装していません` で rc 2。

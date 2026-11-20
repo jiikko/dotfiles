@@ -64,3 +64,36 @@ func TestRemoveTemporaryClearsFlags(t *testing.T) {
 		t.Fatalf("消えていない: %v 知らせ=%q", err, warned)
 	}
 }
+
+// 一時フォルダそのものを、親が書けない (0o555)・親に uchg が付いているので消せないときは、本家の again と同じく親の権限とフラグも
+// 戻して消す (本家は Python 3.15 で同じ 2 つを消し、親を 0o700 にする)。親のほかの中身には触らない。
+func TestRemoveTemporaryRestoresParentOfRoot(t *testing.T) {
+	for name, lock := range map[string]func(string) error{
+		"read-only": func(p string) error { return os.Chmod(p, 0o555) },
+		"uchg":      func(p string) error { return syscall.Chflags(p, 0x2) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir() + "/parent"
+			dir := parent + "/yomiyasu-check-x"
+			if err := os.MkdirAll(dir+"/sub", 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(dir+"/sub/copy.bin", []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = syscall.Chflags(parent, 0); _ = os.Chmod(parent, 0o700) })
+			if err := lock(parent); err != nil {
+				t.Fatal(err)
+			}
+			var warned []string
+			removeTemporary(dir, func(m string) { warned = append(warned, m) })
+			if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) || len(warned) != 0 {
+				t.Fatalf("消えていない: %v 知らせ=%q", err, warned)
+			}
+			info, err := os.Stat(parent)
+			if err != nil || info.Mode().Perm() != 0o700 {
+				t.Fatalf("親の権限 %v %v (本家と同じ 0o700 を期待)", info, err)
+			}
+		})
+	}
+}

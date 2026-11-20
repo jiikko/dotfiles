@@ -145,20 +145,52 @@ func mkdtemp(rt Runtime, env cmdenv.Env, prefix string) (string, error) {
 	return "", &namingError{Folder: parent}
 }
 
-// removeTemporary は _remove_temporary (消せないものは BSD のフラグと権限を戻して消し直し、それでも残れば標準エラーに 1 行で知らせる)。
+// removeTemporary は _remove_temporary (shutil.rmtree(path, onexc=again) で消し、それでも残れば標準エラーに 1 行で知らせる)。
 func removeTemporary(path string, warn func(string)) {
-	if err := os.RemoveAll(path); err == nil {
-		return
-	}
-	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
-		// 消し直す前の手当て。戻せないものは次の RemoveAll の誤りで分かる
-		clearFlags(p)
-		_ = os.Chmod(p, 0o700)
-		return nil
-	})
-	if err := os.RemoveAll(path); err != nil {
+	if err := removeTree(path); err != nil {
 		warn(fmt.Sprintf(temporaryLeftLine, path))
 	}
+}
+
+// removeTree は shutil.rmtree(path, onexc=again) の写し: 中身を消してからフォルダを消し、消せない・読めないものは again で手当てして
+// 1 度だけやり直す。最初の失敗で止まる (本家は again の中の誤りが rmtree の外へ出る)。
+// 本家の again は、読めない入れ子のフォルダを開き直す所で os.open の引数が足りず TypeError で落ちる (Python 3.15 で実測)。Go は開き直して続ける
+// (check の一時フォルダは check が作った写しだけを持ち、読めないフォルダを作らないので、本番では分かれない)。
+func removeTree(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		var entries []fs.DirEntry
+		read := func(p string) error {
+			var err error
+			entries, err = os.ReadDir(p)
+			return err
+		}
+		if err := again(read, path); err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := removeTree(visibility.PathJoin(path, entry.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return again(os.Remove, path)
+}
+
+// again は op(target) を試し、失敗したら _remove_temporary の again と同じく、target の親と target の BSD のフラグを外して権限を 0o700 に
+// してからやり直す (親を戻すのは、書けない・uchg の親の中のものは、それ自身を戻しても消せないため)。戻せないものはやり直しの誤りで分かる。
+func again(op func(string) error, target string) error {
+	if err := op(target); err == nil {
+		return nil
+	}
+	for _, item := range []string{filepath.Dir(target), target} {
+		clearFlags(item)
+		_ = os.Chmod(item, 0o700)
+	}
+	return op(target)
 }
 
 // putSnapshots は _put_snapshots (入力の写しを folder/<sha256>.bin に置く。同じ中身があれば書かない)。
