@@ -200,7 +200,7 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 		return pycli.Fail(env, problem)
 	}
 	// 入力と状態フォルダの記録を読み、結果を組むまで (verify は書かない)。読み終わる前に止められたら読み終わりを待たず、読み終わった後に
-// 止められていたら結果も誤りの文も出さない (untilStopped。本家の _verify は読み終えて結果を組んでから出力する)
+	// 止められていたら結果も誤りの文も出さない (untilStopped。本家の _verify は読み終えて結果を組んでから出力する)
 	var out *verifyResult
 	var final *Target
 	if stop := untilStopped(ctx, func() { out, final, problem, err = readVerify(env, a, since) }); stop != nil {
