@@ -46,6 +46,11 @@ func edit(f *fixtureCase, rel string, spec map[string]any) {
 	f.op(Op{Kind: "pyedit", Path: f.dir(rel), Value: string(b)})
 }
 
+// copyFile は from を rel へバイト列のまま写す (driver だけが動かす。Go のテストは後の snapshot の木を使う)。
+func copyFile(f *fixtureCase, from, rel string) {
+	edit(f, rel, map[string]any{"copy_from": f.dir(from)})
+}
+
 // set は edit の set の 1 組 (鍵の道と値)。
 func set(value any, steps ...any) []any { return []any{steps, value} }
 
@@ -57,6 +62,16 @@ func redigest(f *fixtureCase, record string, pairs ...[]any) {
 // snapshot は作業フォルダの木を記録に残す (Go のテストは、これを作業フォルダに戻す)。
 func snapshot(f *fixtureCase) {
 	f.call(Call{Op: &Op{Kind: "snapshot", Path: f.dir()}, Digest: true, Keep: true})
+}
+
+// snapshotTies は snapshot と同じだが、組ごとに、パターン (fnmatch。作業フォルダからの相対パス) に当たるファイルの mtime を同じ値にする
+// (mtime が 1 秒単位のファイルシステムで同じ秒に書いた場面。並べ方の同点を記録に出す)。
+func snapshotTies(f *fixtureCase, groups ...[]string) {
+	b, err := json.Marshal(map[string]any{"ties": groups})
+	if err != nil {
+		panic(err)
+	}
+	f.call(Call{Op: &Op{Kind: "snapshot", Path: f.dir(), Value: string(b)}, Digest: true, Keep: true})
 }
 
 // verify は本家の verify を呼び、標準出力・標準エラー・終了コードを記録する。
@@ -114,6 +129,7 @@ func CheckVerifyCases() []VisCase {
 		verifyBasicCase(), verifyChangedCase(), verifyAttemptsCase(), verifyAmbiguousCase(), verifyPlaceCase(),
 		verifyInvalidCase(), verifyChecksCase(), verifyToolsCase(), verifyComposeCase(), verifyStdinCase(),
 		verifyContextCase(), verifyWordsCase(), verifyEdgesCase(), verifyArgsCase(),
+		verifyTiesCase(), verifySummaryEdgesCase(), verifyHugeAttemptCase(),
 	}
 	for i := range cases {
 		scopeRefs(&cases[i])
@@ -707,5 +723,74 @@ func verifyArgsCase() VisCase {
 	f.op(Op{Kind: "stdin", BytesB64: base64.StdEncoding.EncodeToString([]byte{0xff, 0xfe})})
 	verify(f, "--final", "-")
 	f.call(Call{Module: CheckModule, Function: "main", Args: []any{[]string{"--version"}}, Digest: true, Keep: true, Capture: true})
+	return f.done()
+}
+
+// verifyTiesCase は「最新」の並べ方の同点: created_at と書いた時刻と回が同じ 2 つの実行 (索引の名前の順で最初のもの)、
+// 同じ実行の 2 回 (回の大きい方)、by-path の索引の時刻と書いた時刻と回が同じ 2 つの実行 (実行 ID の大きい方)。
+func verifyTiesCase() VisCase {
+	f := newFixtureCase("verify-ties")
+	f.write("src.md", vSource).write("final.md", vFinal)
+	chdir(f)
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "t1", "--state-dir", "st")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "t2", "--state-dir", "st")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "u1", "--state-dir", "su")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "u1", "--state-dir", "su")
+	snapshotTies(f, []string{"st/runs/t*/attempt-1.json"}, []string{"su/runs/u1/attempt-*.json"})
+	verifyBoth(f, "--final", "final.md", "--state-dir", "st")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "su")
+	// 最終稿の索引が無い: by-path の同点から選ぶ
+	f.op(Op{Kind: "remove", Path: f.dir("st/index/by-final")})
+	snapshotTies(f, []string{"st/runs/t*/attempt-1.json"}, []string{"st/index/by-path/*/*.t[12].1"})
+	verifyBoth(f, "--final", "final.md", "--state-dir", "st")
+	return f.done()
+}
+
+// verifySummaryEdgesCase は記録とレポートの照らしの端: 資料を逆の順で渡した 2 つの実行 (同じ資料の集まり)・diff の
+// fail_on_meaning_risk_count が真偽 (数に入れない)・created_at が時刻でない記録 (「最新」の並べ方で空にする)・report が runs/ で始まらない。
+func verifySummaryEdgesCase() VisCase {
+	f := newFixtureCase("verify-summary-edges")
+	f.write("src.md", vSource).write("final.md", vFinal).write("a.md", vMaterial).write("b.md", vSourceB)
+	chdir(f)
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--material", "a.md", "--material", "b.md", "--run-id", "m1", "--state-dir", "sm")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--material", "b.md", "--material", "a.md", "--run-id", "m2", "--state-dir", "sm")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "b1", "--state-dir", "sb")
+	edit(f, "sb/runs/b1/attempt-1.diff.json", map[string]any{"set": []any{set(true, "fail_on_meaning_risk_count")}})
+	edit(f, firstRecord("sb", "b1"), map[string]any{"set": []any{set(true, "checks", 1, "summary", "fail_on_meaning_risk_count")}, "rehash": true, "redigest": true})
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "c1", "--state-dir", "sc")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "c2", "--state-dir", "sc")
+	redigest(f, firstRecord("sc", "c2"), set("zzzz", "created_at"))
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "d1", "--state-dir", "sd")
+	redigest(f, firstRecord("sd", "d1"), set("./runs/d1/attempt-1.diff.json", "checks", 1, "report"), set(99, "checks", 1, "summary", "candidate_count"))
+	snapshot(f)
+	for _, state := range []string{"sm", "sb", "sc", "sd"} {
+		verifyBoth(f, "--final", "final.md", "--state-dir", state)
+	}
+	return f.done()
+}
+
+// verifyHugeAttemptCase は回の番号が int64 に収まらない記録: --run-id の最大の回・最終稿の索引が指す回・あとの回で別の本文を検査した回。
+func verifyHugeAttemptCase() VisCase {
+	const huge = "99999999999999999999"
+	f := newFixtureCase("verify-huge-attempt")
+	f.write("src.md", vSource).write("final.md", vFinal)
+	chdir(f)
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "p1", "--state-dir", "sp")
+	copyFile(f, firstRecord("sp", "p1"), "sp/runs/p1/attempt-"+huge+".json")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "q1", "--state-dir", "sq")
+	copyFile(f, firstRecord("sq", "q1"), "sq/runs/q1/attempt-"+huge+".json")
+	f.write("sq/index/by-final/"+sha256Hex(vFinal)+"/q1."+huge, "")
+	// 2 回目 (別の本文) の記録を、int64 に収まらない回の名前へ移す
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "n1", "--state-dir", "sn")
+	f.write("final.md", vFinal2)
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "n1", "--state-dir", "sn")
+	copyFile(f, "sn/runs/n1/attempt-2.json", "sn/runs/n1/attempt-"+huge+".json")
+	f.op(Op{Kind: "remove", Path: f.dir("sn/runs/n1/attempt-2.json")})
+	f.write("final.md", vFinal)
+	snapshotTies(f, []string{"sq/runs/q1/attempt-*.json"})
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sp", "--run-id", "p1")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sp")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sq")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sn")
 	return f.done()
 }

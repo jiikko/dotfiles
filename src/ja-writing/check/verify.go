@@ -1,7 +1,9 @@
 package check
 
 import (
+	"cmp"
 	"errors"
+	"math/big"
 	"os"
 	"slices"
 	"sort"
@@ -79,36 +81,62 @@ func listNames(path string) ([]string, bool) {
 	return names, true
 }
 
+// attemptNo は回の番号 (先頭の 0 を落とした十進の字。0 は "0")。本家は名前の数字を int で読むので、int64 に収まらない番号も
+// 大きさで並べ、記録の attempt と値で比べる (int にすると、その名前を読み飛ばして本家と別の記録を選ぶ)。
+type attemptNo string
+
+func parseAttemptNo(digits string) attemptNo {
+	if trimmed := strings.TrimLeft(digits, "0"); trimmed != "" {
+		return attemptNo(trimmed)
+	}
+	return "0"
+}
+
+// cmp は大きさの比べ (-1・0・1)。
+func (a attemptNo) cmp(b attemptNo) int {
+	if len(a) != len(b) {
+		return cmp.Compare(len(a), len(b))
+	}
+	return strings.Compare(string(a), string(b))
+}
+
+// value は JSON の値 (int64 に収まれば int64、収まらなければ *big.Int。pyjson が読む整数と同じ形)。
+func (a attemptNo) value() pyjson.Value {
+	if n, err := strconv.ParseInt(string(a), 10, 64); err == nil {
+		return n
+	}
+	n, _ := new(big.Int).SetString(string(a), 10)
+	return n
+}
+
 // attemptNumbers は _attempt_numbers (実行のフォルダの attempt-<n>.json の n。昇順)。
-func attemptNumbers(runDir string) []int {
+func attemptNumbers(runDir string) []attemptNo {
 	names, _ := listNames(runDir)
-	var numbers []int
+	var numbers []attemptNo
 	for _, name := range names {
 		if g := groups(attemptFilePattern, name); g != nil {
-			if n, err := strconv.Atoi(g[1]); err == nil {
-				numbers = append(numbers, n)
-			}
+			numbers = append(numbers, parseAttemptNo(g[1]))
 		}
 	}
-	sort.Ints(numbers)
+	slices.SortFunc(numbers, attemptNo.cmp)
 	return numbers
 }
 
-func attemptFile(state, runID string, n int) string {
-	return state + "/runs/" + runID + "/attempt-" + strconv.Itoa(n) + ".json"
+func attemptFile(state, runID string, n attemptNo) string {
+	return state + "/runs/" + runID + "/attempt-" + string(n) + ".json"
 }
 
 // found は _Found (見つけた記録 1 つ。実行 ID と回はファイルの場所から取る)。
 type found struct {
 	runID   string
-	attempt int
+	attempt attemptNo
 	path    string
 	status  RecordStatus
 	record  *pyjson.Object
 	made    int64
 }
 
-func newFound(state, runID string, attempt int) *found {
+func newFound(state, runID string, attempt attemptNo) *found {
 	f := &found{runID: runID, attempt: attempt, path: attemptFile(state, runID, attempt)}
 	f.status, f.record = must2(ReadRecordStatus(f.path))
 	if info, err := os.Stat(f.path); err == nil {
@@ -151,7 +179,7 @@ func (f *found) less(o *found) bool {
 	if f.made != o.made {
 		return f.made < o.made
 	}
-	return f.attempt < o.attempt
+	return f.attempt.cmp(o.attempt) < 0
 }
 
 // final は記録の inputs.final (dict でなければ nil)。
@@ -188,11 +216,7 @@ func indexFound(state, kind, key string) []*found {
 		if g == nil || !runIDPattern.MustMatchAt0(g[1]) {
 			continue
 		}
-		n, err := strconv.Atoi(g[2])
-		if err != nil {
-			continue
-		}
-		if item := newFound(state, g[1], n); item.status != RecordMissing {
+		if item := newFound(state, g[1], parseAttemptNo(g[2])); item.status != RecordMissing {
 			out = append(out, item)
 		}
 	}
@@ -209,7 +233,7 @@ func byPathEntries(state, key string) []found {
 	type entry struct {
 		stamp string
 		made  int64
-		n     int
+		n     attemptNo
 		runID string
 	}
 	var entries []entry
@@ -222,11 +246,7 @@ func byPathEntries(state, key string) []found {
 		if err != nil {
 			continue
 		}
-		n, err := strconv.Atoi(g[3])
-		if err != nil {
-			continue
-		}
-		entries = append(entries, entry{g[1], info.ModTime().UnixNano(), n, g[2]})
+		entries = append(entries, entry{g[1], info.ModTime().UnixNano(), parseAttemptNo(g[3]), g[2]})
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
@@ -236,7 +256,7 @@ func byPathEntries(state, key string) []found {
 		case a.made != b.made:
 			return a.made > b.made
 		case a.n != b.n:
-			return a.n > b.n
+			return a.n.cmp(b.n) > 0
 		case a.runID != b.runID:
 			return a.runID > b.runID
 		}
@@ -645,20 +665,20 @@ func find(state string, final *Target, runID *string, source *Target) findResult
 func maxAttempt(items []*found) *found {
 	best := items[0]
 	for _, item := range items[1:] {
-		if item.attempt > best.attempt {
+		if item.attempt.cmp(best.attempt) > 0 {
 			best = item
 		}
 	}
 	return best
 }
 
-// newerAttempt は _newer_attempt (見つけた記録より後の回で、別の本文を検査した回の番号。なければ 0)。
-func newerAttempt(state string, f *found, record *pyjson.Object) int {
+// newerAttempt は _newer_attempt (見つけた記録より後の回で、別の本文を検査した回の番号。なければ "")。
+func newerAttempt(state string, f *found, record *pyjson.Object) attemptNo {
 	mine := pyops.Get(pyops.Index(pyops.Index(record, "inputs"), "final"), "text_sha256")
 	numbers := attemptNumbers(state + "/runs/" + f.runID)
 	for i := len(numbers) - 1; i >= 0; i-- {
 		number := numbers[i]
-		if number <= f.attempt {
+		if number.cmp(f.attempt) <= 0 {
 			break
 		}
 		later := must(ReadRecord(attemptFile(state, f.runID, number)))
@@ -672,7 +692,7 @@ func newerAttempt(state string, f *found, record *pyjson.Object) int {
 			return number
 		}
 	}
-	return 0
+	return ""
 }
 
 // recordedAsInput は _recorded_as_input (--final に渡した本文が、記録では原文か資料として使われているか)。
@@ -716,11 +736,11 @@ func recordedAsInput(state string, final *Target) bool {
 }
 
 // previousTreated は _previous_treated (同じ実行の attempt より前の読める最新の記録が、原文とみなした資料)。verify は回を必ず渡す (本家の attempt が None の枝は run が使う)。
-func previousTreated(state, runID string, attempt int) *pyjson.Object {
+func previousTreated(state, runID string, attempt attemptNo) *pyjson.Object {
 	numbers := attemptNumbers(state + "/runs/" + runID)
 	for i := len(numbers) - 1; i >= 0; i-- {
 		number := numbers[i]
-		if number >= attempt {
+		if number.cmp(attempt) >= 0 {
 			continue
 		}
 		record := must(ReadRecord(attemptFile(state, runID, number)))
@@ -777,7 +797,7 @@ func snapshotText(state string, item pyjson.Value) *string {
 }
 
 // treatedAgain は _treated_again (新規作成の記録の写しから、原文とみなす資料の番号と決め方を求め直す)。index は 1 から (0 は None)。
-func treatedAgain(state string, record *pyjson.Object, runID string, attempt int) (known bool, index int, by string) {
+func treatedAgain(state string, record *pyjson.Object, runID string, attempt attemptNo) (known bool, index int, by string) {
 	if pyops.Index(record, "mode") != "compose" {
 		return false, 0, ""
 	}
@@ -924,8 +944,8 @@ func verifyRecord(state string, f *found, final *Target, source *Target, since *
 		fail("invalid_record", "record_shape", "キーか型が違います: "+strings.Join(wrong, ", "))
 		return verifyState{name: "invalid_record"}, problems, "skipped", false
 	}
-	if !pyops.Equal(pyops.Index(record, "run_id"), f.runID) || !pyops.Equal(pyops.Index(record, "attempt"), int64(f.attempt)) {
-		fail("invalid_record", "record_location", "run_id と attempt が記録のファイルの場所（"+f.runID+"、"+strconv.Itoa(f.attempt)+"回目）と合いません")
+	if !pyops.Equal(pyops.Index(record, "run_id"), f.runID) || !pyops.Equal(pyops.Index(record, "attempt"), f.attempt.value()) {
+		fail("invalid_record", "record_location", "run_id と attempt が記録のファイルの場所（"+f.runID+"、"+string(f.attempt)+"回目）と合いません")
 	}
 	if !pyops.Equal(pyops.Index(record, "record_digest"), must(RecordDigest(record))) {
 		fail("invalid_record", "record_digest", "record_digest が記録の中身と合いません")
@@ -1018,7 +1038,7 @@ func verifyRecord(state string, f *found, final *Target, source *Target, since *
 			states = append(states, verifyState{name: "incomplete", names: missing})
 		}
 	}
-	runPart := "runs/" + f.runID + "/attempt-" + strconv.Itoa(f.attempt)
+	runPart := "runs/" + f.runID + "/attempt-" + string(f.attempt)
 	inputs := pyops.Index(record, "inputs")
 	type labeled struct {
 		label string
@@ -1075,8 +1095,8 @@ func verifyRecord(state string, f *found, final *Target, source *Target, since *
 		fail("", "skill_changed", "SKILL.md のハッシュが記録と違います")
 	}
 	if trusted {
-		if newer := newerAttempt(state, f, record); newer != 0 {
-			fail("", "newer_attempt_differs", strconv.Itoa(newer)+"回目で別の本文を検査しています")
+		if newer := newerAttempt(state, f, record); newer != "" {
+			fail("", "newer_attempt_differs", string(newer)+"回目で別の本文を検査しています")
 		}
 	}
 	if replay && len(states) == 0 {

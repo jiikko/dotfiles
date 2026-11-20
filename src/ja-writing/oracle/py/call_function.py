@@ -43,9 +43,11 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
     作業フォルダの下の記録の最終稿のパスと標準入力の鍵から、by-path の鍵と _place の文字列の対応を覚える (op snapshot が使う)。
   - op pyedit は path の JSON のファイルを value の指示 (JSON) で書き換える: set ([鍵の道, 値] の並び)・delete (鍵の道の並び)・
     rehash (記録の checks のレポートと本文の SHA-256 をファイルから求め直す)・redigest (record_digest を求め直す)・raw ([元, 後] の
-    字の置き換え。JSON として読まずに書き換える)。
+    字の置き換え。JSON として読まずに書き換える)・copy_from (そのパスのファイルを、バイト列のまま path に写す。ほかの指示とは併せない)。
   - op snapshot は path から下の木を返す: {"entries": [[相対パス, 種類, mode, mtime_ns, 中身の鍵か先, 付け足し]...], "blobs": {鍵: zlib で縮めた中身の base64}}。
-    by-path の鍵のうち作業フォルダのパスから作ったものは、印にした _place の文字列の SHA-256 を名前にする。返す前に、通常のファイルの mtime を、元の順を保った決まった値 (2026-01-01 から 1 ミリ秒ずつ) にそろえる。中身の作業フォルダは
+    by-path の鍵のうち作業フォルダのパスから作ったものは、印にした _place の文字列の SHA-256 を名前にする。返す前に、通常のファイルの mtime を、元の順を保った決まった値 (2026-01-01 から 1 ミリ秒ずつ) にそろえる。
+    value が空でなければ {"ties": [[fnmatch のパターン...]...]} で、組ごとに、どれかのパターンに当たる通常のファイル (path からの相対パス。by-path の鍵は元の名前) の mtime を
+    組の中で最も早い値にそろえる (mtime が 1 秒単位のファイルシステムで同じ秒に書いた場面。当たるファイルが無いパターンは止める)。中身の作業フォルダは
     <<ROOT>> にし、記録の中の、作業フォルダのパスを中身に持つファイル (語の一覧のパスを書いたレポート) の SHA-256 は
     <<SHA:そのファイルの相対パス>> にし、記録の record_digest は、中身と合っていたものを "sha256:<<DIGEST>>"、合っていなかったものを "sha256:" と 0 の 64 字にする。
     並びは相対パスの順。付け足しは、記録のファイルでは record_digest が中身と合っていたか、index/by-path/ の下のフォルダでは鍵の元の
@@ -53,6 +55,7 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 """
 import argparse
 import base64
+import fnmatch
 import io
 import hashlib
 import json
@@ -292,6 +295,9 @@ def remember_places(module):
 def edit_json(path, spec):
     """op pyedit (driver の冒頭)。"""
     module = check_module()
+    if "copy_from" in spec:
+        shutil.copyfile(resolve(spec["copy_from"]), path)
+        return
     if "raw" in spec:
         with open(path, "rb") as handle:
             data = handle.read().decode("utf-8")
@@ -333,7 +339,7 @@ def edit_json(path, spec):
         handle.write((json.dumps(value, ensure_ascii=True, indent=1) + "\n").encode("ascii"))
 
 
-def snapshot(top):
+def snapshot(top, ties):
     """op snapshot (driver の冒頭)。"""
     module = check_module()
     files = []
@@ -344,8 +350,20 @@ def snapshot(top):
             info = os.lstat(path)
             if stat.S_ISREG(info.st_mode):
                 files.append((info.st_mtime_ns, path))
+    stamps = {}
     for rank, (_, path) in enumerate(sorted(files)):
-        stamp = SNAPSHOT_BASE_NS + rank * 1000000
+        stamps[path] = SNAPSHOT_BASE_NS + rank * 1000000
+    for group in ties:
+        members = []
+        for pattern in group:
+            hit = [path for _, path in files if fnmatch.fnmatchcase(os.path.relpath(path, top), pattern)]
+            if not hit:
+                raise ValueError("snapshot の ties のパターン %s に当たるファイルがありません" % pattern)
+            members.extend(hit)
+        first = min(stamps[path] for path in members)
+        for path in members:
+            stamps[path] = first
+    for path, stamp in stamps.items():
         os.utime(path, ns=(stamp, stamp), follow_symlinks=False)
     seen = snapshot_blobs.setdefault(top, set())
     entries, blobs, pending = [], {}, []
@@ -501,7 +519,7 @@ def run_op(op):
     elif kind == "pyedit":
         edit_json(path, json.loads(op["value"]))
     elif kind == "snapshot":
-        return snapshot(path)
+        return snapshot(path, json.loads(op["value"])["ties"] if op.get("value") else [])
     else:
         raise ValueError("未知の op: " + kind)
     return None

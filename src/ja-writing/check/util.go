@@ -143,11 +143,12 @@ func RecordDigest(record *pyjson.Object) (string, error) {
 	return "sha256:" + SHA256([]byte(text)), nil
 }
 
-// Status は _status_line の引数。値が nil のものは行に出さない (Expected 以降)。RunID・Final が空と Attempt が 0 のときは「-」を出す。
+// Status は _status_line の引数。値が nil のものは行に出さない (Expected 以降)。RunID・Final・Attempt が空と Attempt が "0" のときは「-」を出す。
+// Attempt は回の番号の十進の字 (本家は int で、int64 に収まらない番号もある)。
 type Status struct {
 	State, Via  string
 	RunID       string
-	Attempt     int
+	Attempt     string
 	Final       string
 	Expected    *string
 	Mode        *string
@@ -169,8 +170,8 @@ func StatusLine(s Status) string {
 		return v
 	}
 	attempt := "-"
-	if s.Attempt != 0 {
-		attempt = strconv.Itoa(s.Attempt)
+	if s.Attempt != "" && s.Attempt != "0" {
+		attempt = s.Attempt
 	}
 	var b strings.Builder
 	b.WriteString("yomiyasu-check: " + s.State)

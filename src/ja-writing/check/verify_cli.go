@@ -362,7 +362,7 @@ func verifyOutcome(state string, final *Target, source *Target, a verifyArgs, si
 	}
 	status := Status{State: o.status, Via: "verify", Final: final.Token(), Expected: expected, Replay: replayField}
 	if o.found != nil {
-		status.RunID, status.Attempt = o.found.runID, o.found.attempt
+		status.RunID, status.Attempt = o.found.runID, string(o.found.attempt)
 	}
 	if o.record != nil {
 		mode := pyops.Str(pyops.Index(o.record, "mode"))
@@ -473,7 +473,7 @@ func (o *verifyResult) json(final *Target) *pyjson.Object {
 	shown := o.record != nil
 	var runID, attempt, recordPath, recordedSHA, mode, context, required, checks pyjson.Value
 	if o.found != nil {
-		runID, attempt, recordPath = o.found.runID, int64(o.found.attempt), o.found.path
+		runID, attempt, recordPath = o.found.runID, o.found.attempt.value(), o.found.path
 		if record := o.found.final(); record != nil {
 			if s, ok := pyops.Get(record, "sha256").(string); ok {
 				recordedSHA = s
