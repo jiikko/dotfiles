@@ -89,7 +89,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。→ 済んだ (2026-11-20。残り 6 本 samefile-no-inode・samefile-skip-path-compare・samefile-stat-error-true・home-unset-skip・home-unset-no-set-check・home-unset-no-passwd を `bin/mutate-verify-list` で当て、6 本とも rc 0 = 想定どおり red。P2-2・P2-3 の「壊した形は未確認」もこれで確かめた)
   2. ~~2 回目の敵対的レビュー~~ 済んだ (2026-11-20。下の「1 本目の敵対的レビュー (2 回目)」)。以下は当てたときの指示の写し: 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
   3. そのレビューの指摘を直す: P2・P3 とも直した (2026-11-20)
-  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。2 本目の残りと 3 本目の verify (`--replay` を除く) も 2026-11-20 の続きで master に入れた (下の「2026-11-20 の続き」)。次は 4 本目 (run)
+  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。2 本目の残りと 3 本目の verify (`--replay` を除く) も 2026-11-20 の続きで master に入れた (下の「2026-11-20 の続き」)。4 本目の前半 (run) も master に入れた (同じ節)。次は 4 本目の後半 (`verify --replay` と `--since`)
 - **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
   - 着手前の調査の地図: `tmp/yomiyasu-gap-2026-11-12/check-survey/map-check.md`
@@ -152,6 +152,48 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   - 4 本目で足すもの: 本家の run / start / end は回の番号に +1 する (`numbers[-1] + 1`・`_reserve_attempt`。yomiyasu_check.py 1411・1416・1426・2796)。`attemptNo` に big の加算を足す (使わないうちは unused が止めるので足していない)。逆向き (Go が書いた記録を本家の verify が読む) の記録も 4 本目で作る
   - 揃わない範囲 (README): `-h` の折り返しを幅 80 に固定・内部エラーの例外の型と文とトレースバック
 - 検査: 各 push の前の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じ)
+- **4 本目の前半 (4a = run。master に入れた)**: `check/children.go`・`run_link.go`・`run_checks.go`・`run_output.go`・`run_save.go`・`run_cli.go` と、新しい package `entry` (subcommand の表とプロセスの入口 `entry.Run`。`main.go` はそれを呼ぶだけ)。commit は「check の run を写す (子の lint と diff を締め切りで kill・資料の照らし・出力・保存・シグナル)」から「止めた後も残る verify の読みが、名前付きの結果 err を return と競って書き換えない」までの 20 本
+  - 決めたこと: 子の実行ファイル・時刻・経過の時計・乱数・一時フォルダの置き場を `check.Runtime` にした (`MainWith`)。テストの子は、本番と同じ `entry.Run` を通るテストのバイナリにした。回の番号の +1 は `attemptNo.next` (big の加算)
+  - 記録 `check-run.json` (15 case・489 呼び出し)。出力と、Go が書いた状態フォルダの木を本家の木と比べる (python.version と implementation の字だけ印にする)。子の代わりの shell script (op `pyexe`) で、時間切れ・終了コード・シグナル・JSON の形の誤り・起動できない形などを作る。TMPDIR が使えない形は case `run-tempdir`
+  - 逆向き: Go が書いた形の木 (goize) に本家の verify を当てた 18 呼び出しを記録し、Go の verify の出力と比べる
+  - 本家の run の関数 (docstring を除く 1,406 文) のうち 1,272 文を通る。通らない文は、シグナルと例外の枝 (Go の単体のテストで見る)・armed/ の予約 (5 本目)・競合でしか起きない名前の衝突・入力を作れなかった枝
+  - 敵対的レビューは 4 周当てた (opus。証拠は `tmp/1077-cont-1120/p4art*/`、直しの跡とわざと壊した形の表は `p4afix*/mutations.md`)
+    - 1 周目: 差分実行を約 120 case 当てた。見つかったのは次の 3 件と P3 3 件
+      - Kill を SIGTERM に変えても全テストが緑だった (テストの子は SIGTERM で死ぬが、本番の子は SIGTERM を捨てていた)
+      - `--stdin` を読む間のシグナルで止まらない
+      - TMPDIR が無い・ファイルのとき、`--no-record` の run が rc 3 になる (本家は rc 0)
+    - 1 周目の直し: テストの子を `entry.Run` に揃えた。シグナルの受け方は subcommand ごとに本家に揃えた
+      - lint・diff・hook はシグナルを受けず、そのシグナルで終わる。check は SIGINT・SIGTERM・SIGHUP を受けて 128+n で終わる (起動時に無視されていたものは受けない)。lint・diff がシグナルを捨てていたのは 1073 の骨組みからそのままで、意図した決定の記録は無かった
+      - `tempfile.gettempdir` の候補の選び方を写した
+      - 環境変数を Env から読む。Env.Cwd がプロセスの cwd と違えば rc 3 で止める (1078 の hook は run・verify を CLI として呼ばないので、この守りは 1078 を壊さない。2 周目で確かめた)
+      - Ground の panic で子を止めてから流し直す。一時フォルダの片付けで chflags を外す
+    - 2 周目: 見つかったのは次の 2 件と P3 3 件
+      - 書き手の居ない FIFO を `--material` / `--final` に渡すと、シグナルで止まらず、状態フォルダを書くか verify の結果を出してから 143 になる
+      - 無視して起動されたシグナルを受けない分岐を外しても緑だった
+    - 2 周目の直し: 入力と記録を開く・読む所を 1 つの口 `untilStopped` に寄せた。Env の環境変数を 1 つの並び (Environ) にして、空の値と「無い」を分けた。片付けを本家の `rmtree(onexc=again)` の写しにした
+    - 3 周目: 見つかったのは次の 2 件と P3 5 件
+      - 2 回目の直しで「テストから作れない」として、消しても緑のまま受け入れた形 (verify の出力の直前の確かめを消す) が、読み終わった瞬間に Canceled を返す ctx を使えば作れた
+      - 読み終わった直後に止められると、誤りの文を出してから止まる
+    - 3 周目の直し: `untilStopped` が読み終わった後にも ctx を見て、止められていれば結果を捨てる。子に渡す環境を「同じ名前は先のもの」で畳んだ。片付けの途中で消えた中身と、無い根を本家に揃えた (python3.15 で実測)。本物の check を動かすテストの環境を、プロセスから継がずに組んだ (直す前は、同じ退行で repo の `.yomiyasu` に実際に書いた)
+    - 4 周目: P1 は無かった。P3 が 2 件
+      - 止めた後に残る読みの goroutine が、verify の名前付きの結果 err を return と競って書く (`-race` で DATA RACE) → 閉包を局所の変数に書く形に直した。直した後は 3 回とも race 無し
+      - 一時フォルダの根を symlink に差し替えられた形の本家との差 → README に書いた
+    - どの周も、直したものをわざと壊して red を確かめた。緑のまま残したのは、Kill を SIGTERM に変える形だけ (lint・diff がシグナルで終わるようになり、本番の経路では Kill と区別できない。等価)
+  - 揃わない範囲 (README に書いた)
+    - python の欄
+    - `armed/` がある run は rc 3
+    - シグナルを受けて止まる場所。保存の途中では止まらない
+    - 本家の lint・diff が SIGINT で出すトレースバック
+    - 起動時に無視された SIGTERM
+    - 片付けで symlink に差し替えられた形 (同じ利用者と root しか差し替えられず、守る相手がいないため揃えない。ほかの利用者が一時フォルダに書ける形になったら揃える)
+  - 確かめていないこと
+    - 負荷が高いときの時間切れ
+    - 実行中に実行ファイルが入れ替わったとき
+    - `ground` が例外になる本物の入力
+    - 「シグナルで本家は何も出さない」は本家の構造を読んだもので、記録はしていない (シグナルの時点を driver で決められない)
+    - `--final` の FIFO は run では rc 2 で揃う。verify では untilStopped を通る
+  - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じ。`issues/` の hook の一覧に `test_issue_links_awk` が無い)
+  - 4b に回したもの: `verify --replay` と `--since` の動かし直し
 
 ### 1 本目の敵対的レビュー (2 回目。2026-11-20。opus)
 
