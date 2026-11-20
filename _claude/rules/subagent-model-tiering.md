@@ -54,7 +54,7 @@
 
 ## 自作の検査・ゲートの敵対的レビューは上位モデルに投げる
 
-[`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) が要求する
+`adversarial-review-own-safeguards.md` が要求する
 最終ゲートは、**sonnet では届かないことがある** (同じ変更に sonnet 2 本は 2 件、opus 2 本は 13 件 + 8 件。
 「この検査は退行を観測できるか」の反実仮想は opus にしか出なかった)。
 
@@ -93,7 +93,7 @@ sonnet が弱いのは「実装は正しいが、**検査対象の集合が想�
 - 編集系タスクなら `git diff` を main agent が直接読む。報告文だけで判断しない
 - 🚨 **検閲の対象は成果物だけではない。「そのエージェントがマシンに残したもの」も見る**
   (残骸プロセス・一時ファイル・worktree)。作法の正本は
-  [`parallel-write-agents-need-worktree-isolation.md`](parallel-write-agents-need-worktree-isolation.md)
+  `parallel-write-agents-need-worktree-isolation.md`
   の後始末の項
 
 ## なぜ
@@ -107,4 +107,4 @@ sonnet が弱いのは「実装は正しいが、**検査対象の集合が想�
 
 ## 関連
 
-- [`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md) — 視点を増やす分業。本ルールはコスト階層の分業
+- `escalate-to-forge-after-failed-tries.md` — 視点を増やす分業。本ルールはコスト階層の分業

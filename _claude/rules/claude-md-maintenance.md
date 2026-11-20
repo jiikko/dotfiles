@@ -70,4 +70,4 @@
 
 ## 関連
 
-- [`claude-md-layer-prompt.md`](claude-md-layer-prompt.md) — 新規作成の問いかけ
+- `claude-md-layer-prompt.md` — 新規作成の問いかけ

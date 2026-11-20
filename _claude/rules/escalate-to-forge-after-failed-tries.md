@@ -4,7 +4,7 @@
 
 - **自分の hypothesis で 1-2 回試行して効果がなかったバグは、3 回目を試す前に必ず `/forge` を Maximum モード指定で起動する**（forge v2 はモードを明示すれば Phase -1 のモード選択確認を省略する）
 - 「もう少しで分かりそう」と粘って試行を重ねるのは禁止
-- 「治っていない」という症状報告を受けたら、まず [`instrument-before-second-fix.md`](instrument-before-second-fix.md) に従い観測を増やし、観測しても真因が不明なとき forge へ (初回試行直後に blind で forge 直行ではなく、観測データを手土産にする)
+- 「治っていない」という症状報告を受けたら、まず `instrument-before-second-fix.md` に従い観測を増やし、観測しても真因が不明なとき forge へ (初回試行直後に blind で forge 直行ではなく、観測データを手土産にする)
 - forge の結論が自分の仮説と違うなら forge を優先する (固執しない)。未検証のまま docstring に「構造的に発生不可能」のような断定を書かない
 
 ## なぜ
@@ -21,7 +21,7 @@
 - ユーザーが「治っていない」と明示 (build キャッシュ問題でない限り)
 - 自分の仮説と症状の説明が部分的に矛盾している
 - framework 内部挙動が絡む (AttributeGraph cycle / actor isolation / KVO race 等)
-- platform-specific bug で他 platform の参照実装を見ていない ([`check-other-platform-reference.md`](check-other-platform-reference.md))
+- platform-specific bug で他 platform の参照実装を見ていない (`check-other-platform-reference.md`)
 - 3 回目の hypothesis を考え始めた瞬間
 
 ## forge 起動時のテンプレ

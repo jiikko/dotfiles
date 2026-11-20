@@ -93,4 +93,4 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
 
 ## 関連
 
-- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 自分から見えない別セッションが同じ checkout を触る場合の規律は、あちらの「復元の作法」(既定は worktree)
+- `mutation-verify-new-tests.md` — 自分から見えない別セッションが同じ checkout を触る場合の規律は、あちらの「復元の作法」(既定は worktree)

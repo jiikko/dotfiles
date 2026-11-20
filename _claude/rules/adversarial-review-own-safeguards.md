@@ -50,5 +50,5 @@
 
 ## 関連
 
-- [`list-masked-failure-modes-before-removing-guard.md`](list-masked-failure-modes-before-removing-guard.md) — 姉妹ルール。本ルールは安全機構を作ったとき、あちらは外したとき
-- [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 変異検証は本ルールの代わりにならない (変異は自分が想定した不変条件しか試さない)
+- `list-masked-failure-modes-before-removing-guard.md` — 姉妹ルール。本ルールは安全機構を作ったとき、あちらは外したとき
+- `mutation-verify-new-tests.md` — 変異検証は本ルールの代わりにならない (変異は自分が想定した不変条件しか試さない)

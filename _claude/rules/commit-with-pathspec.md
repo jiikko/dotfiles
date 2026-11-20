@@ -38,7 +38,7 @@
   「Already up to date」「Everything up-to-date」が返るだけで master は 1 mm も動かない。本体の checkout / umbrella への操作は
   **`git -C <本体の絶対パス>`** で対象を明示し、直後に `git -C <本体> log -1 --oneline` で先端が動いたことを見る
 - **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
-  status になり、上の rc=1 が消える ([`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の系)
+  status になり、上の rc=1 が消える (`verify-execution-not-just-exit-code.md` の系)
 
 ## pathspec で「生成物」を漏らすと壊れたコミットになる
 

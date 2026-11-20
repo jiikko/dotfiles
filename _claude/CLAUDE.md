@@ -28,12 +28,12 @@
   worktree 内で `git fetch` + rebase して検証をやり直し、push し直す
 - **worktree を残さない**。push の成功を確認してから `git worktree remove` する (`&&` で繋ぐ。push が弾かれたまま消すと未 push の commit を失う)。
   本体の checkout が同じブランチなら、そちらも `git -C <本体> pull --rebase` して追い付かせる
-- 共有 working tree に留まるなら [`commit-with-pathspec.md`](rules/commit-with-pathspec.md) に従う。書き込み権限のエージェントを 2 体以上並行させるときは [`parallel-write-agents-need-worktree-isolation.md`](rules/parallel-write-agents-need-worktree-isolation.md)
+- 共有 working tree に留まるなら `commit-with-pathspec.md` に従う。書き込み権限のエージェントを 2 体以上並行させるときは `parallel-write-agents-need-worktree-isolation.md`
 
 ## 他セッションからの問い合わせに答えるとき
 
 - **調べないと答えられない問い合わせは、背景のサブエージェント (sonnet) に調べさせて返信の下書きを作らせる**。自分の会話に残るのを「受信 / 委譲 / 返信」の数行に抑え、作業の文脈を問い合わせで埋めない
-  - サブエージェントへの指示は「読み取りのみ・返信は 3 行以内の下書きで返す」。**送信は自分で行う** (下書きを検閲してから `SendMessage`。[`subagent-model-tiering.md`](rules/subagent-model-tiering.md))
+  - サブエージェントへの指示は「読み取りのみ・返信は 3 行以内の下書きで返す」。**送信は自分で行う** (下書きを検閲してから `SendMessage`。`subagent-model-tiering.md`)
   - 手元の記憶だけで答えられる 1〜2 行の質問 (今どの issue / どのファイルを触っているか) は委譲せずその場で返す
 
 ## 応答・成果物の長さとスコープ
@@ -55,10 +55,10 @@
   - **確認を求めるときは、選択肢ごとに「何が起きるか」と「今の挙動から失われるもの」を 1 行ずつ書く**。新しい挙動だけを並べると、暗黙に消える挙動を承認者が見落とす。**消す・止める対象は種類 (ファイル / ディレクトリ / プロセス) を分けて列挙する**。「ファイルを消してよいか」の承認はディレクトリに及ばない。**使い心地が変わる選択 (同時に出す数・待ち・消えるまでの時間) では、失うものの文に、ユーザーが体験する場面を 1 つ添える** (「連打すると 2 回目の通知は前のが消えるまで出ない」)。仕組みの言葉だけでは伝わらない
     - **選択肢が今の実装の一部を置き換えるなら、その部分が今どう動くかを実装で確かめ、ファイル名とシンボル名を添えて 1 行で書く**。issue や前の報告の言い回しを引くだけにしない (案の名前が既にある機能と似ていると、承認者は「もうやっている」と読む)
     - **時間を置いて質問を出し直すときは、前に出した時点からの git log (issue と、選択肢が触る実装) を読んでから出す**。前の文面や compaction の要約は出した時点の状態しか持たず、その後に他のセッションが入れたもので前提が変わっている
-  - 例外は「コード変更時の自律改善」が義務付ける範囲だけ (境界は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md) の「自律改善との境界」表)。範囲外の気づきは「ぼやきポイント」へ
+  - 例外は「コード変更時の自律改善」が義務付ける範囲だけ (境界は `verify-design-intent-before-refactor.md` の「自律改善との境界」表)。範囲外の気づきは「ぼやきポイント」へ
 - **訂正のナレーションは重要なものだけ**。ユーザーの判断が変わる誤りは端的に訂正する。何も変わらない言い間違いは知らせずに直す (過去の誤りの列挙・自己批判はしない)
 - **自分の判断で自己再チェックの手順を足さない** (読み返しパス・確認用サブエージェント)。自発的な検証は外部事実の確認 (実コマンド・テスト・実出力・git state) に寄せる
-  - **既定のルールや明示起動した skill が定める検証・レビュー工程は省略しない** (「レビュー方針」の codex / 敵対的レビュー、[`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md) の refactor 提案の外部レビュー、forge エスカレーション、forge / cross-review / review-loop の各 Phase)。これらはユーザーが選んだ工程であり、自己再チェックではない
+  - **既定のルールや明示起動した skill が定める検証・レビュー工程は省略しない** (「レビュー方針」の codex / 敵対的レビュー、`verify-design-intent-before-refactor.md` の refactor 提案の外部レビュー、forge エスカレーション、forge / cross-review / review-loop の各 Phase)。これらはユーザーが選んだ工程であり、自己再チェックではない
 
 ## 一時ファイルの配置
 
@@ -88,11 +88,11 @@
 
 - **`issues/` (または `issue/`) を持つ repo では、SessionStart hook (`_claude/hooks/issue-rules-inject.sh`) が issue 運用規約を注入する。この CLAUDE.md と同じ拘束力で従う**。正本は `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md`。issues/ を持たない repo には適用しない
 - issues/ がある repo なのに注入が見当たらないときは、issue を触る前に正本を Read する
-- claim の手順と issue の反証レビューは `issue-rules.d/` の rule が正本で、同じ hook が 1 本ずつ注入する。検証レポートを issue へ移す手順 ([`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)) は `paths:` で tmp の下に触れたときにどの repo でも読み込まれ、issues/ のある repo では同じ hook が起動時にも注入する。注入が見当たらなければ `~/dotfiles/_claude/issue-rules.d/` と `~/dotfiles/_claude/rules/move-report-conclusions-to-issues.md` を Read する
+- claim の手順と issue の反証レビューは `issue-rules.d/` の rule が正本で、同じ hook が 1 本ずつ注入する。検証レポートを issue へ移す手順 (`move-report-conclusions-to-issues.md`) は `paths:` で tmp の下に触れたときにどの repo でも読み込まれ、issues/ のある repo では同じ hook が起動時にも注入する。注入が見当たらなければ `~/dotfiles/_claude/issue-rules.d/` と `~/dotfiles/_claude/rules/move-report-conclusions-to-issues.md` を Read する
 
 ## 設計方針
 
-- God クラス / God ファイルを避ける。変更したファイルにその予兆 (責務の混在など) を見つけたらリファクタを提案する。ただし**目的は複雑性を下げること**で、行数だけを理由にファイルを分けるのはリファクタではない (分割は複雑性を移動するだけ)。判断基準は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
+- God クラス / God ファイルを避ける。変更したファイルにその予兆 (責務の混在など) を見つけたらリファクタを提案する。ただし**目的は複雑性を下げること**で、行数だけを理由にファイルを分けるのはリファクタではない (分割は複雑性を移動するだけ)。判断基準は `verify-design-intent-before-refactor.md`
 - バグフィックス後、その project の linter のカスタムルール / preset で再発防止できないか検討し、提案する
 - 実装を変えた commit の後に Stop hook `rule-harvest-check` が止めたら、skill `rule-harvest` に従う (2026-11-20 ユーザー指示)
 - 設計・検証の rule (`rules/*.md`) は毎セッション全文読まれ、各 rule の冒頭に発動点がある。ここで索引し直さない。例外は `paths:` で条件ロードされるもの: zsh の precmd / preexec から関数を呼ぶなら `~/dotfiles/.claude/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles では zsh のファイルを Read すると読み込まれる。dotfiles 固有の規範の置き場は `~/dotfiles/docs/README.md` の「ここに置かないもの」)
@@ -145,7 +145,7 @@
   - 🚨 **「N 箇所すべてに対応した」と書くなら N を機械で数えてから** (`git show --stat` / `grep -c`)
   - 🚨 **「等価」「挙動は変わらない」も書く前に compiler / テストで確かめる**。自分の書き換えは疑われにくい
   - **compaction の要約にある事実 (回数・件数・どの道具が何を見つけたか) も主張**。issue・文書へ写す前に、一次の記録 (transcript・ログ) で裏を取る
-- 自分で新設した安全機構は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)、防御を外すときは [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)
+- 自分で新設した安全機構は `adversarial-review-own-safeguards.md`、防御を外すときは `list-masked-failure-modes-before-removing-guard.md`
 - **敵対レビューの出力こそ無検閲で採用しない**。発火条件が具体的で再現できたものだけ直し、再現しないものは記録、示せないものは「未確認リスク」として issue / 観測ポイントに落とす。推測で防御コードを足さない (作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」)
   - **「A より B が悪い」という指摘は、A が現状 (status quo) かを確かめてから採る**。レビュワーは理想と比べることがあり、事実が正しく再現できても、現状より悪化するとは限らない
   - **レビューの推奨を設計・要件へ取り込む前に、関係する skill / rule / issue と会話の既存ユーザー決定を照合する**。
@@ -163,7 +163,7 @@ Swift / Go の repo で関数・メソッド・型を探すとき。使い方は
 ## スキルファイル参照
 
 以下のキーワードに関連するタスクでは、対応する SKILL.md (`~/.claude/skills/<名前>/SKILL.md`) を作業前に Read する。
-agent はこの表に一部しか載っていないので、**agent を探すときは [`agents/README.md`](agents/README.md) を見る**
+agent はこの表に一部しか載っていないので、**agent を探すときは `agents/README.md` を見る**
 (乖離は `tests/claude/test_agents_index.sh` が検出する)。
 
 | キーワード | skill |

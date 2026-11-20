@@ -81,7 +81,7 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 測る対象が環境変数なら親から落とす (`env -u <名前>`)。矛盾する結果が出たら、まずハーネスの隔離を疑う。
 
 🚨 **共有 working tree で変異を当てない — 並行の相手は事前には見えない**
-([`parallel-write-agents-need-worktree-isolation.md`](parallel-write-agents-need-worktree-isolation.md) は
+(`parallel-write-agents-need-worktree-isolation.md` は
 自分が起こした並行だけを対象にする)。他人の変異が自分の pathspec commit に入る / 変異中のファイルを読んだ
 レビューが実在しないコードを前提にする。**既定は worktree**。共有 tree で当てるなら変異中は一切 commit しない。
 
@@ -131,4 +131,4 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 
 ## 関連
 
-- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — 変異を全部 red にした後でも、敵対レビューは想定の外側を出す。片方で閉じず両方通す
+- `adversarial-review-own-safeguards.md` — 変異を全部 red にした後でも、敵対レビューは想定の外側を出す。片方で閉じず両方通す

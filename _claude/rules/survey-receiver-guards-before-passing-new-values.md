@@ -121,4 +121,4 @@
 
 ## 関連
 
-- [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 仮説が外れた後の観測。本ルールは外れる前の予防
+- `instrument-before-second-fix.md` — 仮説が外れた後の観測。本ルールは外れる前の予防

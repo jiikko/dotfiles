@@ -41,4 +41,4 @@
 
 ## 関連
 
-- [`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) — 裏返し: 実装で強制済みの不変条件はコメントで再掲しない
+- `comment-no-restate-enforced.md` — 裏返し: 実装で強制済みの不変条件はコメントで再掲しない

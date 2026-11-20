@@ -68,9 +68,9 @@
 1. 外そうとしている防御の**呼ばれ方**を全部挙げる (grep)
 2. 各経路で「この防御が無かったら何が起きるか」を書く。**本来の目的以外**を必ず 1 つ以上探す
 3. 残る防御が単一障害点なら、**それを壊す変異を作って**、既存のテスト・CI が red になるか試す
-   ([`mutation-verify-new-tests.md`](mutation-verify-new-tests.md))
+   (`mutation-verify-new-tests.md`)
 4. red にならないなら、検出手段を先に入れてから外す
 
 ## 関連
 
-- [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — 姉妹ルール。あちらは安全機構を作ったとき、こちらは外したとき
+- `adversarial-review-own-safeguards.md` — 姉妹ルール。あちらは安全機構を作ったとき、こちらは外したとき

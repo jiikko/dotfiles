@@ -19,7 +19,7 @@
 - 拒否は **API の手前**に置く (呼び出しを受け取った時点で、対象がサンドボックス配下かを
   検査して**実行せずに失敗**させる)。事後の検証では、消えた後にしか気づけない
 - **段数を宣言したら段ごとに変異を当てる**
-  ([`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) §1.5)。
+  (`adversarial-review-own-safeguards.md` §1.5)。
   「3 段構え」と書いて守られていたのが 1 段だけ、が実際に起きている
 
 ## 検査と破壊的操作は隣接させる (TOCTOU の窓は「距離」そのもの)
@@ -30,7 +30,7 @@
 - 直し方: **エントリ単位で plan → exec → verify** に組み替える。窓は「1 件の処理時間」に縮む
 - 窓を 0 にはできないので、**実行の直前に取り直した値** (サイズ・(dev, ino)・mtime) で
   判定する。呼び出し元から渡された申告値を正当性の根拠にしない
-  ([`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) 0-B)
+  (`adversarial-review-own-safeguards.md` 0-B)
 
 ## なぜ
 

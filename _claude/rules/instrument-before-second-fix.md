@@ -85,7 +85,7 @@
 ## 観測後の判断
 
 - 真因を指したら → 観測駆動で 1 発修正
-- まだ不明 / framework 内部挙動 → [`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md) へ。観測データを手土産にすると専門家の収束が段違いに速い (観測なしで投げると専門家も同じ app 層ログから推測することになる)
+- まだ不明 / framework 内部挙動 → `escalate-to-forge-after-failed-tries.md` へ。観測データを手土産にすると専門家の収束が段違いに速い (観測なしで投げると専門家も同じ app 層ログから推測することになる)
 - 観測自体を仕込むのが重い (実機専用 / 再現困難) → ユーザーに具体的な観測手順を渡す (blind fix を投げ続けるより誠実)
 
 ## 「何度直しても直らない」と言われたら、まず**非対称**を特定する

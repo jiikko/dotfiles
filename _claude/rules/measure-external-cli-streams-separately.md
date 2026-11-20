@@ -20,7 +20,7 @@
   実行時の警告文・実挙動と食い違う。範囲を決めるなら**対象 0 件になる条件で 1 回実行して、
   その CLI 自身が何と言うか**を採る (それも stdout / stderr / rc を分けて採る)
 - **非対話で走らせる予定のコマンドは、`</dev/null` で 1 回試してプロンプトの有無を先に実測する** (確認を求める CLI は EOF で何もせず rc=0 を返す。
-  [`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の「確認を求める外部コマンド」節)
+  `verify-execution-not-just-exit-code.md` の「確認を求める外部コマンド」節)
 - **個別 CLI の現在仕様をこのルールに転記しない**。ルールが正本として持つのは**測定方法**だけで、
   「どの CLI が何をどこに出すか」は実装側のコメント (例: `src/glogx/cli_health.go`) か測定記録に
   一箇所だけ置く。両方に書くと CLI のバージョンが上がったときにルール側が気づかないうちに腐る
