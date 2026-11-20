@@ -89,7 +89,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。→ 済んだ (2026-11-20。残り 6 本 samefile-no-inode・samefile-skip-path-compare・samefile-stat-error-true・home-unset-skip・home-unset-no-set-check・home-unset-no-passwd を `bin/mutate-verify-list` で当て、6 本とも rc 0 = 想定どおり red。P2-2・P2-3 の「壊した形は未確認」もこれで確かめた)
   2. ~~2 回目の敵対的レビュー~~ 済んだ (2026-11-20。下の「1 本目の敵対的レビュー (2 回目)」)。以下は当てたときの指示の写し: 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
   3. そのレビューの指摘を直す: P2・P3 とも直した (2026-11-20)
-  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。次は 2 本目の `ground`・`fact_gaps` か 3 本目の verify
+  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。2 本目の残りと 3 本目の verify (`--replay` を除く) も 2026-11-20 の続きで master に入れた (下の「2026-11-20 の続き」)。次は 4 本目 (run)
 - **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
   - 着手前の調査の地図: `tmp/yomiyasu-gap-2026-11-12/check-survey/map-check.md`
@@ -140,6 +140,18 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
     - 揃わない範囲 (README): 閉じた標準入力 (`<&-`) は本家が rc 2、Go は空の入力 (lint・diff・check とも)。Go の runtime が起動の時点で閉じた fd 0 を /dev/null で開き直すので `</dev/null` と区別できない (Go 1.26 で実測)
     - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じ)
   - 残り: verify (replay 以外。本家 3442〜4700 の約 1,200 行: `_Found`・`_find`・`_verify_record`・`_recheck_problem`・`_summary_problems`・`_verify` など)・本家が書いた状態フォルダを Go の verify に読ませる記録とその逆向き・`_touch`・`_ensure_dir` を `_save` と一緒に戻す
+
+### 2026-11-20 の続き (opus で 1 体ずつ直列。作業の跡は本体の `tmp/1077-cont-1120/`)
+
+- **2 本目の残り (master に入れた)**: diff の `Ground`・`FactGaps`・`Diff` (引数なしの口)・`ExtractNumberDicts` (`diff/ground.go`・`factgaps.go`・`public.go`)。commit「check が diff から使う ground・fact_gaps・diff()・extract_numbers の口を写し…」と「ground・fact_gaps の記録に、写しの分かれ目を通る入力を足す」
+  - 記録 `diff-ground.json` 875 case (ground 1,777・fact_gaps 1,707・extract_numbers 81 呼び出し。check が書く `json.dumps(ensure_ascii=True, indent=1)` の字も比べる)。本家の行の網羅は 333 行中 332 (残り 1 行は一覧の読みで先に検査するので届かない)。わざと壊した形 40 本が red
+  - 敵対的レビュー (opus): 本家との食い違いは差分のファジング 37,323 件で 0。記録の入力の不足で緑のまま通るわざと壊した形が 7 本 (強調の後の単位・脚注の中の数・コードの中の設定の行の NFKC と数の鍵・同じ文の 2 つ目の当たり・確度の語に挟まれた範囲の単位・範囲の後に続く数) → 入力 15 件を足して 7 本とも red
+- **3 本目の verify (`--replay` を除く。master に入れた)**: `check/verify.go`・`verify_summary.go`・`verify_cli.go` と `Main` の verify の配線。本家の run で作った状態フォルダ (op `snapshot`) に本家の verify を当てた記録 `check-verify.json` (18 case。main の呼び出し 352) と stdout・stderr・rc (`--json` も) を比べる。本家の verify の行の網羅は 795 行中 780 (残りは `--replay` 11・export の `_return` 2・届かない 2)
+  - 敵対的レビュー 1 周目 (opus): 本家との食い違いは手の入力 209 件と欄のファジング約 2 万件で 0。記録の穴 6 本 (同点の並べ方・`--material` の順・真偽の件数・壊れた created_at・report の `./runs/`) → op `snapshot` に `ties` を足して case を 3 つ足し 6 本とも red。P3 (int64 を超える回の番号の名前で判定が invalid から executed に変わる) は本家に揃え、回の番号を任意の大きさで扱う
+  - 2 周目 (直した差分に絞った opus): 本家との食い違いは約 470 件で 0。回の番号を字の順で比べる退行など 9 本が緑 → `attemptNo` を `cmp` でしか比べられない struct にし (字の比べ・`==`・`slices.Sort` はコンパイルが止める)、回 9 と 10・先頭の 0・巨大な回の読める記録の case を足して 9 本とも red
+  - 4 本目で足すもの: 本家の run / start / end は回の番号に +1 する (`numbers[-1] + 1`・`_reserve_attempt`。yomiyasu_check.py 1411・1416・1426・2796)。`attemptNo` に big の加算を足す (使わないうちは unused が止めるので足していない)。逆向き (Go が書いた記録を本家の verify が読む) の記録も 4 本目で作る
+  - 揃わない範囲 (README): `-h` の折り返しを幅 80 に固定・内部エラーの例外の型と文とトレースバック
+- 検査: 各 push の前の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じ)
 
 ### 1 本目の敵対的レビュー (2 回目。2026-11-20。opus)
 
