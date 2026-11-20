@@ -65,11 +65,19 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 ## 受け入れ条件
 
 - [ ] `run` / `verify` / `start` / `export` / `end` が入力の集まりで本家と同じ出力と rc を返す。違ってよいのは 1073 の表で置き換えた字だけ
-- [ ] `verify --replay` が lint と diff を動かし直し、本家と同じ結果を返す
-- [ ] 状態フォルダの選び方・書けないときの振る舞いが本家と同じ
+  - 2026-11-21: 5 つとも写し、記録で本家と突き合わせた。ただし README の check の「揃わない範囲」に、1073 の表の外の差が残る。主なものは次のとおり
+    - 内部エラーのトレースバック
+    - Windows の枝
+    - macOS のパスでは届かないバイトの形
+    - シグナルで止まる場所
+    - export_hash の競合・VerifyQuick の空の状態フォルダ・標準エラーに書けないときの OSError・FORCE_COLOR の色付きの使い方の行
+    - `--version` にほかの引数を続けた形 (まだ rc 2 の stub)
+  - この差を受け入れるかはユーザーが判断する。受け入れたら印を付ける
+- [x] `verify --replay` が lint と diff を動かし直し、本家と同じ結果を返す (4 本目の後半。記録 `check-replay.json`)
+- [x] 状態フォルダの選び方・書けないときの振る舞いが本家と同じ (記録 `check-base.json` の書き込みと、4a の `gettempdir`)
 - [x] 上の「決めること」の 3 つを決め、理由をこの issue と README に書く (issue には「決めたこと」に、README には check の節に書いた。2026-11-15)
-- [ ] subcommand ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`)
-- [ ] `make test-dupscan-gate` が通る
+- [x] subcommand ごとに最低 1 つ、実装を外して落ちることを確かめた (`mutate-verify`。run は 4a、verify は 3 本目と 4b、start・end・export は 5 本目。表は `tmp/1077-cont-1120/p4a*`・`p4b*`・`p5*` の mutations.md)
+- [x] `make test-dupscan-gate` が通る (5 本目の最後の木で rc 0)
 
 ## 関連ファイル
 
@@ -89,7 +97,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。→ 済んだ (2026-11-20。残り 6 本 samefile-no-inode・samefile-skip-path-compare・samefile-stat-error-true・home-unset-skip・home-unset-no-set-check・home-unset-no-passwd を `bin/mutate-verify-list` で当て、6 本とも rc 0 = 想定どおり red。P2-2・P2-3 の「壊した形は未確認」もこれで確かめた)
   2. ~~2 回目の敵対的レビュー~~ 済んだ (2026-11-20。下の「1 本目の敵対的レビュー (2 回目)」)。以下は当てたときの指示の写し: 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
   3. そのレビューの指摘を直す: P2・P3 とも直した (2026-11-20)
-  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。2 本目の残りと 3 本目の verify (`--replay` を除く) も 2026-11-20 の続きで master に入れた (下の「2026-11-20 の続き」)。4 本目の前半 (run) も master に入れた (同じ節)。4 本目の後半 (`verify --replay` と `--since`) も入れた。4b の節の P1-a・P1-b (argv と環境変数の不正なバイト) も直した。次は 5 本目 (start / end / export / 登録)
+  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。2 本目の残りと 3 本目の verify (`--replay` を除く) も 2026-11-20 の続きで master に入れた (下の「2026-11-20 の続き」)。4 本目の前半 (run) も master に入れた (同じ節)。4 本目の後半 (`verify --replay` と `--since`) も入れた。4b の節の P1-a・P1-b (argv と環境変数の不正なバイト) も直した。5 本目 (start / end / export / 登録) も入れた (2026-11-21)。残りは受け入れ条件の 1 つ目の判断 (README の揃わない範囲を受け入れるか) と、`--version` にほかの引数を続けた形の stub
 - **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
   - 着手前の調査の地図: `tmp/yomiyasu-gap-2026-11-12/check-survey/map-check.md`
@@ -215,6 +223,39 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
       - 記録に足したもの: check-run の case `run-surrogate`、lint-cli の 12 件、diff-cli の 16 件
       - 敵対的レビュー (opus) は P1 0 件。本家と比べた 236 通りは全部一致した。普段の入力 1.9MB は、直す前と出力が同じ (check run は run ID を除いて同じ)。所要の差は 2% 以内。P3 は 2 件 (forbidigo が os.Chdir・OpenRoot・filepath.EvalSymlinks を止めていない・コメントの置き場の誤り) で、直した後はわざと足した 3 本が red になる
       - 確かめていないこと: UTF-8 でない名前を持てる FS・hook (1078 で写す。本家の hook は標準出力を backslashreplace にしている)・cwd を `os.Getwd` (`$PWD` の字) で取る点は本家の実パスと違いうる (未確認)
+- **5 本目 (start・end・export と登録。master に入れた。2026-11-21)**: `check/armed.go` (登録・ロック・管理の上限。本家 4704〜5005) と `check/manage_cli.go` (`_managed_limit`・`verify_quick` など 1078 の hook が呼ぶ関数・`_management`・start / export / end の parser)、run の登録の枝 (予約の後始末・同じファイルの run・管理の上限と armed_by・`_link` の登録)。4a の `armed/` の内部エラー (rc 3) の仮の止めは外した。commit は「check の start・end・export と登録 (armed/・ロック・管理の上限) を写し、1078 の hook が呼ぶ口を公開する」から 3 本
+  - 1078 の hook が呼ぶ口: `ArmedEntries`・`ArmedUpdate`・`StartRun`・`VerifyQuick(env, prog, ...)`・`RunKnownTexts`・`LatestFinalPath`・`TextSHA256Of`・`DefaultLimits` (呼び方は README の check の節「1078 の hook から呼ぶ口」)。誤りは本家の例外の型と文を持つ値で返す
+  - 記録 `check-manage.json` (件数は README の記録の表)。本家の main と、hook が呼ぶ関数を driver で直接呼んだもの (標準エラーも比べる)。逆向き (goize した木に本家の verify・export・end・start・run) も比べる。本物のプロセスの並行の検査は 2 本 (同じ原文の start 6 本・上限 1 回の登録に run 4 本)
+  - 本家の登録の関数と run の登録の枝 378 文のうち 339 文を通る (足した case の後は測り直していない)。通らない文: Windows の枝・ロックの中の競合の枝・止めた時計では届かない締め切り (Go の単体のテスト)・パスで鍵が変わって case に書けない枝
+  - 敵対的レビューは 2 周 (opus。跡は `tmp/1077-cont-1120/p5rt*/`、直しは `p5fix/mutations.md`)
+    - 1 周目: CLI の 196 case と本家 3 本 + Go 3 本の同時の start 15 回・上限つきの run の混在は本家と一致した。見つかったもの:
+      - P1: `--host` に近い値で本家の「maybe you meant」が出ない
+      - P2: 古いロックが空のフォルダのとき、Go だけフォルダを消して進む (`os.Remove` が rmdir に落ちる)
+      - P2: `VerifyQuick` の誤りを確かめる順と、標準エラーへの出力が違う
+      - P2 (テストの穴): 「等価」としてわざと壊した形を緑のまま残したものが、ロックを待つ間に終えた登録の競合で違う答えになる
+      - P2 (テストの穴): シグナルのテストが待ちの途中を見ていない
+      - P3 3 件: 壊れた値の例外の文・サロゲートを含むパスの鍵・時計の起点
+    - 直し: 全部直した
+      - choices の確かめを `pycli.CheckChoice` に寄せた (difflib.get_close_matches と同じ選び方)
+      - `pyos.Remove` を `Unlink` と `Rmdir` に分け、消す所を本家の呼び方に振り分けた
+      - 鍵は `textKey` (surrogateescape して SHA-256) に寄せた
+      - 時計の起点はプロセスで 1 つにした
+      - わざと壊した形 20 本が red
+    - 2 周目 (直しの差分): P1 0 件
+      - 消す所 13 か所を本家の 12 か所と突き合わせて全部対応した。前は消せたのに残る形は無い
+      - CheckChoice は host の値と短い choices の 12 万件で差 0
+      - VerifyQuick は 25 形で一致した
+    - 2 周目の P3 で直さなかったもの (理由つき):
+      - 失敗のときだけ通る消す所 4 か所 (`write.go` の placeNewFile・placeExclusive、export の hash 不一致、ロックの fstat の失敗) は、Unlink を Rmdir に変えてもテストが緑のまま。今の実装は本家と同じ unlink。失敗を起こすには OS の呼び出しを差し替える seam が要り、本番を歪めるので足していない
+      - `closeMatch` は difflib の autojunk を写していない。長い choices (候補が 86 字以上で値が 195 字以上) では本家と違う候補を出す。本番の choices は `claude-code` と `codex` だけなので届かない。choices に長い値を足すときに写す
+      - `pyops.Slice` の dict の KeyError は、`v[:n]` を `slice(0, n, None)` と出す (本家は `slice(None, n, None)`)。呼び出し元は dict を渡さないので届かない (理由はコードのコメントに書いた)
+      - export の hash 不一致で、unlink の誤りを捨てて `OSError export_hash` を返す (本家は unlink の例外を上げる)。この commit より前からある形で、競合のときだけ起きる (未再現)
+      - FORCE_COLOR=1 のとき、本家は使い方の行を argparse の色付きで出す。Go は出さない (README の揃わない範囲にまだ書いていない)
+  - 揃わない範囲 (README): Windows の枝・VerifyQuick の空の状態フォルダ (SystemExit の値で返す)・export_hash の競合・標準エラーに書けないときの OSError
+  - まだ stub: `--version` にほかの引数を続けた形 (rc 2)
+  - 確かめていないこと: ロックの待ちが本家と同じ実時間で時間切れになるか (記録は時計を進める)・ロックの中の競合の枝・UTF-8 でない名前を持てる FS・SIGINT (非対話のシェルの背景の子は SIGINT を無視した状態で始まるので試せなかった。TERM と HUP は本家と同じ)
+  - 事故: 4b と 5 本目の網羅の計測が、状態フォルダを渡さずに dotfiles の中で check を動かし、`~/dotfiles/.yomiyasu/` を作った (2026-11-20 にも 2 回)。中身はテストの残りだけで、ユーザーの指示 (使っていないなら消す) で消した
+  - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じ)
   - 揃わない範囲 (README): 実行ファイルと作業フォルダのパスに生のバイト ED A0〜BF xx があるとき (macOS の APFS はこの名前を作れない)
   - 確かめていないこと: 負荷が高いときの時間切れ・作り直しの最中に写しが消える競合・`ground` と `fact_gaps` が例外になる本物の入力・UTF-8 でない名前を持てる FS (SMB・FAT)
   - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (4a と同じ)
