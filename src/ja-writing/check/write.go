@@ -26,6 +26,13 @@ const (
 	stateJSON      = "{\"format\": \"yomiyasu-state\", \"format_version\": 1}\n"
 )
 
+// 一時ファイルの名前の乱数と、置くときの link。テストが、本物のファイルシステムでは起こせない失敗 (名前が 100 回重なる・
+// link を作れないファイルシステム・作ったフォルダに書けない) を差し込むために差し替える。並行に呼ばれる処理からは差し替えない。
+var (
+	randomRead = rand.Read
+	linkFile   = os.Link
+)
+
 // namingError は、一時ファイルの名前を temporaryTries 回試して決められなかったときの FileExistsError。
 type namingError struct{ Folder string }
 
@@ -82,10 +89,10 @@ func mkstemp(folder string) (*os.File, string, error) {
 	}
 	for range temporaryTries {
 		var random [8]byte
-		if _, err := rand.Read(random[:]); err != nil {
+		if _, err := randomRead(random[:]); err != nil {
 			return nil, "", err
 		}
-		path := filepath.Join(folder, temporaryHead+hex.EncodeToString(random[:]))
+		path := visibility.PathJoin(folder, temporaryHead+hex.EncodeToString(random[:]))
 		file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 		if err == nil {
 			return file, path, nil
@@ -124,7 +131,7 @@ func replace(source, target string) error {
 
 // WriteAtomic は _write_atomic。同じフォルダの一時ファイルに書いてから入れ替える (読む側が書きかけを見ない)。失敗したら一時ファイルを消す。
 func WriteAtomic(path string, data []byte) error {
-	file, temporary, err := mkstemp(filepath.Dir(path))
+	file, temporary, err := mkstemp(visibility.PathParent(path))
 	if err != nil {
 		return err
 	}
@@ -157,7 +164,7 @@ func stillPlaced(path string, info os.FileInfo) bool {
 // placeNewFile は _place_new_file。path にまだ何も無いときだけ data を置き、置いたら true。
 // 一時ファイルに書いてから link で置き、link を作れないファイルシステムでは O_EXCL で作ってから書く。
 func placeNewFile(path string, data []byte) (bool, error) {
-	file, temporary, err := mkstemp(filepath.Dir(path))
+	file, temporary, err := mkstemp(visibility.PathParent(path))
 	if err != nil {
 		return false, err
 	}
@@ -169,7 +176,7 @@ func placeNewFile(path string, data []byte) (bool, error) {
 		_ = os.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
 		return false, err
 	}
-	linkErr := os.Link(temporary, path)
+	linkErr := linkFile(temporary, path)
 	_ = os.Remove(temporary) // 本家の finally と同じく、消せなくても続ける
 	if linkErr == nil {
 		return true, nil
@@ -209,11 +216,11 @@ func placeExclusive(path string, data []byte) (bool, error) {
 // writeStateFiles は _write_state_files。.gitignore を置き、置けたときだけ state.json を置く。
 // 置けた .gitignore は、state.json を書けなくても消さない。
 func writeStateFiles(state string) error {
-	placed, err := placeNewFile(filepath.Join(state, ".gitignore"), []byte(GitignoreText))
+	placed, err := placeNewFile(visibility.PathJoin(state, ".gitignore"), []byte(GitignoreText))
 	if err != nil || !placed {
 		return err
 	}
-	_, err = placeNewFile(filepath.Join(state, "state.json"), []byte(stateJSON))
+	_, err = placeNewFile(visibility.PathJoin(state, "state.json"), []byte(stateJSON))
 	return err
 }
 
@@ -225,10 +232,33 @@ func addStateFiles(state string, defaultPlace bool) error {
 	if info, err := os.Lstat(state); err == nil && info.Mode()&fs.ModeSymlink != 0 {
 		return nil
 	}
-	if fileInfo(filepath.Join(state, ".gitignore"), false) != nil || fileInfo(filepath.Join(state, "state.json"), false) != nil {
+	if fileInfo(visibility.PathJoin(state, ".gitignore"), false) != nil || fileInfo(visibility.PathJoin(state, "state.json"), false) != nil {
 		return nil
 	}
 	return writeStateFiles(state)
+}
+
+// mkdirParents は Path(path).mkdir(parents=True, exist_ok=True)。os.MkdirAll にしない: 途中にファイルがあると ENOTDIR を
+// 返し (pathlib は FileExistsError)、誤りの名前も途中の部品になって、利用者に見せる文が本家と変わる。
+func mkdirParents(path string) error {
+	err := os.Mkdir(path, 0o777)
+	if errors.Is(err, fs.ErrNotExist) {
+		parent := visibility.PathParent(path)
+		if parent == path {
+			return err
+		}
+		if err := mkdirParents(parent); err != nil {
+			return err
+		}
+		err = os.Mkdir(path, 0o777)
+		if errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	if err != nil && !isDir(path) {
+		return err
+	}
+	return nil
 }
 
 // EnsureState は _ensure_state。状態フォルダを用意する。作ったときは .gitignore と state.json を書き、
@@ -237,8 +267,8 @@ func EnsureState(state string, defaultPlace bool) error {
 	if isDir(state) {
 		return addStateFiles(state, defaultPlace)
 	}
-	if parent := filepath.Dir(state); parent != "" && !isDir(parent) {
-		if err := os.MkdirAll(parent, 0o777); err != nil {
+	if parent := visibility.PathParent(state); parent != "" && !isDir(parent) {
+		if err := mkdirParents(parent); err != nil {
 			return err
 		}
 	}
@@ -280,7 +310,7 @@ func WriteProblem(state string, err error) string {
 		where = state
 	}
 	if strings.HasPrefix(filepath.Base(where), temporaryHead) {
-		where = filepath.Dir(where)
+		where = visibility.PathParent(where)
 	}
 	if reason == "" {
 		reason = visibility.OSErrorReason(where, err)

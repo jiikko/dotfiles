@@ -1,9 +1,13 @@
 package check
 
 import (
+	"crypto/rand"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -40,13 +44,6 @@ func requireText(t *testing.T, path, want, what string) {
 	}
 	if string(data) != want {
 		t.Errorf("%s: %s = %q, want %q", what, filepath.Base(path), data, want)
-	}
-}
-
-func must(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -93,20 +90,20 @@ func TestEnsureStateAddsFilesOnlyToBareDefaultFolder(t *testing.T) {
 	cases := []struct {
 		name         string
 		defaultPlace bool
-		prepare      func(t *testing.T, state string)
+		prepare      func(state string) error
 		wantIgnore   bool
 		wantState    bool
 	}{
-		{"既定の場所で空", true, func(*testing.T, string) {}, true, true},
-		{"指定した場所", false, func(*testing.T, string) {}, false, false},
-		{".gitignore だけある", true, func(t *testing.T, state string) {
-			must(t, os.WriteFile(filepath.Join(state, ".gitignore"), []byte("x"), 0o600))
+		{"既定の場所で空", true, func(string) error { return nil }, true, true},
+		{"指定した場所", false, func(string) error { return nil }, false, false},
+		{".gitignore だけある", true, func(state string) error {
+			return os.WriteFile(filepath.Join(state, ".gitignore"), []byte("x"), 0o600)
 		}, true, false},
-		{"state.json だけある", true, func(t *testing.T, state string) {
-			must(t, os.WriteFile(filepath.Join(state, "state.json"), []byte("x"), 0o600))
+		{"state.json だけある", true, func(state string) error {
+			return os.WriteFile(filepath.Join(state, "state.json"), []byte("x"), 0o600)
 		}, false, true},
-		{".gitignore が壊れたリンク", true, func(t *testing.T, state string) {
-			must(t, os.Symlink("missing", filepath.Join(state, ".gitignore")))
+		{".gitignore が壊れたリンク", true, func(state string) error {
+			return os.Symlink("missing", filepath.Join(state, ".gitignore"))
 		}, false, false},
 	}
 	for _, c := range cases {
@@ -116,7 +113,9 @@ func TestEnsureStateAddsFilesOnlyToBareDefaultFolder(t *testing.T) {
 			if err := os.Mkdir(state, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			c.prepare(t, state)
+			if err := c.prepare(state); err != nil {
+				t.Fatal(err)
+			}
 			if err := EnsureState(state, c.defaultPlace); err != nil {
 				t.Fatal(err)
 			}
@@ -159,7 +158,9 @@ func TestEnsureStateLeavesLinkedFolderAlone(t *testing.T) {
 func TestEnsureStateKeepsIgnoreWhenStateAlreadyPlaced(t *testing.T) {
 	s := newSandbox(t)
 	state := s.path(".yomiyasu")
-	must(t, os.Mkdir(state, 0o700))
+	if err := os.Mkdir(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(state, "state.json"), []byte("mine"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +174,9 @@ func TestEnsureStateKeepsIgnoreWhenStateAlreadyPlaced(t *testing.T) {
 func TestWriteStateFilesSkipsStateWhenIgnoreTaken(t *testing.T) {
 	s := newSandbox(t)
 	state := s.path(".yomiyasu")
-	must(t, os.Mkdir(state, 0o700))
+	if err := os.Mkdir(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(state, ".gitignore"), []byte("theirs"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +231,11 @@ func TestWriteProblemForUnwritableFolder(t *testing.T) {
 	if err := os.Mkdir(folder, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { must(t, os.Chmod(folder, 0o700)) })
+	t.Cleanup(func() {
+		if err := os.Chmod(folder, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	err := WriteAtomic(filepath.Join(folder, "record.json"), []byte("data"))
 	if err == nil {
 		t.Skip("書き込みを拒むフォルダを作れない (root で動いている)")
@@ -261,5 +268,120 @@ func TestPlaceNewFileDoesNotOverwrite(t *testing.T) {
 	requireText(t, path, "first", "すでにあるファイル")
 	if left := temporaries(t, s.root); len(left) != 0 {
 		t.Errorf("一時ファイルが残った: %v", left)
+	}
+}
+
+// withRandom は一時ファイルの名前の乱数を差し替え、テストの終わりに戻す。
+func withRandom(t *testing.T, read func([]byte) (int, error)) {
+	t.Helper()
+	saved := randomRead
+	randomRead = read
+	t.Cleanup(func() { randomRead = saved })
+}
+
+// withLink は置くときの link を差し替え、テストの終わりに戻す。
+func withLink(t *testing.T, link func(string, string) error) {
+	t.Helper()
+	saved := linkFile
+	linkFile = link
+	t.Cleanup(func() { linkFile = saved })
+}
+
+func TestEnsureStateRemovesNewFolderWhenIgnoreCannotBeWritten(t *testing.T) {
+	s := newSandbox(t)
+	state := s.path("a", ".yomiyasu")
+	failure := errors.New("乱数を読めない")
+	withRandom(t, func([]byte) (int, error) { return 0, failure })
+	if err := EnsureState(state, true); !errors.Is(err, failure) {
+		t.Fatalf("EnsureState = %v, want %v", err, failure)
+	}
+	if _, err := os.Lstat(state); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf(".gitignore を置けなかった状態フォルダが残った (lstat: %v)", err)
+	}
+	if !isDir(s.path("a")) {
+		t.Error("状態フォルダの親まで消した")
+	}
+}
+
+func TestEnsureStateKeepsFolderWithIgnoreWhenStateJSONCannotBeWritten(t *testing.T) {
+	s := newSandbox(t)
+	state := s.path(".yomiyasu")
+	failure := errors.New("乱数を読めない")
+	reads := 0
+	withRandom(t, func(b []byte) (int, error) {
+		reads++
+		if reads > 1 {
+			return 0, failure
+		}
+		return rand.Read(b)
+	})
+	if err := EnsureState(state, true); !errors.Is(err, failure) {
+		t.Fatalf("EnsureState = %v, want %v", err, failure)
+	}
+	requireText(t, filepath.Join(state, ".gitignore"), GitignoreText, "置けた .gitignore")
+	if fileInfo(filepath.Join(state, "state.json"), false) != nil {
+		t.Error("書けなかった state.json がある")
+	}
+	if left := temporaries(t, state); len(left) != 0 {
+		t.Errorf("一時ファイルが残った: %v", left)
+	}
+}
+
+func TestPlaceNewFileWithoutHardLinks(t *testing.T) {
+	withLink(t, func(string, string) error { return &os.LinkError{Op: "link", Err: syscall.ENOTSUP} })
+	s := newSandbox(t)
+	path := s.path("index")
+	placed, err := placeNewFile(path, []byte("first"))
+	if err != nil || !placed {
+		t.Fatalf("placeNewFile = %v, %v; want true, nil", placed, err)
+	}
+	requireText(t, path, "first", "O_EXCL で置いたファイル")
+	if got := mode(t, path); got != 0o600 {
+		t.Errorf("mode = %o, want 600", got)
+	}
+	if placed, err := placeNewFile(path, []byte("second")); err != nil || placed {
+		t.Fatalf("2 回目の placeNewFile = %v, %v; want false, nil", placed, err)
+	}
+	requireText(t, path, "first", "すでにあるファイル")
+	dangling := s.path("dangling")
+	if err := os.Symlink("missing", dangling); err != nil {
+		t.Fatal(err)
+	}
+	if placed, err := placeNewFile(dangling, []byte("x")); err != nil || placed {
+		t.Fatalf("壊れたリンクの名前に placeNewFile = %v, %v; want false, nil", placed, err)
+	}
+	if _, err := os.Stat(s.path("missing")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("壊れたリンクの先に書いた (stat: %v)", err)
+	}
+	if left := temporaries(t, s.root); len(left) != 0 {
+		t.Errorf("一時ファイルが残った: %v", left)
+	}
+}
+
+func TestWriteAtomicGivesUpWhenTemporaryNamesKeepColliding(t *testing.T) {
+	s := newSandbox(t)
+	if err := os.WriteFile(s.path(temporaryHead+"0000000000000000"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reads := 0
+	withRandom(t, func(b []byte) (int, error) {
+		reads++
+		clear(b)
+		return len(b), nil
+	})
+	path := s.path("record.json")
+	err := WriteAtomic(path, []byte("data"))
+	var naming *namingError
+	if !errors.As(err, &naming) || naming.Folder != s.root {
+		t.Fatalf("WriteAtomic = %v, want 名前を決められない誤り (%s)", err, s.root)
+	}
+	if reads != temporaryTries {
+		t.Errorf("名前を %d 回試した、want %d", reads, temporaryTries)
+	}
+	if got, want := WriteProblem(s.path("state"), err), s.root+" に書けません: 一時ファイルの名前を100回試して決められません"; got != want {
+		t.Errorf("WriteProblem = %q, want %q", got, want)
+	}
+	if fileInfo(path, false) != nil {
+		t.Error("名前を決められなかったのに書いた")
 	}
 }

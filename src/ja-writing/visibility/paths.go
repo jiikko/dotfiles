@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -167,67 +168,126 @@ func pathIsDir(path string) bool { m, ok := statMode(path); return ok && m.IsDir
 
 func pathIsFile(path string) bool { m, ok := statMode(path); return ok && m.IsRegular() }
 
-// strerror は macOS の strerror(3) の文。Go の syscall.Errno の文は小文字などで、Python の OSError.strerror と違う。
-// 表に無い errno は macOS の strerror と同じ "Unknown error: N"。
-func strerror(errno syscall.Errno) string {
-	switch errno {
-	case syscall.EPERM:
-		return "Operation not permitted"
-	case syscall.ENOENT:
-		return "No such file or directory"
-	case syscall.EIO:
-		return "Input/output error"
-	case syscall.ENXIO:
-		return "Device not configured"
-	case syscall.EBADF:
-		return "Bad file descriptor"
-	case syscall.ENOMEM:
-		return "Cannot allocate memory"
-	case syscall.EACCES:
-		return "Permission denied"
-	case syscall.EBUSY:
-		return "Resource busy"
-	case syscall.ENOTDIR:
-		return "Not a directory"
-	case syscall.EISDIR:
-		return "Is a directory"
-	case syscall.EINVAL:
-		return "Invalid argument"
-	case syscall.ENFILE:
-		return "Too many open files in system"
-	case syscall.EMFILE:
-		return "Too many open files"
-	case syscall.ETXTBSY:
-		return "Text file busy"
-	case syscall.EAGAIN:
-		return "Resource temporarily unavailable"
-	case syscall.ENAMETOOLONG:
-		return "File name too long"
-	case syscall.ELOOP:
-		return "Too many levels of symbolic links"
-	case syscall.EOPNOTSUPP:
-		return "Operation not supported"
-	case syscall.ETIMEDOUT:
-		return "Operation timed out"
-	case syscall.EDEADLK:
-		return "Resource deadlock avoided"
-	case syscall.EINTR:
-		return "Interrupted system call"
-	default:
-		return "Unknown error: " + errnoString(errno)
-	}
+// strerrors は macOS の strerror(3) の文を errno の順に並べたもの (Python の os.strerror(0)〜os.strerror(107) の出力を写した)。
+// Go の syscall.Errno の文は小文字などで、Python の OSError.strerror と違う。syscall の名前から引く表にしない (EOPNOTSUPP は 102 で
+// "Operation not supported on socket"、45 の ENOTSUP とは文が違う)。全部の errno が check-base.json の os.strerror の記録と比べられる。
+var strerrors = [...]string{
+	"Undefined error: 0",
+	"Operation not permitted",
+	"No such file or directory",
+	"No such process",
+	"Interrupted system call",
+	"Input/output error",
+	"Device not configured",
+	"Argument list too long",
+	"Exec format error",
+	"Bad file descriptor",
+	"No child processes",
+	"Resource deadlock avoided",
+	"Cannot allocate memory",
+	"Permission denied",
+	"Bad address",
+	"Block device required",
+	"Resource busy",
+	"File exists",
+	"Cross-device link",
+	"Operation not supported by device",
+	"Not a directory",
+	"Is a directory",
+	"Invalid argument",
+	"Too many open files in system",
+	"Too many open files",
+	"Inappropriate ioctl for device",
+	"Text file busy",
+	"File too large",
+	"No space left on device",
+	"Illegal seek",
+	"Read-only file system",
+	"Too many links",
+	"Broken pipe",
+	"Numerical argument out of domain",
+	"Result too large",
+	"Resource temporarily unavailable",
+	"Operation now in progress",
+	"Operation already in progress",
+	"Socket operation on non-socket",
+	"Destination address required",
+	"Message too long",
+	"Protocol wrong type for socket",
+	"Protocol not available",
+	"Protocol not supported",
+	"Socket type not supported",
+	"Operation not supported",
+	"Protocol family not supported",
+	"Address family not supported by protocol family",
+	"Address already in use",
+	"Can't assign requested address",
+	"Network is down",
+	"Network is unreachable",
+	"Network dropped connection on reset",
+	"Software caused connection abort",
+	"Connection reset by peer",
+	"No buffer space available",
+	"Socket is already connected",
+	"Socket is not connected",
+	"Can't send after socket shutdown",
+	"Too many references: can't splice",
+	"Operation timed out",
+	"Connection refused",
+	"Too many levels of symbolic links",
+	"File name too long",
+	"Host is down",
+	"No route to host",
+	"Directory not empty",
+	"Too many processes",
+	"Too many users",
+	"Disc quota exceeded",
+	"Stale NFS file handle",
+	"Too many levels of remote in path",
+	"RPC struct is bad",
+	"RPC version wrong",
+	"RPC prog. not avail",
+	"Program version wrong",
+	"Bad procedure for program",
+	"No locks available",
+	"Function not implemented",
+	"Inappropriate file type or format",
+	"Authentication error",
+	"Need authenticator",
+	"Device power is off",
+	"Device error",
+	"Value too large to be stored in data type",
+	"Bad executable (or shared library)",
+	"Bad CPU type in executable",
+	"Shared library version mismatch",
+	"Malformed Mach-o file",
+	"Operation canceled",
+	"Identifier removed",
+	"No message of desired type",
+	"Illegal byte sequence",
+	"Attribute not found",
+	"Bad message",
+	"EMULTIHOP (Reserved)",
+	"No message available on STREAM",
+	"ENOLINK (Reserved)",
+	"No STREAM resources",
+	"Not a STREAM",
+	"Protocol error",
+	"STREAM ioctl timeout",
+	"Operation not supported on socket",
+	"Policy not found",
+	"State not recoverable",
+	"Previous owner died",
+	"Interface output queue is full",
+	"Capabilities insufficient",
 }
 
-func errnoString(errno syscall.Errno) string {
-	n := int(errno)
-	if n == 0 {
-		return "0"
+// strerror は macOS の strerror(3) の文。表の外の errno は macOS の strerror と同じ "Unknown error: N"。
+func strerror(errno syscall.Errno) string {
+	if int(errno) < len(strerrors) {
+		return strerrors[errno]
 	}
-	var digits []byte
-	for ; n > 0; n /= 10 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-	}
-	return string(digits)
+	return "Unknown error: " + strconv.Itoa(int(errno))
 }
 
 // errnoOf は err の中の errno。無ければ ok が偽。

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -312,7 +313,17 @@ type Call struct {
 	// ArgsOutOnly は結果を [戻り値, 呼んだ後の args のうち、この添字のもの] にする (nil は付けない。args に JSON にできない値があるとき用)。
 	ArgsOutOnly []int `json:"args_out_only,omitempty"`
 	Op          *Op   `json:"op,omitempty"`
+	// SaveRaised は、例外になったときも、その例外を Save の名前で覚える (書けなかった理由の文を作る関数に渡す)。
+	SaveRaised bool `json:"save_raised,omitempty"`
+	// Temporaries は結果と例外の文の中の一時ファイルの名前 (TemporaryName) を TemporaryMask にする (名前は乱数で、実行ごとに変わる)。
+	Temporaries bool `json:"temporaries,omitempty"`
 }
+
+// TemporaryName は本家の一時ファイルの名前 (_mkstemp の .tmp-<16 桁の 16 進>)。call_function.py の TEMPORARY と同じ。
+var TemporaryName = regexp.MustCompile(`\.tmp-[0-9a-f]{16}`)
+
+// TemporaryMask は Temporaries の呼び出しで TemporaryName を置き換える字。
+const TemporaryMask = ".tmp-*"
 
 // PyException は本家の関数が投げた例外。Type が "Unserializable" のときは戻り値が JSON にできなかった。
 type PyException struct {

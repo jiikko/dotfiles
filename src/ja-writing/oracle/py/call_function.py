@@ -25,6 +25,10 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
   大文字と小文字を区別しない FS で、パスの比較用の綴り (casefold したもの) を返す関数の結果が、作業フォルダの綴りの大小に依らず同じ記録になるようにする。
   付けなければ前と一字も同じ出力。
 - "op" の呼び出しは、作業フォルダに fixture を作る・環境を変える: write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。結果は null。
+  op tree だけは結果を返す: path から下の木 ([相対パス, 種類, mode, 中身] の並び。下の tree の docstring)。状態フォルダへの書き込みの結果を比べる用。
+- "save_raised": true の呼び出しは、例外になったときも、その例外を save の名前で覚える (書けなかった理由の文を作る _write_problem に渡す)。
+- "temporaries": true の呼び出しは、結果と例外の文の中の一時ファイルの名前 (.tmp-<16 桁の 16 進>) を ".tmp-*" にする (名前は乱数で、実行ごとに変わる)。
+  どの 3 つも、付けなければ前と一字も同じ出力。
 """
 import base64
 import hashlib
@@ -32,6 +36,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import unicodedata
@@ -106,6 +111,52 @@ def canonical(record):
     return json.dumps(record, sort_keys=True, ensure_ascii=True, separators=(",", ":"), default=encode_default)
 
 
+TEMPORARY = re.compile(r"\.tmp-[0-9a-f]{16}")
+
+
+def mask_temporaries(value):
+    if isinstance(value, dict):
+        return {k: mask_temporaries(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [mask_temporaries(v) for v in value]
+    if isinstance(value, str):
+        return TEMPORARY.sub(".tmp-*", value)
+    return value
+
+
+def tree(top):
+    """top から下の木。[相対パス (top は "."), 種類 (dir・file・link・other・missing), mode (S_IMODE。missing は errno), 中身] の並び。
+    中身は file なら UTF-8 の文字列、link なら先、読めないフォルダは一覧を読めなかった errno、ほかは null。リンクは辿らない。"""
+    entries = []
+
+    def visit(path, rel):
+        try:
+            info = os.lstat(path)
+        except OSError as exc:
+            entries.append([rel, "missing", exc.errno, None])
+            return
+        mode = stat.S_IMODE(info.st_mode)
+        if stat.S_ISLNK(info.st_mode):
+            entries.append([rel, "link", mode, os.readlink(path)])
+        elif stat.S_ISDIR(info.st_mode):
+            try:
+                names = sorted(os.listdir(path))
+            except OSError as exc:
+                entries.append([rel, "dir", mode, exc.errno])
+                return
+            entries.append([rel, "dir", mode, None])
+            for name in names:
+                visit(os.path.join(path, name), name if rel == "." else rel + "/" + name)
+        elif stat.S_ISREG(info.st_mode):
+            with open(path, "rb") as handle:
+                entries.append([rel, "file", mode, handle.read().decode("utf-8")])
+        else:
+            entries.append([rel, "other", mode, None])
+
+    visit(top, ".")
+    return entries
+
+
 def remember_env(name):
     if name not in saved_env:
         saved_env[name] = os.environ.get(name)
@@ -161,6 +212,8 @@ def run_op(op):
         done = subprocess.run([plan["git"]] + [resolve(a) for a in op["args"]], cwd=path or None, env=env, capture_output=True, check=False)
         if done.returncode != 0:
             raise RuntimeError("git %s が rc=%d: %s" % (" ".join(op["args"]), done.returncode, done.stderr.decode("utf-8", "replace")))
+    elif kind == "tree":
+        return tree(path)
     else:
         raise ValueError("未知の op: " + kind)
     return None
@@ -194,7 +247,11 @@ for call in plan["calls"]:
         else:
             record = {"result": unroot(value, ROOT_FOLDED if call.get("folded") else None)}
     except Exception as exc:  # noqa: BLE001 - 例外も記録する (本家が投げる例外は仕様の一部)
+        if call.get("save_raised"):
+            registry[call["save"]] = exc
         record = {"exception": {"type": type(exc).__name__, "message": unroot(str(exc))}}
+    if call.get("temporaries"):
+        record = mask_temporaries(record)
     if call.get("digest"):
         if call.get("quiet") and "exception" not in record:
             entry = {"digest": "00000000"}

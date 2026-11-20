@@ -325,11 +325,11 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 | 似かた | `_compact` `_similarity` `_source_like` (しきい値 0.53) | `similar.go` |
 | 記録の `tools` の欄 | `_tool_versions` `_list_sha256` `_skill_info`・道具と一覧の SHA-256 の定数 | `tools.go` |
 | 書き込み | `_mkstemp` `_replace` `_write_atomic` `_raise_if_hidden` `_still_placed` `_place_new_file` `_write_state_files` `_add_state_files` `_ensure_state` `_write_problem` (Windows の枝は写さない。`src/atomicfile` は一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わるので使わない) | `write.go` |
-| 記録の読み | `_read_record_status` `_read_record` (入れ子が深すぎる JSON は、本家が RecursionError で落ちる所を error で返す) | `record_read.go` |
+| 記録の読み | `_read_record_status` `_read_record` | `record_read.go` |
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
-| `check-base.json` (35 case・1,786 呼び出し) | 上の関数を固定の入力で本家に通した digest。時刻・実行 ID・`--fail-on`・`--timeout`・`--since` は受ける形と受けない形 (全角などの数字・空白・`_`・境の値) を、似かたはしきい値 0.53 の前後 (2 字組の数を決めた入力) を、パスは作業フォルダの fixture (大文字小文字だけ違う綴り・NFD の名前・シンボリックリンク (輪を含む)・読めないファイル・消えた作業フォルダ・`.git` の置き場・環境変数) を、tools の欄は `_HERE` を fixture の置き場に差し替えて (ファイルが無い・フォルダ・読めない・バージョンの行の書き方) 通す。casefold した綴りを返す関数 (`_disk_path` `_place`) は、作業フォルダを NFC にして casefold した綴りも作業フォルダの印に戻してから比べる (`call_function.py` の `folded`) | `check/base_recording_test.go` の `TestBaseMatchesPythonRecording` |
+| `check-base.json` (42 case・2,172 呼び出し) | 上の関数を固定の入力で本家に通した digest。時刻・実行 ID・`--fail-on`・`--timeout`・`--since` は受ける形と受けない形 (全角などの数字・空白・`_`・境の値) を、似かたはしきい値 0.53 の前後 (2 字組の数を決めた入力) を、パスは作業フォルダの fixture (大文字小文字だけ違う綴り・NFD の名前・シンボリックリンク (輪を含む)・読めないファイル・消えた作業フォルダ・`.git` の置き場・環境変数) を、tools の欄は `_HERE` を fixture の置き場に差し替えて (ファイルが無い・フォルダ・読めない・バージョンの行の書き方) 通す。casefold した綴りを返す関数 (`_disk_path` `_place`) は、作業フォルダを NFC にして casefold した綴りも作業フォルダの印に戻してから比べる (`call_function.py` の `folded`)。書き込みは、作業フォルダの fixture (空の・指定した・`.gitignore` か `state.json` だけがある・リンクの状態フォルダ、ファイルや壊れたリンクの名前、書けない親と状態フォルダ、途中がファイルの親) で関数を呼び、呼んだ後の木 (名前・mode・中身・リンクの先。`call_function.py` の op `tree`) と、例外と、その例外から `_write_problem` が作る文を比べる (一時ファイルの名前は伏せる。`temporaries`)。記録の読みは、壊れた JSON・dict でない値・空・BOM・UTF-16・不正なバイト・NaN と無限大・大きい整数・重なった鍵・サロゲート・深さ 300 の入れ子・読めない名前を読ませる。errno の文は `os.strerror(0)`〜`(120)` を visibility の表と比べる | `check/base_recording_test.go` の `TestBaseMatchesPythonRecording` |
 | `casemap.json` | `str.casefold` `lower` `swapcase` `upper` を全コードポイント (サロゲートを除く) で。語末の Σ の規則に使う cased と case_ignorable の範囲 (Python は直接出さないので `"<字>Σ"` と `"a<字>Σ"` の小文字化から求めた)・十進数字の値 | `internal/pyunicode/case_test.go`・`oracle/casemap_test.go` (表を作り直した結果と `case_gen.go` が同じ) |
 
 揃わない範囲 (表の外の差は不一致として落とす):
@@ -337,6 +337,9 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - `_disk_path` に NUL を含むパスを渡したときの本家の `ValueError` は写さない (コマンドラインの引数は NUL を持てない)。`HOME` が無くパスワードデータベースから決める枝は、手元で試していない。
 - 大文字と小文字を区別するファイルシステムは、手元に無いので記録に入らない (`_case_insensitive` が偽を返す枝は、`/` と数字だけのパスで通した)。
 - `_tool_versions` を `DirFiles` (本家と同じ置き場の読み方) で読むときの `decode("utf-8", "replace")` は、バイト列のまま探す。バージョンの値に不正なバイトが入る入力は本家と答えが違う (`3.1` + `\xe3\x81` は本家が `3.1` + U+FFFD 1 字、Go が不正なバイト 2 つ。`3.1` + `\xed\xa0\x80` は本家が U+FFFD 3 字、Go が単独のサロゲートのバイト)。使うのは記録の突き合わせだけで、本番の記録を書く経路は `Released` の固定の値を使い、この読みを通らない。
+- 入れ子が深すぎる記録の JSON (`pyjson.MaxDepth` を超えるもの) は、本家の `_read_record_status` が `RecursionError` で落ちる (捕まえていない) 所を、Go は error で返して呼び出し側が落とす。記録に入れない (本家の例外は driver の中で起き、Go と比べる形にならない)。深さ 300 までは記録で揃うことを見ている。
+- 状態フォルダへの書き込みの、本物のファイルシステムで起こせない失敗 (一時ファイルの名前が 100 回重なる・ハードリンクを作れないファイルシステム・作ったフォルダに `.gitignore` を書けない) は記録に入らない。check の単体のテストで、乱数と link を差し替えて通す (本家と比べてはいない)。O_EXCL で作ったファイルに書けなかったときに消す枝は、通していない。
+- 記録の木の mode は umask で変わる。記録は umask 022 で取った。
 - 本家の `_getcwd` が `os.getcwd` の失敗の理由 (`strerror`) を文に入れる所は、`ENOENT` の文 (`No such file or directory`) だけを出す (`EACCES` で読めない作業フォルダは試していない)。
 
 ## 標準ライブラリを写す package (`internal/`)

@@ -105,6 +105,11 @@ func (e *interp) call(c oracle.Call) outcome {
 		return outcome{value: e.constant(c.Function)}
 	case c.Module == "posixpath":
 		return e.posixpath(c)
+	case c.Module == "os" && c.Function == "strerror":
+		return outcome{value: visibility.OSErrorReason("", syscall.Errno(c.Args[0].(int)))}
+	}
+	if out, ok := e.writeCall(c); ok {
+		return out
 	}
 	a := c.Args
 	switch c.Function {
@@ -402,11 +407,21 @@ func unrootValue(root string, folded bool, v pyjson.Value) pyjson.Value {
 	if folded {
 		needle = pyunicode.Casefold(pyunicode.Normalize(pyunicode.NFC, root))
 	}
+	return mapStrings(v, func(s string) string { return strings.ReplaceAll(s, needle, oracle.RootToken) })
+}
+
+// maskTemporaries は Temporaries の呼び出しの、一時ファイルの名前を伏せた文字列。
+func maskTemporaries(s string) string {
+	return oracle.TemporaryName.ReplaceAllLiteralString(s, oracle.TemporaryMask)
+}
+
+// mapStrings は値の中の文字列 (dict の鍵を除く) を f で置き換えた値。
+func mapStrings(v pyjson.Value, f func(string) string) pyjson.Value {
 	var walk func(v pyjson.Value) pyjson.Value
 	walk = func(v pyjson.Value) pyjson.Value {
 		switch x := v.(type) {
 		case string:
-			return strings.ReplaceAll(x, needle, oracle.RootToken)
+			return f(x)
 		case []pyjson.Value:
 			out := make([]pyjson.Value, len(x))
 			for i, el := range x {
@@ -434,12 +449,18 @@ func (e *interp) digest(c oracle.Call, out outcome) (canon, digest string, raise
 		if e.fx != nil {
 			msg = e.fx.Unroot(msg)
 		}
+		if c.Temporaries {
+			msg = maskTemporaries(msg)
+		}
 		canon, digest, err = replay.ExceptionDigest(out.exc.Type, msg)
 		raised = true
 	} else {
 		v := out.value
 		if e.fx != nil {
 			v = unrootValue(e.fx.Root, c.Folded, v)
+		}
+		if c.Temporaries {
+			v = mapStrings(v, maskTemporaries)
 		}
 		canon, digest, err = replay.ResultDigest(replay.SortKeys(v))
 	}
@@ -497,12 +518,19 @@ func runCase(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats map
 	}
 	for i, call := range c.Calls {
 		var canon, digest string
-		if call.Op != nil {
+		switch {
+		case call.Op != nil && call.Op.Kind == "tree":
+			v, err := treeValue(e.fx.Sub(call.Op.Path))
+			if err != nil {
+				t.Fatalf("case %s の %d 番目の木を読めない: %v", c.Name, i, err)
+			}
+			canon, digest, _ = e.digest(call, outcome{value: v})
+		case call.Op != nil:
 			if err := e.fx.Apply(context.Background(), *call.Op); err != nil {
 				t.Fatalf("case %s の %d 番目の操作 %s が失敗: %v", c.Name, i, call.Op.Kind, err)
 			}
 			canon, digest, _ = e.digest(call, outcome{})
-		} else {
+		default:
 			out := e.call(call)
 			var raised bool
 			canon, digest, raised = e.digest(call, out)
@@ -589,7 +617,7 @@ func TestBaseRecordingCoversEveryFunction(t *testing.T) {
 	for _, f := range g.Functions {
 		byName[f.Name] = f
 	}
-	known := map[string]bool{"_HERE": true, "__import__": true, "setattr": true, "isabs": true, "basename": true}
+	known := map[string]bool{"_HERE": true, "__import__": true, "setattr": true, "isabs": true, "basename": true, "strerror": true}
 	for _, name := range append(slices.Clone(oracle.CheckBaseFunctions), oracle.CheckBaseConstants...) {
 		known[name] = true
 		if byName[name].Calls == 0 {
@@ -600,6 +628,9 @@ func TestBaseRecordingCoversEveryFunction(t *testing.T) {
 		if byName[name].Calls == 0 {
 			t.Errorf("posixpath.%s の記録が 0 件 (HOME が無いときの記録の比べ用)", name)
 		}
+	}
+	if byName["strerror"].Calls == 0 {
+		t.Error("os.strerror の記録が 0 件 (visibility の errno の文の表の比べ用)")
 	}
 	for _, f := range g.Functions {
 		if !known[f.Name] {
