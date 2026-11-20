@@ -35,7 +35,7 @@ func childRuntime(t *testing.T) Runtime {
 	rt := DefaultRuntime()
 	rt.Executable = func() (string, error) { return exe, nil }
 	rt.ChildEnv = childEnv(exe)
-	rt.TempDir = func() string { return t.TempDir() }
+	rt.TempDir = func(cmdenv.Env) (string, error) { return t.TempDir(), nil }
 	return rt
 }
 

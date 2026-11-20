@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
+	"ja-writing/cmdenv"
 	"ja-writing/diff"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
@@ -58,9 +60,71 @@ func touch(folder, name string) error {
 	return os.Chmod(path, 0o600)
 }
 
+// tempdirTries は tempfile.TMP_MAX (候補のフォルダ 1 つで、試しのファイルの名前を試す回数)。
+const tempdirTries = 20
+
+// gettempdir は tempfile.gettempdir (本家の _mkdtemp が一時フォルダを置く親)。候補を順に、試しのファイルを作って書いて消せるかで試し、
+// 最初に通ったフォルダを返す。候補は環境変数 TMPDIR・TEMP・TMP (空は飛ばす)・/tmp・/var/tmp・/usr/tmp・作業ディレクトリ (読めなければ ".")。
+// 名前が重なったら同じフォルダで次の名前を試し、ほかの誤り (無い・ファイル・書けない) は次の候補へ移る。どれも通らなければ FileNotFoundError。
+// 本家はプロセスの中で 1 度だけ求めて覚えるが、run はプロセスの中で 1 度しか呼ばないので覚えない。
+func gettempdir(env cmdenv.Env) (string, error) {
+	var candidates []string
+	for _, name := range []string{"TMPDIR", "TEMP", "TMP"} {
+		if value, _ := env.Lookup(name); value != "" {
+			candidates = append(candidates, value)
+		}
+	}
+	candidates = append(candidates, "/tmp", "/var/tmp", "/usr/tmp")
+	if cwd, ok := visibility.Getcwd(); ok {
+		candidates = append(candidates, cwd)
+	} else {
+		candidates = append(candidates, ".")
+	}
+	for _, dir := range candidates {
+		if dir != "." {
+			absolute, err := visibility.AbsolutePath(dir)
+			if err != nil {
+				return "", err
+			}
+			dir = absolute
+		}
+		if usableTempdir(dir) {
+			return dir, nil
+		}
+	}
+	return "", fmt.Errorf("FileNotFoundError: [Errno 2] No usable temporary directory found in %s", pyops.Format(pyjson.Strings(candidates)))
+}
+
+// usableTempdir は _get_default_tempdir の 1 つの候補の試し (O_EXCL と O_NOFOLLOW で作り、"blat" を書き、閉じて消せたら真)。
+func usableTempdir(dir string) bool {
+	for range tempdirTries {
+		var random [4]byte
+		if _, err := randomRead(random[:]); err != nil {
+			return false
+		}
+		name := visibility.PathJoin(dir, hex.EncodeToString(random[:]))
+		file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return false
+		}
+		_, werr := file.Write([]byte("blat"))
+		cerr := file.Close()
+		rerr := os.Remove(name)
+		return werr == nil && cerr == nil && rerr == nil
+	}
+	return false
+}
+
 // mkdtemp は _mkdtemp (一時フォルダの下に <prefix><16進> を 0o700 で作り、絶対パスを返す)。
-func mkdtemp(rt Runtime, prefix string) (string, error) {
-	parent, err := visibility.AbsolutePath(rt.TempDir())
+func mkdtemp(rt Runtime, env cmdenv.Env, prefix string) (string, error) {
+	parentDir, err := rt.TempDir(env)
+	if err != nil {
+		return "", err
+	}
+	parent, err := visibility.AbsolutePath(parentDir)
 	if err != nil {
 		return "", err
 	}

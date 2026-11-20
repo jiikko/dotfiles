@@ -501,7 +501,7 @@ func numberOf(v pyjson.Value) float64 {
 // checkInTemporary は写しが無ければ一時フォルダに置いてから検査を動かし、一時フォルダを消す (本家の _run_impl の 3 の try と finally)。
 func checkInTemporary(ctx context.Context, rt Runtime, env cmdenv.Env, c *runContext, snapshots map[*Input]string, inputs []*Input, stance *string, timeout float64) error {
 	if snapshots == nil {
-		temporary, err := mkdtemp(rt, "yomiyasu-check-")
+		temporary, err := mkdtemp(rt, env, "yomiyasu-check-")
 		if err != nil {
 			return err
 		}

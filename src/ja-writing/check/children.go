@@ -46,8 +46,8 @@ type Runtime struct {
 	Monotonic func() float64
 	// RandomHex は n バイトの乱数の 16 進 (本家の os.urandom(n).hex())。
 	RandomHex func(n int) (string, error)
-	// TempDir は一時フォルダを作る親 (本家の tempfile.gettempdir())。
-	TempDir func() string
+	// TempDir は一時フォルダを作る親 (本家の tempfile.gettempdir())。本番は gettempdir。
+	TempDir func(env cmdenv.Env) (string, error)
 }
 
 // DefaultRuntime は本番の Runtime。
@@ -65,7 +65,7 @@ func DefaultRuntime() Runtime {
 			}
 			return hex.EncodeToString(b), nil
 		},
-		TempDir: os.TempDir,
+		TempDir: gettempdir,
 	}
 }
 

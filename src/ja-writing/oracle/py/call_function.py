@@ -74,6 +74,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import unicodedata
 import zlib
 
@@ -460,6 +461,10 @@ def is_record(rel):
 def remember_env(name):
     if name not in saved_env:
         saved_env[name] = os.environ.get(name)
+    if name in ("TMPDIR", "TEMP", "TMP"):
+        # tempfile.gettempdir はプロセスの中で 1 度だけ候補を試して覚える。case が変えた値で試し直させる
+        # (本家の check は 1 回の起動で 1 度しか呼ばないので、起動ごとに試すのと同じになる)
+        tempfile.tempdir = None
 
 
 def run_op(op):
@@ -500,6 +505,8 @@ def run_op(op):
         remember_env(op["name"])
         os.environ.pop(op["name"], None)
     elif kind == "restoreenv":
+        if any(name in ("TMPDIR", "TEMP", "TMP") for name in saved_env):
+            tempfile.tempdir = None
         for name, old in saved_env.items():
             if old is None:
                 os.environ.pop(name, None)

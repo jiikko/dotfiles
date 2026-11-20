@@ -98,3 +98,41 @@ func TestRunRefusesEnvCwdOtherThanProcess(t *testing.T) {
 		}
 	}
 }
+
+// 一時フォルダの親は tempfile.gettempdir と同じく、候補 (TMPDIR・TEMP・TMP・/tmp…) を順に、試しのファイルを作って消せるかで選ぶ。
+// 無いフォルダ・ファイル・書けないフォルダは飛ばす。空の値は候補にしない。
+func TestGettempdirSkipsUnusableCandidates(t *testing.T) {
+	base := t.TempDir()
+	file := base + "/afile"
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	readOnly := base + "/ro"
+	if err := os.Mkdir(readOnly, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	usable := base + "/ok"
+	if err := os.Mkdir(usable, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lookupOf := func(values map[string]string) cmdenv.Env {
+		return cmdenv.Env{LookupEnv: func(name string) (string, bool) { v, ok := values[name]; return v, ok }}
+	}
+	for _, tc := range []struct {
+		values map[string]string
+		want   string
+	}{
+		{map[string]string{"TMPDIR": base + "/missing", "TEMP": file, "TMP": usable}, usable},
+		{map[string]string{"TMPDIR": readOnly, "TEMP": "", "TMP": usable}, usable},
+		{map[string]string{"TMPDIR": file}, "/tmp"},
+	} {
+		got, err := gettempdir(lookupOf(tc.values))
+		if err != nil || got != tc.want {
+			t.Errorf("%v: %q %v (期待 %q)", tc.values, got, err, tc.want)
+		}
+	}
+	entries, err := os.ReadDir(usable)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("試しのファイルが残った: %v %v", entries, err)
+	}
+}

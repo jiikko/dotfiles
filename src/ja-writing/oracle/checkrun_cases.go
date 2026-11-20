@@ -89,7 +89,7 @@ func CheckRunCases() []VisCase {
 	cases := []VisCase{
 		runBasicCase(), runLinkCase(), runComposeCase(), runMaterialsCase(), runStdinCase(), runNoRecordCase(),
 		runArgsCase(), runChildrenCase(), runFailOnCase(), runWordsCase(), runDiffsCase(), runDetectorsCase(), runStateCase(),
-		runStartFailCase(),
+		runStartFailCase(), runTempdirCase(),
 	}
 	for i := range cases {
 		scopeRefs(&cases[i])
@@ -242,6 +242,30 @@ func runNoRecordCase() VisCase {
 	run(f, "--source", "src.md", "--final", "final.md", "--run-id", "e3")
 	run(f, "--source", "src.md", "--final", "final.md", "--run-id", "e4", "--session", "given")
 	unsetenv(f, "YOMIYASU_STATE_DIR")
+	snapshot(f)
+	return f.done()
+}
+
+// runTempdirCase は一時フォルダの親の選び方 (tempfile.gettempdir): TMPDIR が無いフォルダ・ファイル・書けないフォルダのとき、次の候補
+// (TEMP・TMP・/tmp) に移って、--no-record の run と、状態フォルダに書けずに一時フォルダへ移る run が最後まで動く。
+func runTempdirCase() VisCase {
+	f := newFixtureCase("run-tempdir")
+	f.write("src.md", vSource).write("final.md", vFinal).write("afile", "x").write("blocker", "x")
+	f.mkdir("ro").mkdir("tmp-ok")
+	chdir(f)
+	mode := uint32(0o555)
+	f.op(Op{Kind: "chmod", Path: f.dir("ro"), Mode: &mode})
+	for _, dir := range []string{f.dir("missing"), f.dir("afile"), f.dir("ro")} {
+		setenv(f, "TMPDIR", dir)
+		run(f, "--source", "src.md", "--final", "final.md", "--no-record")
+		run(f, "--source", "src.md", "--final", "final.md", "--state-dir", "blocker/st")
+	}
+	setenv(f, "TMPDIR", f.dir("missing"))
+	setenv(f, "TEMP", f.dir("afile"))
+	setenv(f, "TMP", f.dir("tmp-ok"))
+	run(f, "--source", "src.md", "--final", "final.md", "--no-record", "--json")
+	open := uint32(0o755)
+	f.op(Op{Kind: "chmod", Path: f.dir("ro"), Mode: &open})
 	snapshot(f)
 	return f.done()
 }

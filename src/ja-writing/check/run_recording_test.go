@@ -27,11 +27,10 @@ type runSim struct {
 	clock   string
 	counter int
 	shim    string
-	tmp     string
 }
 
 func newRunSim(t *testing.T) *runSim {
-	return &runSim{t: t, clock: "2026-01-01T00:00:00Z", tmp: t.TempDir()}
+	return &runSim{t: t, clock: "2026-01-01T00:00:00Z"}
 }
 
 // handles は run の記録の op のうち、Go の run の Runtime に写すもの (clock・pyexe) と driver だけが動かすもの。
@@ -78,7 +77,7 @@ func (s *runSim) runtime() Runtime {
 		s.counter++
 		return fmt.Sprintf("%08x", s.counter), nil
 	}
-	rt.TempDir = func() string { return s.tmp }
+	// 一時フォルダの親は本番と同じ gettempdir で選ぶ (run-tempdir の case が TMPDIR を変えて、候補の移り方を本家と比べる)
 	return rt
 }
 

@@ -44,7 +44,7 @@ func newHangFixture(t *testing.T) *hangFixture {
 		return append(env.Environment(), childEnvName+"="+childHang, "JA_PIDFILE="+h.pidFile)
 	}
 	temporary := t.TempDir()
-	h.rt.TempDir = func() string { return temporary }
+	h.rt.TempDir = func(cmdenv.Env) (string, error) { return temporary, nil }
 	return h
 }
 
@@ -145,7 +145,11 @@ func TestRunStopsChildrenOnSignal(t *testing.T) {
 				if left := leftovers(t, h.dir); len(left) != 0 {
 					t.Fatalf("止められた run の回が残った: %v", left)
 				}
-				temporary, err := filepath.Glob(filepath.Join(h.rt.TempDir(), "yomiyasu-check-*"))
+				parent, err := h.rt.TempDir(cmdenv.Env{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				temporary, err := filepath.Glob(filepath.Join(parent, "yomiyasu-check-*"))
 				if err != nil || len(temporary) != 0 {
 					t.Fatalf("一時フォルダが残った: %v %v", temporary, err)
 				}
