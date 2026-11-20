@@ -566,7 +566,11 @@ func runCaseWith(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats
 			}
 			canon, digest, _ = e.digest(call, outcome{})
 		default:
+			before := e.watchedTrees()
 			out := e.call(call)
+			if changed := e.treeChanges(before); changed != "" {
+				mismatches = append(mismatches, fmt.Sprintf("case %s の %d 番目 (%s %.80v) が作業フォルダか一時フォルダに書いた:\n%s", c.Name, i, call.Function, call.Args, changed))
+			}
 			var raised bool
 			canon, digest, raised = e.digest(call, out)
 			if call.Quiet {

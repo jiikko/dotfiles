@@ -67,12 +67,6 @@ func recordValue(record *pyjson.Object) pyjson.Value {
 	return record
 }
 
-// pyErrorTypes は errno から Python の OSError の子のクラスの名前 (この case で出るもの。ほかは OSError)。
-var pyErrorTypes = map[syscall.Errno]string{
-	syscall.EEXIST: "FileExistsError", syscall.ENOENT: "FileNotFoundError", syscall.EISDIR: "IsADirectoryError",
-	syscall.ENOTDIR: "NotADirectoryError", syscall.EACCES: "PermissionError", syscall.EPERM: "PermissionError",
-}
-
 // pyOSError は Go の書き込みの誤りを、本家が投げる OSError の型と str(例外) にする ("[Errno N] 理由: 'ファイル名' -> 'ファイル名2'")。
 func pyOSError(err error) outcome {
 	var naming *namingError
@@ -92,11 +86,7 @@ func pyOSError(err error) outcome {
 	case errors.As(err, &pathErr):
 		message += ": " + pystr.Repr(pathErr.Path)
 	}
-	typ, known := pyErrorTypes[errno]
-	if !known {
-		typ = "OSError"
-	}
-	return outcome{exc: &oracle.PyException{Type: typ, Message: message}}
+	return outcome{exc: &oracle.PyException{Type: visibility.OSErrorType(errno), Message: message}}
 }
 
 // treeValue は call_function.py の op tree の Go の写し。top から下の [相対パス, 種類, mode, 中身] の並び (名前は昇順に辿る)。

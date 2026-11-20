@@ -97,7 +97,7 @@ func replaySinceCase() VisCase {
 
 // replayMismatchCase は作り直しが記録と合わない形と、作り直しの前に止まる形。レポートのファイル (lint・diff・資料との照合の .json と .txt) を
 // 値を変えずに書き換え、記録のハッシュと record_digest を求め直す (件数の照らしは通り、作り直しで食い違う)。事実の穴の記録を書き換える。
-// 記録の tools の SHA-256 (道具・語の一覧) を変える (tool_changed で作り直さない)。
+// 記録の tools の SHA-256 (道具・語の一覧) を変える (tool_changed で作り直さない)。立場に NUL を入れる (子を起動できない内部エラー)。
 func replayMismatchCase() VisCase {
 	f := newFixtureCase("replay-mismatch")
 	f.write("src.md", rRich).write("final.md", rRich2).write("mat.md", vMaterial).write("comp.md", vComposed).write("gaps.md", rGaps)
@@ -126,6 +126,9 @@ func replayMismatchCase() VisCase {
 	redigest(f, firstRecord("tl", "t"), set(zeros64, "tools", "yomiyasu_lint.py", "sha256"))
 	pycli(f, "0", "run", "--material", "mat.md", "--final", "gaps.md", "--run-id", "t", "--fact-gaps", "--state-dir", "tg")
 	redigest(f, firstRecord("tg", "t"), set(zeros64, "tools", "references/lists/fact-gaps.txt", "sha256"))
+	// 立場に NUL を入れた (diff の子を起動できない。本家の Popen は起動の前に ValueError。内部エラーの文は伏せるので TestReplayCannotRunChildren が比べる)
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "n", "--stance", "報告", "--state-dir", "sn")
+	redigest(f, firstRecord("sn", "n"), set("a\x00b", "options", "stance"))
 	snapshot(f)
 	for _, state := range []string{"ma", "mb", "mc", "md", "me", "mf", "mz", "fg", "tl", "tg"} {
 		final := "final.md"
@@ -135,6 +138,7 @@ func replayMismatchCase() VisCase {
 		verifyBoth(f, "--final", final, "--state-dir", state, "--replay")
 	}
 	verify(f, "--final", "final.md", "--state-dir", "ma")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sn", "--replay")
 	return f.done()
 }
 

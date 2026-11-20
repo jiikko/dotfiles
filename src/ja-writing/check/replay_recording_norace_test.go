@@ -45,6 +45,9 @@ func TestReplayMatchesPythonRecording(t *testing.T) {
 	g, cases := loadReplay(t)
 	sim := newRunSim(t)
 	sim.restore = true
+	// 一時フォルダを空のフォルダにする (ほかのテストが同じ TMPDIR に書いても、verify が書いたものと見分けられる)
+	sim.temporary = t.TempDir()
+	t.Setenv("TMPDIR", sim.temporary)
 	stats := map[string]*stat{}
 	failed, total := 0, 0
 	for i, c := range cases {

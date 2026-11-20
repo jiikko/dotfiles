@@ -141,12 +141,22 @@ func osException(err error) (*pyops.Exception, bool) {
 	if !errors.As(err, &pathErr) || !errors.As(err, &errno) {
 		return nil, false
 	}
-	kind := map[syscall.Errno]string{syscall.ENOENT: "FileNotFoundError", syscall.EACCES: "PermissionError", syscall.EPERM: "PermissionError",
-		syscall.EISDIR: "IsADirectoryError", syscall.ENOTDIR: "NotADirectoryError", syscall.EEXIST: "FileExistsError"}[errno]
-	if kind == "" {
-		kind = "OSError"
+	return &pyops.Exception{Type: visibility.OSErrorType(errno), Msg: fmt.Sprintf("[Errno %d] %s: %s", int(errno), visibility.OSErrorReason("", errno), pystr.Repr(pathErr.Path))}, true
+}
+
+// embeddedNull は、本家の Popen が子を起こす前に ValueError("embedded null byte") で断る形 (argv・実行ファイル・環境変数・作業フォルダの
+// どれかに NUL がある)。Go の exec は同じ形を EINVAL の PathError (実行ファイルのパスつき) で返すので、起動の前に本家と同じ文で断る。
+// 本家の「illegal environment variable name」(名前に = のある環境変数) は写さない: Go の環境変数は「名前=値」の 1 つの文字列で、
+// 最初の = で切った名前は = を持てない。
+func embeddedNull(argv, env []string, cwd string) bool {
+	for _, list := range [][]string{argv, env, {cwd}} {
+		for _, s := range list {
+			if strings.IndexByte(s, 0) >= 0 {
+				return true
+			}
+		}
 	}
-	return &pyops.Exception{Type: kind, Msg: fmt.Sprintf("[Errno %d] %s: %s", int(errno), visibility.OSErrorReason("", errno), pystr.Repr(pathErr.Path))}, true
+	return false
 }
 
 // runOne は _run_one。子を 1 つ動かし、どの道でも結果を残す。
@@ -163,6 +173,11 @@ func (c *children) runOne(name string, argv []string) {
 	if c.stopped {
 		c.mu.Unlock()
 		c.set(name, childResult{status: "error", err: "子プロセスを動かす前に止められました"})
+		return
+	}
+	if embeddedNull(argv, c.env, c.cwd) {
+		c.mu.Unlock()
+		c.set(name, childResult{status: "error", elapsed: elapsed(), err: "子プロセスを動かせません（ValueError: embedded null byte）"})
 		return
 	}
 	cmd := subproc.Command(argv[0], argv[1:]...)

@@ -3,6 +3,7 @@ package check
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 
 	"ja-writing/cmdenv"
@@ -80,5 +81,38 @@ func TestChildrenStopWhenParentWorkPanics(t *testing.T) {
 	}
 	if alive(pid) {
 		t.Fatalf("panic の後に子 %d が止まっていない", pid)
+	}
+}
+
+// argv・実行ファイル・環境変数・作業フォルダのどれかに NUL があると、子を起動せずに本家の Popen と同じ ValueError の文にする
+// (python3.15 (3.15.0) の subprocess.Popen で実測: どの引数の NUL でも「ValueError: embedded null byte」で、作業フォルダが無いときも同じ)。
+func TestChildrenRefuseEmbeddedNull(t *testing.T) {
+	h := newHangFixture(t)
+	exe := testExecutable(t)
+	environ := h.rt.ChildEnv(cmdenv.Env{Cwd: h.dir, Environ: h.environ})
+	for _, c := range []struct {
+		name, cwd string
+		argv, env []string
+	}{
+		{"引数", h.dir, []string{exe, "lint", "a\x00b"}, environ},
+		{"実行ファイル", h.dir, []string{exe + "\x00", "lint"}, environ},
+		{"環境変数の値", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "JA_NUL=a\x00b")},
+		{"環境変数の名前", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "JA\x00NUL=1")},
+		{"作業フォルダ", h.dir + "/no\x00where", []string{exe, "lint"}, environ},
+		{"作業フォルダが無いときの引数", h.dir + "/nowhere", []string{exe, "lint", "a\x00b"}, environ},
+	} {
+		kids := newChildren(h.rt, 60, c.cwd, c.env)
+		kids.start("lint", c.argv)
+		results, err := kids.wait(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := results["lint"]
+		if r.status != "error" || r.code != nil || r.stderr != "" || r.err != "子プロセスを動かせません（ValueError: embedded null byte）" {
+			t.Errorf("%s: 結果 %+v", c.name, r)
+		}
+		if _, err := os.Stat(h.pidFile); err == nil {
+			t.Fatalf("%s: NUL のある子を起動した", c.name)
+		}
 	}
 }

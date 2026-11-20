@@ -29,6 +29,85 @@ type runSim struct {
 	shim    string
 	// restore は op snapshot を比べずに作業フォルダへ戻す (verify --replay の記録。本家の run が書いた木に Go の verify を当てる)。
 	restore bool
+	// temporary は restore のとき、verify の前後で変わらないことを確かめる一時フォルダ (TMPDIR。作業フォルダも一緒に確かめる)。
+	temporary string
+}
+
+// watchedTrees は restore のとき (verify を呼ぶ記録)、作業フォルダ (状態フォルダを含む) と一時フォルダの木。ほかの記録では nil。
+// verify は読むだけ: 本家の verify は状態フォルダにも一時フォルダにも書かないので、記録の stdout・stderr が合っても、Go が書いていれば食い違い。
+func (e *interp) watchedTrees() map[string]string {
+	if e.sim == nil || !e.sim.restore {
+		return nil
+	}
+	trees := map[string]string{}
+	for _, top := range []string{e.fx.Root, e.sim.temporary} {
+		if err := treeFingerprint(top, trees); err != nil {
+			e.t.Fatalf("%s の木を読めない: %v", top, err)
+		}
+	}
+	return trees
+}
+
+// treeChanges は watchedTrees を before と比べ、増えた・消えた・変わったものを並べる (変わらなければ空)。
+func (e *interp) treeChanges(before map[string]string) string {
+	if before == nil {
+		return ""
+	}
+	after := e.watchedTrees()
+	var lines []string
+	for path, was := range before {
+		if now, ok := after[path]; !ok {
+			lines = append(lines, "  消えた "+path)
+		} else if now != was {
+			lines = append(lines, "  変わった "+path+" ("+was+" → "+now+")")
+		}
+	}
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			lines = append(lines, "  増えた "+path)
+		}
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\n")
+}
+
+// treeFingerprint は top の下の全部 (top を含む) を、パス → 種類・mode・中身の SHA-256 (リンクは先) にして trees へ入れる。
+// mtime と atime は入れない (読むだけで atime が変わる)。読めないフォルダは、その誤りを値にして中へ入らない。
+func treeFingerprint(top string, trees map[string]string) error {
+	return filepath.WalkDir(top, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if path == top {
+				return err
+			}
+			trees[path] = "読めない: " + err.Error()
+			return nil
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		mode := fmt.Sprintf("%o", info.Sys().(*syscall.Stat_t).Mode)
+		switch {
+		case d.Type()&fs.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			trees[path] = "link " + mode + " " + target
+		case d.Type().IsRegular():
+			// 読めないファイル (fixture の mode 000) は中身の代わりに大きさで持つ
+			content := fmt.Sprintf("読めない %d", info.Size())
+			if data, err := os.ReadFile(path); err == nil {
+				content = SHA256(data)
+			}
+			trees[path] = "file " + mode + " " + content
+		case d.IsDir():
+			trees[path] = "dir " + mode
+		default:
+			trees[path] = "other " + mode
+		}
+		return nil
+	})
 }
 
 func newRunSim(t *testing.T) *runSim {

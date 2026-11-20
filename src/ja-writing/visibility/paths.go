@@ -290,6 +290,28 @@ func strerror(errno syscall.Errno) string {
 	return "Unknown error: " + strconv.Itoa(int(errno))
 }
 
+// osErrorTypes は Python の OSError(errno, 理由) が作る子のクラスの名前 (macOS の errno。CPython の errnomap と同じ全部の項目。表の外は OSError)。
+// 起動や読みで出ると分かっている errno だけに絞らない: 絞ると、出ると思っていなかった errno で型の名前が本家と違う。
+var osErrorTypes = map[syscall.Errno]string{
+	syscall.EPERM: "PermissionError", syscall.ENOENT: "FileNotFoundError", syscall.ESRCH: "ProcessLookupError", syscall.EINTR: "InterruptedError",
+	syscall.ECHILD: "ChildProcessError", syscall.EACCES: "PermissionError", syscall.EEXIST: "FileExistsError", syscall.ENOTDIR: "NotADirectoryError",
+	syscall.EISDIR: "IsADirectoryError", syscall.EPIPE: "BrokenPipeError", syscall.EAGAIN: "BlockingIOError", syscall.EINPROGRESS: "BlockingIOError",
+	syscall.EALREADY: "BlockingIOError", syscall.ECONNABORTED: "ConnectionAbortedError", syscall.ECONNRESET: "ConnectionResetError",
+	syscall.ESHUTDOWN: "BrokenPipeError", syscall.ETIMEDOUT: "TimeoutError", syscall.ECONNREFUSED: "ConnectionRefusedError",
+	errENOTCAPABLE: "PermissionError",
+}
+
+// errENOTCAPABLE は macOS の ENOTCAPABLE (syscall に名前が無い)。
+const errENOTCAPABLE syscall.Errno = 107
+
+// OSErrorType は type(OSError(errno, 理由)).__name__ (本家が投げる OSError の型の名前)。
+func OSErrorType(errno syscall.Errno) string {
+	if name, ok := osErrorTypes[errno]; ok {
+		return name
+	}
+	return "OSError"
+}
+
 // errnoOf は err の中の errno。無ければ ok が偽。
 func errnoOf(err error) (syscall.Errno, bool) {
 	var errno syscall.Errno

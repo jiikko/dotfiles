@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"syscall"
 	"testing"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyops"
 
 	"github.com/jiikko/dotfiles/src/testwait"
 )
@@ -39,7 +42,15 @@ func TestReplayCannotRunChildren(t *testing.T) {
 	for _, c := range []struct{ exe, want string }{
 		{killer, "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（lint: シグナル9で止まりました" + tail},
 		{missing, "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（lint: 子プロセスを動かせません（FileNotFoundError: [Errno 2] No such file or directory: '" + missing + "'）" + tail},
+		{"", "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（diff: 子プロセスを動かせません（ValueError: embedded null byte）" + tail},
 	} {
+		if c.exe == "" {
+			// 記録の立場に NUL を入れて digest を求め直す (本家の run の記録を同じく書き換え、本家の verify --replay で実測した文)
+			h = recordedHangFixture(t)
+			setRecordedOption(t, h.dir+"/.yomiyasu/runs/r1/attempt-1.json", "stance", "a\x00b")
+			c.exe = testExecutable(t)
+			h.rt.ChildEnv = childRuntime(t).ChildEnv // lint は止まらずに最後まで動く子にする
+		}
 		exe := c.exe
 		h.rt.Executable = func() (string, error) { return exe, nil }
 		out := waitOutcome(t, h.startCommand(context.Background(), "verify", "--final", "final.md", "--replay"))
@@ -104,5 +115,63 @@ func TestReplayAfterStopStartsNoChildren(t *testing.T) {
 	}
 	if _, statErr := os.Stat(h.pidFile); !os.IsNotExist(statErr) {
 		t.Fatalf("止めた後に子が起動した (pid のファイル: %v)", statErr)
+	}
+}
+
+// setRecordedOption は記録の options の 1 つを value にして、record_digest を求め直す (形の検査と digest の照らしを通る書き換え)。
+func setRecordedOption(t *testing.T, path, key string, value pyjson.Value) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := pyjson.LoadsBytes(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := parsed.(*pyjson.Object)
+	record.Field("options").(*pyjson.Object).Set(key, value)
+	digest, err := RecordDigest(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Set("record_digest", digest)
+	out, err := pyjson.Dumps(record, pyjson.Indent1())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(out+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// run でも、子の環境変数に NUL があれば子を起動せず、検査ごとに本家の Popen と同じ文を記録に残す (環境変数の NUL は本家の os.environ
+// には入らないので、文は TestChildrenRefuseEmbeddedNull と同じ実測の Popen の文)。
+func TestRunRecordsEmbeddedNullChildren(t *testing.T) {
+	h := newHangFixture(t)
+	var stdout, stderr bytes.Buffer
+	env := cmdenv.Env{Args: []string{"run", "--source", "src.md", "--final", "final.md", "--run-id", "r1"}, Stdout: &stdout, Stderr: &stderr,
+		Cwd: h.dir, Environ: append(slices.Clone(h.environ), "JA_NUL=a\x00b")}
+	rc := MainWith(context.Background(), env, childRuntime(t))
+	record, err := ReadRecord(h.dir + "/.yomiyasu/runs/r1/attempt-1.json")
+	if err != nil || record == nil {
+		t.Fatalf("rc=%d 記録を読めない: %v stderr=%q", rc, err, stderr.String())
+	}
+	seen := 0
+	for _, entry := range pyops.Iter(pyops.Index(record, "checks")) {
+		name := pyops.Str(pyops.Index(entry, "name"))
+		if name != "lint" && name != "diff" {
+			continue
+		}
+		seen++
+		if got := pyops.Index(entry, "error"); got != "子プロセスを動かせません（ValueError: embedded null byte）" || pyops.Index(entry, "status") != "error" {
+			t.Errorf("%s: status=%v error=%v", name, pyops.Index(entry, "status"), got)
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("lint と diff の結果が %d 件 (rc=%d stdout=%q)", seen, rc, stdout.String())
+	}
+	if _, err := os.Stat(h.pidFile); err == nil {
+		t.Fatal("NUL のある環境で子を起動した")
 	}
 }
