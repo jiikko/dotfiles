@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"ja-writing/internal/pyfs"
 	"sort"
 )
 
@@ -32,8 +33,9 @@ func (c LintCLICase) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(struct {
 		plain
+		Args     Argv   `json:"args"`
 		StdinB64 string `json:"stdin_b64,omitempty"`
-	}{plain(c), base64.StdEncoding.EncodeToString(c.Stdin)})
+	}{plain(c), Argv(c.Args), base64.StdEncoding.EncodeToString(c.Stdin)})
 }
 
 // LintCLIRecord は 1 回の実行の記録。Out は stdout (作業フォルダの実パスを RootToken にしたもの) の SHA-256 の先頭 16 字、Len はそのバイト数。
@@ -149,6 +151,23 @@ var lintCLIExtraFiles = map[string]string{
 // lintCLITextInput は標準入力の実例 (語と候補のある短い文書)。
 const lintCLITextInput = "# まとめ\n\n本記事では設定を扱います🚀ポイントは3つです。\n\n- 項目です。\n- 項目です。\n"
 
+// ArgvSurrogates は、OS から UTF-8 として読めないバイトで受けた引数を、本家の sys.argv (os.fsdecode) と同じ字にした値。
+// dcff は b"z\xff" (U+DCFF 1 字)、raw-d800 は WTF-8 のサロゲートの形の生のバイト b"q\xed\xa0\x80" (3 バイトとも surrogateescape で U+DCED U+DCA0 U+DC80)。
+// 記録には誤りの文 (標準エラーの backslashreplace) と、check の記録の JSON・標準出力 (strict) の出口で入る。
+var ArgvSurrogates = []struct{ Name, Value string }{
+	{"dcff", "z" + surrogates(0xDCFF)},
+	{"raw-d800", "q" + surrogates(0xDCED, 0xDCA0, 0xDC80)},
+}
+
+// surrogates はサロゲートの並びを WTF-8 で書いた文字列 (本家の str の単独のサロゲート)。
+func surrogates(rs ...rune) string {
+	var b []byte
+	for _, r := range rs {
+		b = pyfs.AppendSurrogate(b, r)
+	}
+	return string(b)
+}
+
 // LintCLICases は CLI の記録の case の一覧 (入力の集まりの全ファイルと、条件・誤り・標準入力・作業フォルダの実例)。名前は記録と突き合わせる鍵。
 func LintCLICases(c Corpus, docTypes, readers []string) []LintCLICase {
 	var cases []LintCLICase
@@ -262,6 +281,21 @@ func LintCLICases(c Corpus, docTypes, readers []string) []LintCLICase {
 		{"file-with-doc-type-and-bad-file", []string{"--doc-type", "slides", "corpus/nowhere.md"}},
 	} {
 		cases = append(cases, LintCLICase{Name: "scenario/" + s.name, Args: s.args, Keep: true})
+	}
+	for _, v := range ArgvSurrogates {
+		for _, s := range []struct {
+			name string
+			args []string
+		}{
+			{"file", []string{v.Value}},
+			{"doc-type", []string{"--doc-type", v.Value, first}},
+			{"reader", []string{"--reader", v.Value, first}},
+			{"words", []string{"--words", v.Value, first}},
+			{"fail-on", []string{"--fail-on", v.Value, first}},
+			{"extra", []string{first, v.Value}},
+		} {
+			cases = append(cases, LintCLICase{Name: "argv-" + v.Name + "/" + s.name, Args: s.args, Keep: true})
+		}
 	}
 	stdinCases := []struct {
 		name  string

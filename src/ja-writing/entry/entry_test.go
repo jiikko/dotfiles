@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pyfs"
 )
 
 func run(t *testing.T, args ...string) (int, string, string) {
@@ -25,6 +26,11 @@ func TestMainWithoutSubcommandIsUsageError(t *testing.T) {
 func TestMainUnknownSubcommandIsUsageError(t *testing.T) {
 	rc, _, stderr := run(t, "nope")
 	if rc != cmdenv.ExitUsage || !strings.Contains(stderr, "nope") {
+		t.Fatalf("rc=%d stderr=%q", rc, stderr)
+	}
+	// 引数は本家の sys.argv と同じ字 (0xff は U+DCFF)。標準エラーには本家の _error と同じ backslashreplace で書く
+	rc, _, stderr = run(t, "z"+string(pyfs.AppendSurrogate(nil, 0xDCFF)))
+	if rc != cmdenv.ExitUsage || !strings.Contains(stderr, `です: z\udcff`+"\n") {
 		t.Fatalf("rc=%d stderr=%q", rc, stderr)
 	}
 }

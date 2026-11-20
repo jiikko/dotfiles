@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"ja-writing/internal/pycli"
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 	"ja-writing/visibility"
@@ -132,7 +132,7 @@ func readNamed(role string, index int, given string, stdin []byte) (*Input, stri
 // readGiven は渡された綴りのまま開いて全部読む ('x.md/' を本家と同じく開けない誤りにするため、パスを整えない)。
 // Python の open はフォルダを開くと IsADirectoryError になるので、開いた直後にフォルダを断る (最終稿の通常のファイルの検査より先)。
 func readGiven(given string, regularOnly bool) ([]byte, string) {
-	handle, err := os.Open(given)
+	handle, err := pyos.Open(given)
 	if err != nil {
 		return nil, pycli.OpenProblem(given, err)
 	}

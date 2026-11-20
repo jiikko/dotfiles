@@ -7,6 +7,7 @@ package entry
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,6 +16,7 @@ import (
 	"ja-writing/cmdenv"
 	"ja-writing/diff"
 	"ja-writing/hook"
+	"ja-writing/internal/pyfs"
 	"ja-writing/lint"
 )
 
@@ -52,7 +54,7 @@ func Main(ctx context.Context, env cmdenv.Env) int {
 	}
 	sub, ok := subcommands[env.Args[0]]
 	if !ok {
-		_, _ = fmt.Fprintf(env.Stderr, "ja-writing: 知らない subcommand です: %s\n%s", env.Args[0], usage)
+		_, _ = io.WriteString(env.Stderr, pyfs.BackslashReplace(fmt.Sprintf("ja-writing: 知らない subcommand です: %s\n%s", env.Args[0], usage)))
 		return cmdenv.ExitUsage
 	}
 	rest := env

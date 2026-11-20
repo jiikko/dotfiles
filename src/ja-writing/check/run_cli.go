@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"syscall"
@@ -16,6 +15,7 @@ import (
 	"ja-writing/internal/pycli"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pystr"
 	"ja-writing/visibility"
 )
@@ -437,7 +437,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	// 4. 最終稿のファイルを読み直し、検査の途中で変わっていないかを確かめる (標準入力なら省く)
 	if c.final.Via == "file" {
 		if stop := untilStopped(ctx, func() {
-			data, err := os.ReadFile(*c.final.Path)
+			data, err := pyos.ReadFile(*c.final.Path)
 			c.finalChanged = err != nil || SHA256(data) != c.final.SHA256
 		}); stop != nil {
 			return 0, stop

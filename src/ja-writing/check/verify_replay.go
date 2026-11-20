@@ -3,7 +3,6 @@ package check
 import (
 	"context"
 	"errors"
-	"os"
 	"slices"
 	"sync"
 
@@ -11,6 +10,7 @@ import (
 	"ja-writing/diff"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyos"
 	"ja-writing/lint"
 	"ja-writing/visibility"
 )
@@ -59,7 +59,7 @@ func (r *replayer) stop() {
 
 // replayText は写しの本文 (_replay の text_of: 写しを開いて decode_source)。読めないときは本家の例外と同じ型と文の誤り。
 func replayText(folder string, item pyjson.Value) (string, error) {
-	data, err := os.ReadFile(folder + "/" + snapshotName(item))
+	data, err := pyos.ReadFile(folder + "/" + snapshotName(item))
 	if err != nil {
 		if e, ok := osException(err); ok {
 			return "", e

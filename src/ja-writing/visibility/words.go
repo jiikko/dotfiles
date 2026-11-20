@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 )
@@ -144,7 +144,7 @@ func FindWordsFolder(cwd *string, option *string, lookup func(string) (string, b
 // worktreeWordsFolder は _worktree_words_folder。linked worktree の .git ファイルの gitdir と commondir から、元の checkout の語の一覧を探す。
 // .git ファイルや commondir を読めないとき、checkout が決まらないとき (bare リポジトリなど) は ok が偽。
 func worktreeWordsFolder(gitFile string) (string, bool) {
-	data, err := os.ReadFile(gitFile)
+	data, err := pyos.ReadFile(gitFile)
 	if err != nil || !pyunicode.ValidUTF8(string(data)) {
 		return "", false
 	}
@@ -161,7 +161,7 @@ func worktreeWordsFolder(gitFile string) (string, bool) {
 	if !pathIsFile(commondirPath) {
 		return "", false
 	}
-	cd, err := os.ReadFile(commondirPath)
+	cd, err := pyos.ReadFile(commondirPath)
 	if err != nil || !pyunicode.ValidUTF8(string(cd)) {
 		return "", false
 	}
@@ -196,7 +196,7 @@ func sharedCheckout(commonDir string) (string, bool) {
 		if !pathIsFile(path) {
 			continue
 		}
-		data, err := os.ReadFile(path)
+		data, err := pyos.ReadFile(path)
 		if err != nil {
 			continue
 		}
@@ -387,7 +387,7 @@ type wordsFile struct {
 
 // readWordsFile はファイルを読む。無い (ENOENT・ENOTDIR) ときは nil、ほかの失敗は WordsError (Python の strerror と同じ文)。
 func readWordsFile(path string) (*wordsFile, error) {
-	data, rerr := os.ReadFile(path)
+	data, rerr := pyos.ReadFile(path)
 	if rerr == nil {
 		sum := sha256.Sum256(data)
 		return &wordsFile{data, hex.EncodeToString(sum[:])}, nil

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 	"ja-writing/visibility"
@@ -35,8 +36,8 @@ func sameWorkingDirectory(env cmdenv.Env) error {
 	if env.Cwd == "" {
 		return nil
 	}
-	given, givenErr := os.Stat(env.Cwd)
-	here, hereErr := os.Stat(".")
+	given, givenErr := pyos.Stat(env.Cwd)
+	here, hereErr := pyos.Stat(".")
 	readable := givenErr == nil && hereErr == nil
 	if !readable || os.SameFile(given, here) {
 		return nil
@@ -91,7 +92,7 @@ func visibilityNoCwd() error {
 func CaseInsensitive(path string) bool {
 	current := path
 	for {
-		if _, err := os.Lstat(current); err == nil {
+		if _, err := pyos.Lstat(current); err == nil {
 			break
 		}
 		parent := visibility.PathParent(current)
@@ -104,11 +105,11 @@ func CaseInsensitive(path string) bool {
 	if swapped == current {
 		return false
 	}
-	mine, err := os.Stat(current)
+	mine, err := pyos.Stat(current)
 	if err != nil {
 		return false
 	}
-	other, err := os.Stat(swapped)
+	other, err := pyos.Stat(swapped)
 	if err != nil {
 		return false
 	}
@@ -143,11 +144,11 @@ func SameFile(a, b string) (bool, error) {
 	if err != nil || same {
 		return same, err
 	}
-	fa, err := os.Stat(a)
+	fa, err := pyos.Stat(a)
 	if err != nil {
 		return false, nil //nolint:nilerr // Path.samefile の OSError は「違うファイル」
 	}
-	fb, err := os.Stat(b)
+	fb, err := pyos.Stat(b)
 	if err != nil {
 		return false, nil //nolint:nilerr // 同上
 	}

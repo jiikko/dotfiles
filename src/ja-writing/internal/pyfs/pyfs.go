@@ -60,43 +60,84 @@ func Decode(b string) string {
 	return string(out)
 }
 
-// Encode は Python の os.fsencode(s) (macOS では s.encode("utf-8", "surrogateescape")) と同じバイト列を返す。
-// s は WTF-8 の文字列。U+DC80..U+DCFF のサロゲートは 1 バイト (下位 8 ビット) に戻し、ほかのサロゲートは *EncodeError にする。
-// 位置は、続いたサロゲートの並びのうち、戻せない最初の字から並びの終わりまで (CPython の UTF-8 の encoder が error handler に渡す範囲)。
-// UTF-8 としても WTF-8 としても読めないバイトは、そのバイトを surrogateescape で読んだ字 (U+DC80..U+DCFF) とみなして、そのまま出す。
-// OS から受けた生のバイト列を渡さない: WTF-8 のサロゲートの形 (ED A0..BF xx) はサロゲートの字として読むので、本家が同じバイトで渡す値を
-// 書き換えるか断る。OS の値は Decode で読んでから渡す。
-func Encode(s string) (string, error) {
-	type char struct {
-		r   rune
-		raw string // 出すバイト (サロゲートでない字と、読めないバイト)
-	}
-	var chars []char
+// char は WTF-8 の文字列の 1 字 (r) と、サロゲートでない字のときに出すバイト (raw)。
+type char struct {
+	r   rune
+	raw string
+}
+
+// chars は s を字に分ける。UTF-8 としても WTF-8 としても読めないバイトは、そのバイトを surrogateescape で読んだ字 (U+DC80..U+DCFF) とみなす
+// (OS から受けたバイトを Decode せずに持った値も、本家の str と同じ字に数える)。
+func chars(s string) []char {
+	var out []char
 	for i := 0; i < len(s); {
 		r, n := DecodeRune(s[i:])
 		if r == utf8.RuneError && n == 1 {
 			r = 0xDC00 | rune(s[i])
 		}
-		chars = append(chars, char{r, s[i : i+n]})
+		out = append(out, char{r, s[i : i+n]})
 		i += n
 	}
+	return out
+}
+
+// surrogateRun は cs[i] から続くサロゲートの並びの終わり (含まない添字)。
+func surrogateRun(cs []char, i int) int {
+	end := i
+	for end < len(cs) && isSurrogate(cs[end].r) {
+		end++
+	}
+	return end
+}
+
+// Encode は Python の os.fsencode(s) (macOS では s.encode("utf-8", "surrogateescape")) と同じバイト列を返す。
+// s は WTF-8 の文字列。U+DC80..U+DCFF のサロゲートは 1 バイト (下位 8 ビット) に戻し、ほかのサロゲートは *EncodeError にする。
+// 位置は、続いたサロゲートの並びのうち、戻せない最初の字から並びの終わりまで (CPython の UTF-8 の encoder が error handler に渡す範囲)。
+// OS から受けた生のバイト列を渡さない: WTF-8 のサロゲートの形 (ED A0..BF xx) はサロゲートの字として読むので、本家が同じバイトで渡す値を
+// 書き換えるか断る。OS の値は Decode で読んでから渡す。
+func Encode(s string) (string, error) {
+	cs := chars(s)
 	out := make([]byte, 0, len(s))
-	for i := 0; i < len(chars); {
-		if !isSurrogate(chars[i].r) {
-			out = append(out, chars[i].raw...)
+	for i := 0; i < len(cs); {
+		if !isSurrogate(cs[i].r) {
+			out = append(out, cs[i].raw...)
 			i++
 			continue
 		}
-		end := i
-		for end < len(chars) && isSurrogate(chars[end].r) {
-			end++
-		}
+		end := surrogateRun(cs, i)
 		for ; i < end; i++ {
-			if r := chars[i].r; r < 0xDC80 || r > 0xDCFF {
+			if r := cs[i].r; r < 0xDC80 || r > 0xDCFF {
 				return "", &EncodeError{Start: i, End: end, Char: r}
 			}
-			out = append(out, byte(chars[i].r))
+			out = append(out, byte(cs[i].r))
 		}
 	}
 	return string(out), nil
+}
+
+// EncodeStrict は Python の s.encode("utf-8") (errors は strict) と同じバイト列を返す。サロゲートが 1 字でもあれば *EncodeError で、
+// 位置は最初のサロゲートから、その並びの終わりまで。本家の標準出力 (main が reconfigure(encoding="utf-8") で errors を strict に戻す) に書く口が使う。
+func EncodeStrict(s string) (string, error) {
+	cs := chars(s)
+	for i, c := range cs {
+		if isSurrogate(c.r) {
+			return "", &EncodeError{Start: i, End: surrogateRun(cs, i), Char: c.r}
+		}
+	}
+	return s, nil
+}
+
+// BackslashReplace は Python の s.encode("utf-8", "backslashreplace") と同じバイト列を返す。サロゲートは \udcff の形の 6 字にする。
+// 本家の標準エラー (_error と argparse の error が errors="backslashreplace" にしてから書く) に書く口が使う。
+func BackslashReplace(s string) string {
+	cs := chars(s)
+	out := make([]byte, 0, len(s))
+	for _, c := range cs {
+		if isSurrogate(c.r) {
+			out = fmt.Appendf(out, "\\u%04x", c.r)
+			continue
+		}
+		out = append(out, c.raw...)
+	}
+	return string(out)
 }

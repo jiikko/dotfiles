@@ -104,13 +104,13 @@ func verify(f *fixtureCase, args ...string) { checkMain(f, append([]string{"veri
 
 // checkMain は本家の check の main を argv で呼び、標準出力・標準エラー・終了コードを記録する。
 func checkMain(f *fixtureCase, argv []string) {
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{argv}, Digest: true, Keep: true, Capture: true})
+	f.call(Call{Module: CheckModule, Function: "main", Args: []any{Argv(argv)}, Digest: true, Keep: true, Capture: true})
 }
 
 // verifyBoth は verify を、人が読む出力と --json の両方で呼ぶ (JSON は digest だけを残す。詳しい食い違いは JSON にしか出ない)。
 func verifyBoth(f *fixtureCase, args ...string) {
 	verify(f, args...)
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{append(append([]string{"verify"}, args...), "--json")}, Digest: true, Capture: true})
+	f.call(Call{Module: CheckModule, Function: "main", Args: []any{Argv(append(append([]string{"verify"}, args...), "--json"))}, Digest: true, Capture: true})
 }
 
 // verifyStdin は標準入力を content にしてから verify を呼ぶ。
@@ -750,7 +750,7 @@ func verifyArgsCase() VisCase {
 	}
 	f.op(Op{Kind: "stdin", BytesB64: base64.StdEncoding.EncodeToString([]byte{0xff, 0xfe})})
 	verify(f, "--final", "-")
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{[]string{"--version"}}, Digest: true, Keep: true, Capture: true})
+	f.call(Call{Module: CheckModule, Function: "main", Args: []any{Argv{"--version"}}, Digest: true, Keep: true, Capture: true})
 	return f.done()
 }
 

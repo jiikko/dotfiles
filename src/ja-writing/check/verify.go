@@ -3,7 +3,6 @@ package check
 import (
 	"cmp"
 	"math/big"
-	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
@@ -69,7 +69,7 @@ func groups(p *pyre.Lazy, text string) []string {
 
 // listNames は path の下の名前 (Path.iterdir。読めなければ nil と false)。
 func listNames(path string) ([]string, bool) {
-	entries, err := os.ReadDir(path)
+	entries, err := pyos.ReadDir(path)
 	if err != nil {
 		return nil, false
 	}
@@ -149,7 +149,7 @@ type found struct {
 func newFound(state, runID string, attempt attemptNo) *found {
 	f := &found{runID: runID, attempt: attempt, path: attemptFile(state, runID, attempt)}
 	f.status, f.record = must2(ReadRecordStatus(f.path))
-	if info, err := os.Stat(f.path); err == nil {
+	if info, err := pyos.Stat(f.path); err == nil {
 		f.made = info.ModTime().UnixNano()
 	}
 	return f
@@ -252,7 +252,7 @@ func byPathEntries(state, key string) []found {
 		if g == nil || !runIDPattern.MustMatchAt0(g[2]) {
 			continue
 		}
-		info, err := os.Stat(folder + "/" + name)
+		info, err := pyos.Stat(folder + "/" + name)
 		if err != nil {
 			continue
 		}
@@ -408,7 +408,7 @@ func onlyLineEndings(state string, record *pyjson.Object, final *Target) bool {
 	if !ok || !hex64Pattern.MustMatchAt0(value) {
 		return false
 	}
-	recorded, err := os.ReadFile(state + "/inputs/" + value + ".bin")
+	recorded, err := pyos.ReadFile(state + "/inputs/" + value + ".bin")
 	if err != nil {
 		return false
 	}
@@ -767,7 +767,7 @@ func previousTreated(state, runID string, attempt attemptNo) *pyjson.Object {
 
 // fileSHA256 は _file_sha256。
 func fileSHA256(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := pyos.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
@@ -795,7 +795,7 @@ func snapshotText(state string, item pyjson.Value) *string {
 	if !ok {
 		return nil
 	}
-	data, err := os.ReadFile(state + "/inputs/" + sha + ".bin")
+	data, err := pyos.ReadFile(state + "/inputs/" + sha + ".bin")
 	if err != nil || SHA256(data) != sha {
 		return nil
 	}

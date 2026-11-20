@@ -236,7 +236,7 @@ func normalizeInternal(stderr string) string {
 func (e *interp) capture(c oracle.Call) outcome {
 	e.t.Helper()
 	var argv []string
-	for _, a := range c.Args[0].([]string) {
+	for _, a := range c.Args[0].(oracle.Argv) {
 		argv = append(argv, e.sub(a))
 	}
 	cwd, err := os.Getwd()

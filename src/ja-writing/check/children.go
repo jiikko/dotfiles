@@ -158,8 +158,8 @@ type popenArgs struct {
 // 断りの順は本家と同じ: 環境変数を前から (名前、値の順に bytes にする)、argv を前から 1 つずつ (字を bytes にしてから NUL を見る)、
 // 環境変数の NUL、作業フォルダ (bytes にしてから NUL を見る)。
 // 環境変数は本家の str と同じ形で受ける (cmdenv.Env.Environment。OS から受けた値は cmdenv.FromProcess が os.fsdecode と同じ規則で読むので、
-// ここで受けたバイトに戻る)。実行ファイルと作業フォルダ (一時フォルダ) のパスは OS のバイトのまま来るので、WTF-8 のサロゲートの形
-// (ED A0..BF xx) だけは字として読み、本家と答えが違う。macOS のパスはこの形を持てない (mkdir が EILSEQ)。
+// ここで受けたバイトに戻る)。作業フォルダ (一時フォルダ) も TMPDIR などの字から作るので同じ。実行ファイルのパス (os.Executable) だけは
+// OS のバイトのまま来るので、WTF-8 のサロゲートの形 (ED A0..BF xx) を字として読み、本家と答えが違う。macOS のパスはこの形を持てない (mkdir が EILSEQ)。
 // 本家の「illegal environment variable name」(名前に = のある環境変数) は写さない: Go の環境変数は「名前=値」の 1 つの文字列で、
 // 最初の = で切った名前は = を持てない。
 func popenEncode(argv, env []string, cwd string) (popenArgs, *pyops.Exception) {

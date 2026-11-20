@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ja-writing/internal/pyfs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 
 	"subproc"
 )
@@ -48,6 +50,58 @@ func (n Namespace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]map[string]any{"$namespace": n})
 }
 
+// pyString は s (本家の str と同じ字の WTF-8) を JSON の文字列にする。単独のサロゲートは "\udcff" の形の escape にする
+// (encoding/json は U+FFFD に変える)。driver の json.loads はそれを単独のサロゲートを持つ str に読む。上位と下位のサロゲートが並ぶと
+// json.loads が 1 字に合わせて別の str になるので、誤りにする。WTF-8 としても読めないバイトも誤りにする (本家の str に無い)。
+func pyString(s string) ([]byte, error) {
+	if utf8.ValidString(s) {
+		return json.Marshal(s)
+	}
+	out := []byte{'"'}
+	high := false
+	for i := 0; i < len(s); {
+		r, n := pyfs.DecodeRune(s[i:])
+		switch {
+		case r == utf8.RuneError && n == 1:
+			return nil, fmt.Errorf("WTF-8 でないバイト %#x (%q)", s[i], s)
+		case r >= 0xD800 && r <= 0xDFFF:
+			if high && r >= 0xDC00 {
+				return nil, fmt.Errorf("上位と下位のサロゲートが並んでいる (%q)", s)
+			}
+			out = fmt.Appendf(out, "\\u%04x", r)
+			high = r < 0xDC00
+		default:
+			quoted, err := json.Marshal(s[i : i+n])
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, quoted[1:len(quoted)-1]...)
+			high = false
+		}
+		i += n
+	}
+	return append(out, '"'), nil
+}
+
+// Argv は本家の main に渡す argv (本家の sys.argv と同じ字。単独のサロゲートも持てる)。JSON では pyString の形にする。
+type Argv []string
+
+// MarshalJSON は各要素を pyString にした JSON の配列にする。
+func (a Argv) MarshalJSON() ([]byte, error) {
+	out := []byte{'['}
+	for i, s := range a {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		b, err := pyString(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b...)
+	}
+	return append(out, ']'), nil
+}
+
 // Op は作業フォルダへの操作。Kind は write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git・stdin。
 // stdin は driver の sys.stdin を BytesB64 (か Content) を読む入力にする (Name が "none" なら None)。Go のテストは Apply を通さず、自分の標準入力の代わりに持つ。
 // パスと値の中の RootToken は作業フォルダに置き換わる。git は Path を cwd にして Args を渡す (引数は subproc.GitArgs を通したもの)。
@@ -62,6 +116,19 @@ type Op struct {
 	Name     string   `json:"name,omitempty"`
 	Value    string   `json:"value"`
 	Args     []string `json:"args,omitempty"`
+}
+
+// MarshalJSON は Value を pyString にする (setenv で単独のサロゲートを持つ値を渡す)。
+func (o Op) MarshalJSON() ([]byte, error) {
+	type plain Op
+	value, err := pyString(o.Value)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		plain
+		Value json.RawMessage `json:"value"`
+	}{plain(o), value})
 }
 
 func needsGit(calls []Call) bool {

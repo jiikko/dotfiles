@@ -256,6 +256,18 @@ func diffScenarios(a, b, file string) []diffScenario {
 		{"endings-directory", []string{"--endings", "corpus"}},
 		{"endings-bom-crlf", []string{"--endings", "bom.md"}},
 	}
+	for _, v := range ArgvSurrogates {
+		list = append(list,
+			diffScenario{"argv-" + v.Name + "-file", []string{a, v.Value}},
+			diffScenario{"argv-" + v.Name + "-stance", []string{"--stance", v.Value, a, b}},
+			diffScenario{"argv-" + v.Name + "-doc-type", []string{"--doc-type", v.Value, a, b}},
+			diffScenario{"argv-" + v.Name + "-reader", []string{"--reader", v.Value, a, b}},
+			diffScenario{"argv-" + v.Name + "-words", []string{"--words", v.Value, a, b}},
+			diffScenario{"argv-" + v.Name + "-material", []string{a, b, "--material", v.Value}},
+			diffScenario{"argv-" + v.Name + "-fail-on", []string{"--fail-on", v.Value, a, b}},
+			diffScenario{"argv-" + v.Name + "-endings", []string{"--endings", v.Value}},
+		)
+	}
 	return list
 }
 

@@ -89,7 +89,7 @@ func CheckRunCases() []VisCase {
 	cases := []VisCase{
 		runBasicCase(), runLinkCase(), runComposeCase(), runMaterialsCase(), runStdinCase(), runNoRecordCase(),
 		runArgsCase(), runChildrenCase(), runFailOnCase(), runWordsCase(), runDiffsCase(), runDetectorsCase(), runStateCase(),
-		runStartFailCase(), runTempdirCase(),
+		runStartFailCase(), runTempdirCase(), runSurrogateCase(),
 	}
 	for i := range cases {
 		scopeRefs(&cases[i])
@@ -253,6 +253,57 @@ func runNoRecordCase() VisCase {
 	run(f, "--source", "src.md", "--final", "final.md", "--run-id", "e4", "--session", "given")
 	unsetenv(f, "YOMIYASU_STATE_DIR")
 	snapshot(f)
+	return f.done()
+}
+
+// runSurrogateCase は、OS から UTF-8 として読めないバイトで受けた環境変数と引数 (本家は os.fsdecode で単独のサロゲートを持つ str にする) の出口:
+// 記録の JSON (YOMIYASU_SESSION・CODEX_THREAD_ID・--session)、誤りの文 (標準エラーは backslashreplace)、標準出力 (strict。状態フォルダのパスが案内に入る
+// run・verify は UnicodeEncodeError の内部エラーで rc 3)。最後に木の python の欄を Go の値にしてから本家の verify を当てる (逆向き)。
+func runSurrogateCase() VisCase {
+	f := newFixtureCase("run-surrogate")
+	f.write("src.md", vSource).write("final.md", vFinal)
+	chdir(f)
+	setenv(f, "YOMIYASU_SESSION", surrogates(0xDCFF)+"a")
+	setenv(f, "CODEX_THREAD_ID", "b"+surrogates(0xDCED, 0xDCA0, 0xDC80))
+	run(f, "--source", "src.md", "--final", "final.md", "--run-id", "s1")
+	unsetenv(f, "CODEX_THREAD_ID")
+	run(f, "--source", "src.md", "--final", "final.md", "--run-id", "s2", "--session", "x"+surrogates(0xDCFF)+"y"+surrogates(0xDCED, 0xDCB3, 0xDCBF), "--json")
+	unsetenv(f, "YOMIYASU_SESSION")
+	for _, v := range ArgvSurrogates {
+		for _, args := range [][]string{
+			{"--fail-on", v.Value},
+			{"--timeout", v.Value},
+			{"--stance", v.Value},
+			{"--doc-type", v.Value},
+			{"--reader", v.Value},
+			{"--run-id", v.Value},
+			{"--words", v.Value},
+			{"--material", v.Value},
+			{"--state-dir", v.Value},
+			{"--state-dir", v.Value, "--json"},
+			{v.Value},
+		} {
+			run(f, append([]string{"--source", "src.md", "--final", "final.md"}, args...)...)
+		}
+		run(f, "--source", v.Value, "--final", "final.md")
+		run(f, "--source", "src.md", "--final", v.Value)
+		checkMain(f, []string{v.Value})
+		for _, args := range [][]string{
+			{"--run-id", v.Value},
+			{"--since", v.Value},
+			{"--timeout", v.Value, "--replay"},
+			{"--source", v.Value},
+			{"--state-dir", v.Value},
+			{"--state-dir", v.Value, "--json"},
+		} {
+			verify(f, append([]string{"--final", "final.md"}, args...)...)
+		}
+		verify(f, "--final", v.Value)
+	}
+	snapshot(f)
+	goize(f, ".yomiyasu/runs/s1/attempt-1.json", ".yomiyasu/runs/s2/attempt-1.json")
+	verifyBoth(f, "--final", "final.md", "--run-id", "s1")
+	verifyBoth(f, "--final", "final.md", "--run-id", "s2", "--replay")
 	return f.done()
 }
 

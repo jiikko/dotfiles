@@ -1,6 +1,7 @@
 package visibility
 
 import (
+	"ja-writing/internal/pyos"
 	"os/user"
 	"strconv"
 	"syscall"
@@ -12,5 +13,5 @@ func lookupHomeByUID() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return u.HomeDir, nil
+	return pyos.Decode(u.HomeDir), nil
 }

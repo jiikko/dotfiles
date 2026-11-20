@@ -15,6 +15,7 @@ import (
 	"ja-writing/diff"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pyunicode"
 	"ja-writing/visibility"
 )
@@ -31,7 +32,7 @@ func ensureDir(base string, parts ...string) (string, error) {
 	path := base
 	for _, part := range parts {
 		path = visibility.PathJoin(path, part)
-		if err := os.Mkdir(path, 0o700); err != nil {
+		if err := pyos.Mkdir(path, 0o700); err != nil {
 			if errors.Is(err, fs.ErrExist) {
 				if !isDir(path) {
 					return "", hiddenError(path, err)
@@ -40,7 +41,7 @@ func ensureDir(base string, parts ...string) (string, error) {
 			}
 			return "", err
 		}
-		if err := os.Chmod(path, 0o700); err != nil {
+		if err := pyos.Chmod(path, 0o700); err != nil {
 			return "", err
 		}
 	}
@@ -50,14 +51,14 @@ func ensureDir(base string, parts ...string) (string, error) {
 // touch は _touch (空のファイルを作る。すでにあればそのまま)。
 func touch(folder, name string) error {
 	path := visibility.PathJoin(folder, name)
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	file, err := pyos.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o600)
+	return pyos.Chmod(path, 0o600)
 }
 
 // tempdirTries は tempfile.TMP_MAX (候補のフォルダ 1 つで、試しのファイルの名前を試す回数)。
@@ -103,7 +104,7 @@ func usableTempdir(dir string) bool {
 			return false
 		}
 		name := visibility.PathJoin(dir, hex.EncodeToString(random[:]))
-		file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+		file, err := pyos.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 		if errors.Is(err, fs.ErrExist) {
 			continue
 		}
@@ -112,7 +113,7 @@ func usableTempdir(dir string) bool {
 		}
 		_, werr := file.Write([]byte("blat"))
 		cerr := file.Close()
-		rerr := os.Remove(name)
+		rerr := pyos.Remove(name)
 		return werr == nil && cerr == nil && rerr == nil
 	}
 	return false
@@ -134,7 +135,7 @@ func mkdtemp(rt Runtime, env cmdenv.Env, prefix string) (string, error) {
 			return "", err
 		}
 		path := visibility.PathJoin(parent, prefix+hex.EncodeToString(random[:]))
-		err := os.Mkdir(path, 0o700)
+		err := pyos.Mkdir(path, 0o700)
 		if err == nil {
 			return path, nil
 		}
@@ -166,7 +167,7 @@ type treeOps struct {
 	delete  func(string) error
 }
 
-var osTree = treeOps{lstat: os.Lstat, readDir: os.ReadDir, delete: os.Remove}
+var osTree = treeOps{lstat: pyos.Lstat, readDir: pyos.ReadDir, delete: pyos.Remove}
 
 // remove は path を中身ごと消す。top は rmtree に渡した根 (本家の orig_entry が None のもの)。
 // 本家の _rmtree_safe_fd_step は、根でないものが歩く途中で消えていれば (FileNotFoundError) onexc を呼ばずに次へ進み、根の失敗は
@@ -216,7 +217,7 @@ func (o treeOps) step(op func(string) error, target string, top bool) (gone bool
 func again(op func(string) error, target string) error {
 	for _, item := range []string{filepath.Dir(target), target} {
 		clearFlags(item)
-		_ = os.Chmod(item, 0o700)
+		_ = pyos.Chmod(item, 0o700)
 	}
 	return op(target)
 }
@@ -292,7 +293,7 @@ func reserveAttempt(runDir string, first attemptNo) (attemptNo, string, error) {
 	}
 	for range attemptTries {
 		path := visibility.PathJoin(runDir, "attempt-"+number.String()+".json")
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		file, err := pyos.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if errors.Is(err, fs.ErrExist) {
 			number = number.next()
 			continue
@@ -303,7 +304,7 @@ func reserveAttempt(runDir string, first attemptNo) (attemptNo, string, error) {
 		if err := file.Close(); err != nil {
 			return attemptNo{}, "", err
 		}
-		if err := os.Chmod(path, 0o600); err != nil {
+		if err := pyos.Chmod(path, 0o600); err != nil {
 			return attemptNo{}, "", err
 		}
 		return number, path, nil
@@ -386,7 +387,7 @@ func saveRun(state string, c *runContext, a saveArgs) (attempt attemptNo, record
 	defer func() {
 		if !committed {
 			for _, path := range created {
-				_ = os.Remove(path) // 本家も消せないファイルはそのまま残す
+				_ = pyos.Remove(path) // 本家も消せないファイルはそのまま残す
 			}
 		}
 	}()

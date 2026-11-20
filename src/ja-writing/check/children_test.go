@@ -205,7 +205,7 @@ func TestChildrenPassEscapedSurrogatesInEnvironmentAsBytes(t *testing.T) {
 }
 
 // 子に渡すバイト列: 作り直した値 (記録の JSON の "\udcff" など) は os.fsencode と同じバイトにし、OS から受けた環境変数 (cmdenv.FromProcess が
-// os.fsdecode と同じ規則で読んだ字) は受けたバイトに戻す。作業フォルダは OS のバイトのまま来る (UTF-8 として読めないバイトはそのまま)。
+// os.fsdecode と同じ規則で読んだ字) は受けたバイトに戻す。作業フォルダも同じ字で来る (UTF-8 として読めない生のバイトで渡されても、そのバイトのまま戻す)。
 // nil の環境変数は nil のまま (exec で今の環境を引き継ぐ形。本家の env=None)。
 func TestPopenEncodeKeepsOSValues(t *testing.T) {
 	dcff := pyunicode.FromRunes([]rune{0xDCFF})

@@ -3,6 +3,7 @@ package visibility
 import (
 	"errors"
 	"io/fs"
+	"ja-writing/internal/pyos"
 	"os"
 	"strconv"
 	"strings"
@@ -22,17 +23,17 @@ const (
 
 // getcwd は os.getcwd()。読めなければ ok が偽。
 func getcwd() (string, bool) {
-	cwd, err := syscall.Getwd()
+	cwd, err := pyos.Getwd()
 	if err != nil {
 		return "", false
 	}
 	// macOS の syscall.Getwd は、消えたフォルダの元のパスを返す。libc の getcwd (Python の os.getcwd) は ENOENT で失敗する。
 	// 消して同じ名前で作り直したフォルダは、字面を Stat すると通る。今の cwd (".") と同じ実体かで見分ける。
-	byName, err := os.Stat(cwd)
+	byName, err := pyos.Stat(cwd)
 	if err != nil {
 		return "", false
 	}
-	here, err := os.Stat(".")
+	here, err := pyos.Stat(".")
 	if err != nil || !os.SameFile(byName, here) {
 		return "", false
 	}
@@ -155,7 +156,7 @@ func pureName(s string) string {
 // statMode は os.stat (シンボリックリンクをたどる) の種類。stat できなければ ok が偽。
 // path の真偽の問い合わせ (pathExists・pathIsDir・pathIsFile) は、本家の _path_matches と同じく、読めない名前を全部「そうでない」にする。
 func statMode(path string) (mode fs.FileMode, ok bool) {
-	fi, err := os.Stat(path)
+	fi, err := pyos.Stat(path)
 	if err != nil {
 		return 0, false
 	}
@@ -382,7 +383,7 @@ func realpath(filename string) (string, bool) {
 		if path == "/" {
 			newpath = path + name
 		}
-		fi, err := os.Lstat(newpath)
+		fi, err := pyos.Lstat(newpath)
 		if err != nil {
 			path = newpath
 			continue
@@ -399,7 +400,7 @@ func realpath(filename string) (string, bool) {
 			path = newpath // 解決の途中でまた同じリンクに戻った (輪)。
 			continue
 		}
-		target, err := os.Readlink(newpath)
+		target, err := pyos.Readlink(newpath)
 		if err != nil {
 			path = newpath
 			continue
@@ -480,7 +481,7 @@ func partsInside(base, target string) ([]string, bool) {
 	if commonPath(base, target) == base {
 		return relPartsBelow(base, target), true
 	}
-	baseStat, err := os.Stat(base)
+	baseStat, err := pyos.Stat(base)
 	if err != nil {
 		return nil, false
 	}
@@ -491,7 +492,7 @@ func partsInside(base, target string) ([]string, bool) {
 	var parts []string
 	current := target
 	for {
-		if fi, err := os.Stat(current); err == nil && sameFile(fi, baseStat) {
+		if fi, err := pyos.Stat(current); err == nil && sameFile(fi, baseStat) {
 			for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
 				parts[i], parts[j] = parts[j], parts[i]
 			}

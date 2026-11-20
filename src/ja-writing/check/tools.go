@@ -3,10 +3,10 @@ package check
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"syscall"
 
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pyre"
 	"ja-writing/visibility"
 )
@@ -90,7 +90,7 @@ type DirFiles struct{ Scripts string }
 
 // Tool は ToolFiles。
 func (d DirFiles) Tool(name string) (string, *string, error) {
-	data, err := os.ReadFile(visibility.PathJoin(d.Scripts, name))
+	data, err := pyos.ReadFile(visibility.PathJoin(d.Scripts, name))
 	if err != nil {
 		return "", nil, err
 	}
@@ -109,7 +109,7 @@ func (d DirFiles) Tool(name string) (string, *string, error) {
 
 // List は ToolFiles。
 func (d DirFiles) List(name string) (string, error) {
-	data, err := os.ReadFile(visibility.PathJoin(d.Scripts, "../references/lists/"+name+".txt"))
+	data, err := pyos.ReadFile(visibility.PathJoin(d.Scripts, "../references/lists/"+name+".txt"))
 	if err != nil {
 		return "", err
 	}

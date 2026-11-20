@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"ja-writing/internal/pyos"
 	"ja-writing/visibility"
 )
 
@@ -31,7 +32,7 @@ const (
 // 並行に呼ばれる処理からは差し替えない。
 var (
 	randomRead   = rand.Read
-	linkFile     = os.Link
+	linkFile     = pyos.Link
 	replacePause = func() { time.Sleep(replaceWait) } // sleep-ok: 本家の待ち: 入れ替えを試し直す間隔は本家の _REPLACE_WAIT
 )
 
@@ -67,9 +68,9 @@ func isPermission(err error) bool {
 
 // fileInfo は stat (follow のとき) か lstat の結果。読めなければ nil (本家の _path_matches と os.path.lexists は読めない名前を「無い」とみなす)。
 func fileInfo(path string, follow bool) os.FileInfo {
-	stat := os.Lstat
+	stat := pyos.Lstat
 	if follow {
-		stat = os.Stat
+		stat = pyos.Stat
 	}
 	info, err := stat(path)
 	if err != nil {
@@ -97,7 +98,7 @@ func mkstemp(folder string) (*os.File, string, error) {
 			return nil, "", err
 		}
 		path := visibility.PathJoin(folder, temporaryHead+hex.EncodeToString(random[:]))
-		file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+		file, err := pyos.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 		if err == nil {
 			return file, path, nil
 		}
@@ -121,7 +122,7 @@ func writeAndClose(file *os.File, data []byte) error {
 // os.Rename を使わない。宛先がフォルダのとき rename(2) を呼ばずに EEXIST を返し、本家の os.replace (rename(2) の EISDIR) と理由の文が変わる。
 func replace(source, target string) error {
 	for attempt := range replaceTries {
-		err := syscall.Rename(source, target)
+		err := pyos.Rename(source, target)
 		if err == nil {
 			return nil
 		}
@@ -141,13 +142,13 @@ func WriteAtomic(path string, data []byte) error {
 	}
 	err = writeAndClose(file, data)
 	if err == nil {
-		err = os.Chmod(temporary, 0o600)
+		err = pyos.Chmod(temporary, 0o600)
 	}
 	if err == nil {
 		err = replace(temporary, path)
 	}
 	if err != nil {
-		_ = os.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
+		_ = pyos.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
 	}
 	return err
 }
@@ -155,14 +156,14 @@ func WriteAtomic(path string, data []byte) error {
 // hiddenError は _raise_if_hidden。mkdir が EEXIST を出したのにフォルダと確かめられない理由が PermissionError なら、それを返す。
 // macOS では届かない (mkdir が EEXIST を返す名前は、親を探せるので lstat できる)。本家は Windows のために持つ。本家との対応のために残す。
 func hiddenError(path string, exists error) error {
-	if _, err := os.Lstat(path); err != nil && isPermission(err) {
+	if _, err := pyos.Lstat(path); err != nil && isPermission(err) {
 		return err
 	}
 	return exists
 }
 
 func stillPlaced(path string, info os.FileInfo) bool {
-	now, err := os.Lstat(path)
+	now, err := pyos.Lstat(path)
 	return err == nil && os.SameFile(now, info)
 }
 
@@ -175,14 +176,14 @@ func placeNewFile(path string, data []byte) (bool, error) {
 	}
 	err = writeAndClose(file, data)
 	if err == nil {
-		err = os.Chmod(temporary, 0o600)
+		err = pyos.Chmod(temporary, 0o600)
 	}
 	if err != nil {
-		_ = os.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
+		_ = pyos.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
 		return false, err
 	}
 	linkErr := linkFile(temporary, path)
-	_ = os.Remove(temporary) // 本家の finally と同じく、消せなくても続ける
+	_ = pyos.Remove(temporary) // 本家の finally と同じく、消せなくても続ける
 	if linkErr == nil {
 		return true, nil
 	}
@@ -193,7 +194,7 @@ func placeNewFile(path string, data []byte) (bool, error) {
 }
 
 func placeExclusive(path string, data []byte) (bool, error) {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	file, err := pyos.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 	if errors.Is(err, fs.ErrExist) {
 		return false, nil
 	}
@@ -207,14 +208,14 @@ func placeExclusive(path string, data []byte) (bool, error) {
 	}
 	err = writeAndClose(file, data)
 	if err == nil {
-		err = os.Chmod(path, 0o600)
+		err = pyos.Chmod(path, 0o600)
 	}
 	if err != nil {
 		// 作ってから書けなくなるまでの間に、ほかのプロセスがこの名前を別のファイルに入れ替えていたら、それを消さない。
 		// テストしない: O_EXCL で作ったファイルへの書き込みの失敗と、その間の入れ替えは、本物のファイルシステムで決まって起こせず、
 		// 起こすには書き込みと stat の差し替え口が要る。
 		if stillPlaced(path, info) {
-			_ = os.Remove(path) // 本家も消せなければそのまま元の例外を出す
+			_ = pyos.Remove(path) // 本家も消せなければそのまま元の例外を出す
 		}
 		return false, err
 	}
@@ -237,7 +238,7 @@ func addStateFiles(state string, defaultPlace bool) error {
 	if !defaultPlace {
 		return nil
 	}
-	if info, err := os.Lstat(state); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+	if info, err := pyos.Lstat(state); err == nil && info.Mode()&fs.ModeSymlink != 0 {
 		return nil
 	}
 	if fileInfo(visibility.PathJoin(state, ".gitignore"), false) != nil || fileInfo(visibility.PathJoin(state, "state.json"), false) != nil {
@@ -249,7 +250,7 @@ func addStateFiles(state string, defaultPlace bool) error {
 // mkdirParents は Path(path).mkdir(parents=True, exist_ok=True)。os.MkdirAll にしない: 途中にファイルがあると ENOTDIR を
 // 返し (pathlib は FileExistsError)、誤りの名前も途中の部品になって、利用者に見せる文が本家と変わる。
 func mkdirParents(path string) error {
-	err := os.Mkdir(path, 0o777)
+	err := pyos.Mkdir(path, 0o777)
 	if errors.Is(err, fs.ErrNotExist) {
 		parent := visibility.PathParent(path)
 		if parent == path {
@@ -258,7 +259,7 @@ func mkdirParents(path string) error {
 		if err := mkdirParents(parent); err != nil {
 			return err
 		}
-		err = os.Mkdir(path, 0o777)
+		err = pyos.Mkdir(path, 0o777)
 		if errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
@@ -280,7 +281,7 @@ func EnsureState(state string, defaultPlace bool) error {
 			return err
 		}
 	}
-	if err := os.Mkdir(state, 0o700); err != nil {
+	if err := pyos.Mkdir(state, 0o700); err != nil {
 		if errors.Is(err, fs.ErrExist) && isDir(state) {
 			return addStateFiles(state, defaultPlace)
 		}
@@ -289,12 +290,12 @@ func EnsureState(state string, defaultPlace bool) error {
 		}
 		return err
 	}
-	err := os.Chmod(state, 0o700)
+	err := pyos.Chmod(state, 0o700)
 	if err == nil {
 		err = writeStateFiles(state)
 	}
 	if err != nil {
-		_ = os.Remove(state) // 空でなければ消えない (本家の rmdir と同じ)
+		_ = pyos.Remove(state) // 空でなければ消えない (本家の rmdir と同じ)
 	}
 	return err
 }

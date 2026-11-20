@@ -1,0 +1,32 @@
+# ja-writing の golangci-lint の設定の差分。共通の塊は src/.golangci.yml で、scripts/golangci_lint.sh が run のたびに合成する。
+linters:
+  enable:
+    - forbidigo  # パスを受ける・返す os と syscall の関数は internal/pyos を通す (下の forbid)
+  settings:
+    forbidigo:
+      # ja-writing の文字列は本家の str と同じ字 (WTF-8) で持つ。os・syscall に字のまま渡すと、U+DCFF は 0xff でなく 3 バイトで OS に届き、
+      # 本家 (os.fsencode してから渡す) と別の名前を開く。OS から受けた名前も os.fsdecode しないと本家と別の字になる。
+      # 🚨 forbidigo は式の名前にしか当たらない: os.File のメソッド (f.ReadDir など) と、別名で import した os は捕まえない。
+      forbid:
+        - pattern: ^os\.(Stat|Lstat|Open|OpenFile|Create|ReadFile|WriteFile|ReadDir|Readlink)$
+          msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
+        - pattern: ^os\.(Mkdir|MkdirAll|MkdirTemp|CreateTemp|Chmod|Chown|Lchown|Chtimes|Truncate)$
+          msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
+        - pattern: ^os\.(Remove|RemoveAll|Rename|Link|Symlink|Getwd|DirFS|UserHomeDir)$
+          msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
+        - pattern: ^syscall\.(Open|Stat|Lstat|Rename|Chflags|Getwd|Unlink|Rmdir|Mkdir|Link)$
+          msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
+        - pattern: ^syscall\.(Symlink|Readlink|Chmod|Chown|Lchown|Truncate|Access|Exec)$
+          msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
+  exclusions:
+    rules:
+      # pyos は口そのもの。oracle (本家を動かす道具) とテストは fixture を OS のバイトで組む
+      - path: ^internal/pyos/
+        linters:
+          - forbidigo
+      - path: ^oracle/
+        linters:
+          - forbidigo
+      - path: _test\.go$
+        linters:
+          - forbidigo

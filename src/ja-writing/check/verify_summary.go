@@ -2,13 +2,13 @@ package check
 
 import (
 	"errors"
-	"os"
 	"slices"
 	"sort"
 	"strings"
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pyre"
 )
 
@@ -36,7 +36,7 @@ func reportValue(state string, entry pyjson.Value) *pyjson.Object {
 	if !ok || !strings.HasPrefix(report, "runs/") {
 		return nil
 	}
-	data, err := os.ReadFile(pathParts(state, report))
+	data, err := pyos.ReadFile(pathParts(state, report))
 	if err != nil || !pyops.Equal(SHA256(data), pyops.Get(entry, "report_sha256")) {
 		return nil
 	}

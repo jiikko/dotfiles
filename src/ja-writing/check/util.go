@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 
 	"ja-writing/internal/pycli"
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyos"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
@@ -109,7 +109,7 @@ func RunIDProblem(runID string) string {
 // RunIDCaseProblem は _run_id_case_problem。state/runs/ に、大文字と小文字だけが違う実行 ID のフォルダがあるときの誤りの文 (なければ空)。
 // 大文字と小文字を区別しないファイルシステムでは同じフォルダに入ってしまう。
 func RunIDCaseProblem(state, runID string) string {
-	entries, err := os.ReadDir(visibility.PathJoin(state, "runs"))
+	entries, err := pyos.ReadDir(visibility.PathJoin(state, "runs"))
 	if err != nil {
 		return ""
 	}

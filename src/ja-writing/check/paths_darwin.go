@@ -4,6 +4,7 @@ package check
 
 import (
 	"bytes"
+	"ja-writing/internal/pyos"
 	"syscall"
 	"unsafe"
 )
@@ -14,7 +15,7 @@ const fgetpath = 50
 // diskSpelling は path を開いて F_GETPATH で取った、ディスク上の綴り (開けないか取れなければ空)。読むだけで中身は読まない。
 // O_NONBLOCK で開く: パイプなどでも止まらないように (本家と同じ)。
 func diskSpelling(path string) string {
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	fd, err := pyos.OpenFD(path, syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return ""
 	}
@@ -24,11 +25,11 @@ func diskSpelling(path string) string {
 		return ""
 	}
 	name, _, _ := bytes.Cut(buf, []byte{0})
-	return string(name)
+	return pyos.Decode(string(name))
 }
 
 // isDarwin は _disk_path が F_GETPATH の綴りを使う OS か。
 const isDarwin = true
 
 // clearFlags は os.chflags(path, 0) (BSD のフラグ。uchg などが付いたファイルとフォルダは、権限を戻しても消せない)。外せないときは何もしない。
-func clearFlags(path string) { _ = syscall.Chflags(path, 0) }
+func clearFlags(path string) { _ = pyos.Chflags(path, 0) }

@@ -2,11 +2,11 @@ package check
 
 import (
 	"errors"
-	"os"
 	"syscall"
 	"time"
 
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyos"
 )
 
 // RecordStatus は _read_record_status の 1 つ目の値。
@@ -29,7 +29,7 @@ var emptyRecordPause = func() { time.Sleep(emptyRecordWait) } // sleep-ok: 本�
 func ReadRecordStatus(path string) (RecordStatus, *pyjson.Object, error) {
 	var data []byte
 	for attempt := range 2 {
-		read, err := os.ReadFile(path)
+		read, err := pyos.ReadFile(path)
 		if errors.Is(err, syscall.ENOENT) {
 			return RecordMissing, nil, nil
 		}

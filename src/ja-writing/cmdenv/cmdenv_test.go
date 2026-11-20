@@ -67,8 +67,8 @@ func TestChildSeesSameValueAsLookup(t *testing.T) {
 	}
 }
 
-// FromProcess は環境変数を本家の os.environ と同じ字 (os.fsdecode) で持ち、Getenv は受けたバイトを返す。python3.15 (3.15.0) の os.environ で
-// b"\xed\xa0\x80" は '\udced\udca0\udc80'、b"\xff" は '\udcff' (WTF-8 のサロゲートの形も、3 バイトとも surrogateescape で読む)。
+// FromProcess は環境変数と引数を本家の os.environ・sys.argv と同じ字 (os.fsdecode) で持ち、Getenv もその字を返す。python3.15 (3.15.0) の
+// os.environ と sys.argv で b"\xed\xa0\x80" は '\udced\udca0\udc80'、b"\xff" は '\udcff' (WTF-8 のサロゲートの形も、3 バイトとも surrogateescape で読む)。
 func TestFromProcessReadsEnvironmentLikeFsdecode(t *testing.T) {
 	for name, c := range map[string]struct {
 		raw  string
@@ -80,12 +80,15 @@ func TestFromProcessReadsEnvironmentLikeFsdecode(t *testing.T) {
 		"JA_WRITING_RAW_UTF8": {"日本", []rune{'日', '本'}},
 	} {
 		t.Setenv(name, c.raw)
-		env, err := FromProcess(nil)
+		env, err := FromProcess([]string{"lint", c.raw})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := env.Getenv(name); got != c.raw {
-			t.Errorf("%s: Getenv は % x、受けたバイトは % x", name, got, c.raw)
+		if got := pyunicode.Runes(env.Getenv(name)); !slices.Equal(got, c.want) {
+			t.Errorf("%s: Getenv の字は %U、本家の os.environ は %U", name, got, c.want)
+		}
+		if got := pyunicode.Runes(env.Args[1]); env.Args[0] != "lint" || !slices.Equal(got, c.want) {
+			t.Errorf("%s: 引数の字は %q %U、本家の sys.argv は %U", name, env.Args[0], got, c.want)
 		}
 		found := false
 		for _, entry := range env.Environment() {
@@ -102,12 +105,13 @@ func TestFromProcessReadsEnvironmentLikeFsdecode(t *testing.T) {
 	}
 }
 
-// 手で組んだ Env の値は、Lookup で os.fsencode のバイトになる ("\udcff" は 0xff)。戻せないサロゲートは字のまま返す。
-func TestLookupEncodesLikeFsencode(t *testing.T) {
+// Lookup は Environ の字をそのまま返す (本家の os.environ の値。OS に渡すバイトにするのは internal/pyos)。記録に入る環境変数
+// (YOMIYASU_SESSION・CODEX_THREAD_ID) の "\udcff" が 0xff のバイトや U+FFFD にならない。
+func TestLookupReturnsEnvironValue(t *testing.T) {
 	dcff := pyunicode.FromRunes([]rune{0xDCFF})
 	d800 := pyunicode.FromRunes([]rune{0xD800})
-	env := Env{Environ: []string{"A=x" + dcff, "B=" + d800, "C=\xff"}}
-	for name, want := range map[string]string{"A": "x\xff", "B": d800, "C": "\xff"} {
+	env := Env{Environ: []string{"A=x" + dcff, "B=" + d800, "C=日本"}}
+	for name, want := range map[string]string{"A": "x" + dcff, "B": d800, "C": "日本"} {
 		if got := env.Getenv(name); got != want {
 			t.Errorf("%s: % x、期待は % x", name, got, want)
 		}

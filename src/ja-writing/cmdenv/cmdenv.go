@@ -15,12 +15,13 @@ import (
 
 // Env は 1 回の subcommand の実行が見る外の世界。
 type Env struct {
-	// Args は subcommand 名より後ろの引数 (プログラム名を含まない)。
+	// Args は subcommand 名より後ろの引数 (プログラム名を含まない)。字は本家の sys.argv の str と同じ (WTF-8。FromProcess は os.fsdecode と同じ規則で読む)。
 	Args   []string
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
-	Cwd    string
+	// Cwd は作業フォルダ。字は本家の os.getcwd() と同じ (FromProcess は os.fsdecode と同じ規則で読む)。
+	Cwd string
 	// Environ は環境変数の全部 ("名前=値" の並び)。Lookup・Getenv・Environment はここだけから読む。
 	// 読み口を 1 つにして、手で組んだ Env の間で「ある」の答えが食い違わないようにする (本家の os.environ と同じく、空の値は「ある」)。
 	// 字は本家の os.environ の str と同じ (WTF-8)。FromProcess は OS のバイトを pyfs.Decode (os.fsdecode) で読む。
@@ -29,16 +30,11 @@ type Env struct {
 	Environ []string
 }
 
-// Lookup は環境変数 name を読む (os.LookupEnv の形。空の値と無いを分ける)。同じ名前が 2 つあれば先のもの (os.environ と os.Getenv と同じ)。
-// 値は os.fsencode したバイト (OS から受けた値なら受けたバイトそのもの)。読み手は値をパス (HOME・TMPDIR・YOMIYASU_STATE_DIR) として
-// OS に渡すので、本家が open などの前に os.fsencode するのと同じバイトにする。戻せないサロゲート (手で組んだ値の U+D800 など) を持つ値は
-// 字のまま返す (本家はその値を OS に渡す所で UnicodeEncodeError にする。Go の読み手はその誤りを写していない)。
+// Lookup は環境変数 name を読む (os.environ.get の形。空の値と無いを分ける)。同じ名前が 2 つあれば先のもの (os.environ と os.Getenv と同じ)。
+// 値は本家の os.environ と同じ字 (Environ の字そのまま)。パスとして OS に渡す読み手は internal/pyos を通して os.fsencode したバイトにする。
 func (e Env) Lookup(name string) (string, bool) {
 	for _, entry := range e.Environ {
 		if key, value, ok := strings.Cut(entry, "="); ok && key == name {
-			if encoded, err := pyfs.Encode(value); err == nil {
-				return encoded, true
-			}
 			return value, true
 		}
 	}
@@ -69,16 +65,20 @@ func (e Env) Environment() []string {
 	return kept
 }
 
-// FromProcess は今のプロセスの引数・標準入出力・cwd・環境変数から Env を作る。環境変数は os.fsdecode と同じ規則で読む (Environ)。
-// 引数と cwd は OS のバイトのまま持つ: どちらも子にそのまま渡らず (子の作業フォルダは一時フォルダ)、読み手はパスとして OS に渡すだけなので、
-// 読むと OS に渡す所ごとに戻す手間が増える。子の argv に入る引数のうち --stance・--doc-type・--reader は決まった字に写してから渡り、パス (語の一覧など) は
-// macOS ではサロゲートの形 (ED A0..BF xx) を持てない。
+// FromProcess は今のプロセスの引数・標準入出力・cwd・環境変数から Env を作る。引数・cwd・環境変数は os.fsdecode と同じ規則 (pyfs.Decode) で
+// 本家の str と同じ字にする。生のバイトのまま持たない: UTF-8 として読めないバイト (0xff) は記録の JSON と誤りの文で本家の "\udcff" と別の字になり、
+// WTF-8 のサロゲートの形 (ED A0..BF xx) は単独のサロゲートと見分けられず、子に渡すとき書き換わるか断られる。
+// OS に渡すときは internal/pyos が os.fsencode と同じバイトに戻す。
 func FromProcess(args []string) (Env, error) {
-	cwd, err := os.Getwd()
+	cwd, err := os.Getwd() //nolint:forbidigo // 受けた字は下で pyfs.Decode する。os.Getwd ($PWD を使う) を syscall.Getwd に替えると Cwd の値が変わるので、この口だけ os を直に呼ぶ
 	if err != nil {
 		return Env{}, fmt.Errorf("cwd を読めません: %w", err)
 	}
-	return Env{Args: args, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Cwd: cwd, Environ: processEnviron()}, nil
+	decoded := make([]string, len(args))
+	for i, a := range args {
+		decoded[i] = pyfs.Decode(a)
+	}
+	return Env{Args: decoded, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Cwd: pyfs.Decode(cwd), Environ: processEnviron()}, nil
 }
 
 // processEnviron は os.Environ を os.fsdecode と同じ規則で読んだもの (Environ の形)。

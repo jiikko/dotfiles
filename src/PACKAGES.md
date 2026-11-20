@@ -78,6 +78,7 @@
 - `src/ja-writing/internal/pyfs` (`ja-writing/internal/pyfs`) — Package pyfs は Python の os.fsencode と os.fsdecode (macOS では utf-8 と surrogateescape) を写す。 (internal)
 - `src/ja-writing/internal/pyjson` (`ja-writing/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
 - `src/ja-writing/internal/pyops` (`ja-writing/internal/pyops`) — Package pyops は、json.loads で読んだ値に Python の演算 (d[key]・d.get・for・len・+・join・format) を当てた結果と、例外になるかを写す。 (internal)
+- `src/ja-writing/internal/pyos` (`ja-writing/internal/pyos`) — Package pyos は、パスを受ける・返す os と syscall の関数を、Python の os と同じ字の規則で呼ぶ口。 (internal)
 - `src/ja-writing/internal/pyre` (`ja-writing/internal/pyre`) — Package pyre は Python 3.15.0 の re (str のパターン) を regexp2 の上に写す。 (internal)
 - `src/ja-writing/internal/pystr` (`ja-writing/internal/pystr`) — Package pystr は Python の str の振る舞い (splitlines・strip・isspace などの分類・len) を Go で再現する。 (internal)
 - `src/ja-writing/internal/pyunicode` (`ja-writing/internal/pyunicode`) — Package pyunicode は Python 3.15.0 (unicodedata 17.0.0) の文字の性質を Go で再現する。 (internal)

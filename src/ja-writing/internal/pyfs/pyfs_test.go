@@ -69,6 +69,55 @@ func TestEncodeMatchesPython(t *testing.T) {
 	}
 }
 
+// measuredStdio は python3.15 (3.15.0) で JSON の文字列を json.loads で読み、s.encode("utf-8") (strict。本家の標準出力) の UnicodeEncodeError の文と、
+// s.encode("utf-8", "backslashreplace") (本家の標準エラー) のバイト列。
+var measuredStdio = []struct{ json, strictErr, backslash string }{
+	{`""`, "", ""},
+	{`"a"`, "", "a"},
+	{`"あ😀"`, "", "\xe3\x81\x82\xf0\x9f\x98\x80"},
+	{`"\udcff"`, "'utf-8' codec can't encode character '\\udcff' in position 0: surrogates not allowed", "\x5cudcff"},
+	{`"a\udcffb"`, "'utf-8' codec can't encode character '\\udcff' in position 1: surrogates not allowed", "a\x5cudcffb"},
+	{`"x\udced\udca0\udc80y"`, "'utf-8' codec can't encode characters in position 1-3: surrogates not allowed", "x\x5cudced\x5cudca0\x5cudc80y"},
+	{`"\ud800"`, "'utf-8' codec can't encode character '\\ud800' in position 0: surrogates not allowed", "\x5cud800"},
+	{`"ab\ud800\ud801c"`, "'utf-8' codec can't encode characters in position 2-3: surrogates not allowed", "ab\x5cud800\x5cud801c"},
+	{`"\ud800x\ud801"`, "'utf-8' codec can't encode character '\\ud800' in position 0: surrogates not allowed", "\x5cud800x\x5cud801"},
+	{`"\udc80𐃿"`, "'utf-8' codec can't encode character '\\udc80' in position 0: surrogates not allowed", "\x5cudc80\xf0\x90\x83\xbf"},
+	{`"😀\ud800"`, "'utf-8' codec can't encode character '\\ud800' in position 1: surrogates not allowed", "\xf0\x9f\x98\x80\x5cud800"},
+	{`"あ\udcffい\udbff"`, "'utf-8' codec can't encode character '\\udcff' in position 1: surrogates not allowed", "\xe3\x81\x82\x5cudcff\xe3\x81\x84\x5cudbff"},
+	{`"\u0000\udcff"`, "'utf-8' codec can't encode character '\\udcff' in position 1: surrogates not allowed", "\x00\x5cudcff"},
+	{`"\\\udcff"`, "'utf-8' codec can't encode character '\\udcff' in position 1: surrogates not allowed", "\x5c\x5cudcff"},
+	{`"�\udfff\n"`, "'utf-8' codec can't encode character '\\udfff' in position 1: surrogates not allowed", "\xef\xbf\xbd\x5cudfff\x0a"},
+}
+
+func TestStdioEncodingMatchesPython(t *testing.T) {
+	for _, c := range measuredStdio {
+		v, err := pyjson.Loads(c.json)
+		if err != nil {
+			t.Fatalf("%s: %v", c.json, err)
+		}
+		s := v.(string)
+		got, strictErr := pyfs.EncodeStrict(s)
+		msg := ""
+		if strictErr != nil {
+			msg = strictErr.Error()
+			got = s
+		}
+		if msg != c.strictErr || got != s {
+			t.Errorf("%s: strict は %q、本家は %q", c.json, msg, c.strictErr)
+		}
+		if b := pyfs.BackslashReplace(s); b != c.backslash {
+			t.Errorf("%s: backslashreplace は % x、本家は % x", c.json, b, c.backslash)
+		}
+	}
+	// Decode せずに持った生のバイトも、surrogateescape で読んだ字 (U+DC80..U+DCFF) と同じに扱う
+	if b := pyfs.BackslashReplace("z\xff"); b != `z\udcff` {
+		t.Errorf("生の 0xff: %q", b)
+	}
+	if _, err := pyfs.EncodeStrict("z\xff"); err == nil || err.Error() != "'utf-8' codec can't encode character '\\udcff' in position 1: surrogates not allowed" {
+		t.Errorf("生の 0xff の strict: %v", err)
+	}
+}
+
 // UTF-8 として読めない生のバイト (OS から受けた値) は、本家が os.fsdecode で読んだ U+DC80..U+DCFF の字と同じに扱い、そのバイトのまま出す。
 func TestEncodeKeepsRawBytes(t *testing.T) {
 	for _, c := range []struct{ in, want, err string }{

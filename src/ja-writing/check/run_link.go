@@ -2,13 +2,13 @@ package check
 
 import (
 	"math/big"
-	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyos"
 )
 
 // 実行 ID と回 (本家の _new_run_id・_same_inputs・_same_origin・_latest_record・_path_key・_latest_by_path・_link・_was_checked_final)。
@@ -41,7 +41,7 @@ func newRunID(rt Runtime, state string, moment time.Time) string {
 			panic(failure{err})
 		}
 		runID := Stamp(moment) + "-" + random
-		if _, err := os.Stat(state + "/runs/" + runID); err != nil {
+		if _, err := pyos.Stat(state + "/runs/" + runID); err != nil {
 			return runID
 		}
 	}

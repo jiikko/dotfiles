@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"syscall"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pyfs"
+	"ja-writing/internal/pyos"
 	"ja-writing/visibility"
 )
 
@@ -36,8 +37,14 @@ func AtExit(stream string, err error) error {
 	return err
 }
 
-// Eprintln は標準エラーに 1 行書く (書けなくても何もしない。本家の _error)。
-func Eprintln(env cmdenv.Env, message string) { _, _ = io.WriteString(env.Stderr, message+"\n") }
+// 標準出力と標準エラーに書く口はこの 3 つ (PrintTo・Eprintln・UsageTo) だけにする。字は本家の str と同じ (WTF-8) で、出口で本家の errors の規則に写す:
+// 標準エラーは backslashreplace (本家の _error と argparse の error が reconfigure(errors="backslashreplace") してから書く)、
+// 標準出力は strict (本家の main の _use_utf8(sys.stdout) が reconfigure(encoding="utf-8") で errors を strict に戻す。Python 3.15.0 で実測)。
+
+// Eprintln は標準エラーに 1 行書く (書けなくても何もしない。本家の _error)。サロゲートは \udcff の形にする。
+func Eprintln(env cmdenv.Env, message string) {
+	_, _ = io.WriteString(env.Stderr, pyfs.BackslashReplace(message+"\n"))
+}
 
 // Fail は標準エラーに 1 行書いて rc 2 にする (本家の _error + return 2。lint・diff・check の入力の誤り)。
 func Fail(env cmdenv.Env, message string) (int, error) {
@@ -45,21 +52,27 @@ func Fail(env cmdenv.Env, message string) (int, error) {
 	return cmdenv.ExitUsage, nil
 }
 
-// PrintTo は標準出力に書く。書けなかった誤りは WriteTo で分ける。
-func PrintTo(env cmdenv.Env, text string) error { return WriteTo(env.Stdout, text) }
+// PrintTo は標準出力に書く (本家の print 1 回分)。書けなかった誤りは writeTo で分ける。サロゲートを含むなら 1 字も書かず、本家の
+// UnicodeEncodeError (内部エラー。rc 3) にする。本家の print も、その 1 回分の文字列を書かずに例外になる。
+func PrintTo(env cmdenv.Env, text string) error {
+	if _, err := pyfs.EncodeStrict(text); err != nil {
+		return &visibility.Error{Type: "UnicodeEncodeError", Message: err.Error()}
+	}
+	return writeTo(env.Stdout, text)
+}
 
 // UsageTo は parser.error の文を標準エラーに書く。書けなかったら、本家と同じく rc 2 でなく終わり際の失敗 (LateFlushError) にする
 // (本家の _error が書けなくても黙って rc 2 を返すのとは別)。
 func UsageTo(env cmdenv.Env, usage, prog, message string) (int, error) {
-	if err := WriteTo(env.Stderr, UsageError(usage, prog, message)); err != nil {
+	if err := writeTo(env.Stderr, pyfs.BackslashReplace(UsageError(usage, prog, message))); err != nil {
 		return 0, AtExit("stderr", err)
 	}
 	return cmdenv.ExitUsage, nil
 }
 
-// WriteTo は w に書き、書けなかった誤りを本家の main の分け方で返す: 読む側が閉じた (EPIPE。本家の BrokenPipeError) は ErrOutputClosed、
+// writeTo は w に書き、書けなかった誤りを本家の main の分け方で返す: 読む側が閉じた (EPIPE。本家の BrokenPipeError) は ErrOutputClosed、
 // ほか (ENOSPC など。本家は OSError の内部エラー) はその誤り。EPIPE を受けるには、入口 (main.go) が SIGPIPE を Notify で受けている必要がある。
-func WriteTo(w io.Writer, text string) error {
+func writeTo(w io.Writer, text string) error {
 	if _, err := io.WriteString(w, text); err != nil {
 		if errors.Is(err, syscall.EPIPE) {
 			return ErrOutputClosed
@@ -115,7 +128,7 @@ func ReadStdinBytes(r io.Reader) ([]byte, string) {
 // ReadInput は本家の _read_input。path か標準入力 (path が nil か "-") を読み、(文字列, decode_source の情報, "") か (_, _, 誤りの文) を返す。
 func ReadInput(env cmdenv.Env, path *string) (string, visibility.SourceInfo, string) {
 	if path != nil && *path != "-" {
-		data, err := os.ReadFile(*path)
+		data, err := pyos.ReadFile(*path)
 		if err != nil {
 			return "", visibility.SourceInfo{}, OpenProblem(*path, err)
 		}
