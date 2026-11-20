@@ -133,7 +133,13 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   - 敵対的レビュー (opus): P1・P2 なし。本家と並べた書き込み 37 通り (リンク・読めないフォルダ・大文字小文字・NFD・uchg・umask 000/022/027/077)・FAT のボリューム (hard link を作れない FS で O_EXCL に回る経路)・8 プロセスの同時の用意 40 回・記録の読みの壊れた入力 (サロゲート・BOM・NaN・5000 桁・入れ子 5 万段) は全部一致。P3 5 件を直した: 記録の比べが umask に依存 (固定した。`S_IMODE` と同じく 0o7777 を見る)・空の記録の読み直しと EACCES の読み直しと Chmod の分岐にテストが無い (待ちを差し替え口にしてテストを足した)・`hiddenError` と相対パスの `AbsPath` は macOS / 本番から届かない (コメントに書いた)。`stillPlaced` は本物の FS で決まって起こせないので、テストせず理由を `placeExclusive` に書いた
   - 揃わない範囲 (README): 入れ子が 20 万段の JSON は本家が RecursionError・Go が error
   - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じく赤。この変更は触っていない)
-  - 残り: 入力の読み (`_read_stdin_bytes`・`_read_named`・`_path_problem`・`_read_inputs`・`_read_target`)・記録の形の検査 (`_record_shape`・`_fact_gaps_shape`・`_words_shape` を表 1 つの検査器にする)・verify (replay 以外)・本家が書いた状態フォルダを Go の verify に読ませる記録・`_touch`・`_ensure_dir` を `_save` と一緒に戻す
+  - 続き (2026-11-20。master に入れた): 入力の読み (本家の `_Input` 1033・`_read_stdin_bytes` 1076・`_make_input` 1095・`_read_named` 1104・`_material_marker` 1131・`_split_material` 1145・`_split_stdin` 1177・`_path_problem` 1239・`_read_inputs` 1254・`_Target`/`_read_target` 3399〜3439。`check/input.go`) と記録の形の検査 (`_record_shape` 3735・`_fact_gaps_shape` 3718・`_words_shape` 3897。`check/record_shape.go`)
+    - 決めたこと: 入力の読みの誤りの文と標準入力の読みは `internal/pycli` (`OpenProblem`・`NotUTF8File`・`NotUTF8Stdin`・`ReadStdinBytes`) に寄せ、lint・diff の `pycli.ReadInput` も同じものを使う。形の検査は項目を本家と同じ順の表 `recordRules` に並べ、`RecordShape` 1 本で回す。本家が TypeError で落ちる記録 (検査の名前や fact_gaps の kind に list・dict) は Python 3.15 と同じ文の error を返す
+    - 記録 `check-base.json` を 49 case・35,361 呼び出しにした (入力の読み 425・形の検査は形の合う記録 2 つの欄を 1 か所ずつ替えた 14,789 件)。driver に `$namespace`・op `stdin`・`objects` を足した
+    - 敵対的レビュー (opus): 本家と違う答えは 1 件 (P2)。checks の name を 2 つとも NaN にした記録で、本家は nan を 1 つに数える (json.loads が同じ object を返し set は identity を先に見る) のに Go は別に数え、形の誤りを 1 件見落とした。直した (commit「fix(ja-writing): 記録の形の検査で、検査の名前の nan どうしを 1 つに数える」。期待値は本家の答え。変異 `nan-distinct` で red)。pycli に寄せたことによる lint・diff の退行は、master と並べた標準入力 6 通り × 4 コマンドで rc・出力とも一致。check の入力の読み 71 通り・形の検査 65 通りと 2〜4 か所を変えた 4,000 件のファジングは本家と一致。形の検査の変異 10 本は直した後の木で当て直して全部 red
+    - 揃わない範囲 (README): 閉じた標準入力 (`<&-`) は本家が rc 2、Go は空の入力 (lint・diff・check とも)。Go の runtime が起動の時点で閉じた fd 0 を /dev/null で開き直すので `</dev/null` と区別できない (Go 1.26 で実測)
+    - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (master でも同じ)
+  - 残り: verify (replay 以外。本家 3442〜4700 の約 1,200 行: `_Found`・`_find`・`_verify_record`・`_recheck_problem`・`_summary_problems`・`_verify` など)・本家が書いた状態フォルダを Go の verify に読ませる記録とその逆向き・`_touch`・`_ensure_dir` を `_save` と一緒に戻す
 
 ### 1 本目の敵対的レビュー (2 回目。2026-11-20。opus)
 
