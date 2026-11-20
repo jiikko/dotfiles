@@ -25,4 +25,4 @@ func PathParent(s string) string { return pureParent(s) }
 func PathExists(path string) bool { return pathExists(path) }
 
 // ExpandUser は os.path.expanduser("~")。取れなければ ok が偽。
-func ExpandUser() (string, bool) { return expandUser() }
+func ExpandUser(lookup func(string) (string, bool)) (string, bool) { return expandUser(lookup) }

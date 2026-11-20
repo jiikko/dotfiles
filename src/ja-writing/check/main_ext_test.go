@@ -2,7 +2,9 @@ package check_test
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"strconv"
 	"testing"
 	"time"
@@ -20,6 +22,12 @@ func TestMain(m *testing.M) {
 		os.Exit(entry.Run(os.Args[1:], entry.Main))
 	case check.ChildHang:
 		os.Exit(entry.Run(os.Args[1:], hang))
+	}
+	// 子として起こされたのに印が無い (Env の環境変数を子に渡し損ねた退行) ときは、テストの全部を子として走らせない。
+	// 走らせると、子がまた子を起こして run の締め切りまで増え続ける。
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-test.") {
+		fmt.Fprintf(os.Stderr, "テストのバイナリが %s の子の印なしで %q として起こされました\n", check.ChildEnvName, os.Args[1:])
+		os.Exit(70)
 	}
 	os.Exit(m.Run())
 }

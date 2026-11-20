@@ -362,7 +362,7 @@ func (e *env) invoke(t *testing.T, c oracle.Call) (v pyjson.Value, exc *visibili
 		}
 		return s, nil
 	case "find_words_folder":
-		folder, ok, err := visibility.FindWordsFolder(e.argOptString(t, a[0]), e.argOptString(t, a[1]))
+		folder, ok, err := visibility.FindWordsFolder(e.argOptString(t, a[0]), e.argOptString(t, a[1]), os.LookupEnv)
 		if err != nil {
 			return fail(err)
 		}
@@ -382,7 +382,7 @@ func (e *env) invoke(t *testing.T, c oracle.Call) (v pyjson.Value, exc *visibili
 		save(w)
 		return wordsValue(w), nil
 	case "resolve_words":
-		w, ok, err := visibility.ResolveWords(e.argOptString(t, a[0]), e.argOptString(t, a[1]), a[2].(bool))
+		w, ok, err := visibility.ResolveWords(e.argOptString(t, a[0]), e.argOptString(t, a[1]), a[2].(bool), os.LookupEnv)
 		if err != nil {
 			return fail(err)
 		}

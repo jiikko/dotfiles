@@ -17,7 +17,7 @@ func TestChildrenDoNotStartAfterDeadline(t *testing.T) {
 		}
 		return now
 	}
-	kids := newChildren(h.rt, 1, h.dir)
+	kids := newChildren(h.rt, 1, h.dir, h.rt.ChildEnv(processEnv(nil, h.dir, nil, nil)))
 	kids.start("lint", []string{testExecutable(t), "lint"})
 	results, err := kids.wait(context.Background())
 	if err != nil {
@@ -35,7 +35,7 @@ func TestChildrenDoNotStartAfterDeadline(t *testing.T) {
 // 止めた後に頼まれた子は起動しない (止める間に別の子を起こさない)。
 func TestChildrenDoNotStartAfterStop(t *testing.T) {
 	h := newHangFixture(t)
-	kids := newChildren(h.rt, 60, h.dir)
+	kids := newChildren(h.rt, 60, h.dir, h.rt.ChildEnv(processEnv(nil, h.dir, nil, nil)))
 	kids.stop()
 	kids.start("diff", []string{testExecutable(t), "diff"})
 	results, err := kids.wait(context.Background())
@@ -63,7 +63,7 @@ func TestWaitSecondsDropsHugeLimits(t *testing.T) {
 // 親の中の仕事 (資料との照合) が panic しても、動いている子を止めてから panic を流し直す (本家の except BaseException の枝)。
 func TestChildrenStopWhenParentWorkPanics(t *testing.T) {
 	h := newHangFixture(t)
-	kids := newChildren(h.rt, 60, h.dir)
+	kids := newChildren(h.rt, 60, h.dir, h.rt.ChildEnv(processEnv(nil, h.dir, nil, nil)))
 	pid := 0
 	recovered := func() (r any) {
 		defer func() { r = recover() }()

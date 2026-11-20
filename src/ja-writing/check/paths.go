@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"ja-writing/cmdenv"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 	"ja-writing/visibility"
@@ -24,6 +25,25 @@ func Getcwd() (string, error) {
 		return "", &NoWorkingDirectoryError{Message: fmt.Sprintf(noWorkingDirError, "No such file or directory")}
 	}
 	return cwd, nil
+}
+
+// sameWorkingDirectory は、env.Cwd がプロセスの作業ディレクトリと同じフォルダかを確かめ、違えば誤りを返す (内部エラー)。
+// check の部品は相対パスの読み書きと _getcwd をプロセスの作業ディレクトリで行う (OS がそこで解決する) ので、Env にだけ別の作業フォルダを
+// 渡されても従えない。黙って片方を使うと、入力を読む場所と記録に書く cwd・状態フォルダの場所が食い違う。
+// env.Cwd が空のときと、どちらかを読めない (消えた作業ディレクトリ) ときは確かめない (読めない作業ディレクトリは Getcwd が本家と同じ誤りにする)。
+func sameWorkingDirectory(env cmdenv.Env) error {
+	if env.Cwd == "" {
+		return nil
+	}
+	given, err := os.Stat(env.Cwd)
+	if err != nil {
+		return nil
+	}
+	here, err := os.Stat(".")
+	if err != nil || os.SameFile(given, here) {
+		return nil
+	}
+	return fmt.Errorf("Env の作業フォルダ %s が、プロセスの作業フォルダと違います（check はプロセスの作業フォルダでパスを読みます）", env.Cwd)
 }
 
 // AbsPath は _abspath (os.path.abspath と同じ。相対パスのときだけ作業ディレクトリを読む)。
@@ -141,14 +161,14 @@ func SameFile(a, b string) (bool, error) {
 // 「~user/x」や「~x」は置き換えない (その名前の利用者が機械にいるかどうかで、場所が変わらないように)。
 // ホームが決まらないとき (HOME が空かルートだけ・取れない・「~」で始まる) は、値をそのまま返す (作業ディレクトリからの相対パス)。
 // HOME が空かルートだけのときは状態フォルダをファイルシステムのルートに置かないために、expanduser の結果を使わない。
-func HomePath(value string) string {
+func HomePath(value string, lookup func(string) (string, bool)) string {
 	if value != "~" && !strings.HasPrefix(value, "~/") {
 		return value
 	}
-	if configured, set := os.LookupEnv("HOME"); set && strings.Trim(pystr.Strip(configured), "/") == "" {
+	if configured, set := lookup("HOME"); set && strings.Trim(pystr.Strip(configured), "/") == "" {
 		return value
 	}
-	expanded, ok := visibility.ExpandUser()
+	expanded, ok := visibility.ExpandUser(lookup)
 	if !ok {
 		return value
 	}
@@ -161,8 +181,8 @@ func HomePath(value string) string {
 }
 
 // stateDirFromEnv は環境変数で決めた状態フォルダの値 (空白だけと、展開されなかった ${…} を含む値は無いものとして "" を返す)。
-func stateDirFromEnv() string {
-	value, set := os.LookupEnv(stateDirEnv)
+func stateDirFromEnv(lookup func(string) (string, bool)) string {
+	value, set := lookup(stateDirEnv)
 	if !set || pystr.Strip(value) == "" || strings.Contains(value, "${") {
 		return ""
 	}
@@ -176,13 +196,13 @@ func stateDirFromEnv() string {
 //
 // 1 と 2 の値の頭の ~ は HomePath の決まりでホームフォルダに置き換える。環境変数が空白だけのときと、展開されなかった ${…} を含むときは、ないものとして 3 と 4 に進む
 // (作業フォルダに「${CLAUDE_PROJECT_DIR}」のようなフォルダを作らない)。
-func StateDirFor(cwd, option string) (string, error) {
+func StateDirFor(cwd, option string, lookup func(string) (string, bool)) (string, error) {
 	selected := option
 	if selected == "" {
-		selected = stateDirFromEnv()
+		selected = stateDirFromEnv(lookup)
 	}
 	if selected != "" {
-		return visibility.AbsolutePath(visibility.PathJoin(cwd, HomePath(selected)))
+		return visibility.AbsolutePath(visibility.PathJoin(cwd, HomePath(selected, lookup)))
 	}
 	cwd, err := visibility.AbsolutePath(cwd)
 	if err != nil {
@@ -202,13 +222,13 @@ func StateDirFor(cwd, option string) (string, error) {
 }
 
 // StateDir は _state_dir。絶対パスで指定したときは、作業ディレクトリが消えていても通る。
-func StateDir(option string) (string, error) {
+func StateDir(option string, lookup func(string) (string, bool)) (string, error) {
 	selected := option
 	if selected == "" {
-		selected = stateDirFromEnv()
+		selected = stateDirFromEnv(lookup)
 	}
 	if selected != "" {
-		selected = HomePath(selected)
+		selected = HomePath(selected, lookup)
 		if strings.HasPrefix(selected, "/") {
 			return visibility.Normpath(selected), nil
 		}
@@ -217,10 +237,10 @@ func StateDir(option string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return StateDirFor(cwd, option)
+	return StateDirFor(cwd, option, lookup)
 }
 
 // StateDirGiven は _state_dir_given。状態フォルダを --state-dir か環境変数 YOMIYASU_STATE_DIR で決めたか。
-func StateDirGiven(option string) bool {
-	return option != "" || stateDirFromEnv() != ""
+func StateDirGiven(option string, lookup func(string) (string, bool)) bool {
+	return option != "" || stateDirFromEnv(lookup) != ""
 }

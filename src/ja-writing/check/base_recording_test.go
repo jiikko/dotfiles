@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -382,13 +383,13 @@ func (e *interp) pathCall(c oracle.Call) outcome {
 	case "_same_file":
 		return boolean(SameFile(e.str(a[0]), e.str(a[1])))
 	case "_home_path":
-		return outcome{value: HomePath(e.str(a[0]))}
+		return outcome{value: HomePath(e.str(a[0]), os.LookupEnv)}
 	case "state_dir_for":
-		return wrap(StateDirFor(e.str(a[0]), optionArg(e, a[1])))
+		return wrap(StateDirFor(e.str(a[0]), optionArg(e, a[1]), os.LookupEnv))
 	case "_state_dir":
-		return wrap(StateDir(optionArg(e, a[0])))
+		return wrap(StateDir(optionArg(e, a[0]), os.LookupEnv))
 	case "_state_dir_given":
-		return outcome{value: StateDirGiven(optionArg(e, a[0]))}
+		return outcome{value: StateDirGiven(optionArg(e, a[0]), os.LookupEnv)}
 	}
 	e.t.Fatalf("Go に持っていない関数 %s", c.Function)
 	return outcome{}

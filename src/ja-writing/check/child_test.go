@@ -1,8 +1,11 @@
 package check
 
 import (
+	"io"
 	"os"
 	"testing"
+
+	"ja-writing/cmdenv"
 )
 
 // テストのバイナリを run の子 (lint・diff) として起こし直す。check の run は子に自分自身 (ja-writing) を起こすが、テストでは os.Executable が
@@ -36,7 +39,14 @@ func childRuntime(t *testing.T) Runtime {
 	return rt
 }
 
-// childEnv は子の環境変数 (今のプロセスの環境に、子として走る印と、子の代わりの shell script が渡す本物の実行ファイルを足す)。
-func childEnv(exe string) func() []string {
-	return func() []string { return append(os.Environ(), childEnvName+"="+childReal, "JA_REAL="+exe) }
+// childEnv は子の環境変数 (run の Env の環境変数に、子として走る印と、子の代わりの shell script が渡す本物の実行ファイルを足す)。
+func childEnv(exe string) func(cmdenv.Env) []string {
+	return func(env cmdenv.Env) []string {
+		return append(env.Environment(), childEnvName+"="+childReal, "JA_REAL="+exe)
+	}
+}
+
+// processEnv は今のプロセスの引数以外の外の世界を写した Env (本番の cmdenv.FromProcess と同じく環境変数の全部を持つ)。
+func processEnv(args []string, cwd string, stdout, stderr io.Writer) cmdenv.Env {
+	return cmdenv.Env{Args: args, Stdout: stdout, Stderr: stderr, Cwd: cwd, Getenv: os.Getenv, LookupEnv: os.LookupEnv, Environ: os.Environ}
 }

@@ -30,7 +30,7 @@ func TestRawFindingsMatchPythonRecording(t *testing.T) {
 		t.Fatalf("case が %d 件、記録が %d 件 (make golden で作り直す)", len(cases), len(g.Cases))
 	}
 	wordsFolder := "words"
-	words, _, err := visibility.ResolveWords(&root, &wordsFolder, false)
+	words, _, err := visibility.ResolveWords(&root, &wordsFolder, false, os.LookupEnv)
 	if err != nil {
 		t.Fatal(err)
 	}

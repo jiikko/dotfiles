@@ -12,7 +12,7 @@ lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り�
 | 場所 | 中身 |
 |---|---|
 | `main.go` `entry/` | プロセスの入口。`entry.Main` が subcommand を振り分け、`entry.Run` が subcommand ごとのシグナルの受け方と `Env` を整える (check のテストの子も同じ `entry.Run` を通る) |
-| `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
+| `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数 (`Getenv`・空と無いを分ける `LookupEnv`・全部の `Environ`))。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
 | `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (hook の `Main` はいまは未実装の stub。check の `Main` は `verify` と `--version` だけ。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
 | `internal/pycli/` | lint と diff が共有する CLI の部品: argparse の写し (`Spec.Parse`。位置引数とオプションを混ぜてよい形も同じ答え)・使い方の誤りの文・`--fail-on` の値の正規化・出力先が閉じたときの終了コード・入力 (ファイルか標準入力) の読み。本家の lint・diff・check は同じ `_ArgumentParser` と `_read_input` を写しで持つ (ast が同じ) |
 | `lint/pausecomma/` | lint の群 G13 (規則 `pause_comma`: 短い主語・主題・目的語のすぐあとの読点)。本家の `_pause_comma_hits`・`_pause_comma_object_hits`・`_pause_comma_line_hits` の写しで、記録は `testdata/golden/pause_comma.json` (issue 1084)。骨組みは `Fallback` と `LineHits` を呼び、G16 は `TENotVerb`、G17 は `TEAttrObject` を使う |
@@ -317,6 +317,8 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - **lint と diff は、自分自身 (`os.Executable()`) を `lint --json` / `diff --json` の子として起こし、締め切りで kill する** (`check/children.go`)。本家が子で止めるのは止まらない照合を止めるためで、`lint.Main`・`diff.Main` は ctx を見ず、regexp2 の照合も ctx を見ないので、同じ強さで守れるのはこの形だけ。
   失うもの: 実行ファイルが ja-writing であることに頼る。check のテストと hook のテストから呼ぶとテストバイナリになるので、子の実行ファイル・時刻・経過の時計・乱数を `check.Runtime` で差し込み (`MainWith`)、check のテストは `TestMain` の再 exec でテストのバイナリを ja-writing の lint・diff として走らせる (`check/child_test.go`)。
   シグナル: 受け方はプロセスの入口 `entry.Run` が subcommand ごとに決める (main と、check のテストが自分のバイナリを子として起こし直すときの両方がここを通る)。check は本家の main と同じく SIGINT・SIGTERM・SIGHUP を受けて ctx を取り消し (cause に受けたシグナルを入れる `cmdenv.NotifyContext`。無視して起動された SIGINT・SIGHUP は受けない)、run・verify のどちらも `yomiyasu_check.py: 止められました（SIGTERM）。…` を出して 128+番号で終わる。止められた run は動いている子を kill し、一時フォルダを消す。lint・diff・hook はシグナルを受けず、本家と同じくそのシグナルで終わる (シェルから見て 128+番号)。
+- **環境変数は `Env` から読む** (状態フォルダの `YOMIYASU_STATE_DIR`・`HOME`・セッション・`--words` の `~`・子の環境)。hook が `MainWith` にプロセスと違う `Env` を渡しても、読む所ごとに食い違わない。
+  作業フォルダはプロセスのものを使う: 相対パスの読み書きと `_getcwd` は OS がプロセスの作業ディレクトリで解決するので、`Env.Cwd` に別のフォルダを渡されても従えない。run と verify は `Env.Cwd` がプロセスの作業ディレクトリと違えば内部エラーで止める (`sameWorkingDirectory`)。
 - **記録の突き合わせは、実行 ID・時刻・ミリ秒・パス・`python.version`・`python.implementation`・案内のコマンド名を置き換えてから比べる**。置き換えないのは `python.unicode_version`・tools の SHA-256・語の一覧を使わない入力の `report_sha256` と `text_sha256`。
 
 入っているもの (本家の関数。Go の名前は `check/` の関数の doc コメントにある):

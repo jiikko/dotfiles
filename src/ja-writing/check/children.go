@@ -17,6 +17,7 @@ import (
 
 	"subproc"
 
+	"ja-writing/cmdenv"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
 	"ja-writing/internal/pystr"
@@ -37,8 +38,8 @@ const (
 type Runtime struct {
 	// Executable は子として起こす ja-writing (lint・diff の subcommand を持つ実行ファイル)。
 	Executable func() (string, error)
-	// ChildEnv は子の環境変数 (本家は親の環境に PYTHONIOENCODING を足したもの)。
-	ChildEnv func() []string
+	// ChildEnv は子の環境変数 (本家は親の環境に PYTHONIOENCODING を足したもの)。本番は run の Env の環境変数の全部。
+	ChildEnv func(env cmdenv.Env) []string
 	// Now は今の時刻 (UTC・秒まで。本家の _utc_now)。
 	Now func() time.Time
 	// Monotonic は経過を測る時計の秒 (本家の time.monotonic)。
@@ -54,7 +55,7 @@ func DefaultRuntime() Runtime {
 	started := time.Now()
 	return Runtime{
 		Executable: os.Executable,
-		ChildEnv:   os.Environ,
+		ChildEnv:   cmdenv.Env.Environment,
 		Now:        func() time.Time { return time.Now().UTC().Truncate(time.Second) },
 		Monotonic:  func() float64 { return time.Since(started).Seconds() },
 		RandomHex: func(n int) (string, error) {
@@ -100,9 +101,9 @@ type children struct {
 	results   map[string]childResult
 }
 
-func newChildren(rt Runtime, timeout float64, cwd string) *children {
+func newChildren(rt Runtime, timeout float64, cwd string, environ []string) *children {
 	return &children{
-		deadline: rt.Monotonic() + timeout, monotonic: rt.Monotonic, env: rt.ChildEnv(), cwd: cwd,
+		deadline: rt.Monotonic() + timeout, monotonic: rt.Monotonic, env: environ, cwd: cwd,
 		results: map[string]childResult{},
 	}
 }

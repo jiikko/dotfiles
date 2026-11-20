@@ -20,6 +20,31 @@ type Env struct {
 	Cwd    string
 	// Getenv は環境変数の読み出し。os.Getenv を直接呼ばず、テストが差し替えられるようにする。
 	Getenv func(string) string
+	// LookupEnv は空と無いを分けて読む環境変数 (os.LookupEnv の形。HOME が空のときと無いときで扱いが違う所が使う)。
+	// nil なら Getenv で読み、空を無いとみなす (Lookup)。
+	LookupEnv func(string) (string, bool)
+	// Environ は環境変数の全部 (os.Environ の形。check が子の環境を組む)。nil なら空 (Environment)。
+	Environ func() []string
+}
+
+// Lookup は環境変数 name を読む。LookupEnv が無ければ Getenv で読み、空の値を無いとみなす。
+func (e Env) Lookup(name string) (string, bool) {
+	if e.LookupEnv != nil {
+		return e.LookupEnv(name)
+	}
+	if e.Getenv == nil {
+		return "", false
+	}
+	value := e.Getenv(name)
+	return value, value != ""
+}
+
+// Environment は環境変数の全部。Environ が無ければ空 (nil にしない: exec.Cmd の Env の nil は今のプロセスの環境を引き継ぐ)。
+func (e Env) Environment() []string {
+	if e.Environ == nil {
+		return []string{}
+	}
+	return e.Environ()
 }
 
 // FromProcess は今のプロセスの引数・標準入出力・cwd・環境変数から Env を作る。
@@ -28,7 +53,7 @@ func FromProcess(args []string) (Env, error) {
 	if err != nil {
 		return Env{}, fmt.Errorf("cwd を読めません: %w", err)
 	}
-	return Env{Args: args, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Cwd: cwd, Getenv: os.Getenv}, nil
+	return Env{Args: args, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Cwd: cwd, Getenv: os.Getenv, LookupEnv: os.LookupEnv, Environ: os.Environ}, nil
 }
 
 // ExitUsage は本家の argparse と同じく、使い方か入力の誤りを表す終了コード。

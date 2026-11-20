@@ -230,6 +230,9 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 			return pycli.Fail(env, problem)
 		}
 	}
+	if err := sameWorkingDirectory(env); err != nil {
+		return 0, err
+	}
 	cwd, err := Getcwd()
 	if err != nil {
 		return 0, err
@@ -237,7 +240,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	if a.words != nil && a.noWords {
 		return usage("--words と --no-words は一緒に使えません")
 	}
-	words, found, err := visibility.ResolveWords(&cwd, a.words, a.noWords)
+	words, found, err := visibility.ResolveWords(&cwd, a.words, a.noWords, env.Lookup)
 	if err != nil {
 		var werr *visibility.Error
 		if errors.As(err, &werr) && werr.Type != visibility.TypeWordsError {
@@ -269,7 +272,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		if a.stateDir != nil {
 			option = *a.stateDir
 		}
-		if !a.newRun && !a.noRecord && isDir(must(StateDir(option))+"/armed") {
+		if !a.newRun && !a.noRecord && isDir(must(StateDir(option, env.Lookup))+"/armed") {
 			panic(failure{errArmed{}})
 		}
 		return pycli.Fail(env, sameFileError)
@@ -338,14 +341,14 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	moment := rt.Now()
 	session := a.session
 	if session == nil {
-		if value, ok := lookupEnv(env, "YOMIYASU_SESSION"); ok {
+		if value, ok := env.Lookup("YOMIYASU_SESSION"); ok {
 			session = &value
 		}
 	}
 	host := pyjson.NewObject()
 	host.Set("session", pyjson.OptionalString(HostValue(session)))
 	var thread *string
-	if value, ok := lookupEnv(env, "CODEX_THREAD_ID"); ok {
+	if value, ok := env.Lookup("CODEX_THREAD_ID"); ok {
 		thread = &value
 	}
 	host.Set("codex_thread_id", pyjson.OptionalString(HostValue(thread)))
@@ -369,7 +372,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		if a.stateDir != nil {
 			option = *a.stateDir
 		}
-		state = must(StateDir(option))
+		state = must(StateDir(option, env.Lookup))
 	}
 	var chosen link
 	key := pathKey(c.final, c.source, c.materials)
@@ -391,7 +394,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		if a.stateDir != nil {
 			option = *a.stateDir
 		}
-		if StateDirGiven(option) {
+		if StateDirGiven(option, env.Lookup) {
 			c.stateDirOption = &state
 		}
 		c.sourceWasFinal = c.source != nil && wasCheckedFinal(state, c.source)
@@ -421,7 +424,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	inputs := slices.Concat(sourceList(c.source), c.materials, []*Input{c.final})
 	var snapshots map[*Input]string
 	if recording {
-		err := EnsureState(state, !StateDirGiven(optionOf(a.stateDir)))
+		err := EnsureState(state, !StateDirGiven(optionOf(a.stateDir), env.Lookup))
 		if err == nil {
 			var folder string
 			if folder, err = ensureDir(state, "inputs"); err == nil {
@@ -489,12 +492,6 @@ func optionOf(s *string) string {
 	return *s
 }
 
-// lookupEnv は os.environ.get(name) (無ければ偽)。cmdenv.Env の Getenv は空と無いを分けないので、本家と同じく空の値は HostValue が捨てる。
-func lookupEnv(env cmdenv.Env, name string) (string, bool) {
-	value := env.Getenv(name)
-	return value, value != ""
-}
-
 // numberOf は --timeout の値 (int か float) の秒数。
 func numberOf(v pyjson.Value) float64 {
 	n, _ := pyops.Number(v)
@@ -513,7 +510,7 @@ func checkInTemporary(ctx context.Context, rt Runtime, env cmdenv.Env, c *runCon
 			return err
 		}
 	}
-	if err := runChecks(ctx, rt, c, snapshots, stance, timeout); err != nil {
+	if err := runChecks(ctx, rt, env, c, snapshots, stance, timeout); err != nil {
 		if stop := stopped(ctx); stop != nil {
 			return stop
 		}

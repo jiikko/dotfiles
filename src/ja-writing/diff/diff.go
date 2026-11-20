@@ -101,7 +101,7 @@ func prepare(env cmdenv.Env) (req *request, code int, err error) {
 		if env.Cwd != "" {
 			cwd = &env.Cwd
 		}
-		if r.words, _, err = visibility.ResolveWords(cwd, o.words, o.noWords); err != nil {
+		if r.words, _, err = visibility.ResolveWords(cwd, o.words, o.noWords, env.Lookup); err != nil {
 			var werr *visibility.Error
 			if errors.As(err, &werr) && werr.Type == visibility.TypeWordsError {
 				return finish(fail(env, werr.Message))

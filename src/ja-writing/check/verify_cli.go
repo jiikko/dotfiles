@@ -192,6 +192,9 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	if _, problem := Timeout(a.timeout); problem != "" {
 		return pycli.Fail(env, problem)
 	}
+	if err := sameWorkingDirectory(env); err != nil {
+		return 0, err
+	}
 	if problem := must(PathProblem("verify", []*string{a.final, a.source})); problem != "" {
 		return pycli.Fail(env, problem)
 	}
@@ -225,7 +228,7 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	if a.stateDir != nil {
 		option = *a.stateDir
 	}
-	state := must(StateDir(option))
+	state := must(StateDir(option, env.Lookup))
 	if a.runID != nil && isDir(state) {
 		if problem := RunIDCaseProblem(state, *a.runID); problem != "" {
 			return pycli.Fail(env, problem)

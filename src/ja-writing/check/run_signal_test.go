@@ -40,7 +40,9 @@ func newHangFixture(t *testing.T) *hangFixture {
 	}
 	h := &hangFixture{dir: dir, pidFile: dir + "/child.pid"}
 	h.rt = childRuntime(t)
-	h.rt.ChildEnv = func() []string { return append(os.Environ(), childEnvName+"="+childHang, "JA_PIDFILE="+h.pidFile) }
+	h.rt.ChildEnv = func(env cmdenv.Env) []string {
+		return append(env.Environment(), childEnvName+"="+childHang, "JA_PIDFILE="+h.pidFile)
+	}
 	temporary := t.TempDir()
 	h.rt.TempDir = func() string { return temporary }
 	return h
@@ -77,7 +79,7 @@ func (h *hangFixture) start(ctx context.Context, args ...string) chan runOutcome
 	done := make(chan runOutcome, 1)
 	go func() {
 		var stdout, stderr bytes.Buffer
-		rc := MainWith(ctx, cmdenv.Env{Args: append([]string{"run"}, args...), Stdout: &stdout, Stderr: &stderr, Cwd: h.dir, Getenv: os.Getenv}, h.rt)
+		rc := MainWith(ctx, processEnv(append([]string{"run"}, args...), h.dir, &stdout, &stderr), h.rt)
 		done <- runOutcome{rc, stdout.String(), stderr.String()}
 	}()
 	return done

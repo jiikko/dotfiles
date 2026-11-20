@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"ja-writing/cmdenv"
 	"ja-writing/diff"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
@@ -383,7 +384,7 @@ func keptMarkReplacements(findings pyjson.Value, replacements map[string]string)
 
 // runChecks は _run_checks。lint と diff を子プロセスで (並べて) 動かし、資料があればプロセスの中で照らす。
 // snapshots は入力から写しの絶対パス。ctx が取り消されたら、子を止めてから cause を返す。
-func runChecks(ctx context.Context, rt Runtime, c *runContext, snapshots map[*Input]string, stance *string, timeout float64) error {
+func runChecks(ctx context.Context, rt Runtime, env cmdenv.Env, c *runContext, snapshots map[*Input]string, stance *string, timeout float64) error {
 	exe, err := rt.Executable()
 	if err != nil {
 		return err
@@ -435,7 +436,7 @@ func runChecks(ctx context.Context, rt Runtime, c *runContext, snapshots map[*In
 		c.setEntry(name, checkEntry(name, targets[name]))
 	}
 
-	results, err := newChildren(rt, timeout, folder).run(ctx, commands, func() {
+	results, err := newChildren(rt, timeout, folder, rt.ChildEnv(env)).run(ctx, commands, func() {
 		if slices.Contains(c.required, "materials") {
 			entry := c.entries["materials"]
 			started := rt.Monotonic()

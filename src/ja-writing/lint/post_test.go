@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -69,7 +70,7 @@ func TestPostProcessingMatchesPythonRecording(t *testing.T) {
 		lc := lintContext{docType: docType, reader: reader}
 		if c.Words != "" {
 			folder := c.Words
-			if lc.words, _, err = visibility.ResolveWords(&root, &folder, false); err != nil {
+			if lc.words, _, err = visibility.ResolveWords(&root, &folder, false, os.LookupEnv); err != nil {
 				t.Fatal(err)
 			}
 		}

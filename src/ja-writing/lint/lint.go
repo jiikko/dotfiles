@@ -80,7 +80,7 @@ func run(env cmdenv.Env, lint lintFunc) (int, error) {
 	if env.Cwd != "" {
 		cwd = &env.Cwd
 	}
-	words, _, err := visibility.ResolveWords(cwd, o.words, o.noWords)
+	words, _, err := visibility.ResolveWords(cwd, o.words, o.noWords, env.Lookup)
 	if err != nil {
 		var werr *visibility.Error
 		if errors.As(err, &werr) && werr.Type == visibility.TypeWordsError {

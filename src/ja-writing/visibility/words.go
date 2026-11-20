@@ -29,15 +29,15 @@ func wordsError(format string, args ...any) *Error {
 }
 
 // wordsHome は _words_home (--words の値の頭の ~ をホームフォルダに置き換える。check と hook の _home_path と同じ決まり)。
-func wordsHome(value string) string {
+func wordsHome(value string, lookup func(string) (string, bool)) string {
 	if value != "~" && !strings.HasPrefix(value, "~/") {
 		return value
 	}
-	configured, set := os.LookupEnv("HOME")
+	configured, set := lookup("HOME")
 	if set && strings.Trim(stripPy(configured), "/") == "" {
 		return value
 	}
-	home, ok := expandUser()
+	home, ok := expandUser(lookup)
 	if !ok {
 		return value
 	}
@@ -50,9 +50,9 @@ func wordsHome(value string) string {
 	return value
 }
 
-// expandUser は os.path.expanduser("~")。HOME が無いときはパスワードデータベース。取れなければ ok が偽 (pathlib は RuntimeError にし、本家はそれを握って値をそのまま返す)。
-func expandUser() (string, bool) {
-	home, set := os.LookupEnv("HOME")
+// expandUser は os.path.expanduser("~")。HOME (lookup で読む) が無いときはパスワードデータベース。取れなければ ok が偽 (pathlib は RuntimeError にし、本家はそれを握って値をそのまま返す)。
+func expandUser(lookup func(string) (string, bool)) (string, bool) {
+	home, set := lookup("HOME")
 	if !set {
 		var err error
 		if home, err = lookupHomeByUID(); err != nil {
@@ -81,9 +81,9 @@ func expandedPure(value, home string) string {
 //  3. git の外では cwd の .yomiyasu-words/。2 と 3 は、フォルダが無ければ ok が偽。
 //
 // cwd が nil (作業ディレクトリを読めない) ときは、2 と 3 を探さずに ok が偽、相対パスの option は WordsError。
-func FindWordsFolder(cwd *string, option *string) (string, bool, error) {
+func FindWordsFolder(cwd *string, option *string, lookup func(string) (string, bool)) (string, bool, error) {
 	if option != nil {
-		value := wordsHome(*option)
+		value := wordsHome(*option, lookup)
 		if stripPy(value) == "" {
 			return "", false, wordsError("--words に空の値は使えません")
 		}
@@ -460,12 +460,12 @@ func LoadWords(folder string) (*Words, bool, error) {
 }
 
 // ResolveWords は resolve_words。--words と --no-words から語の一覧を決める。使うときは LoadWords の値、使わないときは ok が偽。
-// disabled (--no-words) なら探さない。cwd は作業ディレクトリ (読めなければ nil)。読めない一覧は WordsError。
-func ResolveWords(cwd, option *string, disabled bool) (*Words, bool, error) {
+// disabled (--no-words) なら探さない。cwd は作業ディレクトリ (読めなければ nil)。lookup は環境変数の読み出し (--words の頭の ~ に HOME を使う)。読めない一覧は WordsError。
+func ResolveWords(cwd, option *string, disabled bool, lookup func(string) (string, bool)) (*Words, bool, error) {
 	if disabled {
 		return nil, false, nil
 	}
-	folder, found, err := FindWordsFolder(cwd, option)
+	folder, found, err := FindWordsFolder(cwd, option, lookup)
 	if err != nil || !found {
 		return nil, false, err
 	}

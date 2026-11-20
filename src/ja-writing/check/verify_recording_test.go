@@ -249,7 +249,7 @@ func (e *interp) capture(c oracle.Call) outcome {
 	if e.sim != nil {
 		rt = e.sim.runtime()
 	}
-	rc := MainWith(context.Background(), cmdenv.Env{Args: argv, Stdin: e.stdin, Stdout: &stdout, Stderr: &stderr, Cwd: cwd, Getenv: os.Getenv}, rt)
+	rc := MainWith(context.Background(), cmdenv.Env{Args: argv, Stdin: e.stdin, Stdout: &stdout, Stderr: &stderr, Cwd: cwd, Getenv: os.Getenv, LookupEnv: os.LookupEnv, Environ: os.Environ}, rt)
 	o := pyjson.NewObject()
 	o.Set("rc", int64(rc))
 	o.Set("stdout", stdout.String())
