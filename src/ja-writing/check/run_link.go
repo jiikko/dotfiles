@@ -144,10 +144,11 @@ func latestByPath(state, key string) (string, *pyjson.Object) {
 	return first.runID, must(ReadRecord(attemptFile(state, first.runID, first.attempt)))
 }
 
-// link は _link の結果 (実行 ID と、次に確保を試す回)。
+// link は _link の結果 (実行 ID と、次に確保を試す回)。reserved は登録の run が上限の判定と同じロックの中で確保した回 (本家の link["reserved"])。
 type link struct {
-	runID   string
-	attempt attemptNo
+	runID    string
+	attempt  attemptNo
+	reserved *reservedAttempt
 }
 
 // linkRun は _link (読むだけ)。(結果, "") か (空, 誤りの文)。
@@ -159,36 +160,24 @@ func linkRun(rt Runtime, state string, runID *string, newRun bool, mode string, 
 			return link{}, "別の原文の実行IDです（--run-id " + *runID + "）。この実行の記録は、モード、原文、資料の集まりのどれかが違います。" +
 				"この原文で検査するときは、--run-id を外すか、別の実行IDを指定してください。"
 		}
-		return link{*runID, nextAttempt(state + "/runs/" + *runID)}, ""
+		return link{runID: *runID, attempt: nextAttempt(state + "/runs/" + *runID)}, ""
 	}
 	if !newRun {
-		mustNotBeArmed(state, source)
+		if armed := armedForSource(state, source, nil, false); armed != nil {
+			armedID := pyops.Str(pyops.Index(armed, "run_id"))
+			return link{runID: armedID, attempt: nextAttempt(state + "/runs/" + armedID)}, ""
+		}
 		if foundID, record := latestByPath(state, pathKey(final, source, materials)); record != nil {
 			createdText, _ := pyops.Get(record, "created_at").(string)
 			created, ok := ParseISO(createdText)
 			recordedCwd, isStr := pyops.Get(record, "cwd").(string)
 			if ok && moment.Sub(created).Seconds() <= linkSeconds && isStr && must(SamePath(recordedCwd, cwd)) &&
 				sameOrigin(record, mode, source, materials) {
-				return link{foundID, nextAttempt(state + "/runs/" + foundID)}, ""
+				return link{runID: foundID, attempt: nextAttempt(state + "/runs/" + foundID)}, ""
 			}
 		}
 	}
-	return link{newRunID(rt, state, moment), parseAttemptNo("1")}, ""
-}
-
-// errArmed は start の登録 (状態フォルダの armed/) に触れる run。登録は 5 本目で写すので、今は内部エラーで止める。
-type errArmed struct{}
-
-func (errArmed) Error() string {
-	return "start の登録（armed/）を使う run はまだ実装していません（ja-writing）"
-}
-
-// mustNotBeArmed は、本家の _armed_for_source が登録を探しにいく場面 (原文があり、状態フォルダに armed/ がある) で止める。
-// armed/ が無ければ本家も None を返すので、run の答えは変わらない。
-func mustNotBeArmed(state string, source *Input) {
-	if source != nil && state != "" && isDir(state+"/armed") {
-		panic(failure{errArmed{}})
-	}
+	return link{runID: newRunID(rt, state, moment), attempt: parseAttemptNo("1")}, ""
 }
 
 // wasCheckedFinal は _was_checked_final (原文の本文が、前に最終稿として検査した本文と同じか)。

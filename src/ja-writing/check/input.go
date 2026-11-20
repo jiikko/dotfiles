@@ -39,12 +39,21 @@ type Input struct {
 
 // makeInput は _make_input。UTF-8 として読めなければ誤りの文を返す。
 func makeInput(role string, index int, path *string, data []byte) (*Input, string) {
-	text, info, err := visibility.DecodeSourceBytes(data)
+	item, err := newInput(role, index, path, data)
 	if err != nil {
 		if path == nil {
 			return nil, pycli.NotUTF8Stdin
 		}
 		return nil, pycli.NotUTF8File(*path)
+	}
+	return item, ""
+}
+
+// newInput は _Input(role, index, path, data)。UTF-8 として読めなければ、本家の UnicodeDecodeError と同じ文の誤り (*visibility.Error)。
+func newInput(role string, index int, path *string, data []byte) (*Input, error) {
+	text, info, err := visibility.DecodeSourceBytes(data)
+	if err != nil {
+		return nil, err
 	}
 	via := "file"
 	if path == nil {
@@ -53,7 +62,7 @@ func makeInput(role string, index int, path *string, data []byte) (*Input, strin
 	return &Input{
 		Role: role, Index: index, Path: path, Via: via, Data: data, SHA256: SHA256(data),
 		Text: text, BOM: info.BOM, EOL: info.EOL, TextSHA256: TextSHA256(text),
-	}, ""
+	}, nil
 }
 
 // Snapshot は状態フォルダの中の写しの場所。

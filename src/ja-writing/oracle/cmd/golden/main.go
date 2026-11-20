@@ -342,6 +342,13 @@ var goldens = []golden{
 		}
 		return oracle.MarshalVisibility(g)
 	}},
+	{name: "check-manage", file: oracle.CheckManageFile, what: "check の start・end・export と登録・hook が呼ぶ関数の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+		g, err := r.RecordVisibility(e.ctx, e.header.WithoutCorpus(), oracle.CheckManageCases())
+		if err != nil {
+			return nil, err
+		}
+		return oracle.MarshalVisibility(g)
+	}},
 	{name: "casemap", file: oracle.CasemapFile, what: "大文字小文字の変換の記録 (casefold・lower・swapcase・upper)", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		return buildCasemap(e.ctx, r, e.header.WithoutCorpus())
 	}, table: buildCasemapTables, tablePath: oracle.CasemapTablesPath},

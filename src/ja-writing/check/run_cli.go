@@ -181,11 +181,28 @@ func runMain(ctx context.Context, env cmdenv.Env, rt Runtime, argv []string) (co
 	if help {
 		return 0, pycli.AtExit("stdout", pycli.PrintTo(env, runHelp))
 	}
-	return runImpl(ctx, env, rt, a)
+	// 登録の run が確保した回は、記録を書けずに終わった (誤り・止められた・上限で返った) ときに消す (本家の _run の finally)
+	var reserved *reservedAttempt
+	defer func() {
+		if reserved == nil {
+			return
+		}
+		info, serr := pyos.Stat(reserved.path)
+		switch {
+		case errors.Is(serr, syscall.ENOENT):
+		case serr != nil:
+			err = serr
+		case info.Size() == 0:
+			if rerr := pyos.Remove(reserved.path); rerr != nil && !errors.Is(rerr, syscall.ENOENT) {
+				err = rerr
+			}
+		}
+	}()
+	return runImpl(ctx, env, rt, a, &reserved)
 }
 
-// runImpl は _run_impl。
-func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, error) {
+// runImpl は _run_impl。登録の run が確保した回は *reserved に入れる (runMain が後で片付ける)。
+func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs, reserved **reservedAttempt) (int, error) {
 	usage := func(message string) (int, error) { return pycli.UsageTo(env, runUsage, runProg, message) }
 	// 1. 引数を確かめる。ここから入力を読み終えるまで、状態フォルダには何も書かない
 	if a.stdin && (len(a.final) > 0 || len(a.source) > 0 || len(a.materials) > 0) {
@@ -246,20 +263,9 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	if err != nil {
 		return 0, err
 	}
-	if a.words != nil && a.noWords {
-		return usage("--words と --no-words は一緒に使えません")
-	}
-	var words *visibility.Words
-	var found bool
-	if stop := untilStopped(ctx, func() { words, found, err = visibility.ResolveWords(&cwd, a.words, a.noWords, env.Lookup) }); stop != nil {
-		return 0, stop
-	}
-	if err != nil {
-		var werr *visibility.Error
-		if errors.As(err, &werr) && werr.Type != visibility.TypeWordsError {
-			return 0, err
-		}
-		return pycli.Fail(env, err.Error())
+	words, found, done, code, err := resolveWords(ctx, env, cwd, a.words, a.noWords, usage)
+	if done {
+		return code, err
 	}
 	var stance *string
 	if a.stance != nil {
@@ -280,15 +286,43 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 			return pycli.Fail(env, problem)
 		}
 	}
+	// 原文と最終稿が同じファイルなら、start で登録した原文の写しを原文にする (無ければ 2)
+	var original *Input
+	snapshotID := ""
 	if !a.stdin && len(a.source) > 0 && a.source[0] != "-" && a.final[0] != "-" && must(SameFile(a.source[0], a.final[0])) {
-		option := ""
-		if a.stateDir != nil {
-			option = *a.stateDir
+		stateForStart := must(StateDir(optionOf(a.stateDir), env.Lookup))
+		if !a.newRun && !a.noRecord && isDir(visibility.PathJoin(stateForStart, "armed")) {
+			// 閉包は自分の変数にだけ書く (止めた後も残る読みの goroutine が、run の変数を書き換えないため)
+			var readProblem, readID string
+			var readErr error
+			var readOriginal *Input
+			if stop := untilStopped(ctx, func() {
+				current, problem, err := readNamed("source", 0, a.source[0], nil)
+				if err != nil || problem != "" {
+					readErr, readProblem = err, problem
+					return
+				}
+				armed := armedForSource(stateForStart, current, a.runID, false)
+				armedID := a.runID
+				if armedID == nil && armed != nil {
+					id := pyops.Str(pyops.Index(armed, "run_id"))
+					armedID = &id
+				}
+				readID, readOriginal = startSnapshot(rt, stateForStart, a.source[0], armedID, &cwd)
+			}); stop != nil {
+				return 0, stop
+			}
+			if readErr != nil {
+				return 0, readErr
+			}
+			if readProblem != "" {
+				return pycli.Fail(env, readProblem)
+			}
+			snapshotID, original = readID, readOriginal
 		}
-		if !a.newRun && !a.noRecord && isDir(must(StateDir(option, env.Lookup))+"/armed") {
-			panic(failure{errArmed{}})
+		if original == nil {
+			return pycli.Fail(env, sameFileError)
 		}
-		return pycli.Fail(env, sameFileError)
 	}
 	in := InputArgs{Stdin: a.stdin, Materials: a.materials}
 	if !a.stdin {
@@ -310,6 +344,9 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 
 	c := newRunContext()
 	c.source, c.materials, c.final = loaded.Source, loaded.Materials, loaded.Final
+	if original != nil {
+		c.source = original
+	}
 	c.docType, c.reader = docType, reader
 	if found {
 		c.words = visibility.WordsContextOf(words).Value()
@@ -389,11 +426,30 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	if state != "" {
 		// 状態フォルダの記録と写しを読む所 (書かない)。読み終わる前に止められたら、読み終わりを待たない (untilStopped)
 		problem := ""
-		if stop := untilStopped(ctx, func() { chosen, problem = linkState(rt, state, a, c, moment, cwd) }); stop != nil {
+		if stop := untilStopped(ctx, func() { chosen, problem = linkState(rt, state, a, snapshotID, c, moment, cwd) }); stop != nil {
 			return 0, stop
 		}
 		if problem != "" {
 			return pycli.Fail(env, problem)
+		}
+		// 登録の run は、検査の前に登録のロックの中で上限を確かめ、回を確保する
+		var managed *pyjson.Object
+		if stop := untilStopped(ctx, func() { managed = armedForSource(state, c.source, a.runID, a.newRun) }); stop != nil {
+			return 0, stop
+		}
+		if managed != nil && pyops.Equal(pyops.Index(managed, "run_id"), chosen.runID) {
+			limited, err := managedLimit(ctx, env, rt, state, managed, c, a, &chosen)
+			*reserved = chosen.reserved
+			if err != nil {
+				return 0, err
+			}
+			if limited {
+				return pycli.ExitHit, nil
+			}
+			host.Set("armed_by", "armed/"+chosen.runID+".json")
+			if host.Field("session") == nil {
+				host.Set("session", pyops.Index(managed, "session_id"))
+			}
 		}
 		option := ""
 		if a.stateDir != nil {
@@ -469,22 +525,50 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	return printRun(env, c, a, d, recording, savedRun{chosen, attempt, recordPath, fixCount}, writeProblem)
 }
 
+// resolveWords は本家の _resolve_words (--words と --no-words から語の一覧を決める。run と start)。done が真なら呼び出し元は (code, err) で終える:
+// 両方の指定は使い方の誤り、読めない一覧は 2 (WordsError の文)、ほかの誤りと止められたときは誤り。一覧を読む間は untilStopped の中。
+func resolveWords(ctx context.Context, env cmdenv.Env, cwd string, given *string, disabled bool, usage func(string) (int, error)) (
+	words *visibility.Words, found, done bool, code int, err error) {
+	if given != nil && disabled {
+		code, err = usage("--words と --no-words は一緒に使えません")
+		return nil, false, true, code, err
+	}
+	// 閉包は自分の変数にだけ書く (止めた後も残る読みの goroutine が、名前付きの結果を return と競って書き換えないため)
+	var read *visibility.Words
+	var readFound bool
+	var readErr error
+	if stop := untilStopped(ctx, func() { read, readFound, readErr = visibility.ResolveWords(&cwd, given, disabled, env.Lookup) }); stop != nil {
+		return nil, false, true, 0, stop
+	}
+	if readErr != nil {
+		var werr *visibility.Error
+		if errors.As(readErr, &werr) && werr.Type != visibility.TypeWordsError {
+			return nil, false, true, 0, readErr
+		}
+		code, err = pycli.Fail(env, readErr.Error())
+		return nil, false, true, code, err
+	}
+	return read, readFound, false, 0, nil
+}
+
 // linkState は _run_impl の 2 の、状態フォルダを読んで実行 ID と回を決める所 (読むだけ)。別の原文の実行 ID などの誤りは文で返す。
+// snapshotID は、原文と最終稿が同じファイルの run で start の写しを使ったときの実行 ID (--run-id が無ければ、その実行につなぐ)。
 // 回を決めたら、原文が前の最終稿か・前の回が原文とみなした資料も c に入れる。
-func linkState(rt Runtime, state string, a runArgs, c *runContext, moment time.Time, cwd string) (link, string) {
+func linkState(rt Runtime, state string, a runArgs, snapshotID string, c *runContext, moment time.Time, cwd string) (link, string) {
 	problem := ""
 	if a.runID != nil {
 		problem = RunIDCaseProblem(state, *a.runID)
 	}
+	runID := a.runID
+	if runID == nil && snapshotID != "" {
+		runID = &snapshotID
+	}
 	var chosen link
 	if problem == "" {
-		chosen, problem = linkRun(rt, state, a.runID, a.newRun, c.mode, c.source, c.materials, c.final, moment, cwd)
+		chosen, problem = linkRun(rt, state, runID, a.newRun, c.mode, c.source, c.materials, c.final, moment, cwd)
 	}
 	if problem != "" {
 		return chosen, problem
-	}
-	if !a.newRun {
-		mustNotBeArmed(state, c.source)
 	}
 	c.sourceWasFinal = c.source != nil && wasCheckedFinal(state, c.source)
 	if c.mode == "compose" && c.treated == nil {

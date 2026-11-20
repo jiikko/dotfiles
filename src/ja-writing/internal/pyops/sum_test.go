@@ -33,7 +33,7 @@ func sumValue(raw json.RawMessage) (pyjson.Value, error) {
 			if neg {
 				b.Neg(b)
 			}
-			return intValue(b), nil
+			return IntValue(b), nil
 		}
 		if s, ok := x["f"].(string); ok {
 			bits, err := strconv.ParseUint(s, 16, 64)

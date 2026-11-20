@@ -1,5 +1,5 @@
 // Package check は ja-writing check (lint と diff をまとめて実行して記録を残す) の Main と、その部品を持つ。
-// Main は run・verify (--replay と --since を含む) と、subcommand の前の -h・--version を写した (start・export・end はまだ)。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの。
+// Main は run・verify (--replay と --since を含む)・start・export・end と、subcommand の前の -h・--version を写した。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの。
 //
 // 本家の名前と Go の名前の対応 (本家の名前は先頭の _ を持つ非公開のもの。state_dir_for だけ公開):
 //
@@ -30,5 +30,10 @@
 //
 //	verify --replay (verify_replay.go): _replay → replayer.run / _ReplayError → replayError (_Material は本家でも使われていないので写さない)
 //
-// まだ写していない部品 (後の本が足す): _skill_version (SKILL.md を持たないので使わない)・start の登録 (armed/)。
+//	start の登録 (armed.go): armed_entries → ArmedEntries / armed_update → ArmedUpdate / start_run → StartRun / _ArmedLock → armedLock /
+//	_managed_input → managedInput / _armed_for_source → armedForSource / _start_snapshot → startSnapshot (ほかは同じ名前の非公開の関数)
+//	start・export・end (manage_cli.go): _management → management (と startCommand・endCommand・exportCommand) / _managed_limit → managedLimit /
+//	_verification → verify / verify_quick → VerifyQuick / run_known_texts → RunKnownTexts / latest_final_path → LatestFinalPath / text_sha256_of → TextSHA256Of
+//
+// 写さない部品: _skill_version (SKILL.md を持たないので使わない)。
 package check

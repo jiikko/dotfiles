@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 
 	"subproc"
@@ -102,7 +104,8 @@ func (a Argv) MarshalJSON() ([]byte, error) {
 	return append(out, ']'), nil
 }
 
-// Op は作業フォルダへの操作。Kind は write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git・stdin。
+// Op は作業フォルダへの操作。Kind は write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git・stdin・utime。
+// utime は Path の mtime と atime を、今の時刻に Value の秒数を足した時刻にする。
 // stdin は driver の sys.stdin を BytesB64 (か Content) を読む入力にする (Name が "none" なら None)。Go のテストは Apply を通さず、自分の標準入力の代わりに持つ。
 // パスと値の中の RootToken は作業フォルダに置き換わる。git は Path を cwd にして Args を渡す (引数は subproc.GitArgs を通したもの)。
 // restoreenv は setenv・unsetenv で変えた環境変数を戻し、cwd を作業フォルダに戻す。
@@ -266,6 +269,13 @@ func (f *Fixture) Apply(ctx context.Context, op Op) error {
 		return os.Unsetenv(op.Name)
 	case "restoreenv":
 		return f.Restore()
+	case "utime":
+		seconds, err := strconv.ParseFloat(op.Value, 64)
+		if err != nil {
+			return fmt.Errorf("utime の秒数を読めません: %w", err)
+		}
+		stamp := time.Now().Add(time.Duration(seconds * float64(time.Second)))
+		return os.Chtimes(path, stamp, stamp)
 	case "git":
 		args := make([]string, len(op.Args))
 		for i, a := range op.Args {

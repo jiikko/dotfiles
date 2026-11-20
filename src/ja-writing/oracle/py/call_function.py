@@ -19,7 +19,8 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 - "get": true の呼び出しは関数を呼ばずに、module の属性 (定数) そのものを返す。
 - "save": "名前" の呼び出しは、戻り値の Python の値を覚える。args の中の {"$ref": "名前"} が、その値になる (JSON を経由しない)。
 - args の中の {"$bytes_b64": "..."} は bytes、{"$str": [コードポイント...]} は str (単独のサロゲートも持てる)。
-- 文字列の中の "<<ROOT>>" は実行の作業フォルダ (cwd の実パス) に置き換える。結果の文字列の中の作業フォルダは "<<ROOT>>" に戻す。
+- 文字列の中の "<<ROOT>>" は実行の作業フォルダ (cwd の実パス) に置き換える。結果の文字列の中の作業フォルダは "<<ROOT>>" に戻す
+  (集合の中も、元の値の昇順に並べてから戻す)。
 - "quiet": true の呼び出し ("digest" も付ける) は、結果の digest を 8 つの 0 にする。覚える値 (save) を作るだけで、結果そのもの (大きな解析の結果など) の記録は要らない呼び出し用。例外になったときは普通の digest と raised。
 - "folded": true の呼び出しは、結果の文字列の中の「作業フォルダを NFC にして casefold したもの」を "<<ROOT>>" に戻す (ふつうの呼び出しは作業フォルダそのものを戻す)。
   大文字と小文字を区別しない FS で、パスの比較用の綴り (casefold したもの) を返す関数の結果が、作業フォルダの綴りの大小に依らず同じ記録になるようにする。
@@ -60,6 +61,14 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
     作業フォルダの外の状態フォルダ (--state-dir ../) にも書くので、実行の作業フォルダ全体から探す)。
   - op pyexe は、本家の check が lint と diff の子に使う sys.executable を path (子の代わりの shell script) にし、本物の python3 の
     パスを環境変数 JA_REAL に入れる。path が空なら sys.executable を戻す (JA_REAL は restoreenv で戻る)。
+- check の start・end・export と登録の記録用 (使わなければ前と一字も同じ出力):
+  - op monotonic は、value が "step" なら check の time.monotonic を呼ぶたびに 1 秒進め (ほかのプロセスが持つロックを待つ締め切りに届かせる)、
+    空なら 1000 で止まった時計に戻す。
+  - op utime は path の mtime と atime を、今の時刻 (time.time()) に value の秒数を足した時刻にする (古いロックを作る)。
+  - args の中の {"$armed_change": {"set": [[鍵の道, 値]...], "write": 真偽}} は、armed_update に渡す change (登録の鍵の道に値を入れ、
+    write が偽なら False を返して書かせない)。
+  - op snapshot は runs/<実行 ID>/start.json も記録として扱い (record_digest の印)、index/starts/ の下の鍵も by-path と同じく
+    元の _place の文字列で名前を付け直す。鍵の元は、start.json の原文のパスからも覚える。
 """
 import argparse
 import base64
@@ -114,12 +123,26 @@ def resolve(value):
                 return "".join(chr(cp) for cp in inner)
             if key == "$namespace":
                 return argparse.Namespace(**resolve(inner))
+            if key == "$armed_change":
+                return armed_change(resolve(inner))
         return {k: resolve(v) for k, v in value.items()}
     if isinstance(value, list):
         return [resolve(v) for v in value]
     if isinstance(value, str):
         return value.replace(ROOT_TOKEN, ROOT)
     return value
+
+
+def armed_change(spec):
+    """{"$armed_change": ...} の change (driver の冒頭)。"""
+    def change(entry):
+        for steps, new in spec.get("set", []):
+            node = entry
+            for step in steps[:-1]:
+                node = node[step]
+            node[steps[-1]] = new
+        return None if spec.get("write", True) else False
+    return change
 
 
 def unroot(value, root=None):
@@ -129,6 +152,9 @@ def unroot(value, root=None):
         return {k: unroot(v, root) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [unroot(v, root) for v in value]
+    if isinstance(value, (set, frozenset)):
+        # 集合は encode_default と同じく元の値の昇順に並べてから戻す (作業フォルダを含まない集合は前と一字も同じ出力)
+        return [unroot(v, root) for v in sorted(value)]
     if isinstance(value, str):
         return value.replace(root, ROOT_TOKEN)
     return value
@@ -213,6 +239,7 @@ INTERNAL_ERROR = "yomiyasu_check.py: 内部エラー"
 check_patched = []
 real_executable = []
 check_clock = ["2026-01-01T00:00:00Z"]
+check_step = [None]
 check_places = {}
 snapshot_blobs = {}
 SNAPSHOT_BASE_NS = 1767225600 * 1000000000
@@ -233,7 +260,10 @@ def check_module():
 
             @staticmethod
             def monotonic():
-                return 1000.0
+                if check_step[0] is None:
+                    return 1000.0
+                check_step[0] += 1.0
+                return check_step[0]
 
         counter = [0]
 
@@ -283,13 +313,19 @@ def remember_places(module, start=None):
         if os.path.basename(os.path.dirname(top)) != "runs":
             continue
         for name in names:
-            if not re.match(r"^attempt-[0-9]+\.json$", name):
+            if not re.match(r"^attempt-[0-9]+\.json$", name) and name != "start.json":
                 continue
             record = module._read_record(os.path.join(top, name))
             inputs = record.get("inputs") if isinstance(record, dict) else None
             if not isinstance(inputs, dict):
                 continue
             bases = []
+            if name == "start.json":
+                source = inputs.get("source")
+                if isinstance(source, dict) and isinstance(source.get("path"), str):
+                    base = module._place(source["path"])
+                    check_places[module._sha256(base.encode("utf-8", "surrogateescape"))] = base.replace(ROOT_FOLDED, ROOT_TOKEN)
+                continue
             final = inputs.get("final")
             if isinstance(final, dict) and isinstance(final.get("path"), str):
                 bases.append(module._place(final["path"]))
@@ -389,9 +425,9 @@ def snapshot(top, ties):
             entries.append([rel, "link", mode, 0, os.readlink(path).replace(ROOT, ROOT_TOKEN), None])
         elif stat.S_ISDIR(info.st_mode):
             extra = None
-            if os.path.basename(os.path.dirname(path)) == "by-path" and os.path.basename(os.path.dirname(os.path.dirname(path))) == "index":
+            if os.path.basename(os.path.dirname(path)) in ("by-path", "starts") and os.path.basename(os.path.dirname(os.path.dirname(path))) == "index":
                 if os.path.basename(path) not in check_places:
-                    raise ValueError("by-path の鍵 %s の元が分かりません" % os.path.basename(path))
+                    raise ValueError("%s の鍵 %s の元が分かりません" % (os.path.basename(os.path.dirname(path)), os.path.basename(path)))
                 extra = check_places[os.path.basename(path)]
             if extra is not None and ROOT_TOKEN in extra:
                 # 鍵は作業フォルダのパスで変わるので、印にした文字列の SHA-256 を名前にする (Go のテストが自分のパスで鍵を作り直す)
@@ -453,9 +489,9 @@ def snapshot(top, ties):
 
 
 def is_record(rel):
-    """snapshot の相対パスが記録 (runs/<実行 ID>/attempt-<n>.json) か。"""
+    """snapshot の相対パスが記録 (runs/<実行 ID>/attempt-<n>.json か start.json) か。"""
     parts = rel.split("/")
-    return len(parts) >= 3 and parts[-3] == "runs" and re.match(r"^attempt-[0-9]+\.json$", parts[-1]) is not None
+    return len(parts) >= 3 and parts[-3] == "runs" and (re.match(r"^attempt-[0-9]+\.json$", parts[-1]) is not None or parts[-1] == "start.json")
 
 
 def remember_env(name):
@@ -551,6 +587,13 @@ def run_op(op):
         edit_json(path, json.loads(op["value"]))
     elif kind == "snapshot":
         return snapshot(path, json.loads(op["value"])["ties"] if op.get("value") else [])
+    elif kind == "monotonic":
+        check_module()
+        check_step[0] = 1000.0 if op["value"] == "step" else None
+    elif kind == "utime":
+        import time as real_time
+        stamp = real_time.time() + float(op["value"])
+        os.utime(path, (stamp, stamp))
     elif kind == "pyexe":
         if not real_executable:
             real_executable.append(sys.executable)

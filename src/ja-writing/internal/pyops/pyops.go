@@ -382,7 +382,8 @@ func bigOf(v pyjson.Value) (*big.Int, bool) {
 	return nil, false
 }
 
-func intValue(b *big.Int) pyjson.Value {
+// IntValue は Python の int の値 (int64 に収まれば int64、収まらなければ *big.Int。pyjson が読む整数と同じ形)。
+func IntValue(b *big.Int) pyjson.Value {
 	if b.IsInt64() {
 		return b.Int64()
 	}
@@ -411,9 +412,9 @@ func arith(a, b pyjson.Value, op string) pyjson.Value {
 	if x, ok := bigOf(a); ok {
 		if y, ok := bigOf(b); ok {
 			if op == "+" {
-				return intValue(new(big.Int).Add(x, y))
+				return IntValue(new(big.Int).Add(x, y))
 			}
-			return intValue(new(big.Int).Sub(x, y))
+			return IntValue(new(big.Int).Sub(x, y))
 		}
 	}
 	if !isNumber(a) || !isNumber(b) {

@@ -377,8 +377,9 @@ func saveRun(state string, c *runContext, a saveArgs) (attempt attemptNo, record
 	if err != nil {
 		return attemptNo{}, "", 0, decision{}, err
 	}
-	attempt, recordPath, err = reserveAttempt(runDir, a.link.attempt)
-	if err != nil {
+	if a.link.reserved != nil {
+		attempt, recordPath = a.link.reserved.number, a.link.reserved.path
+	} else if attempt, recordPath, err = reserveAttempt(runDir, a.link.attempt); err != nil {
 		return attemptNo{}, "", 0, decision{}, err
 	}
 	// 消すファイルは名前つきの戻り値でなく別の変数に持つ (誤りで返すときの return は recordPath を空にしてから defer を走らせる)

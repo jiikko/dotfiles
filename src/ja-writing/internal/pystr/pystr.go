@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -279,6 +280,41 @@ func DecimalInt(s string) (int, bool) {
 	}
 	return n, true
 }
+
+// ParseInt は int(s) (10 進。前後の空白 (str.isspace の字)・符号・Unicode の十進数字・数字の間の 1 つの「_」を受け、桁は 4300 まで)。
+// 読めなければ ok が偽 (本家の ValueError)。argparse の type=int が使う。
+func ParseInt(s string) (*big.Int, bool) {
+	text := Strip(s)
+	sign := ""
+	if strings.HasPrefix(text, "+") || strings.HasPrefix(text, "-") {
+		sign, text = text[:1], text[1:]
+	}
+	var digits strings.Builder
+	underscore := true // 先頭の「_」と、続いた「_」を断る
+	for _, r := range pyunicode.Runes(text) {
+		if r == '_' {
+			if underscore {
+				return nil, false
+			}
+			underscore = true
+			continue
+		}
+		v, ok := pyunicode.DecimalValue(r)
+		if !ok {
+			return nil, false
+		}
+		digits.WriteByte(byte('0' + v))
+		underscore = false
+	}
+	if digits.Len() == 0 || underscore || digits.Len() > maxIntDigits {
+		return nil, false
+	}
+	n, ok := new(big.Int).SetString(sign+digits.String(), 10)
+	return n, ok
+}
+
+// maxIntDigits は Python の int と文字列の変換の桁数の上限 (sys.get_int_max_str_digits() の初期値)。
+const maxIntDigits = 4300
 
 // floatMantissa は floatDigits の出力を「0.<先頭と末尾の 0 を除いた数字>e<指数>」に書き直す。
 // strconv.ParseFloat にそのまま渡さない: Go 1.26.0 の ParseFloat は、仮数の 0 が 800 個を超えて並び指数で打ち消す入力

@@ -27,6 +27,8 @@ type runSim struct {
 	clock   string
 	counter int
 	shim    string
+	// step は op monotonic の step のときの時計 (呼ぶたびに 1 秒進める。0 は 1000 で止めた時計)
+	step float64
 	// restore は op snapshot を比べずに作業フォルダへ戻す (verify --replay の記録。本家の run が書いた木に Go の verify を当てる)。
 	restore bool
 	// temporary は restore のとき、verify の前後で変わらないことを確かめる一時フォルダ (TMPDIR。作業フォルダも一緒に確かめる)。
@@ -127,6 +129,11 @@ func (s *runSim) handles(e *interp, op oracle.Op) bool {
 		if op.Path != "" {
 			s.shim = e.fx.Sub(op.Path)
 		}
+	case "monotonic":
+		s.step = 0
+		if op.Value == "step" {
+			s.step = 1000
+		}
 	case "pycli", "pyedit", "rename":
 	default:
 		return false
@@ -152,7 +159,13 @@ func (s *runSim) runtime() Runtime {
 		}
 		return moment
 	}
-	rt.Monotonic = func() float64 { return 1000 }
+	rt.Monotonic = func() float64 {
+		if s.step == 0 {
+			return 1000
+		}
+		s.step++
+		return s.step
+	}
 	random := rt.RandomHex
 	rt.RandomHex = func(n int) (string, error) {
 		if n != 4 {
@@ -202,7 +215,7 @@ func normalizeRecordFields(data []byte) []byte {
 func isRecordRel(rel string) bool {
 	parts := strings.Split(rel, "/")
 	n := len(parts)
-	return n >= 3 && parts[n-3] == "runs" && attemptFilePattern.MustMatchAt0(parts[n-1])
+	return n >= 3 && parts[n-3] == "runs" && (attemptFilePattern.MustMatchAt0(parts[n-1]) || parts[n-1] == "start.json")
 }
 
 // goTree は Go が書いた木を op snapshot と同じ形にする: 通常のファイルの mtime を元の順を保った決まった値にそろえ (本家の op snapshot と同じく

@@ -94,7 +94,7 @@ func parseVerify(argv []string) (verifyArgs, bool, error) {
 	return a, false, err
 }
 
-// Main は subcommand の入口 (本家の _run_cli と main)。今は run・verify と、subcommand の前の -h と --version だけを写した。
+// Main は subcommand の入口 (本家の _run_cli と main)。run・verify・start・export・end と、subcommand の前の -h と --version 1 つだけを写した。
 func Main(ctx context.Context, env cmdenv.Env) int { return MainWith(ctx, env, DefaultRuntime()) }
 
 // MainWith は Main の、run が外の世界から取る値 (子の実行ファイル・時刻など) を渡せる形。
@@ -124,46 +124,43 @@ func dispatch(ctx context.Context, env cmdenv.Env, rt Runtime) (int, error) {
 	}
 	switch {
 	case args[0] == "run":
-		code, err := runMain(ctx, env, rt, args[1:])
-		var noCwd *NoWorkingDirectoryError
-		var stop errStopped
-		switch {
-		case errors.As(err, &noCwd):
-			pycli.Eprintln(env, noCwd.Message)
-			return cmdenv.ExitUsage, nil
-		case errors.As(err, &stop):
-			return 0, stop
-		case err != nil:
-			return pycli.Finish(env, prog, err), nil
-		}
-		return code, nil
+		return commandOutcome(env)(runMain(ctx, env, rt, args[1:]))
 	case args[0] == "verify":
 		code, err := runVerify(ctx, env, rt, args[1:])
-		var noCwd *NoWorkingDirectoryError
-		var stop errStopped
 		var replayErr replayError
-		if errors.As(err, &stop) {
-			return 0, stop
-		}
-		if errors.As(err, &noCwd) {
-			pycli.Eprintln(env, noCwd.Message)
-			return cmdenv.ExitUsage, nil
-		}
 		if errors.As(err, &replayErr) {
 			// 子を動かせなかったのは記録の食い違いではない。状態を決めず、内部の誤りとして 3 で終える
 			pycli.Eprintln(env, fmt.Sprintf(replayCannotRun, replayErr.detail))
 			return pycli.ExitInternal, nil
 		}
-		if err != nil {
-			return pycli.Finish(env, prog, err), nil
-		}
-		return code, nil
+		return commandOutcome(env)(code, err)
+	case slices.Contains([]string{"start", "export", "end"}, args[0]):
+		return commandOutcome(env)(management(ctx, env, rt, args[0], args[1:]))
 	case args[0] == "-h" || args[0] == "--help":
 		return finishPrint(env, topHelp), nil
 	case len(args) == 1 && args[0] == "--version":
 		return finishPrint(env, fmt.Sprintf("%s %s (record format 1, result format 1, materials format %d)\n", prog, visibility.Version, diff.MaterialsFormatVersion)), nil
 	}
 	return cmdenv.Unimplemented(env, "check "+args[0]), nil
+}
+
+// commandOutcome は subcommand の (終了コード, 誤り) を、本家の _run_cli と main の分け方で終了コードにする: 作業フォルダが消えていれば
+// 文を出して 2 (_NoWorkingDirectory)、止められたら errStopped をそのまま返し (MainWith が 128+番号にする)、ほかの誤りは内部エラー。
+func commandOutcome(env cmdenv.Env) func(int, error) (int, error) {
+	return func(code int, err error) (int, error) {
+		var noCwd *NoWorkingDirectoryError
+		var stop errStopped
+		switch {
+		case errors.As(err, &stop):
+			return 0, stop
+		case errors.As(err, &noCwd):
+			pycli.Eprintln(env, noCwd.Message)
+			return cmdenv.ExitUsage, nil
+		case err != nil:
+			return pycli.Finish(env, prog, err), nil
+		}
+		return code, nil
+	}
 }
 
 // runVerify は _verify。(終了コード, 誤り)。

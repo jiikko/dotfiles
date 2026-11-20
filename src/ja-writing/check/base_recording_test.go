@@ -116,6 +116,9 @@ func (e *interp) call(c oracle.Call) outcome {
 	if c.Capture {
 		return e.capture(c)
 	}
+	if out, ok := e.manageCall(c); ok {
+		return out
+	}
 	if out, ok := e.writeCall(c); ok {
 		return out
 	}
