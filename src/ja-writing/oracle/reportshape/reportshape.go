@@ -188,6 +188,10 @@ func variant(name string) (pyjson.Value, error) {
 		return 2.0, nil
 	case "big":
 		return pyjson.Loads("10000000000000000000000000")
+	case "huge":
+		return pyjson.Loads("1" + strings.Repeat("0", 400))
+	case "case_str":
+		return pyjson.Loads(`"\u00df\ufb01\u0149\ud800x"`)
 	}
 	return nil, fmt.Errorf("書き換えの種類 %q を知りません", name)
 }

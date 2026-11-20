@@ -26,7 +26,7 @@ func TestCaseMapsMatchPythonForEveryCodePoint(t *testing.T) {
 		name string
 		fn   func(string) string
 		rows []oracle.CaseRow
-	}{{"casefold", Casefold, g.Casefold}, {"lower", Lower, g.Lower}, {"swapcase", Swapcase, g.Swapcase}} {
+	}{{"casefold", Casefold, g.Casefold}, {"lower", Lower, g.Lower}, {"swapcase", Swapcase, g.Swapcase}, {"upper", Upper, g.Upper}} {
 		if len(c.rows) < 1000 {
 			t.Fatalf("%s の行が %d 行しかない (記録が空振り)", c.name, len(c.rows))
 		}
@@ -73,6 +73,9 @@ func TestCaseMapsMatchPythonOnStrings(t *testing.T) {
 		}
 		if got, want := Swapcase(s), FromRunes(c.Swapcase); got != want {
 			t.Errorf("Swapcase(%q) = %q、Python は %q", s, got, want)
+		}
+		if got, want := Upper(s), FromRunes(c.Upper); got != want {
+			t.Errorf("Upper(%q) = %q、Python は %q", s, got, want)
 		}
 		if got, want := Lower(s), FromRunes(c.Lower); got != want {
 			t.Errorf("Lower(%q) = %q、Python は %q", s, got, want)

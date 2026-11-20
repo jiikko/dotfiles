@@ -42,14 +42,15 @@ func HunkHeading(h *pyjson.Object) (heading string, err error) {
 // FailOnCount は本家の fail_on_count (意味が変わる恐れのうち、--fail-on=meaning-risk が数えるものの数)。dict でない要素と kind の無い要素は error。
 func FailOnCount(risks []pyjson.Value) (n int, err error) {
 	defer pyops.Catch(&err)
+	count := 0
 	for _, r := range risks {
 		kind, _ := idx(r, "kind").(string)
 		subkind, _ := get(r, "subkind").(string)
 		if failOnCounted(kind, subkind) {
-			n++
+			count++
 		}
 	}
-	return n, nil
+	return count, nil
 }
 
 // DetectorKeys は DetectorSummary に渡せる key (本家の docstring の並び)。
@@ -96,7 +97,7 @@ func DetectorSummary(d *pyjson.Object, key string) (summary *string, err error) 
 		}
 	}
 	switch {
-	case !pyops.Less(int64(infos), count):
+	case pyops.GreaterEq(int64(infos), count):
 		return out("参考" + pyStr(count) + "件")
 	case infos > 0:
 		return out(fmt.Sprintf("候補%s件、参考%d件", pyStr(pyops.Sub(count, int64(infos))), infos))

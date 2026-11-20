@@ -57,6 +57,9 @@ func TestPublicHelpersMatchPython(t *testing.T) {
 		if got := map[bool]string{true: "E", false: string(rune('0' + n))}[err != nil]; got != c.want {
 			t.Errorf("FailOnCount(%s) = %s (本家 %s)", c.risks, got, c.want)
 		}
+		if err != nil && n != 0 {
+			t.Errorf("FailOnCount(%s) が error と一緒に途中までの数 %d を返した", c.risks, n)
+		}
 	}
 	for _, c := range []struct{ d, want string }{
 		{`{}`, "E"}, {`{"status": "no_change"}`, "false"}, {`{"status": "changed", "full_diff": {"hunks": [1]}}`, "true"},

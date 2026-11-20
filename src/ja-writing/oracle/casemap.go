@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// CasemapFile は str.casefold・lower・swapcase の記録 (testdata/golden/ の中)。internal/pyunicode の大文字小文字の表のもとで、
+// CasemapFile は str.casefold・lower・swapcase・upper の記録 (testdata/golden/ の中)。internal/pyunicode の大文字小文字の表のもとで、
 // CasemapTablesPath の Go のソースにする。
 const (
 	CasemapFile       = "casemap.json"
@@ -31,19 +31,19 @@ func (d DecimalRow) MarshalJSON() ([]byte, error) { return marshalTuple(d.CP, d.
 // UnmarshalJSON は [cp, 値] を読む。
 func (d *DecimalRow) UnmarshalJSON(b []byte) error { return unmarshalTuple(b, &d.CP, &d.Value) }
 
-// CaseString は文字列 (cp の列) 1 つに 3 つのメソッドを当てた記録。
+// CaseString は文字列 (cp の列) 1 つに 4 つのメソッドを当てた記録。
 type CaseString struct {
-	S, Casefold, Lower, Swapcase []rune
+	S, Casefold, Lower, Swapcase, Upper []rune
 }
 
-// MarshalJSON は [元, casefold, lower, swapcase] の形にする。
+// MarshalJSON は [元, casefold, lower, swapcase, upper] の形にする。
 func (c CaseString) MarshalJSON() ([]byte, error) {
-	return marshalTuple(c.S, c.Casefold, c.Lower, c.Swapcase)
+	return marshalTuple(c.S, c.Casefold, c.Lower, c.Swapcase, c.Upper)
 }
 
-// UnmarshalJSON は [元, casefold, lower, swapcase] を読む。
+// UnmarshalJSON は [元, casefold, lower, swapcase, upper] を読む。
 func (c *CaseString) UnmarshalJSON(b []byte) error {
-	return unmarshalTuple(b, &c.S, &c.Casefold, &c.Lower, &c.Swapcase)
+	return unmarshalTuple(b, &c.S, &c.Casefold, &c.Lower, &c.Swapcase, &c.Upper)
 }
 
 // CasemapBody は py/record_casemap.py の出力。
@@ -51,6 +51,7 @@ type CasemapBody struct {
 	Casefold []CaseRow `json:"casefold"`
 	Lower    []CaseRow `json:"lower"`
 	Swapcase []CaseRow `json:"swapcase"`
+	Upper    []CaseRow `json:"upper"`
 	// Cased と CaseIgnorable は語末の Σ の規則に使う字の範囲 (py/record_casemap.py の冒頭に求め方を書いた)。
 	Cased         []CPRange         `json:"cased"`
 	CaseIgnorable []CPRange         `json:"case_ignorable"`
@@ -75,7 +76,7 @@ func MarshalCasemap(g CasemapGolden) ([]byte, error) {
 	for _, f := range []struct {
 		name string
 		v    any
-	}{{"casefold", g.Casefold}, {"lower", g.Lower}, {"swapcase", g.Swapcase}, {"cased", g.Cased}, {"case_ignorable", g.CaseIgnorable}, {"decimal", g.Decimal}, {"cases", g.Cases}} {
+	}{{"casefold", g.Casefold}, {"lower", g.Lower}, {"swapcase", g.Swapcase}, {"upper", g.Upper}, {"cased", g.Cased}, {"case_ignorable", g.CaseIgnorable}, {"decimal", g.Decimal}, {"cases", g.Cases}} {
 		lines, err := marshalLinesAny(f.v)
 		if err != nil {
 			return nil, err
@@ -130,6 +131,7 @@ func GenerateCasemapTables(g CasemapGolden) ([]byte, error) {
 		{"casefoldTable", "str.casefold が 1 字を変える結果 (cp の昇順)。", g.Casefold},
 		{"lowerTable", "str.lower が 1 字を変える結果 (cp の昇順。語末の Σ の規則は含まない)。", g.Lower},
 		{"swapcaseTable", "str.swapcase が 1 字を変える結果 (cp の昇順)。", g.Swapcase},
+		{"upperTable", "str.upper が 1 字を変える結果 (cp の昇順)。", g.Upper},
 	} {
 		if len(t.rows) == 0 {
 			return nil, fmt.Errorf("記録に %s の行がありません", t.name)

@@ -269,7 +269,7 @@ var goldens = []golden{
 		}
 		return oracle.MarshalVisibility(g)
 	}},
-	{name: "casemap", file: oracle.CasemapFile, what: "大文字小文字の変換の記録 (casefold・lower・swapcase)", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+	{name: "casemap", file: oracle.CasemapFile, what: "大文字小文字の変換の記録 (casefold・lower・swapcase・upper)", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		return buildCasemap(e.ctx, r, e.header.WithoutCorpus())
 	}, table: buildCasemapTables, tablePath: oracle.CasemapTablesPath},
 	{name: "pause_comma", file: oracle.PauseCommaFile, what: "pause_comma の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {

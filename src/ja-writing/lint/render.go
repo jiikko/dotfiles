@@ -7,6 +7,7 @@ import (
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
 	"ja-writing/internal/pystr"
+	"ja-writing/internal/pyunicode"
 	"ja-writing/visibility"
 )
 
@@ -92,7 +93,7 @@ func renderFindings(d *pyjson.Object) string {
 	sorted := pyops.SortedBy(pyops.Iter(findings), func(f pyjson.Value) pyjson.Value { return pyops.Index(f, "line") })
 	for _, f := range sorted {
 		line := pyops.Format(pyops.Index(f, "line"))
-		severity := strings.ToUpper(pyops.Str(pyops.Index(f, "severity")))
+		severity := pyunicode.Upper(pyops.Str(pyops.Index(f, "severity")))
 		lines := []string{fmt.Sprintf("L%s [%s] %s: %s", line, severity, pyops.Format(pyops.Index(f, "rule")), pyops.Format(pyops.Index(f, "message")))}
 		for _, snippetLine := range strings.Split(pyops.Format(pyops.Index(f, "snippet")), "\n") {
 			if snippetLine = pystr.RStrip(snippetLine); snippetLine != "" {

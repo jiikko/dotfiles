@@ -5,12 +5,14 @@
 標準入力: {"scripts_dir": "...", "diff_inputs": [{"name", "old", "new", "doc_type"}], "lint_inputs": [{"name", "text", "doc_type", "reader", "words"}],
           "words": {"allow.txt": 中身, ...}, "words_path": context.words.path に書く文字列}
 標準出力: {"bases": {名前: 書き換える前の dict}, "mutations": [{"base", "path", "variant", "results": [関数ごとに "E:<例外の型>" か 16 字]}]}
-記録に残す書き換えは、どれかの関数が例外になったもの全部と、書き換えない基準の dict と、例外にならなかったもののうち (lint か diff, 位置の最後の 2 段,
-書き換えの種類) ごとに最初の 1 つ (全部を残すと約 11MB になる)。"all" が真なら全部を返す (手で回す突き合わせ用)。
+記録に残す書き換えは、どれかの関数が例外になったもの全部と、書き換えない基準の dict と、例外にならなかったもののうち (lint か diff, 位置から list の
+添字を外した鍵の並び全体, 書き換えの種類) ごとに最初の 1 つ (全部を残すと約 11MB になる)。位置の最後の 2 段で束ねない: 別の節の同じ名前の欄
+(stiffness と tone の候補の subkind) が 1 つに束ねられ、片方の節だけを壊す退行が記録から消える。"all" が真なら全部を返す (手で回す突き合わせ用)。
 
 基準の dict は diff_inputs を本家の diff() に、lint_inputs を lint_text() に通した値 (語の一覧は一時フォルダに書いて読み、path を words_path に置き換える) を
 JSON に書いて読み直したもの (diff() の値は節どうしで同じ list を共有することがあり、そのまま書き換えると 2 か所が変わる。check が読む子の出力は共有しない)。
-書き換えは、dict の鍵と list の先頭 (添字 0) を深さ 5 までたどった各位置に、VARIANTS の 12 通り (del は鍵か要素を消す) を 1 つずつ当てる。
+書き換えは、dict の鍵と list の先頭 (添字 0) を深さ 5 までたどった各位置に、VARIANTS の 14 通り (del は鍵か要素を消す) を 1 つずつ当てる。
+huge は float に変える所で OverflowError になる int、case_str は upper() が複数字に展開する字 (ß・ﬁ・ŉ) と単独のサロゲートを含む文字列。
 """
 import copy
 import hashlib
@@ -26,7 +28,8 @@ import yomiyasu_diff as D  # noqa: E402
 import yomiyasu_lint as L  # noqa: E402
 
 VARIANTS = (("del", None), ("null", None), ("empty_str", ""), ("str", "3"), ("empty_list", []), ("empty_dict", {}), ("zero", 0),
-            ("neg", -2), ("true", True), ("false", False), ("float", 2.0), ("big", 10 ** 25))
+            ("neg", -2), ("true", True), ("false", False), ("float", 2.0), ("big", 10 ** 25), ("huge", 10 ** 400),
+            ("case_str", "\u00df\ufb01\u0149\ud800x"))
 SUMMARY_KEYS = ("stiffness", "tone", "hedges", "immutable", "politeness", "register")
 LINT_FNS = (("render_report", None), ("render_findings", None))
 DIFF_FNS = (("report_parts", None), ("report", None)) + tuple(("detector_summary", key) for key in SUMMARY_KEYS)
@@ -120,7 +123,7 @@ def kept(items):
         if item["variant"] == "base" or any(result.startswith("E:") for result in item["results"]):
             yield item
             continue
-        group = (item["base"].split("/")[0], tuple(item["path"][-2:]), item["variant"])
+        group = (item["base"].split("/")[0], tuple(key for key in item["path"] if not isinstance(key, int)), item["variant"])
         if group not in seen:
             seen.add(group)
             yield item

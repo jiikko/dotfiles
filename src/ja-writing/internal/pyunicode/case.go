@@ -1,6 +1,6 @@
 package pyunicode
 
-// 大文字小文字の変換。表は Python の str.casefold・lower・swapcase を全コードポイントについて読んだもの (case_gen.go。oracle/casemap.go が作る)。
+// 大文字小文字の変換。表は Python の str.casefold・lower・swapcase・upper を全コードポイントについて読んだもの (case_gen.go。oracle/casemap.go が作る)。
 // Go の strings.ToLower・unicode.SimpleFold は Unicode 15.0.0 の 1 字 1 字の対応で、ß→ss のような複数字への展開と、
 // Unicode 16 / 17 で増えた字を持たない。
 
@@ -45,6 +45,9 @@ func Casefold(s string) string { return mapRunes(s, casefoldTable[:], false) }
 
 // Lower は Python の str.lower() (語末の Σ は ς)。
 func Lower(s string) string { return mapRunes(s, lowerTable[:], true) }
+
+// Upper は Python の str.upper() (ß→SS のような複数字への展開を含む。語末の規則は無い)。
+func Upper(s string) string { return mapRunes(s, upperTable[:], false) }
 
 // Swapcase は Python の str.swapcase()。
 func Swapcase(s string) string { return mapRunes(s, swapcaseTable[:], true) }

@@ -312,23 +312,59 @@ func Lookup(table map[string]string, v pyjson.Value, def pyjson.Value) pyjson.Va
 	return def
 }
 
-// Number は数として使う値 (int・float・bool)。数でなければ ok が偽。
+func isNumber(v pyjson.Value) bool {
+	switch v.(type) {
+	case bool, int64, *big.Int, float64:
+		return true
+	}
+	return false
+}
+
+// Number は数として使う値 (int・float・bool) を float にした値 (本家の float(x))。数でなければ ok が偽。
+// float に収まらない int は inf にせず OverflowError (本家は int を float に変える所で OverflowError になる)。
 func Number(v pyjson.Value) (float64, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case int64:
-		return float64(x), true
-	case *big.Int:
-		f, _ := new(big.Float).SetInt(x).Float64()
-		return f, true
-	case float64:
+	if x, ok := v.(float64); ok {
 		return x, true
 	}
-	return 0, false
+	b, ok := bigOf(v)
+	if !ok {
+		return 0, false
+	}
+	f, _ := new(big.Float).SetInt(b).Float64()
+	if math.IsInf(f, 0) {
+		Raise("OverflowError", "int too large to convert to float")
+	}
+	return f, true
+}
+
+// exactFloat は数を丸めずに big.Float にする (nan は nil)。
+func exactFloat(v pyjson.Value) *big.Float {
+	if x, ok := v.(float64); ok {
+		if math.IsNaN(x) {
+			return nil
+		}
+		return new(big.Float).SetFloat64(x)
+	}
+	b, _ := bigOf(v)
+	return new(big.Float).SetInt(b)
+}
+
+// compareNumbers は数どうしの大小 (-1・0・1)。本家と同じく int と float も float に変えずに比べる (9007199254740993 と 9007199254740992.0 は違う、
+// 10**400 は inf より小さい)。ok が偽なら片方が数でない。unordered が真なら片方が nan で、== も < も >= も偽。
+func compareNumbers(a, b pyjson.Value) (cmp int, unordered, ok bool) {
+	if !isNumber(a) || !isNumber(b) {
+		return 0, false, false
+	}
+	if x, ok := bigOf(a); ok {
+		if y, ok := bigOf(b); ok {
+			return x.Cmp(y), false, true
+		}
+	}
+	x, y := exactFloat(a), exactFloat(b)
+	if x == nil || y == nil {
+		return 0, true, true
+	}
+	return x.Cmp(y), false, true
 }
 
 func bigOf(v pyjson.Value) (*big.Int, bool) {
@@ -380,11 +416,11 @@ func arith(a, b pyjson.Value, op string) pyjson.Value {
 			return intValue(new(big.Int).Sub(x, y))
 		}
 	}
-	x, okA := Number(a)
-	y, okB := Number(b)
-	if !okA || !okB {
+	if !isNumber(a) || !isNumber(b) {
 		Raise("TypeError", "unsupported operand type(s) for %s: '%s' and '%s'", op, TypeName(a), TypeName(b))
 	}
+	x, _ := Number(a)
+	y, _ := Number(b)
 	if op == "+" {
 		return x + y
 	}
@@ -393,21 +429,38 @@ func arith(a, b pyjson.Value, op string) pyjson.Value {
 
 // Mul は a * b (数どうし。本家の 100.0 * x だけに使う。str や list に float を掛けると TypeError)。
 func Mul(a, b pyjson.Value) float64 {
-	x, okA := Number(a)
-	y, okB := Number(b)
-	if !okA || !okB {
+	if !isNumber(a) || !isNumber(b) {
 		Raise("TypeError", "unsupported operand type(s) for *: '%s' and '%s'", TypeName(a), TypeName(b))
 	}
+	x, _ := Number(a)
+	y, _ := Number(b)
 	return x * y
 }
 
-// Div は a / b (真の割り算。0 で割ると ZeroDivisionError)。
+// Div は a / b (真の割り算。0 で割ると ZeroDivisionError)。int どうしは本家と同じく商を丸めて 1 回で float にし (10**400 / 10**399 は 10.0)、
+// 収まらなければ OverflowError。
 func Div(a, b pyjson.Value) float64 {
-	x, okA := Number(a)
-	y, okB := Number(b)
-	if !okA || !okB {
+	if !isNumber(a) || !isNumber(b) {
 		Raise("TypeError", "unsupported operand type(s) for /: '%s' and '%s'", TypeName(a), TypeName(b))
 	}
+	if x, ok := bigOf(a); ok {
+		if y, ok := bigOf(b); ok {
+			if y.Sign() == 0 {
+				Raise("ZeroDivisionError", "division by zero")
+			}
+			q, _ := new(big.Rat).SetFrac(x, y).Float64()
+			if math.IsInf(q, 0) {
+				Raise("OverflowError", "integer division result too large for a float")
+			}
+			if q == 0 && (x.Sign() < 0) != (y.Sign() < 0) {
+				// 有理数の 0 は符号を持たないが、本家の 0 / -2 と 1 / -10**400 は -0.0 (format すると "-0.00")
+				return math.Copysign(0, -1)
+			}
+			return q
+		}
+	}
+	x, _ := Number(a)
+	y, _ := Number(b)
 	if y == 0 {
 		Raise("ZeroDivisionError", "division by zero")
 	}
@@ -438,16 +491,16 @@ func Values(v pyjson.Value) []pyjson.Value {
 }
 
 // Equal は a == b (数は値で比べる。1 == 1.0 == True)。
+//
+// nan は本家と揃えない所がある: list の == は本家では要素の identity を先に見る (同じ nan の object を持つ list どうしは等しい) が、ここは値だけで比べる。
+// 並べ替え (SortedBy) の nan を含む鍵の順も本家の timsort とは揃えていない。どちらも子の JSON に nan が出ないので届かない: check の子は Go の同じ
+// バイナリで、encoding/json は nan を書けない (書くと error)。本家が書いた記録を読む突き合わせにも出ない (本家の lint・diff の --json の数は数えた数と、
+// 分母が正のときだけ割った比で、nan を作る式が無い)。再提起するなら、nan を含む子の JSON が実際に出る経路 (子を本家の Python にする等) を示すこと。
 func Equal(a, b pyjson.Value) bool {
-	if x, ok := Number(a); ok {
-		if y, ok := Number(b); ok {
-			if bx, ok := bigOf(a); ok {
-				if by, ok := bigOf(b); ok {
-					return bx.Cmp(by) == 0
-				}
-			}
-			return x == y
-		}
+	if c, unordered, ok := compareNumbers(a, b); ok {
+		return !unordered && c == 0
+	}
+	if isNumber(a) {
 		return false
 	}
 	switch x := a.(type) {
@@ -478,15 +531,8 @@ func Equal(a, b pyjson.Value) bool {
 
 // Less は a < b (数どうし・str どうし・list どうし。ほかの組は TypeError)。
 func Less(a, b pyjson.Value) bool {
-	if x, ok := Number(a); ok {
-		if y, ok := Number(b); ok {
-			if bx, ok := bigOf(a); ok {
-				if by, ok := bigOf(b); ok {
-					return bx.Cmp(by) < 0
-				}
-			}
-			return x < y
-		}
+	if c, unordered, ok := compareNumbers(a, b); ok {
+		return !unordered && c < 0
 	}
 	if x, ok := a.(string); ok {
 		if y, ok := b.(string); ok {
@@ -505,6 +551,14 @@ func Less(a, b pyjson.Value) bool {
 	}
 	Raise("TypeError", "'<' not supported between instances of '%s' and '%s'", TypeName(a), TypeName(b))
 	return false
+}
+
+// GreaterEq は a >= b (数どうしは丸めずに比べ、nan があれば偽。ほかは Less の否定で、比べられない組は TypeError)。
+func GreaterEq(a, b pyjson.Value) bool {
+	if c, unordered, ok := compareNumbers(a, b); ok {
+		return !unordered && c >= 0
+	}
+	return !Less(a, b)
 }
 
 // SortedBy は sorted(items, key=key) (安定。鍵はすべて先に作る。比べられない鍵の組は TypeError)。
@@ -554,10 +608,10 @@ func formatNumber(v pyjson.Value, code string) float64 {
 	if _, ok := v.(string); ok {
 		Raise("ValueError", "Unknown format code '%s' for object of type 'str'", code)
 	}
-	x, ok := Number(v)
-	if !ok {
+	if !isNumber(v) {
 		Raise("TypeError", "unsupported format string passed to %s.__format__", TypeName(v))
 	}
+	x, _ := Number(v)
 	return x
 }
 
