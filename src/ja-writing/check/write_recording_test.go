@@ -113,7 +113,7 @@ func treeValue(top string) (pyjson.Value, error) {
 			entries = append(entries, []pyjson.Value{rel, "missing", int64(errno), nil})
 			return nil
 		}
-		mode := int64(info.Mode().Perm())
+		mode := int64(info.Sys().(*syscall.Stat_t).Mode & 0o7777) // 本家の S_IMODE。Perm() は setgid・sticky を落とす
 		switch {
 		case info.Mode()&fs.ModeSymlink != 0:
 			target, err := os.Readlink(path)

@@ -67,3 +67,45 @@ func TestReadRecordReturnsErrorForTooDeepJSON(t *testing.T) {
 		t.Error("本家が落ちる入れ子の深さを bad として読んだ")
 	}
 }
+
+func TestReadRecordStatusReadsAgainAfterWriterFinishes(t *testing.T) {
+	s := newSandbox(t)
+	path := s.path("record.json")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pauses := 0
+	swap(t, &emptyRecordPause, func() {
+		pauses++
+		if err := os.WriteFile(path, []byte(`{"a": 1}`), 0o600); err != nil {
+			t.Error(err)
+		}
+	})
+	got, record, err := ReadRecordStatus(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != RecordOK || record == nil || pauses != 1 {
+		t.Errorf("待つ間に書き終えた記録 = %s (%v)・待ち %d 回, want ok・待ち 1 回", got, record != nil, pauses)
+	}
+}
+
+func TestReadRecordStatusWaitsOnceOnlyForEmptyRecord(t *testing.T) {
+	s := newSandbox(t)
+	empty, full := s.path("empty.json"), s.path("full.json")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pauses := 0
+	swap(t, &emptyRecordPause, func() { pauses++ })
+	if got, _, err := ReadRecordStatus(empty); err != nil || got != RecordBad || pauses != 1 {
+		t.Errorf("空のままの記録 = %s, %v・待ち %d 回, want bad・待ち 1 回", got, err, pauses)
+	}
+	pauses = 0
+	if got, _, err := ReadRecordStatus(full); err != nil || got != RecordOK || pauses != 0 {
+		t.Errorf("中身のある記録 = %s, %v・待ち %d 回, want ok・待ち 0 回", got, err, pauses)
+	}
+}

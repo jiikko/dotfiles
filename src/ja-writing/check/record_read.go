@@ -20,6 +20,9 @@ const (
 
 const emptyRecordWait = 50 * time.Millisecond
 
+// emptyRecordPause は空の記録を読み直す前の待ち。テストが、待つ間に書き手が書き終える形を差し込むために差し替える。
+var emptyRecordPause = func() { time.Sleep(emptyRecordWait) } // sleep-ok: 本家の待ち: 書きかけの記録を読み直す前の間隔は本家と同じ 50 ミリ秒
+
 // ReadRecordStatus は _read_record_status。大きさ 0 のファイルは書いている途中とみなし、50 ミリ秒待って 1 回だけ読み直す。
 // 無いのは ENOENT だけ (本家の FileNotFoundError)。ほかの読めない理由は bad。
 // 入れ子が深すぎる JSON は本家では RecursionError で落ちる (捕まえていない)。ここでは error で返し、呼び出し側が落とす。
@@ -38,7 +41,7 @@ func ReadRecordStatus(path string) (RecordStatus, *pyjson.Object, error) {
 			break
 		}
 		if attempt == 0 {
-			time.Sleep(emptyRecordWait) // sleep-ok: 本家の待ち: 書きかけの記録を読み直す前の間隔は本家と同じ 50 ミリ秒
+			emptyRecordPause()
 		}
 	}
 	if len(data) == 0 {

@@ -586,6 +586,7 @@ func loadBase(t *testing.T) (oracle.CheckBaseGolden, []oracle.VisCase) {
 }
 
 func TestBaseMatchesPythonRecording(t *testing.T) {
+	withUmask(t, 0o022) // 記録の木の mode は umask で変わり、記録は umask 022 で取った
 	g, cases := loadBase(t)
 	stats := map[string]*stat{}
 	failed, total := 0, 0

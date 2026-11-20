@@ -339,7 +339,7 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - `_tool_versions` を `DirFiles` (本家と同じ置き場の読み方) で読むときの `decode("utf-8", "replace")` は、バイト列のまま探す。バージョンの値に不正なバイトが入る入力は本家と答えが違う (`3.1` + `\xe3\x81` は本家が `3.1` + U+FFFD 1 字、Go が不正なバイト 2 つ。`3.1` + `\xed\xa0\x80` は本家が U+FFFD 3 字、Go が単独のサロゲートのバイト)。使うのは記録の突き合わせだけで、本番の記録を書く経路は `Released` の固定の値を使い、この読みを通らない。
 - 入れ子が深すぎる記録の JSON (`pyjson.MaxDepth` を超えるもの) は、本家の `_read_record_status` が `RecursionError` で落ちる (捕まえていない) 所を、Go は error で返して呼び出し側が落とす。記録に入れない (本家の例外は driver の中で起き、Go と比べる形にならない)。深さ 300 までは記録で揃うことを見ている。
 - 状態フォルダへの書き込みの、本物のファイルシステムで起こせない失敗 (一時ファイルの名前が 100 回重なる・ハードリンクを作れないファイルシステム・作ったフォルダに `.gitignore` を書けない) は記録に入らない。check の単体のテストで、乱数と link を差し替えて通す (本家と比べてはいない)。O_EXCL で作ったファイルに書けなかったときに消す枝は、通していない。
-- 記録の木の mode は umask で変わる。記録は umask 022 で取った。
+- 記録の木の mode は umask で変わる。記録は umask 022 で取り、`TestBaseMatchesPythonRecording` は umask を 022 にしてから比べる。
 - 本家の `_getcwd` が `os.getcwd` の失敗の理由 (`strerror`) を文に入れる所は、`ENOENT` の文 (`No such file or directory`) だけを出す (`EACCES` で読めない作業フォルダは試していない)。
 
 ## 標準ライブラリを写す package (`internal/`)

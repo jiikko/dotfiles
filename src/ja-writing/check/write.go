@@ -26,11 +26,13 @@ const (
 	stateJSON      = "{\"format\": \"yomiyasu-state\", \"format_version\": 1}\n"
 )
 
-// 一時ファイルの名前の乱数と、置くときの link。テストが、本物のファイルシステムでは起こせない失敗 (名前が 100 回重なる・
-// link を作れないファイルシステム・作ったフォルダに書けない) を差し込むために差し替える。並行に呼ばれる処理からは差し替えない。
+// 一時ファイルの名前の乱数と、置くときの link と、入れ替えを試し直す前の待ち。テストが、本物のファイルシステムでは起こせない失敗
+// (名前が 100 回重なる・link を作れないファイルシステム・作ったフォルダに書けない) と、待つ間の変化を差し込むために差し替える。
+// 並行に呼ばれる処理からは差し替えない。
 var (
-	randomRead = rand.Read
-	linkFile   = os.Link
+	randomRead   = rand.Read
+	linkFile     = os.Link
+	replacePause = func() { time.Sleep(replaceWait) } // sleep-ok: 本家の待ち: 入れ替えを試し直す間隔は本家の _REPLACE_WAIT
 )
 
 // namingError は、一時ファイルの名前を temporaryTries 回試して決められなかったときの FileExistsError。
@@ -82,6 +84,8 @@ func isDir(path string) bool {
 }
 
 // mkstemp は _mkstemp。folder に .tmp-<16進> を O_EXCL・O_NOFOLLOW・0o600 で作って開く。
+// AbsPath は、作業フォルダが消えた状態で相対パスを渡すと本家と誤りの文が変わる。呼び出し元が渡すのは状態フォルダの下の
+// 絶対パスだけなので、その形は本番では起きない。
 func mkstemp(folder string) (*os.File, string, error) {
 	folder, err := AbsPath(folder)
 	if err != nil {
@@ -124,7 +128,7 @@ func replace(source, target string) error {
 		if !isPermission(err) || attempt == replaceTries-1 {
 			return &os.LinkError{Op: "rename", Old: source, New: target, Err: err}
 		}
-		time.Sleep(replaceWait) // sleep-ok: 本家の待ち: 入れ替えを試し直す間隔は本家の _REPLACE_WAIT
+		replacePause()
 	}
 	return nil
 }
@@ -149,6 +153,7 @@ func WriteAtomic(path string, data []byte) error {
 }
 
 // hiddenError は _raise_if_hidden。mkdir が EEXIST を出したのにフォルダと確かめられない理由が PermissionError なら、それを返す。
+// macOS では届かない (mkdir が EEXIST を返す名前は、親を探せるので lstat できる)。本家は Windows のために持つ。本家との対応のために残す。
 func hiddenError(path string, exists error) error {
 	if _, err := os.Lstat(path); err != nil && isPermission(err) {
 		return err
@@ -205,6 +210,9 @@ func placeExclusive(path string, data []byte) (bool, error) {
 		err = os.Chmod(path, 0o600)
 	}
 	if err != nil {
+		// 作ってから書けなくなるまでの間に、ほかのプロセスがこの名前を別のファイルに入れ替えていたら、それを消さない。
+		// テストしない: O_EXCL で作ったファイルへの書き込みの失敗と、その間の入れ替えは、本物のファイルシステムで決まって起こせず、
+		// 起こすには書き込みと stat の差し替え口が要る。
 		if stillPlaced(path, info) {
 			_ = os.Remove(path) // 本家も消せなければそのまま元の例外を出す
 		}

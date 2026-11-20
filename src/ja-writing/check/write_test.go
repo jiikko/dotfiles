@@ -113,6 +113,9 @@ func TestEnsureStateAddsFilesOnlyToBareDefaultFolder(t *testing.T) {
 			if err := os.Mkdir(state, 0o755); err != nil {
 				t.Fatal(err)
 			}
+			if err := os.Chmod(state, 0o755); err != nil { // umask によらず、EnsureState が作るときの 700 と違う mode にする
+				t.Fatal(err)
+			}
 			if err := c.prepare(state); err != nil {
 				t.Fatal(err)
 			}
@@ -227,18 +230,10 @@ func TestWriteAtomicFailureRemovesTemporaryAndNamesFolder(t *testing.T) {
 
 func TestWriteProblemForUnwritableFolder(t *testing.T) {
 	s := newSandbox(t)
-	folder := s.path("locked")
-	if err := os.Mkdir(folder, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chmod(folder, 0o700); err != nil {
-			t.Error(err)
-		}
-	})
+	folder := lockedFolder(t, s, "locked")
 	err := WriteAtomic(filepath.Join(folder, "record.json"), []byte("data"))
 	if err == nil {
-		t.Skip("書き込みを拒むフォルダを作れない (root で動いている)")
+		t.Fatal("書き込みを拒むフォルダに書けてしまった")
 	}
 	if got, want := WriteProblem(s.path("state"), err), folder+" に書けません: Permission denied"; got != want {
 		t.Errorf("WriteProblem = %q, want %q", got, want)
@@ -271,27 +266,26 @@ func TestPlaceNewFileDoesNotOverwrite(t *testing.T) {
 	}
 }
 
-// withRandom は一時ファイルの名前の乱数を差し替え、テストの終わりに戻す。
-func withRandom(t *testing.T, read func([]byte) (int, error)) {
+// swap は package の差し替え口を value にし、テストの終わりに戻す。
+func swap[T any](t *testing.T, target *T, value T) {
 	t.Helper()
-	saved := randomRead
-	randomRead = read
-	t.Cleanup(func() { randomRead = saved })
+	saved := *target
+	*target = value
+	t.Cleanup(func() { *target = saved })
 }
 
-// withLink は置くときの link を差し替え、テストの終わりに戻す。
-func withLink(t *testing.T, link func(string, string) error) {
+// withUmask は umask を mask にし、テストの終わりに戻す。プロセス全体の値なので、呼ぶテストは t.Parallel にしない。
+func withUmask(t *testing.T, mask int) {
 	t.Helper()
-	saved := linkFile
-	linkFile = link
-	t.Cleanup(func() { linkFile = saved })
+	saved := syscall.Umask(mask)
+	t.Cleanup(func() { syscall.Umask(saved) })
 }
 
 func TestEnsureStateRemovesNewFolderWhenIgnoreCannotBeWritten(t *testing.T) {
 	s := newSandbox(t)
 	state := s.path("a", ".yomiyasu")
 	failure := errors.New("乱数を読めない")
-	withRandom(t, func([]byte) (int, error) { return 0, failure })
+	swap(t, &randomRead, func([]byte) (int, error) { return 0, failure })
 	if err := EnsureState(state, true); !errors.Is(err, failure) {
 		t.Fatalf("EnsureState = %v, want %v", err, failure)
 	}
@@ -308,7 +302,7 @@ func TestEnsureStateKeepsFolderWithIgnoreWhenStateJSONCannotBeWritten(t *testing
 	state := s.path(".yomiyasu")
 	failure := errors.New("乱数を読めない")
 	reads := 0
-	withRandom(t, func(b []byte) (int, error) {
+	swap(t, &randomRead, func(b []byte) (int, error) {
 		reads++
 		if reads > 1 {
 			return 0, failure
@@ -328,7 +322,7 @@ func TestEnsureStateKeepsFolderWithIgnoreWhenStateJSONCannotBeWritten(t *testing
 }
 
 func TestPlaceNewFileWithoutHardLinks(t *testing.T) {
-	withLink(t, func(string, string) error { return &os.LinkError{Op: "link", Err: syscall.ENOTSUP} })
+	swap(t, &linkFile, func(string, string) error { return &os.LinkError{Op: "link", Err: syscall.ENOTSUP} })
 	s := newSandbox(t)
 	path := s.path("index")
 	placed, err := placeNewFile(path, []byte("first"))
@@ -364,7 +358,7 @@ func TestWriteAtomicGivesUpWhenTemporaryNamesKeepColliding(t *testing.T) {
 		t.Fatal(err)
 	}
 	reads := 0
-	withRandom(t, func(b []byte) (int, error) {
+	swap(t, &randomRead, func(b []byte) (int, error) {
 		reads++
 		clear(b)
 		return len(b), nil
@@ -383,5 +377,75 @@ func TestWriteAtomicGivesUpWhenTemporaryNamesKeepColliding(t *testing.T) {
 	}
 	if fileInfo(path, false) != nil {
 		t.Error("名前を決められなかったのに書いた")
+	}
+}
+
+// lockedFolder は書き込みを拒むフォルダを作る。root で動いていて拒めないときは飛ばす。
+func lockedFolder(t *testing.T, s sandbox, name string) string {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("書き込みを拒むフォルダを作れない (root で動いている)")
+	}
+	folder := s.path(name)
+	if err := os.Mkdir(folder, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(folder, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
+	return folder
+}
+
+func TestReplaceRetriesAfterPermissionError(t *testing.T) {
+	s := newSandbox(t)
+	source := s.path("source")
+	if err := os.WriteFile(source, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	folder := lockedFolder(t, s, "locked")
+	pauses := 0
+	swap(t, &replacePause, func() {
+		pauses++
+		if err := os.Chmod(folder, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := replace(source, filepath.Join(folder, "target")); err != nil || pauses != 1 {
+		t.Fatalf("待つ間に書けるようになったフォルダへの入れ替え = %v・待ち %d 回, want nil・待ち 1 回", err, pauses)
+	}
+	requireText(t, filepath.Join(folder, "target"), "data", "入れ替えた後")
+}
+
+func TestReplaceGivesUpAfterSixTries(t *testing.T) {
+	s := newSandbox(t)
+	source := s.path("source")
+	if err := os.WriteFile(source, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	folder := lockedFolder(t, s, "locked")
+	pauses := 0
+	swap(t, &replacePause, func() { pauses++ })
+	err := replace(source, filepath.Join(folder, "target"))
+	if !errors.Is(err, syscall.EACCES) || pauses != replaceTries-1 {
+		t.Errorf("書けないままのフォルダへの入れ替え = %v・待ち %d 回, want EACCES・待ち %d 回", err, pauses, replaceTries-1)
+	}
+}
+
+func TestWritesSetOwnerBitsUmaskDropped(t *testing.T) {
+	s := newSandbox(t)
+	withUmask(t, 0o277) // 一時フォルダを作った後に変える (この umask では作ったフォルダに書けない)
+	atomic, placed := s.path("record.json"), s.path("index")
+	if err := WriteAtomic(atomic, []byte("data")); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := placeNewFile(placed, []byte("data")); err != nil || !ok {
+		t.Fatalf("placeNewFile = %v, %v; want true, nil", ok, err)
+	}
+	for _, path := range []string{atomic, placed} {
+		if got := mode(t, path); got != 0o600 {
+			t.Errorf("umask 277 で書いた %s の mode = %o, want 600", filepath.Base(path), got)
+		}
 	}
 }
