@@ -11,7 +11,7 @@ lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り�
 
 | 場所 | 中身 |
 |---|---|
-| `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
+| `main.go` `entry/` | プロセスの入口。`entry.Main` が subcommand を振り分け、`entry.Run` が subcommand ごとのシグナルの受け方と `Env` を整える (check のテストの子も同じ `entry.Run` を通る) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
 | `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (hook の `Main` はいまは未実装の stub。check の `Main` は `verify` と `--version` だけ。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
 | `internal/pycli/` | lint と diff が共有する CLI の部品: argparse の写し (`Spec.Parse`。位置引数とオプションを混ぜてよい形も同じ答え)・使い方の誤りの文・`--fail-on` の値の正規化・出力先が閉じたときの終了コード・入力 (ファイルか標準入力) の読み。本家の lint・diff・check は同じ `_ArgumentParser` と `_read_input` を写しで持つ (ast が同じ) |
@@ -271,7 +271,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
   - argparse の写しは、本家の記録にある形 (`--opt=値`・`--`・`-` ・負の数 (Python 3.15 の `-\.?\d` の前方一致。Unicode の数字を含む)・空白を含む引数・`-h` の連結・省略形の拒否・値の欠け・知らないオプション・無視した値の repr の引用) を確かめている。ほかの形 (`-hx` 以外の短い名前の連結など) は未確認。
   - 本家の rc 3 のうち、トレースバックの文面と、Windows の閉じたパイプ (`EINVAL`) は写さない。
   - 読む側が閉じたパイプ: 本文の出力は本家と同じ rc 3 と 1 行。`-h`・`--version`・使い方の誤りは、本家では書き込みが Python の終わり際の flush まで遅れるので、
-    同じく rc 120 (標準出力なら「Exception ignored while flushing sys.stdout:」の 2 行) にする (Python 3.15.0 で実測)。EPIPE を受けるため、入口 (`main.go`) が SIGPIPE を `signal.Notify` で受ける。
+    同じく rc 120 (標準出力なら「Exception ignored while flushing sys.stdout:」の 2 行) にする (Python 3.15.0 で実測)。EPIPE を受けるため、入口 (`entry.Run`) が SIGPIPE を `signal.Notify` で受ける。
     EPIPE 以外の書き込みの誤り (ENOSPC など) は内部エラーの rc 3。
   - 閉じた標準入力 (`<&-`) は、本家が rc 2「標準入力を読めません（標準入力がありません）」、Go は空の入力として検査する (diff・check の `--stdin` も同じ)。Go の runtime は起動の時点で閉じた fd 0 を /dev/null で開き直すので、`main` からは `</dev/null` と区別できない (os.Stdin.Stat が両方とも文字デバイスを返すことを Go 1.26 で実測)。check の `ReadStdinBytes` の「標準入力が無い」の枝はこのため CLI からは届かない。
   - 入力のパスの検査 (`visibility.InputPathProblem`) とファイルを開く処理は、プロセスの cwd を見る。語の一覧の探し方だけが `Env.Cwd` を見る。`Main` を cwd の違う `Env` で呼ぶテストは、プロセスの cwd も移す。
@@ -316,7 +316,7 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
   挙動のバージョンは `python.implementation` の文字列 (`Go ja-writing <バージョン>`) に入れる。本家の `.py` がある環境では `skill_changed` の注記が付く (状態は変わらない)。`SkillInfo` は SKILL.md を持たないので常に `found: false`。
 - **lint と diff は、自分自身 (`os.Executable()`) を `lint --json` / `diff --json` の子として起こし、締め切りで kill する** (`check/children.go`)。本家が子で止めるのは止まらない照合を止めるためで、`lint.Main`・`diff.Main` は ctx を見ず、regexp2 の照合も ctx を見ないので、同じ強さで守れるのはこの形だけ。
   失うもの: 実行ファイルが ja-writing であることに頼る。check のテストと hook のテストから呼ぶとテストバイナリになるので、子の実行ファイル・時刻・経過の時計・乱数を `check.Runtime` で差し込み (`MainWith`)、check のテストは `TestMain` の再 exec でテストのバイナリを ja-writing の lint・diff として走らせる (`check/child_test.go`)。
-  シグナル: SIGINT と SIGTERM は main が受けて ctx を取り消し (cause に受けたシグナルを入れる `cmdenv.NotifyContext`)、SIGHUP は run の間だけ run が受ける (lint・diff は本家と同じく SIGHUP でそのまま終わる)。止められた run は動いている子を kill し、一時フォルダを消し、`yomiyasu_check.py: 止められました（SIGTERM）。…` を出して 128+番号で終わる。
+  シグナル: 受け方はプロセスの入口 `entry.Run` が subcommand ごとに決める (main と、check のテストが自分のバイナリを子として起こし直すときの両方がここを通る)。check は本家の main と同じく SIGINT・SIGTERM・SIGHUP を受けて ctx を取り消し (cause に受けたシグナルを入れる `cmdenv.NotifyContext`。無視して起動された SIGINT・SIGHUP は受けない)、run・verify のどちらも `yomiyasu_check.py: 止められました（SIGTERM）。…` を出して 128+番号で終わる。止められた run は動いている子を kill し、一時フォルダを消す。lint・diff・hook はシグナルを受けず、本家と同じくそのシグナルで終わる (シェルから見て 128+番号)。
 - **記録の突き合わせは、実行 ID・時刻・ミリ秒・パス・`python.version`・`python.implementation`・案内のコマンド名を置き換えてから比べる**。置き換えないのは `python.unicode_version`・tools の SHA-256・語の一覧を使わない入力の `report_sha256` と `text_sha256`。
 
 入っているもの (本家の関数。Go の名前は `check/` の関数の doc コメントにある):
@@ -354,7 +354,9 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - 状態フォルダに `armed/` (start の登録) がある run は、本家が登録を探しにいく場面 (原文があって `--new-run` でない・原文と最終稿が同じファイル) で、`yomiyasu_check.py: 内部エラー: start の登録（armed/）を使う run はまだ実装していません（ja-writing）` と出して rc 3 にする (start・end と一緒に 5 本目で写す。`armed/` が無ければ本家も登録を見ないので、run の答えは同じ)。
 - 子を起動できないときの文は、起動の errno (ENOENT・EACCES・EPERM・ほか) を本家の Popen が出す `FileNotFoundError`・`PermissionError`・`OSError` と `[Errno 番号] 理由: 'パス'` に写す。ほかの起動の失敗 (本家では起きない、Go の出力の写しが終わらないなど) は Go の誤りの型と文になる。
 - 資料との照合 (`ground`) が例外になったときの記録の `stderr` は、本家のトレースバックの末尾 2000 字でなく、Go の誤りの文 (本家の例外の型と文)。入力の集まりでは `ground` を例外にする入力を作れていない (5000 桁の数でも例外にならない)。
-- 止められた run: 本家はシグナルのハンドラが例外を投げ、どの行でも止まる。Go は子を待つ間・子が終わった後・記録を書いた後に ctx を見て止まる。資料との照合 (`ground`) の途中と記録を書く途中のシグナルは、それが終わってから止まる (記録を書き終えた後に止まったときは、本家と同じく記録を残して 128+番号)。SIGHUP は run の間だけ受ける (本家は verify も SIGHUP で 129 にする。Go の verify は SIGHUP でそのまま終わる)。
+- 止められた run: 本家はシグナルのハンドラが例外を投げ、どの行でも止まる。Go は子を待つ間・子が終わった後・記録を書いた後に ctx を見て止まる。資料との照合 (`ground`) の途中と記録を書く途中のシグナルは、それが終わってから止まる (記録を書き終えた後に止まったときは、本家と同じく記録を残して 128+番号)。verify は、戻った後に ctx を見て止まる (戻る前に届いたシグナルは、出力の後でも 128+番号にする)。
+- シグナルの受け方の差: 本家の lint・diff は SIGINT で KeyboardInterrupt のトレースバックを標準エラーに出してから SIGINT で終わる。Go の lint・diff は何も出さずに SIGINT で終わる (終わり方は同じ)。
+  無視して起動された SIGTERM を、本家の check はそのまま無視し、本家の lint・diff は無視したまま走る。Go は起動時の無視を SIGINT と SIGHUP しか覚えないので、check は受けて 143 で終わり、lint・diff は SIGTERM で終わる。
 - subcommand の前の引数は、`-h`・`--help` で始まるときと `--version` 1 つだけのときを写した。`--version` にほかの引数を続けた形と `start`・`export`・`end` は、まだ `ja-writing check …: まだ実装していません` で rc 2。
 - 記録の `duration_ms` は Go の子と照合の時間 (本家と比べるテストは時計を止めて 0 にする)。
 - `verify --replay` は、作り直しの前までの照らしで食い違いが無ければ、`yomiyasu_check.py: 内部エラー: --replay はまだ実装していません（ja-writing）。` と出して rc 3 にする (本家は lint と diff を動かし直す。4 本目で写す)。

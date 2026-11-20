@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -116,54 +117,39 @@ func TestRunKillsChildAfterTimeout(t *testing.T) {
 }
 
 // 外から止められた (ctx の取り消しの cause がシグナル) run は、動いている子を kill し、128+番号で終わり、記録の回を残さない。
+// --no-record の run は一時フォルダの写しを消す。シグナルを ctx の取り消しにするのは entry.Run (entry のテストが本物のシグナルで見る)。
 func TestRunStopsChildrenOnSignal(t *testing.T) {
-	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
-		t.Run(sig.String(), func(t *testing.T) {
-			h := newHangFixture(t)
-			ctx, cancel := context.WithCancelCause(context.Background())
-			defer cancel(nil)
-			done := h.start(ctx, "--source", "src.md", "--final", "final.md", "--run-id", "s1", "--timeout", "60")
-			pid := h.childPID(t)
-			cancel(cmdenv.Signaled{Signal: sig})
-			out := waitOutcome(t, done)
-			want := "yomiyasu_check.py: 止められました（" + signalName(sig) + "）。動いていた検査を止めて終わります。\n"
-			if out.rc != 128+int(sig) || out.stderr != want || out.stdout != "" {
-				t.Fatalf("rc=%d stdout=%q stderr=%q", out.rc, out.stdout, out.stderr)
-			}
-			if alive(pid) {
-				t.Fatalf("子 %d が止まっていない", pid)
-			}
-			if left := leftovers(t, h.dir); len(left) != 0 {
-				t.Fatalf("止められた run の回が残った: %v", left)
-			}
-		})
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP} {
+		for _, noRecord := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/no-record=%v", sig, noRecord), func(t *testing.T) {
+				h := newHangFixture(t)
+				ctx, cancel := context.WithCancelCause(context.Background())
+				defer cancel(nil)
+				args := []string{"--source", "src.md", "--final", "final.md", "--run-id", "s1", "--timeout", "60"}
+				if noRecord {
+					args = append(args, "--no-record")
+				}
+				done := h.start(ctx, args...)
+				pid := h.childPID(t)
+				cancel(cmdenv.Signaled{Signal: sig})
+				out := waitOutcome(t, done)
+				want := "yomiyasu_check.py: 止められました（" + signalName(sig) + "）。動いていた検査を止めて終わります。\n"
+				if out.rc != 128+int(sig) || out.stderr != want || out.stdout != "" {
+					t.Fatalf("rc=%d stdout=%q stderr=%q", out.rc, out.stdout, out.stderr)
+				}
+				if alive(pid) {
+					t.Fatalf("子 %d が止まっていない", pid)
+				}
+				if left := leftovers(t, h.dir); len(left) != 0 {
+					t.Fatalf("止められた run の回が残った: %v", left)
+				}
+				temporary, err := filepath.Glob(filepath.Join(h.rt.TempDir(), "yomiyasu-check-*"))
+				if err != nil || len(temporary) != 0 {
+					t.Fatalf("一時フォルダが残った: %v %v", temporary, err)
+				}
+			})
+		}
 	}
-}
-
-// SIGHUP は main が受けないので、run が自分で受けて子を止める (本当のシグナルを自分のプロセスに送る)。
-func TestRunStopsChildrenOnHangup(t *testing.T) {
-	h := newHangFixture(t)
-	done := h.start(context.Background(), "--source", "src.md", "--final", "final.md", "--run-id", "h1", "--no-record", "--timeout", "60")
-	pid := h.childPID(t)
-	if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
-		t.Fatal(err)
-	}
-	out := waitOutcome(t, done)
-	if out.rc != 129 || !strings.Contains(out.stderr, "止められました（SIGHUP）") {
-		t.Fatalf("rc=%d stdout=%q stderr=%q", out.rc, out.stdout, out.stderr)
-	}
-	if alive(pid) {
-		t.Fatalf("子 %d が止まっていない", pid)
-	}
-	temporary, err := filepath.Glob(filepath.Join(h.rtTemp(t), "yomiyasu-check-*"))
-	if err != nil || len(temporary) != 0 {
-		t.Fatalf("一時フォルダが残った: %v %v", temporary, err)
-	}
-}
-
-func (h *hangFixture) rtTemp(t *testing.T) string {
-	t.Helper()
-	return h.rt.TempDir()
 }
 
 // 取り消しの cause がシグナルでない ctx は SIGINT とみなす (本家は Ctrl+C の KeyboardInterrupt)。

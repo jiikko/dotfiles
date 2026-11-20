@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"slices"
 	"strings"
 	"syscall"
@@ -127,21 +126,10 @@ func stopped(ctx context.Context) error {
 	return errStopped{syscall.SIGINT}
 }
 
-// watchHangup は run の間だけ SIGHUP を受け、ctx を取り消す (nohup などで無視しているときは受けない。本家の _install_stop_handlers)。
-// SIGINT と SIGTERM は main が受けている。
-func watchHangup(ctx context.Context) (context.Context, context.CancelFunc) {
-	if signal.Ignored(syscall.SIGHUP) {
-		return ctx, func() {}
-	}
-	return cmdenv.NotifyContext(ctx, syscall.SIGHUP)
-}
-
 // runMain は run の入口 (引数の parse と _run_impl)。(終了コード, 誤り)。
 func runMain(ctx context.Context, env cmdenv.Env, rt Runtime, argv []string) (code int, err error) {
 	defer pyops.Catch(&err)
 	defer catchFailure(&err)
-	ctx, stop := watchHangup(ctx)
-	defer stop()
 	a, help, perr := parseRun(argv)
 	if perr != nil {
 		return pycli.UsageTo(env, runUsage, runProg, perr.Error())

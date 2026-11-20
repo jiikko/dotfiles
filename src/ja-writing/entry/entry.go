@@ -23,12 +23,24 @@ const usage = "使い方: ja-writing {lint|diff|check|hook} [オプション]\n"
 // Body は subcommand の名前を含む Env を受けて終了コードを返す (Main か、テストの子の代わりの本体)。
 type Body func(context.Context, cmdenv.Env) int
 
+// subcommand は入口と、プロセスの間ずっと受けて ctx の取り消しにするシグナル。
+type subcommand struct {
+	main Body
+	// stops は受けるシグナル。空なら受けない (Go の既定のまま、シグナルでそのまま終わる)。
+	stops []os.Signal
+}
+
 // subcommands は subcommand 名と入口の対応。順序は使い方の表示に関わらないので map にしている。
-var subcommands = map[string]Body{
-	"lint":  lint.Main,
-	"diff":  diff.Main,
-	"check": check.Main,
-	"hook":  hook.Main,
+//
+// lint・diff・hook はシグナルを受けない: 本家の yomiyasu_lint.py・yomiyasu_diff.py・yomiyasu_hook.py はハンドラを持たず、SIGTERM と SIGHUP は
+// 既定の扱いでそのまま終わり、SIGINT は KeyboardInterrupt を捕まえずにシグナルで終わる (シェルから見て 128+番号)。受けて ctx を取り消しても、
+// lint.Main・diff.Main は ctx を見ないので最後まで走り、外から止められなくなる。
+// check は本家の main と同じく SIGTERM と SIGHUP (_install_stop_handlers) と SIGINT (KeyboardInterrupt) を受け、128+番号で終わる。
+var subcommands = map[string]subcommand{
+	"lint":  {main: lint.Main},
+	"diff":  {main: diff.Main},
+	"check": {main: check.Main, stops: []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}},
+	"hook":  {main: hook.Main},
 }
 
 // Main は env.Args の先頭の subcommand 名で入口を選んで呼び、終了コードを返す。
@@ -38,22 +50,28 @@ func Main(ctx context.Context, env cmdenv.Env) int {
 		_, _ = fmt.Fprint(env.Stderr, usage)
 		return cmdenv.ExitUsage
 	}
-	run, ok := subcommands[env.Args[0]]
+	sub, ok := subcommands[env.Args[0]]
 	if !ok {
 		_, _ = fmt.Fprintf(env.Stderr, "ja-writing: 知らない subcommand です: %s\n%s", env.Args[0], usage)
 		return cmdenv.ExitUsage
 	}
-	sub := env
-	sub.Args = env.Args[1:]
-	return run(ctx, sub)
+	rest := env
+	rest.Args = env.Args[1:]
+	return sub.main(ctx, rest)
 }
 
 // Run はプロセスの入口。args は os.Args[1:]。シグナルの受け方と Env を整えてから body (本番は Main) を呼び、終了コードを返す。
+// 受けるシグナルは args の先頭の subcommand で決める (body を差し替えても、同じ名前の subcommand と同じ受け方になる)。
 func Run(args []string, body Body) int {
-	// 取り消しの cause に受けたシグナルを入れる (check は 128+番号で終わる)。SIGHUP はここで受けない: lint・diff は本家と同じく SIGHUP で
-	// そのまま終わり、check は run の間だけ自分で受ける。
-	ctx, stop := cmdenv.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx := context.Background()
+	if len(args) > 0 {
+		if stops := listening(subcommands[args[0]].stops); len(stops) > 0 {
+			var stop context.CancelFunc
+			// 取り消しの cause に受けたシグナルを入れる (check はその番号で 128+番号と文を決める)
+			ctx, stop = cmdenv.NotifyContext(ctx, stops...)
+			defer stop()
+		}
+	}
 	// 読む側が閉じたパイプへの書き込みを、SIGPIPE で落ちずに EPIPE の誤りとして受ける (本家の Python は BrokenPipeError を受けて rc 3 にする)。
 	// signal.Ignore にしない: 無視は exec した子プロセス (git など) に引き継がれ、子の SIGPIPE の振る舞いまで変える。
 	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
@@ -63,4 +81,16 @@ func Run(args []string, body Body) int {
 		return 1
 	}
 	return body(ctx, env)
+}
+
+// listening は sigs のうち、無視して起動されていないもの (本家の _install_stop_handlers は SIG_IGN のシグナルにハンドラを置かない。nohup など)。
+// Go が起動時の無視を覚えているのは SIGHUP と SIGINT だけで、無視して起動された SIGTERM は受けてしまう (README の check の「揃わない範囲」)。
+func listening(sigs []os.Signal) []os.Signal {
+	var out []os.Signal
+	for _, s := range sigs {
+		if !signal.Ignored(s) {
+			out = append(out, s)
+		}
+	}
+	return out
 }

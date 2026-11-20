@@ -98,7 +98,24 @@ func parseVerify(argv []string) (verifyArgs, bool, error) {
 func Main(ctx context.Context, env cmdenv.Env) int { return MainWith(ctx, env, DefaultRuntime()) }
 
 // MainWith は Main の、run が外の世界から取る値 (子の実行ファイル・時刻など) を渡せる形。
+// 外から止められた (ctx の取り消し) ときは、どの subcommand でも本家の main の _Stopped・KeyboardInterrupt の枝と同じく
+// 「止められました」の文を出して 128+番号で終わる。本家はどの行でもハンドラが例外を投げるが、Go は run の途中の決まった所と、subcommand が
+// 戻った後に ctx を見る (戻る前に届いたシグナルは、出力の後でも 128+番号にする。本家も出力の後のシグナルで 128+番号になる)。
 func MainWith(ctx context.Context, env cmdenv.Env, rt Runtime) int {
+	code, err := dispatch(ctx, env, rt)
+	if err == nil {
+		err = stopped(ctx)
+	}
+	var stop errStopped
+	if errors.As(err, &stop) {
+		pycli.Eprintln(env, fmt.Sprintf(stoppedLine, signalName(stop.signal)))
+		return 128 + int(stop.signal)
+	}
+	return code
+}
+
+// dispatch は subcommand を選んで動かす。止められたときだけ errStopped を返す。
+func dispatch(ctx context.Context, env cmdenv.Env, rt Runtime) (int, error) {
 	args := env.Args
 	commands := []string{"run", "verify", "start", "export", "end", "-h", "--help", "--version"}
 	if len(args) == 0 || !slices.Contains(commands, args[0]) {
@@ -112,35 +129,34 @@ func MainWith(ctx context.Context, env cmdenv.Env, rt Runtime) int {
 		switch {
 		case errors.As(err, &noCwd):
 			pycli.Eprintln(env, noCwd.Message)
-			return cmdenv.ExitUsage
+			return cmdenv.ExitUsage, nil
 		case errors.As(err, &stop):
-			pycli.Eprintln(env, fmt.Sprintf(stoppedLine, signalName(stop.signal)))
-			return 128 + int(stop.signal)
+			return 0, stop
 		case err != nil:
-			return pycli.Finish(env, prog, err)
+			return pycli.Finish(env, prog, err), nil
 		}
-		return code
+		return code, nil
 	case args[0] == "verify":
 		code, err := runVerify(env, args[1:])
 		var noCwd *NoWorkingDirectoryError
 		if errors.As(err, &noCwd) {
 			pycli.Eprintln(env, noCwd.Message)
-			return cmdenv.ExitUsage
+			return cmdenv.ExitUsage, nil
 		}
 		if errors.Is(err, errReplay) {
 			pycli.Eprintln(env, replayNotImplemented)
-			return pycli.ExitInternal
+			return pycli.ExitInternal, nil
 		}
 		if err != nil {
-			return pycli.Finish(env, prog, err)
+			return pycli.Finish(env, prog, err), nil
 		}
-		return code
+		return code, nil
 	case args[0] == "-h" || args[0] == "--help":
-		return finishPrint(env, topHelp)
+		return finishPrint(env, topHelp), nil
 	case len(args) == 1 && args[0] == "--version":
-		return finishPrint(env, fmt.Sprintf("%s %s (record format 1, result format 1, materials format %d)\n", prog, visibility.Version, diff.MaterialsFormatVersion))
+		return finishPrint(env, fmt.Sprintf("%s %s (record format 1, result format 1, materials format %d)\n", prog, visibility.Version, diff.MaterialsFormatVersion)), nil
 	}
-	return cmdenv.Unimplemented(env, "check "+args[0])
+	return cmdenv.Unimplemented(env, "check "+args[0]), nil
 }
 
 // runVerify は _verify。(終了コード, 誤り)。
