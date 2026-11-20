@@ -46,9 +46,7 @@ esac
 `
 
 // run は本家の check の main を run の引数で呼び、標準出力・標準エラー・終了コードを記録する。
-func run(f *fixtureCase, args ...string) {
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{append([]string{"run"}, args...)}, Digest: true, Keep: true, Capture: true})
-}
+func run(f *fixtureCase, args ...string) { checkMain(f, append([]string{"run"}, args...)) }
 
 // runStdin は標準入力を content にしてから run を呼ぶ。
 func runStdin(f *fixtureCase, content string, args ...string) {
@@ -496,9 +494,9 @@ func runStartFailCase() VisCase {
 	f := newFixtureCase("run-top")
 	f.write("src.md", vSource).write("final.md", vFinal)
 	chdir(f)
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{[]string{"--source", "src.md", "--final", "final.md", "--run-id", "o1"}}, Digest: true, Keep: true, Capture: true})
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{[]string{"-h"}}, Digest: true, Keep: true, Capture: true})
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{[]string{"--version"}}, Digest: true, Keep: true, Capture: true})
+	checkMain(f, []string{"--source", "src.md", "--final", "final.md", "--run-id", "o1"})
+	checkMain(f, []string{"-h"})
+	checkMain(f, []string{"--version"})
 	snapshot(f)
 	return f.done()
 }

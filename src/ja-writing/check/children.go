@@ -216,11 +216,7 @@ func clipStderr(data []byte) string {
 
 // wait は全部の子を待つ。ctx が取り消されたら、動いている子を止めてから ctx の誤りを返す。
 func (c *children) wait(ctx context.Context) (map[string]childResult, error) {
-	finished := make(chan struct{})
-	go func() {
-		c.wg.Wait()
-		close(finished)
-	}()
+	finished := c.finished()
 	select {
 	case <-finished:
 	case <-ctx.Done():
@@ -233,6 +229,16 @@ func (c *children) wait(ctx context.Context) (map[string]childResult, error) {
 	return c.results, nil
 }
 
+// finished は全部の子の結果がそろうと閉じる。
+func (c *children) finished() <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+	return done
+}
+
 // stop は動いている子を止める (これから起動する子も起動しない)。
 func (c *children) stop() {
 	c.mu.Lock()
@@ -242,13 +248,8 @@ func (c *children) stop() {
 	for _, p := range processes {
 		_ = p.Process.Kill()
 	}
-	finished := make(chan struct{})
-	go func() {
-		c.wg.Wait()
-		close(finished)
-	}()
 	select {
-	case <-finished:
+	case <-c.finished():
 	case <-time.After(stopWait * time.Duration(max(1, len(processes)))):
 	}
 }

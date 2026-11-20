@@ -155,10 +155,6 @@ func runMain(ctx context.Context, env cmdenv.Env, rt Runtime, argv []string) (co
 // runImpl は _run_impl。
 func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, error) {
 	usage := func(message string) (int, error) { return pycli.UsageTo(env, runUsage, runProg, message) }
-	fail := func(message string) (int, error) {
-		pycli.Eprintln(env, message)
-		return cmdenv.ExitUsage, nil
-	}
 	// 1. 引数を確かめる。ここから入力を読み終えるまで、状態フォルダには何も書かない
 	if a.stdin && (len(a.final) > 0 || len(a.source) > 0 || len(a.materials) > 0) {
 		return usage("--stdin のときは --final、--source、--material を使えません（原文か資料と最終稿は、標準入力の区切りの行で渡します）")
@@ -192,23 +188,23 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	}
 	failOn, problem := FailOn(a.failOn)
 	if problem != "" {
-		return fail(problem)
+		return pycli.Fail(env, problem)
 	}
 	docType, err := visibility.NormalizeDocType(a.docType)
 	if err != nil {
-		return fail(err.Error())
+		return pycli.Fail(env, err.Error())
 	}
 	reader, err := visibility.NormalizeReader(a.reader)
 	if err != nil {
-		return fail(err.Error())
+		return pycli.Fail(env, err.Error())
 	}
 	timeout, problem := Timeout(a.timeout)
 	if problem != "" {
-		return fail(problem)
+		return pycli.Fail(env, problem)
 	}
 	if a.runID != nil {
 		if problem := RunIDProblem(*a.runID); problem != "" {
-			return fail(problem)
+			return pycli.Fail(env, problem)
 		}
 	}
 	cwd, err := Getcwd()
@@ -224,13 +220,13 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		if errors.As(err, &werr) && werr.Type != visibility.TypeWordsError {
 			return 0, err
 		}
-		return fail(err.Error())
+		return pycli.Fail(env, err.Error())
 	}
 	var stance *string
 	if a.stance != nil {
 		mapped, ok := diff.Stances()[*a.stance]
 		if !ok {
-			return fail(fmt.Sprintf("--stance に使えない値です: %s。使えるのは %s です。", shown(*a.stance), strings.Join(diff.StanceNames(), "、")))
+			return pycli.Fail(env, fmt.Sprintf("--stance に使えない値です: %s。使えるのは %s です。", shown(*a.stance), strings.Join(diff.StanceNames(), "、")))
 		}
 		stance = &mapped
 	}
@@ -242,7 +238,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 			}
 		}
 		if problem := must(PathProblem("run", given)); problem != "" {
-			return fail(problem)
+			return pycli.Fail(env, problem)
 		}
 	}
 	if !a.stdin && len(a.source) > 0 && a.source[0] != "-" && a.final[0] != "-" && must(SameFile(a.source[0], a.final[0])) {
@@ -253,7 +249,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		if !a.newRun && !a.noRecord && isDir(must(StateDir(option))+"/armed") {
 			panic(failure{errArmed{}})
 		}
-		return fail(sameFileError)
+		return pycli.Fail(env, sameFileError)
 	}
 	in := InputArgs{Stdin: a.stdin, Materials: a.materials}
 	if !a.stdin {
@@ -267,7 +263,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		return 0, err
 	}
 	if problem != "" {
-		return fail(problem)
+		return pycli.Fail(env, problem)
 	}
 
 	c := newRunContext()
@@ -278,7 +274,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		c.flagReplacements = words.FlagReplacements
 	}
 	if pystr.Strip(c.final.Text) == "" {
-		return fail(emptyFinalError)
+		return pycli.Fail(env, emptyFinalError)
 	}
 	finalCompact := ""
 	if len(c.materials) > 0 {
@@ -291,7 +287,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	for i, item := range c.materials {
 		same := item.TextSHA256 == c.final.TextSHA256 || (finalCompact != "" && compacts[i] == finalCompact)
 		if same && (c.source == nil || item.Label == nil) {
-			return fail(sameAsFinalError)
+			return pycli.Fail(env, sameAsFinalError)
 		}
 	}
 	c.mode = "compose"
@@ -357,7 +353,7 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 			chosen, problem = linkRun(rt, state, a.runID, a.newRun, c.mode, c.source, c.materials, c.final, moment, cwd)
 		}
 		if problem != "" {
-			return fail(problem)
+			return pycli.Fail(env, problem)
 		}
 		if !a.newRun {
 			mustNotBeArmed(state, c.source)
@@ -567,7 +563,11 @@ func runJSON(c *runContext, d decision, recording bool, saved savedRun, complete
 	var diffResult pyjson.Value
 	if c.diffResult != nil {
 		r := c.diffResult.Clone()
-		r.Set("meaning_risks", diffRisksValue(c.diffRisks))
+		var risks pyjson.Value
+		if c.diffRisks != nil {
+			risks = c.diffRisks
+		}
+		r.Set("meaning_risks", risks)
 		diffResult = r
 	}
 	var runID, attemptValue, path, fixCount pyjson.Value
@@ -615,11 +615,4 @@ func runJSON(c *runContext, d decision, recording bool, saved savedRun, complete
 		out.Set(kv.k, kv.v)
 	}
 	return out
-}
-
-func diffRisksValue(risks []pyjson.Value) pyjson.Value {
-	if risks == nil {
-		return nil
-	}
-	return risks
 }

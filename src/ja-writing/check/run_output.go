@@ -502,13 +502,18 @@ func headPart(label string, entries []headEntry, total pyjson.Value) string {
 	return text
 }
 
+// classified は照合の項目の classification が name か。
+func classified(name string) func(pyjson.Value) bool {
+	return func(item pyjson.Value) bool { return pyops.Equal(pyops.Get(item, "classification"), name) }
+}
+
 // materialsLineNames は _materials_line_names。
 func materialsLineNames(result *pyjson.Object) []string {
 	items := pyops.Iter(pyops.Or(pyops.Get(result, "items"), []pyjson.Value{}))
 	rewrite := pyops.Equal(pyops.Get(result, "mode"), "rewrite")
 	anyItem := func(f func(pyjson.Value) bool) bool { return slices.ContainsFunc(items, f) }
 	var names []string
-	if anyItem(func(i pyjson.Value) bool { return pyops.Equal(pyops.Get(i, "classification"), "from_materials") }) && rewrite {
+	if anyItem(classified("from_materials")) && rewrite {
 		names = append(names, "資料に基づく補足")
 	}
 	if !rewrite && anyItem(func(i pyjson.Value) bool {
@@ -516,7 +521,7 @@ func materialsLineNames(result *pyjson.Object) []string {
 	}) {
 		names = append(names, "資料にない語")
 	}
-	if anyItem(func(i pyjson.Value) bool { return pyops.Equal(pyops.Get(i, "classification"), "dropped_certainty") }) {
+	if anyItem(classified("dropped_certainty")) {
 		names = append(names, "最終稿にない確度の語")
 	}
 	return names
@@ -1121,9 +1126,7 @@ func materialsLines(c *runContext) []string {
 		return out
 	}
 	text := func(item pyjson.Value) string { return pyops.Str(pyops.Index(item, "text")) }
-	classIs := func(name string) func(pyjson.Value) bool {
-		return func(item pyjson.Value) bool { return pyops.Equal(pyops.Get(item, "classification"), name) }
-	}
+	classIs := classified
 	if rewrite {
 		if supplements := texts(classIs("from_materials"), text); len(supplements) > 0 {
 			lines = append(lines, "- 資料に基づく補足の候補: "+strings.Join(supplements, "、"))

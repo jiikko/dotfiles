@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"ja-writing/internal/pyjson"
-	"ja-writing/internal/pyunicode"
 	"ja-writing/oracle"
 	"ja-writing/visibility"
 )
@@ -62,7 +61,7 @@ func (s *runSim) runtime() Runtime {
 		}
 		return exe, nil
 	}
-	rt.ChildEnv = func() []string { return append(os.Environ(), childEnvName+"=1", "JA_REAL="+exe) }
+	rt.ChildEnv = childEnv(exe)
 	rt.Now = func() time.Time {
 		moment, err := time.Parse("2006-01-02T15:04:05Z", s.clock)
 		if err != nil {
@@ -257,22 +256,7 @@ func (e *interp) compareSnapshot(name string, index int, op oracle.Op, kept orac
 		e.t.Fatalf("run の記録の snapshot に ties は使わない (%s の %d 番目)", name, index)
 	}
 	entries := e.decodeSnapshot(kept)
-	folded := pyunicode.Casefold(pyunicode.Normalize(pyunicode.NFC, e.fx.Root))
-	renamed := map[string]string{}
-	for _, en := range entries {
-		if place, ok := en.extra.(string); ok && strings.Contains(place, oracle.RootToken) {
-			dir := en.rel[:strings.LastIndex(en.rel, "/")+1]
-			renamed[en.rel] = dir + SHA256([]byte(strings.ReplaceAll(place, oracle.RootToken, folded)))
-		}
-	}
-	relOf := func(rel string) string {
-		for from, to := range renamed {
-			if rel == from || strings.HasPrefix(rel, from+"/") {
-				return to + rel[len(from):]
-			}
-		}
-		return rel
-	}
+	relOf := byPathRenamer(entries, e.fx.Root)
 	want := map[string]treeEntry{}
 	for _, en := range entries {
 		t := treeEntry{kind: en.kind, mode: en.mode, mtime: en.mtime}

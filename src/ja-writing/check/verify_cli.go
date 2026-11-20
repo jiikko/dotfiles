@@ -160,29 +160,25 @@ func runVerify(env cmdenv.Env, argv []string) (code int, err error) {
 	if *a.final == "-" && a.source != nil && *a.source == "-" {
 		return pycli.UsageTo(env, verifyUsage, verifyProg, verifyStdinTwice)
 	}
-	fail := func(message string) (int, error) {
-		pycli.Eprintln(env, message)
-		return cmdenv.ExitUsage, nil
-	}
 	if a.runID != nil {
 		if problem := RunIDProblem(*a.runID); problem != "" {
-			return fail(problem)
+			return pycli.Fail(env, problem)
 		}
 	}
 	since, problem := Since(a.since)
 	if problem != "" {
-		return fail(problem)
+		return pycli.Fail(env, problem)
 	}
 	if _, problem := Timeout(a.timeout); problem != "" {
-		return fail(problem)
+		return pycli.Fail(env, problem)
 	}
 	if problem := must(PathProblem("verify", []*string{a.final, a.source})); problem != "" {
-		return fail(problem)
+		return pycli.Fail(env, problem)
 	}
 	var stdin []byte
 	if *a.final == "-" || (a.source != nil && *a.source == "-") {
 		if stdin, problem = ReadStdinBytes(env.Stdin); problem != "" {
-			return fail(problem)
+			return pycli.Fail(env, problem)
 		}
 	}
 	final, problem, err := ReadTarget(*a.final, stdin)
@@ -190,7 +186,7 @@ func runVerify(env cmdenv.Env, argv []string) (code int, err error) {
 		return 0, err
 	}
 	if problem != "" {
-		return fail(problem)
+		return pycli.Fail(env, problem)
 	}
 	var source *Target
 	if a.source != nil {
@@ -198,7 +194,7 @@ func runVerify(env cmdenv.Env, argv []string) (code int, err error) {
 			return 0, err
 		}
 		if problem != "" {
-			return fail(problem)
+			return pycli.Fail(env, problem)
 		}
 	}
 	option := ""
@@ -208,7 +204,7 @@ func runVerify(env cmdenv.Env, argv []string) (code int, err error) {
 	state := must(StateDir(option))
 	if a.runID != nil && isDir(state) {
 		if problem := RunIDCaseProblem(state, *a.runID); problem != "" {
-			return fail(problem)
+			return pycli.Fail(env, problem)
 		}
 	}
 	out := verifyOutcome(state, final, source, a, since)

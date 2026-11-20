@@ -100,8 +100,11 @@ func snapshotTies(f *fixtureCase, groups ...[]string) {
 }
 
 // verify は本家の verify を呼び、標準出力・標準エラー・終了コードを記録する。
-func verify(f *fixtureCase, args ...string) {
-	f.call(Call{Module: CheckModule, Function: "main", Args: []any{append([]string{"verify"}, args...)}, Digest: true, Keep: true, Capture: true})
+func verify(f *fixtureCase, args ...string) { checkMain(f, append([]string{"verify"}, args...)) }
+
+// checkMain は本家の check の main を argv で呼び、標準出力・標準エラー・終了コードを記録する。
+func checkMain(f *fixtureCase, argv []string) {
+	f.call(Call{Module: CheckModule, Function: "main", Args: []any{argv}, Digest: true, Keep: true, Capture: true})
 }
 
 // verifyBoth は verify を、人が読む出力と --json の両方で呼ぶ (JSON は digest だけを残す。詳しい食い違いは JSON にしか出ない)。

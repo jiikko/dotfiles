@@ -29,11 +29,8 @@ func Main(_ context.Context, env cmdenv.Env) int {
 	return pycli.Finish(env, prog, err)
 }
 
-// fail は標準エラーに 1 行書いて rc 2 にする (本家の _error + return 2)。
-func fail(env cmdenv.Env, message string) (int, error) {
-	pycli.Eprintln(env, message)
-	return cmdenv.ExitUsage, nil
-}
+// fail は pycli.Fail (本家の _error + return 2)。
+var fail = pycli.Fail
 
 // request は引数の検査を済ませた 1 回の呼び出し (diff 本体が受け取るもの)。
 type request struct {

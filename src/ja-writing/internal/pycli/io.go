@@ -39,6 +39,12 @@ func AtExit(stream string, err error) error {
 // Eprintln は標準エラーに 1 行書く (書けなくても何もしない。本家の _error)。
 func Eprintln(env cmdenv.Env, message string) { _, _ = io.WriteString(env.Stderr, message+"\n") }
 
+// Fail は標準エラーに 1 行書いて rc 2 にする (本家の _error + return 2。lint・diff・check の入力の誤り)。
+func Fail(env cmdenv.Env, message string) (int, error) {
+	Eprintln(env, message)
+	return cmdenv.ExitUsage, nil
+}
+
 // PrintTo は標準出力に書く。書けなかった誤りは WriteTo で分ける。
 func PrintTo(env cmdenv.Env, text string) error { return WriteTo(env.Stdout, text) }
 

@@ -116,22 +116,7 @@ func (e *interp) materialize(op oracle.Op, kept oracle.VisKept) {
 			e.t.Fatal(err)
 		}
 	}()
-	folded := pyunicode.Casefold(pyunicode.Normalize(pyunicode.NFC, e.fx.Root))
-	renamed := map[string]string{}
-	for _, en := range entries {
-		if place, ok := en.extra.(string); ok && strings.Contains(place, oracle.RootToken) {
-			dir := en.rel[:strings.LastIndex(en.rel, "/")+1]
-			renamed[en.rel] = dir + SHA256([]byte(strings.ReplaceAll(place, oracle.RootToken, folded)))
-		}
-	}
-	relOf := func(rel string) string {
-		for from, to := range renamed {
-			if rel == from || strings.HasPrefix(rel, from+"/") {
-				return to + rel[len(from):]
-			}
-		}
-		return rel
-	}
+	relOf := byPathRenamer(entries, e.fx.Root)
 	type mode struct {
 		path string
 		mode uint32
@@ -184,6 +169,26 @@ func (e *interp) materialize(op oracle.Op, kept oracle.VisKept) {
 		if err := os.Chmod(m.path, fs.FileMode(m.mode&0o777)|unixBits(m.mode)); err != nil {
 			e.t.Fatal(err)
 		}
+	}
+}
+
+// byPathRenamer は記録の木の相対パスを、by-path の鍵 (印にした _place の文字列の SHA-256) を作業フォルダ root で作り直した名前にする関数を返す。
+func byPathRenamer(entries []snapshotEntry, root string) func(string) string {
+	folded := pyunicode.Casefold(pyunicode.Normalize(pyunicode.NFC, root))
+	renamed := map[string]string{}
+	for _, en := range entries {
+		if place, ok := en.extra.(string); ok && strings.Contains(place, oracle.RootToken) {
+			dir := en.rel[:strings.LastIndex(en.rel, "/")+1]
+			renamed[en.rel] = dir + SHA256([]byte(strings.ReplaceAll(place, oracle.RootToken, folded)))
+		}
+	}
+	return func(rel string) string {
+		for from, to := range renamed {
+			if rel == from || strings.HasPrefix(rel, from+"/") {
+				return to + rel[len(from):]
+			}
+		}
+		return rel
 	}
 }
 

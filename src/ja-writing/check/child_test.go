@@ -57,7 +57,12 @@ func childRuntime(t *testing.T) Runtime {
 	exe := testExecutable(t)
 	rt := DefaultRuntime()
 	rt.Executable = func() (string, error) { return exe, nil }
-	rt.ChildEnv = func() []string { return append(os.Environ(), childEnvName+"=1", "JA_REAL="+exe) }
+	rt.ChildEnv = childEnv(exe)
 	rt.TempDir = func() string { return t.TempDir() }
 	return rt
+}
+
+// childEnv は子の環境変数 (今のプロセスの環境に、子として走る印と、子の代わりの shell script が渡す本物の実行ファイルを足す)。
+func childEnv(exe string) func() []string {
+	return func() []string { return append(os.Environ(), childEnvName+"=1", "JA_REAL="+exe) }
 }
