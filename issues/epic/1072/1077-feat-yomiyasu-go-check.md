@@ -89,7 +89,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。→ 済んだ (2026-11-20。残り 6 本 samefile-no-inode・samefile-skip-path-compare・samefile-stat-error-true・home-unset-skip・home-unset-no-set-check・home-unset-no-passwd を `bin/mutate-verify-list` で当て、6 本とも rc 0 = 想定どおり red。P2-2・P2-3 の「壊した形は未確認」もこれで確かめた)
   2. ~~2 回目の敵対的レビュー~~ 済んだ (2026-11-20。下の「1 本目の敵対的レビュー (2 回目)」)。以下は当てたときの指示の写し: 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
   3. そのレビューの指摘を直す: P2・P3 とも直した (2026-11-20)
-  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。2 本目の残りと 3 本目の verify (`--replay` を除く) も 2026-11-20 の続きで master に入れた (下の「2026-11-20 の続き」)。4 本目の前半 (run) も master に入れた (同じ節)。4 本目の後半 (`verify --replay` と `--since`) も入れた。次は 4b の節の「残り」(argv と環境変数の不正なバイトの P1-a・P1-b) と 5 本目 (start / end / export / 登録)
+  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。2 本目の残りと 3 本目の verify (`--replay` を除く) も 2026-11-20 の続きで master に入れた (下の「2026-11-20 の続き」)。4 本目の前半 (run) も master に入れた (同じ節)。4 本目の後半 (`verify --replay` と `--since`) も入れた。4b の節の P1-a・P1-b (argv と環境変数の不正なバイト) も直した。次は 5 本目 (start / end / export / 登録)
 - **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
   - 着手前の調査の地図: `tmp/yomiyasu-gap-2026-11-12/check-survey/map-check.md`
@@ -203,10 +203,18 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
     - 直している途中で、記録の stance の孤立したサロゲートでも本家と違う答えになっていた (本家は UnicodeEncodeError で rc 3、Go は rc 1)。同じ口で直した
     - 2 周目と 3 周目: 本体 (`pyfs.Encode`/`Decode`) の差分ファジングは python3.15 と合わせて 71 万件で、食い違いは届かない形 (生のバイト ED A0〜BF xx) だけだった。テストの穴 (mtime を見ない木の比べ) と README の誤りを直した
     - 直しが新しい食い違いを入れた: 環境変数を子に渡す前にバイトにすると、OS から受けた値に ED A0〜BF xx があるとき、書き換えるか断るようになった (この形の環境変数が 1 つあるだけで子が起動しない)。プロセスから Env を作る所で環境変数を `os.fsdecode` と同じ規則で読むように直し (`internal/pyfs`)、本物の子が受けたバイトのまま受けることを確かめた
-  - **残り (1077 を閉じる前に直す。4 周目の P1。b29999e3d より前からある形で、4b の退行ではない)**:
+  - **4 周目の P1 (b29999e3d より前からある形。2026-11-21 に直して master に入れた)**:
     - P1-a: 環境変数 YOMIYASU_SESSION・CODEX_THREAD_ID に不正なバイトがあると、記録の JSON の字が本家と違う。例: `\xff` は本家が `"\udcff"`、Go が `"�"`。原因は `run_cli.go` が `env.Lookup` (バイトを返す) の値を記録に入れること
     - P1-b: argv の値に不正なバイトがあると、記録 (`--session`) と誤りの文 (`--fail-on`・`--timeout`・`--stance`) の字が本家と違う。`cmdenv.FromProcess` は Args を decode しない。stderr には本家の backslashreplace に当たる出口も無い。lint・diff・check の全部の口に関わる
-    - 再現は `tmp/1077-cont-1120/p4brt3/x.G8CIVR/` (repro-session.log・argerr.log)。直すときは、本家と Go の比べに不正なバイトを持つ環境変数と argv の case を足す
+    - 再現は `tmp/1077-cont-1120/p4brt3/x.G8CIVR/` (repro-session.log・argerr.log)
+    - 直し (commit「argv・環境変数・cwd を本家の str と同じ字で持ち、OS・標準出力・標準エラーの出口で本家の規則に写す」と「pyos を迂回して OS にパスを渡す os.Chdir・OpenRoot・filepath.Walk なども forbidigo で止める」):
+      - 入口 `cmdenv.FromProcess` が、argv・環境変数・cwd を `os.fsdecode` と同じ字で一度だけ読む
+      - 出口は 3 つの口に寄せた。OS にパスを渡すのは `internal/pyos` (72 か所。迂回は forbidigo が止める。別名で import した os は捕まえない)、標準出力は strict、標準エラーは backslashreplace (どちらも `pycli`)
+      - 本家と同じ argv と環境変数を並べた 103 通りの比べで、食い違いは 96 件から 6 件になった。残った 6 件は `--state-dir` の内部エラーで本家だけが出すトレースバックで、揃えない範囲として README に書いた
+      - 新しく揃えた差: `--state-dir` に不正なバイトがあると、本家は案内の文を 1 字も出さずに rc 3 になる (標準出力が strict のため)
+      - 記録に足したもの: check-run の case `run-surrogate`、lint-cli の 12 件、diff-cli の 16 件
+      - 敵対的レビュー (opus) は P1 0 件。本家と比べた 236 通りは全部一致した。普段の入力 1.9MB は、直す前と出力が同じ (check run は run ID を除いて同じ)。所要の差は 2% 以内。P3 は 2 件 (forbidigo が os.Chdir・OpenRoot・filepath.EvalSymlinks を止めていない・コメントの置き場の誤り) で、直した後はわざと足した 3 本が red になる
+      - 確かめていないこと: UTF-8 でない名前を持てる FS・hook (1078 で写す。本家の hook は標準出力を backslashreplace にしている)・cwd を `os.Getwd` (`$PWD` の字) で取る点は本家の実パスと違いうる (未確認)
   - 揃わない範囲 (README): 実行ファイルと作業フォルダのパスに生のバイト ED A0〜BF xx があるとき (macOS の APFS はこの名前を作れない)
   - 確かめていないこと: 負荷が高いときの時間切れ・作り直しの最中に写しが消える競合・`ground` と `fact_gaps` が例外になる本物の入力・UTF-8 でない名前を持てる FS (SMB・FAT)
   - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は `tests/githooks/test_pre_push.sh` だけ赤 (4a と同じ)
