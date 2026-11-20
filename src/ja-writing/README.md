@@ -360,6 +360,7 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - 一時フォルダの片付け (`removeTemporary`) は本家の `shutil.rmtree(path, onexc=again)` を写し、消せない・読めないものごとに、それと親のフラグと権限を戻して 1 度だけやり直す。本家の `again` は、読めない入れ子のフォルダを開き直す所で `os.open` の引数が足りず TypeError で落ちる (Python 3.15 で実測)。Go は開き直して続ける (一時フォルダは check の写しだけを持ち、読めないフォルダを作らないので、本番では分かれない)。
   歩く途中で中のものが消えたとき (FileNotFoundError) と、一時フォルダそのものが無いときは本家に揃える (中のものは飛ばして続け、根は again に回して親を 0o700 にし、消せなかったと知らせる。Python 3.15 で実測)。
   揃わないのは symlink への差し替え: 本家の `_rmtree_safe_fd` は fd で歩き、lstat・open・fstat を突き合わせるので、歩く途中でフォルダを symlink に差し替えられても先を辿らない。Go はパスで歩くので、lstat の後に差し替えられたフォルダ (と、歩き終えた先の親) は symlink の先を読み、その中身を消す。一時フォルダは 0o700 で作るので、差し替えられるのは check を動かしている利用者と root だけで、それらは差し替えなくても先を消せる (守る相手がいない)。fd で歩く形 (openat・unlinkat・fstatat の写し) に揃えるのは、一時フォルダを他の利用者も書ける場所に作る・作った後で権限を緩めるなど、ほかの利用者が中に書ける形になったとき。
+  片付けの前に一時フォルダの根そのものを symlink に差し替えられたときも分かれる: 本家は lstat と fstat が合わず again に回り、親と symlink の先を 0o700 にして symlink を残し、知らせを出さない。Go は symlink だけを消し、権限を変えず、知らせも出さない (先を書き換えない分、Go の方が外に触らない。Python 3.15 で実測)。
 - シグナルの受け方の差: 本家の lint・diff は SIGINT で KeyboardInterrupt のトレースバックを標準エラーに出してから SIGINT で終わる。Go の lint・diff は何も出さずに SIGINT で終わる (終わり方は同じ)。
   無視して起動された SIGTERM を、本家の check はそのまま無視し、本家の lint・diff は無視したまま走る。Go は起動時の無視を SIGINT と SIGHUP しか覚えないので、check は受けて 143 で終わり、lint・diff は SIGTERM で終わる。
 - subcommand の前の引数は、`-h`・`--help` で始まるときと `--version` 1 つだけのときを写した。`--version` にほかの引数を続けた形と `start`・`export`・`end` は、まだ `ja-writing check …: まだ実装していません` で rc 2。

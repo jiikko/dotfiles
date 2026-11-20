@@ -201,16 +201,20 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	}
 	// 入力と状態フォルダの記録を読み、結果を組むまで (verify は書かない)。読み終わる前に止められたら読み終わりを待たず、読み終わった後に
 	// 止められていたら結果も誤りの文も出さない (untilStopped。本家の _verify は読み終えて結果を組んでから出力する)
+	// 閉包は自分の変数にだけ書き、untilStopped が nil を返した後で写す。止めた後も残る読みの goroutine が、名前付きの結果 err や
+	// problem を runVerify の return と競って書き換えないため
 	var out *verifyResult
 	var final *Target
-	if stop := untilStopped(ctx, func() { out, final, problem, err = readVerify(env, a, since) }); stop != nil {
+	var readProblem string
+	var readErr error
+	if stop := untilStopped(ctx, func() { out, final, readProblem, readErr = readVerify(env, a, since) }); stop != nil {
 		return 0, stop
 	}
-	if err != nil {
-		return 0, err
+	if readErr != nil {
+		return 0, readErr
 	}
-	if problem != "" {
-		return pycli.Fail(env, problem)
+	if readProblem != "" {
+		return pycli.Fail(env, readProblem)
 	}
 	if a.json {
 		return out.code(), pycli.PrintTo(env, must(pyjson.Dumps(out.json(final), pyjson.Indent1()))+"\n")
