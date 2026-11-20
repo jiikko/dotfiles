@@ -7,7 +7,7 @@
 
 - コードを書き始める前に、必ず `git pull` を実行して最新の状態に更新すること
 - 変更を入れる前に、依頼が名指ししていない関連ソース (その領域の issue・`docs/`・周辺の CLAUDE.md) も開いて、見つけた制約を使う。すぐ手を動かす方へ寄りやすく、依頼文にない前提を取りこぼす
-  - **独自の lint の規則を持つ repo で新しいファイルを書く前に、規則の一覧 (名前とメッセージ) を読む**。対象は SwiftLint の `custom_rules` と opt-in の規則、Makefile の lint の target。lint を早く回しても、規則を知らずに書いた分は書き直しになる (vlc-multi-video-player retro 550: 6 種類の規則で 4 回落とした)
+  - **独自の lint の規則を持つ repo で新しいファイルを書く前に、規則の一覧 (名前とメッセージ) を読む**。対象は SwiftLint の `custom_rules` と opt-in の規則、Makefile の lint の target。lint を早く回しても、規則を知らずに書いた分は書き直しになる
   - 🚨 **Bash (python / sed) でファイルを編集するなら、先にそのディレクトリの CLAUDE.md を Read する**。下位の CLAUDE.md は Read ツールで触れたときにしか読み込まれないので、スクリプトだけで編集するとそのディレクトリの規約 (GUI 必須の作業など) を素通りする
 - **起動した cwd の外の repo を触るなら、編集の前にその repo の CLAUDE.md と `.claude/rules/` を Read する**。repo の規約は cwd がその repo に入るまで注入されない
 
@@ -94,6 +94,7 @@
 
 - God クラス / God ファイルを避ける。変更したファイルにその予兆 (責務の混在など) を見つけたらリファクタを提案する。ただし**目的は複雑性を下げること**で、行数だけを理由にファイルを分けるのはリファクタではない (分割は複雑性を移動するだけ)。判断基準は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
 - バグフィックス後、その project の linter のカスタムルール / preset で再発防止できないか検討し、提案する
+- 実装を変えた commit の後に Stop hook `rule-harvest-check` が止めたら、skill `rule-harvest` に従う (2026-11-20 ユーザー指示)
 - 設計・検証の rule (`rules/*.md`) は毎セッション全文読まれ、各 rule の冒頭に発動点がある。ここで索引し直さない。例外は `paths:` で条件ロードされるもの: zsh の precmd / preexec から関数を呼ぶなら `~/dotfiles/.claude/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles では zsh のファイルを Read すると読み込まれる。dotfiles 固有の規範の置き場は `~/dotfiles/docs/README.md` の「ここに置かないもの」)
 
 ## コード変更時の自律改善
@@ -131,7 +132,7 @@
 - **直したバグは「同じ間違いが別の場所にもある」前提で grep する**。テストで見つけたら production を、production で見つけたらテスト・別モジュールを見る。関数の契約変更 (返し方・シグネチャ) の呼び残しも同じ扱い
   - grep は直した行の字面ではなく**失敗の仕組み**で書く (SIGPIPE なら生産側を問わず `| grep -q` を探す)。字面で探すと、引数や生産側が違う同じ仕組みの変種を取りこぼす
 - **効果がなかった修正は必ず revert する**
-- 新しい値・フラグ・経路を既存の呼び出しに通すなら [`survey-receiver-guards-before-passing-new-values.md`](rules/survey-receiver-guards-before-passing-new-values.md)。UI / デバイス / 環境の問題は [`check-other-platform-reference.md`](rules/check-other-platform-reference.md) / [`no-ios-simulator-verification.md`](rules/no-ios-simulator-verification.md)。Apple のプロジェクトの次の rule は `paths:` で Swift / Xcode のファイルを Read したときだけ読み込まれる: UI 確認 ([`no-osascript-for-ui-verification.md`](rules/no-osascript-for-ui-verification.md))・xcodebuild 中の `swift build` / `swift test` ([`no-concurrent-spm-build-during-xcodebuild.md`](rules/no-concurrent-spm-build-during-xcodebuild.md))・別の thread から呼ばれる callback ([`swift-off-actor-callback-outside-actor.md`](rules/swift-off-actor-callback-outside-actor.md))・id だけで等しくなる型を SwiftUI の差分に使う ([`swiftui-id-only-equatable-skips-redraw.md`](rules/swiftui-id-only-equatable-skips-redraw.md))。**読み込まれていなければ、その作業の前に直接 Read する**
+- 次の rule は `~/.claude/rules/` にある。新しい値・フラグ・経路を既存の呼び出しに通すなら `survey-receiver-guards-before-passing-new-values.md`。UI / デバイス / 環境の問題は `check-other-platform-reference.md` / `no-ios-simulator-verification.md`。Apple のプロジェクトの次の rule は `paths:` で Swift / Xcode のファイルを Read したときだけ読み込まれる: UI 確認 (`no-osascript-for-ui-verification.md`)・xcodebuild 中の `swift build` / `swift test` (`no-concurrent-spm-build-during-xcodebuild.md`)・別の thread から呼ばれる callback (`swift-off-actor-callback-outside-actor.md`)・id だけで等しくなる型を SwiftUI の差分に使う (`swiftui-id-only-equatable-skips-redraw.md`)。**読み込まれていなければ、その作業の前に直接 Read する**
 
 ## レビュー方針
 
@@ -191,6 +192,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | claude-md-compact, CLAUDE.md を圧縮, rules を縮める, 常時読み込みを減らす, instruction files の上限 | `claude-md-compact` (規範を残して実例・重複を外へ移す。ずれを直すのは claude-md-refresh) |
 | claude-assets-review, Claude の資産を評価, hooks / skills / agents を公式ドキュメントと照らす, claude 系の設定の改善点 | `claude-assets-review` (提案だけ。直すのは選んだ提案の issue) |
 | refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `refresh-on-session` (差分だけを見る。バグ探しは `/code-review`) |
+| rule-harvest, 決めたことを rule に, デグレしないための rule | `rule-harvest` (振り返りは retro) |
 | events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `my-products-update-apps-event` |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `crash-log-analyzer` |
 | dupscan-dogfood, dupscan を使って開発, dupscan のフィードバック, dupscan を使い込む | `dupscan-dogfood` |
