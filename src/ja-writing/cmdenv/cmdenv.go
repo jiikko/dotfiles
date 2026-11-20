@@ -41,9 +41,21 @@ func (e Env) Getenv(name string) string {
 	return value
 }
 
-// Environment は環境変数の全部の写し (nil にしない: exec.Cmd の Env の nil は今のプロセスの環境を引き継ぐ)。
+// Environment は子に渡す環境変数の全部 (nil にしない: exec.Cmd の Env の nil は今のプロセスの環境を引き継ぐ)。
+// 同じ名前が 2 つあれば先のものだけを残し、"=" の無いものは落とす (Lookup が読むものと同じ)。重なりのまま渡すと、Go の exec は
+// 後のものを残すので、親の Lookup と子が別の値を読む。本家は os.environ (先のもの) から dict を作って子に渡す。
 func (e Env) Environment() []string {
-	return append([]string{}, e.Environ...)
+	kept := []string{}
+	seen := map[string]bool{}
+	for _, entry := range e.Environ {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || seen[key] {
+			continue
+		}
+		seen[key] = true
+		kept = append(kept, entry)
+	}
+	return kept
 }
 
 // FromProcess は今のプロセスの引数・標準入出力・cwd・環境変数から Env を作る。

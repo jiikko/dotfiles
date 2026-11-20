@@ -2,6 +2,7 @@ package cmdenv
 
 import (
 	"bytes"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -41,5 +42,24 @@ func TestLookupSeparatesEmptyFromMissing(t *testing.T) {
 	}
 	if got := (Env{}).Environment(); got == nil || len(got) != 0 {
 		t.Errorf("Environment() = %#v (空で nil でない並びを期待)", got)
+	}
+}
+
+// 子に渡す環境は、同じ名前が 2 つあれば親の Lookup と同じ先のものになる (本家は os.environ から作った dict を子に渡す)。
+// 重なりのまま exec に渡すと、子は後のものを読む。子の側で読んだ値で見る (並びの形だけを見ると、exec の畳み方の違いが見えない)。
+func TestChildSeesSameValueAsLookup(t *testing.T) {
+	env := Env{Environ: []string{"TWICE=first", "NOEQUAL", "PATH=/usr/bin:/bin", "TWICE=second", "EMPTY="}}
+	want, _ := env.Lookup("TWICE")
+	cmd := exec.Command("/usr/bin/printenv", "TWICE")
+	cmd.Env = env.Environment()
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Fatalf("子は %q を読んだ (親の Lookup は %q)", got, want)
+	}
+	if got := env.Environment(); strings.Join(got, "\n") != "TWICE=first\nPATH=/usr/bin:/bin\nEMPTY=" {
+		t.Fatalf("Environment() = %q", got)
 	}
 }
