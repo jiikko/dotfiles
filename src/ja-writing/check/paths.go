@@ -35,15 +35,13 @@ func sameWorkingDirectory(env cmdenv.Env) error {
 	if env.Cwd == "" {
 		return nil
 	}
-	given, err := os.Stat(env.Cwd)
-	if err != nil {
+	given, givenErr := os.Stat(env.Cwd)
+	here, hereErr := os.Stat(".")
+	readable := givenErr == nil && hereErr == nil
+	if !readable || os.SameFile(given, here) {
 		return nil
 	}
-	here, err := os.Stat(".")
-	if err != nil || os.SameFile(given, here) {
-		return nil
-	}
-	return fmt.Errorf("Env の作業フォルダ %s が、プロセスの作業フォルダと違います（check はプロセスの作業フォルダでパスを読みます）", env.Cwd)
+	return fmt.Errorf("作業フォルダ (Env.Cwd) %s が、プロセスの作業フォルダと違います（check はプロセスの作業フォルダでパスを読みます）", env.Cwd)
 }
 
 // AbsPath は _abspath (os.path.abspath と同じ。相対パスのときだけ作業ディレクトリを読む)。

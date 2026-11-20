@@ -93,7 +93,7 @@ func TestRunRefusesEnvCwdOtherThanProcess(t *testing.T) {
 	for _, args := range [][]string{{"run", "--source", "src.md", "--final", "final.md"}, {"verify", "--final", "final.md"}} {
 		var stdout, stderr bytes.Buffer
 		rc := MainWith(context.Background(), processEnv(args, other, &stdout, &stderr), childRuntime(t))
-		if rc != 3 || !strings.Contains(stderr.String(), "内部エラー: Env の作業フォルダ "+other+" が、プロセスの作業フォルダと違います") {
+		if rc != 3 || !strings.Contains(stderr.String(), "内部エラー: 作業フォルダ (Env.Cwd) "+other+" が、プロセスの作業フォルダと違います") {
 			t.Fatalf("%v: rc=%d stdout=%q stderr=%q (cwd %s)", args, rc, stdout.String(), stderr.String(), dir)
 		}
 	}
