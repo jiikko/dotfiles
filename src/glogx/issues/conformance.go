@@ -191,6 +191,8 @@ var (
 // `# 3 つの案の比較` / `# 2026 年の振り返り` / `# 10 Tips: x` の数字はタイトルの一部で、剥がすと指示文に
 // 「タイトルの文言は変えない」と並んで壊れたタイトルが載る。括弧の type と `word:` も、番号を剥がした後か、
 // word がファイル名の type と同じときだけ type と読む (`# Note: …` の語を剥がさない)。
+// 番号の小さい issue (003-*.md の `# 3 つの案`) では、タイトルの数と番号が偶然一致して剥がす。H1 からは
+// 見分けられないので受ける (指示文はタイトルを「変えない」と書いており、Claude が本文と並べて直せる)。
 func bareTitle(h1, number, category string) string {
 	if loc := conformPrefixRe.FindStringIndex(h1); loc != nil {
 		return strings.TrimSpace(h1[loc[1]:])
@@ -233,7 +235,11 @@ func (b *Body) FixPrompt(iss *Issue, root, next string) string {
 		has[v.Kind] = true
 	}
 	number, lead := fileNumber(iss)
-	title := bareTitle(b.facts.h1, number, iss.Category)
+	h1Number := number
+	if h1Number == "" {
+		h1Number = lead // 051_task_x.md の `# 051: x` の 051 も番号として剥がす (番号に使うかは指示文で選ばせる)
+	}
+	title := bareTitle(b.facts.h1, h1Number, iss.Category)
 	if title == "" {
 		title = "<タイトル>"
 	}

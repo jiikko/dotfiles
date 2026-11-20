@@ -155,6 +155,11 @@ func TestConformanceLeadingDigitsAreNotTakenAsNumber(t *testing.T) {
 			t.Errorf("指示に %q が無い:\n%s", want, got)
 		}
 	}
+	// 規約の形でない H1 の先頭の数字 (ファイル名の先頭の数字と同じ) は、組み直す H1 のタイトルに残さない
+	got = NewBody("# 051: x を直す\n").FixPrompt(newIssue("/r/issues", "051_task_x.md"), "/r", "099")
+	if !strings.Contains(got, "「# 099 (<type>): x を直す」") {
+		t.Errorf("H1 の番号をタイトルに残した:\n%s", got)
+	}
 	if got := NewBody(src).FixPrompt(newIssue("/r/issues", "20260101.md"), "/r", "099"); strings.Contains(got, "先頭の 2026") {
 		t.Errorf("7 桁以上の数字を番号の候補にした:\n%s", got)
 	}
@@ -199,6 +204,7 @@ func TestBareTitleKeepsTitleWords(t *testing.T) {
 		{"10 Tips: x", "", "", "10 Tips: x"},
 		{"3 (仮) の案", "051", "task", "3 (仮) の案"},
 		{"Note: 見出しの語", "051", "feat", "Note: 見出しの語"},
+		{"51 feat: x", "052", "feat", "51 feat: x"}, // 規約の形でなく番号も違えば剥がさない
 		{"(下書き) 計画", "051", "task", "(下書き) 計画"},
 	}
 	for _, c := range cases {
