@@ -1671,7 +1671,7 @@ func (v *IssuesView) visibleRows(vp IssuesViewport) int {
 }
 
 // headWidth はヘッダーを組む幅。本文は引き出しの内側に描くので、そちらの幅で数える。
-// 本文のヘッダーの行数は今は幅によらない (bodyHeadLines は 3 行固定) が、linkJump の状態文は幅で
+// 本文のヘッダーの行数は今は幅によらない (bodyHeadLines は 3 行、規約外の警告があれば 4 行で、どちらも開いている issue と本文で決まる) が、linkJump の状態文は幅で
 // リンクを組み直すので、描画と同じ幅を渡す (行数がずれる形が足されたときに備える意味もある)
 func (v *IssuesView) headWidth(total int) int {
 	if v.open != nil {
@@ -2226,18 +2226,22 @@ func (v *IssuesView) openViolations() []issues.Violation {
 // 🚨 copyText を通さない: 指示文は複数行で、copyText は通知に全文を載せる (トーストは 1 行なので枠が壊れる)。
 // 制御文字を含むなら断るのは copyText と同じ (指示文にはファイル名とタイトルが入る)。
 func (v *IssuesView) copyFixPrompt() {
+	if len(v.docStack) > 0 {
+		v.setNotice("Tab で開いた文書の上では見ません (h で issue へ戻ってから w)", app.NoticeRefused)
+		return
+	}
 	vs := v.openViolations()
 	if len(vs) == 0 {
 		v.setNotice("この issue に規約から外れた点はありません", app.NoticeRefused)
 		return
 	}
-	text := v.body.FixPrompt(v.open, v.root, issues.NextNumber(v.all))
-	for _, l := range strings.Split(text, "\n") {
-		if !term.IsCopySafe(l) {
-			v.refuseUnsafeCopy("修正指示")
-			return
-		}
+	// 🚨 指示文を行に割ってから検査しない: ファイル名に入った改行は割った時点で消え、指示文に任意の行を差し込める。
+	// 埋め込む前の値 (パス) を丸ごと見る。タイトルは本文の H1 で、読んだ時点で無害化してある
+	if !term.IsCopySafe(v.open.Path) {
+		v.refuseUnsafeCopy("修正指示")
+		return
 	}
+	text := v.body.FixPrompt(v.open, v.root, issues.NextNumber(v.all))
 	if err := extcmd.CopyToClipboard(text); err != nil {
 		v.setNotice(app.ClipboardFailText(err), app.NoticeRefused)
 		return

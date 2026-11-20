@@ -82,6 +82,10 @@ func TestConformanceDeadlineForms(t *testing.T) {
 		"太字の期限":   {head + "**期限: 2026-12-01**\n", []ViolationKind{ViolationDeadlineForm}},
 		"期限なし":    {head, []ViolationKind{ViolationHumanNoDeadline}},
 		"日付の無い言及は書き方の警告にしない": {head + "期限: 2026-12-01\n- 期限: は箇条書きにしない\n", nil},
+		// hook (human-tasks-due.sh の `^期限[:：]`) が読める形は期限として数える
+		"コロンの後に空白なし":  {head + "期限:2026-12-01\n", nil},
+		"全角のコロン":      {head + "期限：2026-12-01\n", nil},
+		"チェックボックスの期限": {head + "- [ ] 期限: 2026-12-01\n", []ViolationKind{ViolationDeadlineForm}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -112,10 +116,10 @@ func TestFixPromptForUnnumberedFileTellsHowToRenameAndRelink(t *testing.T) {
 	for _, want := range []string{
 		"issues/epic/051/plan.md が issue の規約",
 		"issues/epic/051/052-<type>-<slug>.md へ git mv",
-		"`# 052 (<type>): RE-93 論理削除の廃止 — 全体プラン`",
+		"「# 052 (<type>): RE-93 論理削除の廃止 — 全体プラン」",
 		"起票日: YYYY-MM-DD",
 		"issues/ の外 (docs/ など) へ移し",
-		"grep -rn 'plan.md' /r/issues",
+		"「plan.md」を含む行を探し",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("指示に %q が無い:\n%s", want, got)
@@ -126,10 +130,78 @@ func TestFixPromptForUnnumberedFileTellsHowToRenameAndRelink(t *testing.T) {
 func TestFixPromptForH1KeepsNumberAndType(t *testing.T) {
 	iss := newIssue("/r/issues", "051-feat-x.md")
 	got := NewBody("# 051 feat: x を直す\n").FixPrompt(iss, "/r", "099")
-	if !strings.Contains(got, "H1 を `# 051 (feat): x を直す` の形にする") {
+	if !strings.Contains(got, "H1 を「# 051 (feat): x を直す」の形にする") {
 		t.Fatalf("H1 の直し方が無い:\n%s", got)
 	}
 	if strings.Contains(got, "099") || strings.Contains(got, "git mv") {
 		t.Fatalf("ファイル名が規約どおりなのに番号の振り直しを指示した:\n%s", got)
+	}
+}
+
+func TestConformanceFileNameForms(t *testing.T) {
+	src := "# 051 (task): x\n\n起票日: 2026-11-20\n"
+	cases := map[string][]ViolationKind{
+		"051.md":            {ViolationNameForm},
+		"051_task_x.md":     {ViolationNameForm},
+		"20260101-notes.md": {ViolationNoNumber}, // 7 桁以上の先頭の数字は日付 (NextNumber と同じ)
+	}
+	for name, want := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := conformanceKinds(newIssue("/r/issues", name), src); !slices.Equal(got, want) {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		})
+	}
+	got := NewBody(src).FixPrompt(newIssue("/r/issues", "051_task_x.md"), "/r", "099")
+	if !strings.Contains(got, "番号 051 はそのままで issues/051-<type>-<slug>.md へ git mv") || strings.Contains(got, "099") {
+		t.Fatalf("番号を残す指示になっていない:\n%s", got)
+	}
+}
+
+// H1 の括弧の中の複合の type (`perf/feat`) は、ファイル名の type を含めば食い違いにしない
+func TestConformanceAcceptsCompositeTypeContainingFileType(t *testing.T) {
+	iss := newIssue("/r/issues", "051-feat-x.md")
+	if got := conformanceKinds(iss, "# 051 (perf/feat): x\n起票日: 2026-11-20\n"); len(got) != 0 {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestConformanceStripsBOMBeforeH1(t *testing.T) {
+	iss := newIssue("/r/issues", "051-feat-x.md")
+	if got := conformanceKinds(iss, "\ufeff# 051 (feat): x\n起票日: 2026-11-20\n"); len(got) != 0 {
+		t.Fatalf("BOM の付いた H1 を読めなかった: %v", got)
+	}
+}
+
+func TestBareTitleKeepsTitleWords(t *testing.T) {
+	cases := []struct{ h1, category, want string }{
+		{"051 (task): x を直す", "task", "x を直す"},
+		{"051 feat: x を直す", "feat", "x を直す"},
+		{"051: x", "task", "x"},
+		{"051 (task) x", "task", "x"},
+		{"human: lockman を確かめる", "human", "lockman を確かめる"},
+		{"3D ビューを直す", "feat", "3D ビューを直す"},
+		{"2026年の計画", "task", "2026年の計画"},
+		{"Note: 見出しの語", "feat", "Note: 見出しの語"},
+		{"(下書き) 計画", "task", "(下書き) 計画"},
+	}
+	for _, c := range cases {
+		if got := bareTitle(c.h1, c.category); got != c.want {
+			t.Errorf("bareTitle(%q, %q) = %q, want %q", c.h1, c.category, got, c.want)
+		}
+	}
+}
+
+// 参照の張り直しは repo 全体から探させ、同じ名前の別のファイルへのリンクを触らせない。シェルのコマンドは埋め込まない
+func TestFixPromptRelinkCoversWholeRepoWithoutShellCommand(t *testing.T) {
+	iss := newIssue("/r/issues", filepath.Join("epic", "051", "plan.md"))
+	got := NewBody("# 計画\n").FixPrompt(iss, "/r", "052")
+	for _, want := range []string{"repo 全体", "このファイル (issues/epic/051/plan.md) を指すリンクだけ", "同じ名前のファイルへのリンクは触らない"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("指示に %q が無い:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "grep ") || strings.Contains(got, "git log ") {
+		t.Errorf("シェルのコマンドを埋め込んだ:\n%s", got)
 	}
 }
