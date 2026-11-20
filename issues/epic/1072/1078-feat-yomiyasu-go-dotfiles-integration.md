@@ -116,7 +116,10 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
   - 敵対的レビューの指摘への対応 (2026-11-20): textlint の対象の拡張子 (既定の plugin の text と markdown) だけに ja-writing lint を掛ける・
     値を取るオプション (`-c` など) の値をファイルと読まないことをテストで見る・`--stdin-filename` の値が無くても落ちない・
     ja-writing lint の入力の誤り (UTF-8 で読めない) は rc 2 のまま (表の「2 (入力の誤り)」の行に挙動を合わせた)・掛けなかったファイルの件数を標準エラーの最後に出す
-  - レビューの指摘 (未対応): `.textlintignore` (と `--ignore-path`) に載ったファイルにも ja-writing lint が掛かる。textlint の対象一覧を正にする形は未着手
+  - レビューの指摘 (対応済み 2026-11-20): `.textlintignore` (cwd) と `--ignore-path` に載ったファイルにも ja-writing lint が掛かっていた。
+    `bin/lib/ja_textlint_targets.cjs` が textlint の CLI と同じ関数 (引数の読み・設定の読み込み・`searchFiles`・`separateByAvailability`) で対象を決め、そのファイルだけに掛ける。
+    ignore の書式は gitignore でなく glob の ignore (`sub/` は sub/ の下に当たらない。textlint 15.8 で実測) なので写さなかった。textlint を 2 回走らせる形は所要が倍なので採らない。
+    所要は 1 ファイルで 0.62 秒 → 0.85 秒 (変更前と交互に 5 回)。textlint の依存が無い (rc 3) ときだけ ignore を見ずに拡張子で選ぶ。変異 4 本は red (ログは本体 checkout の `tmp/1078-ignore-1120/mv/`)
   - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
