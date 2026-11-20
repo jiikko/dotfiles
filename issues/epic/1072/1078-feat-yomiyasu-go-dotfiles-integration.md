@@ -140,6 +140,7 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
     - P3: `x.md/` (ENOTDIR) が 1 つあると補助ごと落ちて全部のファイルで掛からず rc 3 だった (`throwIfNoEntry` は ENOENT しか黙らせない)。その名前だけを「読めない」として外す。テストと変異 (投げ直す) で red
     - 壊せなかった観点: textlint の引数の読み (`-f=json`・`-o=FILE`・`--format=stylish`・`-- -x.md`・`--no-color`・`--stdin=true`。`-fjson` と `-qf json` は optionator が読めず textlint だけで終える)・補助と bash の受け渡し (改行を含む名前・空の引数・`-`)・依存が無いときの rc 3・hook の契約 (`--ignore-path /dev/null -f json` で標準出力は JSON だけ)・`/bin/bash` 3.2
     - 指摘に数えなかったもの: `--dry-run` を `--fix` 無しで付けると textlint は普通に lint するが ja-writing lint は掛けない (usage に書いた設計どおり)。`ja-textlint '' x.md` で textlint 自体が `/` から glob して止まらない (textlint 本体の挙動。この変更が原因ではない)
+  - master に入れた (2026-11-20、3 周目の修正まで)。push の後の CI の Tests で「x.md/ と -d.md」のテストが赤だった。手元の Node 22.14 は `fs.statSync(throwIfNoEntry: false)` が ENOTDIR を投げて補助が「読めない」と出すが、CI の Node は「ファイルでない」と出す。どちらでも -d.md には掛かり rc 1 で、守りたい挙動は成り立っていたので、テストがどちらの文も受けるようにした (commit「fix(ja-textlint): x.md/ を外すときの文を Node のバージョンによらず受けるテストにする」。次の run で `test_ja_textlint.sh` が ok)
   - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。

@@ -89,7 +89,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
   1. 修正の確かめの続き: わざと壊した形 7 本 (一覧は `tmp/yomiyasu-gap-2026-11-12/check-wf1b/list.sh`。`bin/mutate-verify-list` に渡す) のうち、`fifo-no-nonblock` だけ red (rc 0) を確かめた所で止めた。→ 済んだ (2026-11-20。残り 6 本 samefile-no-inode・samefile-skip-path-compare・samefile-stat-error-true・home-unset-skip・home-unset-no-set-check・home-unset-no-passwd を `bin/mutate-verify-list` で当て、6 本とも rc 0 = 想定どおり red。P2-2・P2-3 の「壊した形は未確認」もこれで確かめた)
   2. ~~2 回目の敵対的レビュー~~ 済んだ (2026-11-20。下の「1 本目の敵対的レビュー (2 回目)」)。以下は当てたときの指示の写し: 1 本目の全部 (起点 23f638d6f から 2 本目の前まで) に、もう一度 opus の敵対的レビューを当てる。前のレビュー (`check-wf1/redteam.md`) は途中で止まっていて、lint/・diff/ のテスト・共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないか・大文字小文字の表の使い所を攻めていない。済んだ範囲 (関数の fuzz・語末の Σ・パス・`_record_digest`) は繰り返さない
   3. そのレビューの指摘を直す: P2・P3 とも直した (2026-11-20)
-  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは下の「まだ統合していないもの」の worktree にある
+  4. 2 本目 (diff の群 AE と、JSON から文を作る口) へ進む。以降は上の「実装の分け方」の順。2 本目と 3 本目の途中までは master に入った (下の「2026-11-20 の並列の作業で進めた 2 本目と 3 本目」。worktree は残っていない)。次は 2 本目の `ground`・`fact_gaps` か 3 本目の verify
 - **進め方** (ユーザー指示 2026-11-15): 係 (実装・レビュー・修正) は **opus で 1 体ずつ直列** に起こす (fable は使わない・並べない)。1 本 = 実装 → 敵対的レビュー → 修正。係が動いている間は main agent も計測やテストを重ねない。worktree は 1 つ作ってそこで作業し、push は `git push origin HEAD:master` の後に `scripts/pull_main_checkout.sh`。CI は `bin/ci-log -i` で src/ja-writing・Tests・unused・Bench を名指しで待ち、最後に引数なしの `bin/ci-log`
 - **使ったもの** (どれも手元の本体 checkout の `tmp/` にあり、git には入らない。消えていたら作り直す):
   - 着手前の調査の地図: `tmp/yomiyasu-gap-2026-11-12/check-survey/map-check.md`
