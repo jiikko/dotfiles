@@ -25,7 +25,7 @@ import (
 )
 
 // driverOnly は driver (本家) だけが動かす op。Go のテストは何もしない (状態フォルダは後の op snapshot の記録から戻す)。
-var driverOnly = map[string]bool{"pycli": true, "pyedit": true, "clock": true}
+var driverOnly = map[string]bool{"pycli": true, "pyedit": true, "rename": true, "clock": true}
 
 // 状態フォルダの木の記録の印 (call_function.py の op snapshot)。
 const (

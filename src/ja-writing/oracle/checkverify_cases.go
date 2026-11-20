@@ -59,6 +59,31 @@ func redigest(f *fixtureCase, record string, pairs ...[]any) {
 	edit(f, record, map[string]any{"set": pairs, "redigest": true})
 }
 
+// rename は dir からの相対の glob に当たるファイルの名前の old を new に替える (driver だけが動かす。glob ごとに 1 つは当たらないと止める)。
+func rename(f *fixtureCase, dir, old, new string, globs ...string) {
+	b, err := json.Marshal(map[string]any{"globs": globs, "old": old, "new": new})
+	if err != nil {
+		panic(err)
+	}
+	f.op(Op{Kind: "rename", Path: f.dir(dir), Value: string(b)})
+}
+
+// renameAttempt は状態フォルダ state の実行 runID の回 from の記録・レポート・索引の名前を回 to にする (記録の中身は替えない)。
+func renameAttempt(f *fixtureCase, state, runID, from, to string) {
+	rename(f, state+"/runs/"+runID, "attempt-"+from+".", "attempt-"+to+".", "attempt-"+from+".*")
+	rename(f, state+"/index", runID+"."+from, runID+"."+to,
+		"by-final/*/"+runID+"."+from, "by-text/*/"+runID+"."+from, "by-path/*/*."+runID+"."+from)
+}
+
+// moveAttempt は renameAttempt に加えて、記録の中のレポートの道と attempt を to にし、record_digest を求め直す (読める記録のまま回を移す)。
+func moveAttempt(f *fixtureCase, state, runID, from, to string) {
+	record := state + "/runs/" + runID + "/attempt-" + from + ".json"
+	prefix := "runs/" + runID + "/attempt-"
+	edit(f, record, map[string]any{"raw": [][2]string{{prefix + from + ".", prefix + to + "."}}})
+	redigest(f, record, set(json.Number(to), "attempt"))
+	renameAttempt(f, state, runID, from, to)
+}
+
 // snapshot は作業フォルダの木を記録に残す (Go のテストは、これを作業フォルダに戻す)。
 func snapshot(f *fixtureCase) {
 	f.call(Call{Op: &Op{Kind: "snapshot", Path: f.dir()}, Digest: true, Keep: true})
@@ -129,7 +154,7 @@ func CheckVerifyCases() []VisCase {
 		verifyBasicCase(), verifyChangedCase(), verifyAttemptsCase(), verifyAmbiguousCase(), verifyPlaceCase(),
 		verifyInvalidCase(), verifyChecksCase(), verifyToolsCase(), verifyComposeCase(), verifyStdinCase(),
 		verifyContextCase(), verifyWordsCase(), verifyEdgesCase(), verifyArgsCase(),
-		verifyTiesCase(), verifySummaryEdgesCase(), verifyHugeAttemptCase(),
+		verifyTiesCase(), verifySummaryEdgesCase(), verifyHugeAttemptCase(), verifyAttemptOrderCase(),
 	}
 	for i := range cases {
 		scopeRefs(&cases[i])
@@ -792,5 +817,55 @@ func verifyHugeAttemptCase() VisCase {
 	verifyBoth(f, "--final", "final.md", "--state-dir", "sp")
 	verifyBoth(f, "--final", "final.md", "--state-dir", "sq")
 	verifyBoth(f, "--final", "final.md", "--state-dir", "sn")
+	return f.done()
+}
+
+// verifyAttemptOrderCase は回の番号を字の順と大きさの順が食い違う番号 (9 と 10) へ移した記録: あとの回で別の本文を検査した回・
+// --run-id の最大の回・同点の並べ方 (同じ実行の 2 回・by-path の索引)・前の回で原文とみなした資料の引き継ぎ。名前の先頭に 0 を付けた回
+// (本家は 0 を落とした名前のファイルを探す) と、int64 に収まらない回へ記録の attempt とレポートまで移した読める記録も。
+func verifyAttemptOrderCase() VisCase {
+	const huge = "99999999999999999999"
+	f := newFixtureCase("verify-attempt-order")
+	f.write("src.md", vSource).write("final.md", vFinal).write("mat.md", vMaterial).write("near.md", vComposed)
+	chdir(f)
+	clock(f, "2026-01-01T00:00:00Z")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "n1", "--state-dir", "sn")
+	f.write("final.md", vFinal2)
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "n1", "--state-dir", "sn")
+	moveAttempt(f, "sn", "n1", "2", "10")
+	moveAttempt(f, "sn", "n1", "1", "9")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "t1", "--state-dir", "st")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "t1", "--state-dir", "st")
+	moveAttempt(f, "st", "t1", "2", "10")
+	moveAttempt(f, "st", "t1", "1", "9")
+	pycli(f, "0", "run", "--material", "mat.md", "--final", "near.md", "--run-id", "c1", "--state-dir", "sc")
+	f.write("near.md", vComposedFar)
+	pycli(f, "0", "run", "--material", "mat.md", "--final", "near.md", "--run-id", "c1", "--state-dir", "sc")
+	moveAttempt(f, "sc", "c1", "2", "10")
+	moveAttempt(f, "sc", "c1", "1", "9")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "z1", "--state-dir", "sz")
+	renameAttempt(f, "sz", "z1", "1", "01")
+	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "h1", "--state-dir", "sh")
+	moveAttempt(f, "sh", "h1", "1", huge)
+	f.write("final.md", vFinal)
+	snapshotTies(f, []string{"st/runs/t1/attempt-*.json"})
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sn")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sn", "--run-id", "n1")
+	f.write("final.md", vOther)
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sn", "--run-id", "n1")
+	f.write("final.md", vFinal2)
+	verifyBoth(f, "--final", "final.md", "--state-dir", "st")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "st", "--run-id", "t1")
+	verifyBoth(f, "--final", "near.md", "--state-dir", "sc")
+	verifyBoth(f, "--final", "near.md", "--state-dir", "sc", "--run-id", "c1")
+	// sz と sh の記録の最終稿は vFinal2
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sz")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sz", "--run-id", "z1")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sh")
+	verifyBoth(f, "--final", "final.md", "--state-dir", "sh", "--run-id", "h1")
+	f.op(Op{Kind: "remove", Path: f.dir("st/index/by-final")})
+	snapshotTies(f, []string{"st/runs/t1/attempt-*.json"}, []string{"st/index/by-path/*/*.t1.*"})
+	verifyBoth(f, "--final", "final.md", "--state-dir", "st")
+	clock(f, "2026-01-01T00:00:00Z")
 	return f.done()
 }

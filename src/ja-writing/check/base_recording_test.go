@@ -254,7 +254,7 @@ func (e *interp) status(c oracle.Call) Status {
 		s.RunID = e.str(c.Args[2])
 	}
 	if len(c.Args) > 3 {
-		s.Attempt = strconv.Itoa(c.Args[3].(int))
+		s.Attempt = parseAttemptNo(strconv.Itoa(c.Args[3].(int)))
 	}
 	if len(c.Args) > 4 {
 		s.Final = e.str(c.Args[4])
@@ -278,7 +278,7 @@ func (e *interp) status(c oracle.Call) Status {
 			}
 		case "attempt":
 			if v != nil {
-				s.Attempt = strconv.Itoa(v.(int))
+				s.Attempt = parseAttemptNo(strconv.Itoa(v.(int)))
 			}
 		case "final":
 			if p := text(v); p != nil {

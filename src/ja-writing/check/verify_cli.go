@@ -362,7 +362,7 @@ func verifyOutcome(state string, final *Target, source *Target, a verifyArgs, si
 	}
 	status := Status{State: o.status, Via: "verify", Final: final.Token(), Expected: expected, Replay: replayField}
 	if o.found != nil {
-		status.RunID, status.Attempt = o.found.runID, string(o.found.attempt)
+		status.RunID, status.Attempt = o.found.runID, o.found.attempt
 	}
 	if o.record != nil {
 		mode := pyops.Str(pyops.Index(o.record, "mode"))

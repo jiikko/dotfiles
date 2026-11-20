@@ -44,6 +44,8 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
   - op pyedit は path の JSON のファイルを value の指示 (JSON) で書き換える: set ([鍵の道, 値] の並び)・delete (鍵の道の並び)・
     rehash (記録の checks のレポートと本文の SHA-256 をファイルから求め直す)・redigest (record_digest を求め直す)・raw ([元, 後] の
     字の置き換え。JSON として読まずに書き換える)・copy_from (そのパスのファイルを、バイト列のまま path に写す。ほかの指示とは併せない)。
+  - op rename は value の {"globs": [path からの相対の glob...], "old", "new"} で、当たったファイルの名前の最初の old を new に替える
+    (mtime はそのまま。当たらない glob と、名前に old を持たないファイルは止める)。記録の回の番号を移す用。
   - op snapshot は path から下の木を返す: {"entries": [[相対パス, 種類, mode, mtime_ns, 中身の鍵か先, 付け足し]...], "blobs": {鍵: zlib で縮めた中身の base64}}。
     by-path の鍵のうち作業フォルダのパスから作ったものは、印にした _place の文字列の SHA-256 を名前にする。返す前に、通常のファイルの mtime を、元の順を保った決まった値 (2026-01-01 から 1 ミリ秒ずつ) にそろえる。
     value が空でなければ {"ties": [[fnmatch のパターン...]...]} で、組ごとに、どれかのパターンに当たる通常のファイル (path からの相対パス。by-path の鍵は元の名前) の mtime を
@@ -56,6 +58,7 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 import argparse
 import base64
 import fnmatch
+import glob
 import io
 import hashlib
 import json
@@ -516,6 +519,17 @@ def run_op(op):
         if str(result["rc"]) not in op["value"].split(","):
             raise RuntimeError("pycli %s が rc=%s: %s%s" % (" ".join(op["args"]), result["rc"], result["stderr"], result["stdout"][:400]))
         remember_places(module)
+    elif kind == "rename":
+        spec = json.loads(op["value"])
+        for pattern in spec["globs"]:
+            hits = sorted(glob.glob(os.path.join(glob.escape(path), pattern)))
+            if not hits:
+                raise ValueError("rename: %s に %s が当たりません" % (path, pattern))
+            for hit in hits:
+                base = os.path.basename(hit)
+                if spec["old"] not in base:
+                    raise ValueError("rename: %r が %s にありません" % (spec["old"], hit))
+                os.rename(hit, os.path.join(os.path.dirname(hit), base.replace(spec["old"], spec["new"], 1)))
     elif kind == "pyedit":
         edit_json(path, json.loads(op["value"]))
     elif kind == "snapshot":

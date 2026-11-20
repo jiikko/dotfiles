@@ -81,31 +81,42 @@ func listNames(path string) ([]string, bool) {
 	return names, true
 }
 
-// attemptNo は回の番号 (先頭の 0 を落とした十進の字。0 は "0")。本家は名前の数字を int で読むので、int64 に収まらない番号も
+// attemptNo は回の番号 (先頭の 0 を落とした十進の字。0 は "0"。ゼロ値は回が無いこと)。本家は名前の数字を int で読むので、int64 に収まらない番号も
 // 大きさで並べ、記録の attempt と値で比べる (int にすると、その名前を読み飛ばして本家と別の記録を選ぶ)。
-type attemptNo string
+// 字を土台にした型にしない: <・>・==・slices.Sort・sort.Strings が字の順 ("9" > "10") のままコンパイルを通す。比べは cmp だけを使い、
+// 中身の字を直に比べない (_ の欄は == を止める)。
+type attemptNo struct {
+	digits string
+	_      [0]func()
+}
 
 func parseAttemptNo(digits string) attemptNo {
 	if trimmed := strings.TrimLeft(digits, "0"); trimmed != "" {
-		return attemptNo(trimmed)
+		return attemptNo{digits: trimmed}
 	}
-	return "0"
+	return attemptNo{digits: "0"}
 }
 
 // cmp は大きさの比べ (-1・0・1)。
 func (a attemptNo) cmp(b attemptNo) int {
-	if len(a) != len(b) {
-		return cmp.Compare(len(a), len(b))
+	if len(a.digits) != len(b.digits) {
+		return cmp.Compare(len(a.digits), len(b.digits))
 	}
-	return strings.Compare(string(a), string(b))
+	return strings.Compare(a.digits, b.digits)
 }
+
+// String はファイルの名前と文に入れる字。
+func (a attemptNo) String() string { return a.digits }
+
+// none は回が無い (ゼロ値) か 0 のとき真 (本家の `attempt or "-"`)。
+func (a attemptNo) none() bool { return a.digits == "" || a.digits == "0" }
 
 // value は JSON の値 (int64 に収まれば int64、収まらなければ *big.Int。pyjson が読む整数と同じ形)。
 func (a attemptNo) value() pyjson.Value {
-	if n, err := strconv.ParseInt(string(a), 10, 64); err == nil {
+	if n, err := strconv.ParseInt(a.digits, 10, 64); err == nil {
 		return n
 	}
-	n, _ := new(big.Int).SetString(string(a), 10)
+	n, _ := new(big.Int).SetString(a.digits, 10)
 	return n
 }
 
@@ -123,7 +134,7 @@ func attemptNumbers(runDir string) []attemptNo {
 }
 
 func attemptFile(state, runID string, n attemptNo) string {
-	return state + "/runs/" + runID + "/attempt-" + string(n) + ".json"
+	return state + "/runs/" + runID + "/attempt-" + n.String() + ".json"
 }
 
 // found は _Found (見つけた記録 1 つ。実行 ID と回はファイルの場所から取る)。
@@ -255,7 +266,7 @@ func byPathEntries(state, key string) []found {
 			return a.stamp > b.stamp
 		case a.made != b.made:
 			return a.made > b.made
-		case a.n != b.n:
+		case a.n.cmp(b.n) != 0:
 			return a.n.cmp(b.n) > 0
 		case a.runID != b.runID:
 			return a.runID > b.runID
@@ -672,8 +683,8 @@ func maxAttempt(items []*found) *found {
 	return best
 }
 
-// newerAttempt は _newer_attempt (見つけた記録より後の回で、別の本文を検査した回の番号。なければ "")。
-func newerAttempt(state string, f *found, record *pyjson.Object) attemptNo {
+// newerAttempt は _newer_attempt (見つけた記録より後の回で、別の本文を検査した回の番号。なければ偽)。
+func newerAttempt(state string, f *found, record *pyjson.Object) (attemptNo, bool) {
 	mine := pyops.Get(pyops.Index(pyops.Index(record, "inputs"), "final"), "text_sha256")
 	numbers := attemptNumbers(state + "/runs/" + f.runID)
 	for i := len(numbers) - 1; i >= 0; i-- {
@@ -689,10 +700,10 @@ func newerAttempt(state string, f *found, record *pyjson.Object) attemptNo {
 			}
 		}
 		if recorded != nil && !pyops.Equal(pyops.Get(recorded, "text_sha256"), mine) {
-			return number
+			return number, true
 		}
 	}
-	return ""
+	return attemptNo{}, false
 }
 
 // recordedAsInput は _recorded_as_input (--final に渡した本文が、記録では原文か資料として使われているか)。
@@ -945,7 +956,7 @@ func verifyRecord(state string, f *found, final *Target, source *Target, since *
 		return verifyState{name: "invalid_record"}, problems, "skipped", false
 	}
 	if !pyops.Equal(pyops.Index(record, "run_id"), f.runID) || !pyops.Equal(pyops.Index(record, "attempt"), f.attempt.value()) {
-		fail("invalid_record", "record_location", "run_id と attempt が記録のファイルの場所（"+f.runID+"、"+string(f.attempt)+"回目）と合いません")
+		fail("invalid_record", "record_location", "run_id と attempt が記録のファイルの場所（"+f.runID+"、"+f.attempt.String()+"回目）と合いません")
 	}
 	if !pyops.Equal(pyops.Index(record, "record_digest"), must(RecordDigest(record))) {
 		fail("invalid_record", "record_digest", "record_digest が記録の中身と合いません")
@@ -1038,7 +1049,7 @@ func verifyRecord(state string, f *found, final *Target, source *Target, since *
 			states = append(states, verifyState{name: "incomplete", names: missing})
 		}
 	}
-	runPart := "runs/" + f.runID + "/attempt-" + string(f.attempt)
+	runPart := "runs/" + f.runID + "/attempt-" + f.attempt.String()
 	inputs := pyops.Index(record, "inputs")
 	type labeled struct {
 		label string
@@ -1095,8 +1106,8 @@ func verifyRecord(state string, f *found, final *Target, source *Target, since *
 		fail("", "skill_changed", "SKILL.md のハッシュが記録と違います")
 	}
 	if trusted {
-		if newer := newerAttempt(state, f, record); newer != "" {
-			fail("", "newer_attempt_differs", string(newer)+"回目で別の本文を検査しています")
+		if newer, ok := newerAttempt(state, f, record); ok {
+			fail("", "newer_attempt_differs", newer.String()+"回目で別の本文を検査しています")
 		}
 	}
 	if replay && len(states) == 0 {
