@@ -116,6 +116,9 @@ func (e *interp) call(c oracle.Call) outcome {
 	if out, ok := e.inputCall(c); ok {
 		return out
 	}
+	if out, ok := e.shapeCall(c); ok {
+		return out
+	}
 	a := c.Args
 	switch c.Function {
 	case "_sha256":
@@ -626,7 +629,7 @@ func TestBaseRecordingCoversEveryFunction(t *testing.T) {
 	for _, f := range g.Functions {
 		byName[f.Name] = f
 	}
-	known := map[string]bool{"_HERE": true, "__import__": true, "setattr": true, "isabs": true, "basename": true, "strerror": true}
+	known := map[string]bool{"_HERE": true, "__import__": true, "setattr": true, "isabs": true, "basename": true, "strerror": true, "loads": true}
 	for _, name := range append(slices.Clone(oracle.CheckBaseFunctions), oracle.CheckBaseConstants...) {
 		known[name] = true
 		if byName[name].Calls == 0 {

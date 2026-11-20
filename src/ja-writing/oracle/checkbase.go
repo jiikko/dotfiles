@@ -1,6 +1,6 @@
 package oracle
 
-// CheckBaseFile は本家 yomiyasu_check.py の小道具・パスと状態フォルダの場所・似かた・tools の欄・状態フォルダへの書き込み・記録の読み・入力の読みの関数の記録 (testdata/golden/ の中)。
+// CheckBaseFile は本家 yomiyasu_check.py の小道具・パスと状態フォルダの場所・似かた・tools の欄・状態フォルダへの書き込み・記録の読み・入力の読み・記録の形の検査の関数の記録 (testdata/golden/ の中)。
 // 形は visibility.json と同じ (case ごとの呼び出しの digest の列)。
 const CheckBaseFile = "check-base.json"
 
@@ -19,6 +19,7 @@ var CheckBaseFunctions = []string{
 	"_tool_versions", "_list_sha256", "_skill_info",
 	"_ensure_state", "_write_atomic", "_place_new_file", "_write_problem", "_read_record_status", "_read_record",
 	"_read_stdin_bytes", "_read_named", "_path_problem", "_read_inputs", "_read_target", "_split_stdin", "_material_marker",
+	"_record_shape", "_fact_gaps_shape", "_words_shape",
 }
 
 // CheckBaseConstants は Go の値と比べる本家の定数 (Get で読む)。
@@ -50,6 +51,7 @@ func CheckBaseCases() []VisCase {
 	cases = append(cases, checkPathCases()...)
 	cases = append(cases, checkWriteCases()...)
 	cases = append(cases, checkInputCases()...)
+	cases = append(cases, checkShapeCases()...)
 	return cases
 }
 

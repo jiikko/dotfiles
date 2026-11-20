@@ -90,7 +90,9 @@ func OpenProblem(path string, err error) string {
 }
 
 // NotUTF8File は本家の入力の読みが、ファイルを UTF-8 として読めないときに返す文。
-func NotUTF8File(path string) string { return fmt.Sprintf("Error opening file %s: UTF-8 として読めません", path) }
+func NotUTF8File(path string) string {
+	return fmt.Sprintf("Error opening file %s: UTF-8 として読めません", path)
+}
 
 // NotUTF8Stdin は本家の入力の読みが、標準入力を UTF-8 として読めないときに返す文。
 const NotUTF8Stdin = "Error reading stdin: UTF-8 として読めません"

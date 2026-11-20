@@ -16,6 +16,8 @@
 //	_Input → Input / _read_stdin_bytes → ReadStdinBytes / _path_problem → PathProblem / _read_inputs → ReadInputs (引数は InputArgs)
 //	_Target → Target / _read_target → ReadTarget
 //	_make_input・_read_named・_material_marker・_split_material・_split_stdin は同じ名前の非公開の関数
+//	_record_shape → RecordShape / _fact_gaps_shape → FactGapsShape / _words_shape → WordsShape (検査の項目は record_shape.go の recordRules の表)
+//	_mode_checks・_record_treated・_known_value → modeChecks・recordTreated・knownValue
 //	_TOOL_NAMES → ToolNames / _LIST_NAMES → ListNames / _FACT_GAPS_KEY → FactGapsKey / _DEFAULT_TIMEOUT → DefaultTimeout / _GITIGNORE → GitignoreText
 //
 // まだ写していない部品 (後の本が足す): _utc_now・_file_sha256・_label・_skill_version (SKILL.md を持たないので使わない)・_materials_format_version・_version_line。
