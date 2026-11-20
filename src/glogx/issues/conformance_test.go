@@ -138,23 +138,33 @@ func TestFixPromptForH1KeepsNumberAndType(t *testing.T) {
 	}
 }
 
-func TestConformanceFileNameForms(t *testing.T) {
+// 先頭に数字はあるが `NNN-` で区切っていない名前は番号なしとして扱う (2026_roadmap.md の数字は番号ではない)。
+// 指示文は数字を残す判断の材料を書き、残せとは決めない
+func TestConformanceLeadingDigitsAreNotTakenAsNumber(t *testing.T) {
 	src := "# 051 (task): x\n\n起票日: 2026-11-20\n"
-	cases := map[string][]ViolationKind{
-		"051.md":            {ViolationNameForm},
-		"051_task_x.md":     {ViolationNameForm},
-		"20260101-notes.md": {ViolationNoNumber}, // 7 桁以上の先頭の数字は日付 (NextNumber と同じ)
-	}
-	for name, want := range cases {
+	for _, name := range []string{"051.md", "051_task_x.md", "2026_roadmap.md", "20260101-notes.md", "20260101.md"} {
 		t.Run(name, func(t *testing.T) {
-			if got := conformanceKinds(newIssue("/r/issues", name), src); !slices.Equal(got, want) {
-				t.Fatalf("got %v, want %v", got, want)
+			if got := conformanceKinds(newIssue("/r/issues", name), src); !slices.Equal(got, []ViolationKind{ViolationNoNumber}) {
+				t.Fatalf("got %v", got)
 			}
 		})
 	}
 	got := NewBody(src).FixPrompt(newIssue("/r/issues", "051_task_x.md"), "/r", "099")
-	if !strings.Contains(got, "番号 051 はそのままで issues/051-<type>-<slug>.md へ git mv") || strings.Contains(got, "099") {
-		t.Fatalf("番号を残す指示になっていない:\n%s", got)
+	for _, want := range []string{"次の番号 099", "先頭の 051 が採番の番号なら", "年・日付・版の数字なら使わない", "同じ番号の issue が既にあるなら使わない"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("指示に %q が無い:\n%s", want, got)
+		}
+	}
+	if got := NewBody(src).FixPrompt(newIssue("/r/issues", "20260101.md"), "/r", "099"); strings.Contains(got, "先頭の 2026") {
+		t.Errorf("7 桁以上の数字を番号の候補にした:\n%s", got)
+	}
+}
+
+func TestFixPromptForNoTypeKeepsRawFileName(t *testing.T) {
+	iss := newIssue("/r/issues", "050-foo\tbar.md")
+	got := NewBody("# 050 (bug): x\n起票日: 2026-11-20\n").FixPrompt(iss, "/r", "099")
+	if !strings.Contains(got, "issues/050-<type>-foo\tbar.md") {
+		t.Fatalf("新しいファイル名が元の名前から作られていない:\n%q", got)
 	}
 }
 
@@ -174,20 +184,26 @@ func TestConformanceStripsBOMBeforeH1(t *testing.T) {
 }
 
 func TestBareTitleKeepsTitleWords(t *testing.T) {
-	cases := []struct{ h1, category, want string }{
-		{"051 (task): x を直す", "task", "x を直す"},
-		{"051 feat: x を直す", "feat", "x を直す"},
-		{"051: x", "task", "x"},
-		{"051 (task) x", "task", "x"},
-		{"human: lockman を確かめる", "human", "lockman を確かめる"},
-		{"3D ビューを直す", "feat", "3D ビューを直す"},
-		{"2026年の計画", "task", "2026年の計画"},
-		{"Note: 見出しの語", "feat", "Note: 見出しの語"},
-		{"(下書き) 計画", "task", "(下書き) 計画"},
+	cases := []struct{ h1, number, category, want string }{
+		{"051 (task): x を直す", "051", "task", "x を直す"},
+		{"052 (task): x を直す", "051", "task", "x を直す"}, // 規約の形なら番号が違っても剥がす (番号は H1Number で直させる)
+		{"051 feat: x を直す", "051", "feat", "x を直す"},
+		{"51 feat: x を直す", "051", "feat", "x を直す"},
+		{"051: x", "051", "task", "x"},
+		{"051 (task) x", "051", "task", "x"},
+		{"human: lockman を確かめる", "375", "human", "lockman を確かめる"},
+		{"3D ビューを直す", "051", "feat", "3D ビューを直す"},
+		{"2026年の計画", "051", "task", "2026年の計画"},
+		{"3 つの案の比較", "051", "task", "3 つの案の比較"},
+		{"2026 年の振り返り", "", "", "2026 年の振り返り"},
+		{"10 Tips: x", "", "", "10 Tips: x"},
+		{"3 (仮) の案", "051", "task", "3 (仮) の案"},
+		{"Note: 見出しの語", "051", "feat", "Note: 見出しの語"},
+		{"(下書き) 計画", "051", "task", "(下書き) 計画"},
 	}
 	for _, c := range cases {
-		if got := bareTitle(c.h1, c.category); got != c.want {
-			t.Errorf("bareTitle(%q, %q) = %q, want %q", c.h1, c.category, got, c.want)
+		if got := bareTitle(c.h1, c.number, c.category); got != c.want {
+			t.Errorf("bareTitle(%q, %q, %q) = %q, want %q", c.h1, c.number, c.category, got, c.want)
 		}
 	}
 }

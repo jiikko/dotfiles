@@ -102,6 +102,9 @@ func TestIssuesViewDoesNotJudgeDocOpenedByLinkJump(t *testing.T) {
 	if *copied != "" {
 		t.Fatalf("doc の上の w が何かをコピーした: %q", *copied)
 	}
+	if n, _ := v.TakeNotice(); !strings.Contains(n, "文書の上では見ません") {
+		t.Fatalf("doc の上で見ていないことが伝わらない: %q", n)
+	}
 }
 
 // ファイル名に改行があると、指示文に任意の行を差し込める。コピーせずに断る

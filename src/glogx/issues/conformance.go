@@ -13,7 +13,6 @@ type ViolationKind uint8
 
 const (
 	ViolationNoNumber        ViolationKind = iota // ファイル名に番号が無い (plan.md など)
-	ViolationNameForm                             // 番号はあるが `NNN-` で区切っていない (051.md / 051_task_x.md)
 	ViolationNoType                               // 番号の後に type のトークンが無い (050-foo.md)
 	ViolationNoH1                                 // H1 が無い
 	ViolationH1Form                               // H1 が `# NNN (<type>): タイトル` の形でない
@@ -42,7 +41,8 @@ var (
 	// hook が拾えない書き方の期限 (行頭が箇条書き・チェックボックス・太字)。日付を伴う行だけを見る (規約を説明する
 	// 文の中の「`- 期限:` にしない」のような言及は日付を持たないので当たらない)
 	badDeadlineRe = regexp.MustCompile(`^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?\**|\*\*)期限\**\s*[:：]\**\s*\d{4}-\d{2}-\d{2}`)
-	// 先頭に番号を持つが `NNN-` で区切っていないファイル名の番号 (051.md / 051_task_x.md)。直すときに番号を残させる
+	// 先頭に数字を持つが `NNN-` で区切っていないファイル名 (051.md / 051_task_x.md) の数字。番号か年・日付かは
+	// 名前から決まらない (2026_roadmap.md) ので番号なしとして扱い、指示文で残すかの判断を促すだけに使う
 	leadNumberRe = regexp.MustCompile(`^(\d{2,6})(?:[_. ]|$)`)
 )
 
@@ -91,7 +91,8 @@ func scanBodyFacts(src string) bodyFacts {
 }
 
 // fileNumber はファイル名の採番の番号 ("" = 無い)。7 桁以上の先頭の数字は日付 (20260101-notes.md) で
-// 採番の番号ではない (NextNumber と同じ扱い)。`NNN-` で区切っていない番号 (051.md) は lead に返す。
+// 採番の番号ではない (NextNumber と同じ扱い)。`NNN-` で区切っていない先頭の数字 (051.md) は lead に返す
+// (番号とは決めない。leadNumberRe の doc)。
 func fileNumber(iss *Issue) (number, lead string) {
 	if len(iss.Number) <= maxNumberDigits {
 		number = iss.Number
@@ -124,11 +125,8 @@ func (b *Body) Conformance(iss *Issue) []Violation {
 		out = append(out, Violation{Kind: k, Label: label, Detail: detail})
 	}
 	if iss.Prefix == "" {
-		number, lead := fileNumber(iss)
+		number, _ := fileNumber(iss)
 		switch {
-		case number == "" && lead != "":
-			add(ViolationNameForm, "ファイル名の形",
-				"ファイル名の番号 "+lead+" の後が `-<type>-<slug>` になっていません (規約は NNN-<type>-<slug>.md)")
 		case number == "":
 			add(ViolationNoNumber, "ファイル名に番号なし",
 				"ファイル名に番号がありません (規約は NNN-<type>-<slug>.md。番号の無い md は issue として扱われない)")
@@ -178,21 +176,29 @@ func typeListed(h1Type, category string) bool {
 }
 
 var (
-	// H1 の先頭の番号。後ろが空白かコロンのときだけ番号と読む (`# 3D ビュー` / `# 2026年の計画` の数字はタイトルの一部)
-	h1LeadNumberRe = regexp.MustCompile(`^\d+(?:\s+|\s*[:：]\s*)`)
+	// 規約の形の H1 の、タイトルより前 (conformH1Re と同じ形)
+	conformPrefixRe = regexp.MustCompile(`^\d+ \([^()]+\)[:：] `)
+	// H1 の先頭の番号。後ろが空白かコロンのときだけ番号の候補にする (`# 3D ビュー` / `# 2026年の計画`)
+	h1LeadNumberRe = regexp.MustCompile(`^(\d+)(?:\s+|\s*[:：]\s*)`)
 	// 番号の後ろの type の書き方。`(task):` / `(task)` / 括弧の無い旧い形の `feat:`
 	h1ParenTypeRe = regexp.MustCompile(`^\([^()]*\)\s*[:：]?\s*`)
 	h1WordTypeRe  = regexp.MustCompile(`^([A-Za-z][A-Za-z/-]*)\s*[:：]\s*`)
 )
 
 // bareTitle は H1 から番号と type を剥がしたタイトルの文言 (H1 を規約の形へ組み直すときに使う)。
-// 括弧の無い `word:` は、番号の後ろにあるか、word がファイル名の type と同じときだけ type と読む
-// (`# Note: …` のような見出しの語を剥がさない)。
-func bareTitle(h1, category string) string {
+//
+// 🚨 先頭の数字を剥がすのは、規約の形 (conformH1Re) のときか、ファイル名の番号と同じ数のときだけ。
+// `# 3 つの案の比較` / `# 2026 年の振り返り` / `# 10 Tips: x` の数字はタイトルの一部で、剥がすと指示文に
+// 「タイトルの文言は変えない」と並んで壊れたタイトルが載る。括弧の type と `word:` も、番号を剥がした後か、
+// word がファイル名の type と同じときだけ type と読む (`# Note: …` の語を剥がさない)。
+func bareTitle(h1, number, category string) string {
+	if loc := conformPrefixRe.FindStringIndex(h1); loc != nil {
+		return strings.TrimSpace(h1[loc[1]:])
+	}
 	t := h1
 	numbered := false
-	if loc := h1LeadNumberRe.FindStringIndex(t); loc != nil {
-		t, numbered = t[loc[1]:], true
+	if m := h1LeadNumberRe.FindStringSubmatch(t); m != nil && number != "" && sameNumber(m[1], number) {
+		t, numbered = t[len(m[0]):], true
 	}
 	if loc := h1ParenTypeRe.FindStringIndex(t); loc != nil && numbered {
 		t = t[loc[1]:]
@@ -200,6 +206,11 @@ func bareTitle(h1, category string) string {
 		t = t[len(m[0]):]
 	}
 	return strings.TrimSpace(t)
+}
+
+// sameNumber は 2 つの番号が同じ数か (ゼロ埋めの違いを無視する。`# 51 …` と 051-*.md)。
+func sameNumber(a, b string) bool {
+	return strings.TrimLeft(a, "0") == strings.TrimLeft(b, "0")
 }
 
 // FixPrompt は iss の規約外の点 (Conformance) を直すための、Claude Code へそのまま貼れる指示文を組む。
@@ -221,11 +232,11 @@ func (b *Body) FixPrompt(iss *Issue, root, next string) string {
 	for _, v := range vs {
 		has[v.Kind] = true
 	}
-	title := bareTitle(b.facts.h1, iss.Category)
+	number, lead := fileNumber(iss)
+	title := bareTitle(b.facts.h1, number, iss.Category)
 	if title == "" {
 		title = "<タイトル>"
 	}
-	number, lead := fileNumber(iss)
 
 	var w strings.Builder
 	w.WriteString(path + " が issue の規約 (~/dotfiles/_claude/issue-rules.md) に合っていません (glogx の issues viewer の警告)。\n")
@@ -242,13 +253,15 @@ func (b *Body) FixPrompt(iss *Issue, root, next string) string {
 			filepath.Join(issueDir, next+"-<type>-<slug>.md") + " へ git mv し、H1 を「# " + next + " (<type>): " + title +
 			"」にして、H1 の次に `起票日: YYYY-MM-DD` を書く。<type> は issue-rules の語彙から内容で選ぶ\n")
 		w.WriteString("2. issue でない資料 (計画・メモ・調査) なら issues/ の外 (docs/ など) へ移し、関係する issue から参照する\n")
-	case has[ViolationNameForm]:
-		renamed, number = true, lead
-		w.WriteString("- 番号 " + lead + " はそのままで " + filepath.Join(issueDir, lead+"-<type>-<slug>.md") +
-			" へ git mv する。<type> は issue-rules の語彙から内容で選ぶ\n")
+		if lead != "" {
+			w.WriteString("ファイル名の先頭の " + lead + " が採番の番号なら、1 で " + next + " の代わりに " + lead +
+				" を使ってよい。ただし年・日付・版の数字なら使わない。同じ番号の issue が既にあるなら使わない (issues/ 全体で " +
+				lead + "- で始まるファイルを探す)\n")
+		}
 	case has[ViolationNoType]:
 		renamed = true
-		w.WriteString("- 番号はそのままで " + filepath.Join(issueDir, number+"-<type>-"+iss.Slug+".md") +
+		rest := strings.TrimPrefix(strings.TrimSuffix(base, filepath.Ext(base)), iss.Number+"-")
+		w.WriteString("- 番号はそのままで " + filepath.Join(issueDir, number+"-<type>-"+rest+".md") +
 			" へ git mv する。<type> は issue-rules の語彙から内容で選ぶ\n")
 	}
 	if !has[ViolationNoNumber] && (has[ViolationNoH1] || has[ViolationH1Form] || has[ViolationH1Number] || has[ViolationH1Type]) {
