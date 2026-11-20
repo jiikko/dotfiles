@@ -50,7 +50,9 @@ func Main(ctx context.Context, env cmdenv.Env) int {
 }
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// 取り消しの cause に受けたシグナルを入れる (check は 128+番号で終わる)。SIGHUP はここで受けない: lint・diff は本家と同じく SIGHUP で
+	// そのまま終わり、check は run の間だけ自分で受ける。
+	ctx, stop := cmdenv.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// 読む側が閉じたパイプへの書き込みを、SIGPIPE で落ちずに EPIPE の誤りとして受ける (本家の Python は BrokenPipeError を受けて rc 3 にする)。
 	// signal.Ignore にしない: 無視は exec した子プロセス (git など) に引き継がれ、子の SIGPIPE の振る舞いまで変える。

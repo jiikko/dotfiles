@@ -11,6 +11,7 @@ on:
       - 'src/ja-writing/**'
       - 'src/atomicfile/**'   # replace で取り込む共有 module (記録とキャッシュの書き込み)
       - 'src/subproc/**'      # replace で取り込む共有 module (外部プロセスの安全弁)
+      - 'src/testwait/**'     # replace で取り込む共有 module (テストの条件の待ち)
       - .github/workflows/src_ja-writing.yml
       - .github/workflows/_go-project.yml
       - .github/go-version
@@ -24,6 +25,7 @@ on:
       - 'src/ja-writing/**'
       - 'src/atomicfile/**'   # replace で取り込む共有 module (記録とキャッシュの書き込み)
       - 'src/subproc/**'      # replace で取り込む共有 module (外部プロセスの安全弁)
+      - 'src/testwait/**'     # replace で取り込む共有 module (テストの条件の待ち)
       - .github/workflows/src_ja-writing.yml
       - .github/workflows/_go-project.yml
       - .github/go-version

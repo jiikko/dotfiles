@@ -40,6 +40,7 @@ type interp struct {
 	files ToolFiles
 	stdin io.Reader         // op stdin が決めた、本家の sys.stdin の代わり (nil は標準入力が無い)
 	blobs map[string][]byte // op snapshot が返した中身 (同じ case の前の snapshot の分も持つ)
+	sim   *runSim           // run の記録のときだけ (Go の run の Runtime)
 }
 
 func (e *interp) sub(s string) string {
@@ -515,7 +516,14 @@ func clip(s string, n int) string {
 
 func runCase(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats map[string]*stat) (mismatches []string) {
 	t.Helper()
-	e := &interp{t: t, saved: map[string]any{}, files: Released{}, blobs: map[string][]byte{}}
+	return runCaseWith(t, c, rec, stats, nil)
+}
+
+// runCaseWith は runCase の、run の記録 (sim が nil でない) の op も扱う形。run の記録では op snapshot を戻さずに Go が書いた木と比べ、
+// op clock・pyexe を Go の run の Runtime に写す。
+func runCaseWith(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats map[string]*stat, sim *runSim) (mismatches []string) {
+	t.Helper()
+	e := &interp{t: t, saved: map[string]any{}, files: Released{}, blobs: map[string][]byte{}, sim: sim}
 	if hasOp(c) {
 		fx, err := oracle.NewFixture(fixtureRoot(t))
 		if err != nil {
@@ -540,6 +548,11 @@ func runCase(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats map
 		case call.Op != nil && call.Op.Kind == "stdin":
 			e.stdinOp(*call.Op)
 			canon, digest, _ = e.digest(call, outcome{})
+		case call.Op != nil && sim != nil && sim.handles(e, *call.Op):
+			canon, digest = "(run の op)", rec.Digests[i*oracle.DigestWidth:(i+1)*oracle.DigestWidth]
+		case call.Op != nil && call.Op.Kind == "snapshot" && sim != nil:
+			mismatches = append(mismatches, e.compareSnapshot(c.Name, i, *call.Op, kept[i])...)
+			canon, digest = "(snapshot)", rec.Digests[i*oracle.DigestWidth:(i+1)*oracle.DigestWidth]
 		case call.Op != nil && call.Op.Kind == "snapshot":
 			// 本家の run が書いた木を作業フォルダに戻す (結果は記録のものなので、digest は比べない)
 			e.materialize(*call.Op, kept[i])

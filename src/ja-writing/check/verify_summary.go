@@ -352,8 +352,8 @@ func badKeptMark(m pyjson.Value) bool {
 	return !isList
 }
 
-// keptMarksText は _kept_marks_text (使う語なし。「語（語の一覧か直訳語。行番号）」を「、」でつなぐ)。
-func keptMarksText(marks []pyjson.Value) string {
+// keptMarksText は _kept_marks_text (「語（語の一覧か直訳語。行番号。使う語）」を「、」でつなぐ)。replacements は語の一覧の使う語 (verify は使わないので nil)。
+func keptMarksText(marks []pyjson.Value, replacements map[string]string) string {
 	var shown []string
 	for _, m := range marks[:min(len(marks), keptMarkShownWords)] {
 		lines := pyops.Index(m, "lines").([]pyjson.Value)
@@ -374,7 +374,11 @@ func keptMarksText(marks []pyjson.Value) string {
 		if where != "" {
 			where = "。" + where
 		}
-		shown = append(shown, text+"（"+keptMarkRules[name].label+where+"）")
+		used := ""
+		if w, ok := word.(string); ok && name == "project_term" && replacements[w] != "" {
+			used = "。使う語: " + replacements[w]
+		}
+		shown = append(shown, text+"（"+keptMarkRules[name].label+where+used+"）")
 	}
 	if len(marks) > keptMarkShownWords {
 		shown = append(shown, "ほか"+pyops.Format(int64(len(marks)-keptMarkShownWords))+"語")

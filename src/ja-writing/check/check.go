@@ -1,5 +1,5 @@
 // Package check は ja-writing check (lint と diff をまとめて実行して記録を残す) の Main と、その部品を持つ。
-// Main は verify (--replay を除く) と --version だけを写した (run・start・export・end はまだ)。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの。
+// Main は run・verify (--replay を除く) と、subcommand の前の -h・--version を写した (start・export・end はまだ)。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの。
 //
 // 本家の名前と Go の名前の対応 (本家の名前は先頭の _ を持つ非公開のもの。state_dir_for だけ公開):
 //
@@ -24,5 +24,9 @@
 //	_file_sha256 → fileSHA256 / _label → label / _tool_changed_line → toolChangedLine / _verified_contents_line → verifiedContentsLine。ほかの verify の関数は同じ名前の非公開の関数
 //	(_index_found → indexFound・_by_path_entries → byPathEntries・_origin → originOf など。名前の対応は各関数の doc コメント)
 //
-// まだ写していない部品 (後の本が足す): _utc_now・_skill_version (SKILL.md を持たないので使わない)・_replay と verify --replay。
+//	run (run_link.go・children.go・run_checks.go・run_output.go・run_save.go・run_cli.go): _Children → children / _Context → runContext /
+//	_run_impl → runImpl / _save → saveRun / _decide → decide / _sections → sections / _utc_now・time.monotonic・os.urandom → Runtime の Now・Monotonic・RandomHex。
+//	ほかの run の関数は同じ名前の非公開の関数 (_link → linkRun・_history → history など。名前の対応は各関数の doc コメント)
+//
+// まだ写していない部品 (後の本が足す): _skill_version (SKILL.md を持たないので使わない)・_replay と verify --replay・start の登録 (armed/)。
 package check

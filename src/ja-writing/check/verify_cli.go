@@ -27,6 +27,19 @@ const verifyProg = prog + " verify"
 const verifyUsage = "使い方: yomiyasu_check.py verify --final 最終稿|- [--run-id ID] [--source 原文] [--since ISO8601]\n" +
 	"           [--replay] [--timeout 秒] [--state-dir DIR] [--json]\n"
 
+// topHelp は subcommand の前の -h の出力 (本家の argparse が幅 80 で組んだ字)。
+//
+//go:embed top_help.txt
+var topHelp string
+
+// finishPrint は標準出力に書いて 0 で終わる (書けなければ本家の終わり際の失敗と同じ扱い)。
+func finishPrint(env cmdenv.Env, text string) int {
+	if err := pycli.PrintTo(env, text); err != nil {
+		return pycli.Finish(env, prog, pycli.AtExit("stdout", err))
+	}
+	return 0
+}
+
 // verifyHelp は verify -h の出力 (本家の argparse が幅 80 で組んだ字。端末の幅で組み直さない)。
 //
 //go:embed verify_help.txt
@@ -81,14 +94,32 @@ func parseVerify(argv []string) (verifyArgs, bool, error) {
 	return a, false, err
 }
 
-// Main は subcommand の入口 (本家の _run_cli と main)。今は verify と --version だけを写した。
-func Main(_ context.Context, env cmdenv.Env) int {
+// Main は subcommand の入口 (本家の _run_cli と main)。今は run・verify と、subcommand の前の -h と --version だけを写した。
+func Main(ctx context.Context, env cmdenv.Env) int { return MainWith(ctx, env, DefaultRuntime()) }
+
+// MainWith は Main の、run が外の世界から取る値 (子の実行ファイル・時刻など) を渡せる形。
+func MainWith(ctx context.Context, env cmdenv.Env, rt Runtime) int {
 	args := env.Args
 	commands := []string{"run", "verify", "start", "export", "end", "-h", "--help", "--version"}
 	if len(args) == 0 || !slices.Contains(commands, args[0]) {
 		args = append([]string{"run"}, args...)
 	}
 	switch {
+	case args[0] == "run":
+		code, err := runMain(ctx, env, rt, args[1:])
+		var noCwd *NoWorkingDirectoryError
+		var stop errStopped
+		switch {
+		case errors.As(err, &noCwd):
+			pycli.Eprintln(env, noCwd.Message)
+			return cmdenv.ExitUsage
+		case errors.As(err, &stop):
+			pycli.Eprintln(env, fmt.Sprintf(stoppedLine, signalName(stop.signal)))
+			return 128 + int(stop.signal)
+		case err != nil:
+			return pycli.Finish(env, prog, err)
+		}
+		return code
 	case args[0] == "verify":
 		code, err := runVerify(env, args[1:])
 		var noCwd *NoWorkingDirectoryError
@@ -104,12 +135,10 @@ func Main(_ context.Context, env cmdenv.Env) int {
 			return pycli.Finish(env, prog, err)
 		}
 		return code
+	case args[0] == "-h" || args[0] == "--help":
+		return finishPrint(env, topHelp)
 	case len(args) == 1 && args[0] == "--version":
-		line := fmt.Sprintf("%s %s (record format 1, result format 1, materials format %d)\n", prog, visibility.Version, diff.MaterialsFormatVersion)
-		if err := pycli.PrintTo(env, line); err != nil {
-			return pycli.Finish(env, prog, pycli.AtExit("stdout", err))
-		}
-		return 0
+		return finishPrint(env, fmt.Sprintf("%s %s (record format 1, result format 1, materials format %d)\n", prog, visibility.Version, diff.MaterialsFormatVersion))
 	}
 	return cmdenv.Unimplemented(env, "check "+args[0])
 }
@@ -462,7 +491,7 @@ func (o *verifyResult) lines() []string {
 	if o.status == "executed" {
 		lines = append(lines, verifiedContentsLine(o.finalCount, o.changed, o.required))
 		if len(o.keptMarks) > 0 {
-			lines = append(lines, fmt.Sprintf(keptMarkVerify, keptMarksText(o.keptMarks)))
+			lines = append(lines, fmt.Sprintf(keptMarkVerify, keptMarksText(o.keptMarks, nil)))
 		}
 	}
 	return lines

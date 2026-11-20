@@ -42,7 +42,8 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
   - op pycli は本家の check の main(args) を出力を捨てて呼ぶ。終了コードが value (「,」区切り) に無ければ止める。呼んだ後、
     作業フォルダの下の記録の最終稿のパスと標準入力の鍵から、by-path の鍵と _place の文字列の対応を覚える (op snapshot が使う)。
   - op pyedit は path の JSON のファイルを value の指示 (JSON) で書き換える: set ([鍵の道, 値] の並び)・delete (鍵の道の並び)・
-    rehash (記録の checks のレポートと本文の SHA-256 をファイルから求め直す)・redigest (record_digest を求め直す)・raw ([元, 後] の
+    rehash (記録の checks のレポートと本文の SHA-256 をファイルから求め直す)・redigest (record_digest を求め直す)・keep_mtime (書き換えた後に
+    mtime を書き換える前の値に戻す。set などと併せる)・raw ([元, 後] の
     字の置き換え。JSON として読まずに書き換える)・copy_from (そのパスのファイルを、バイト列のまま path に写す。ほかの指示とは併せない)。
   - op rename は value の {"globs": [path からの相対の glob...], "old", "new"} で、当たったファイルの名前の最初の old を new に替える
     (mtime はそのまま。当たらない glob と、名前に old を持たないファイルは止める)。記録の回の番号を移す用。
@@ -54,6 +55,11 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
     <<SHA:そのファイルの相対パス>> にし、記録の record_digest は、中身と合っていたものを "sha256:<<DIGEST>>"、合っていなかったものを "sha256:" と 0 の 64 字にする。
     並びは相対パスの順。付け足しは、記録のファイルでは record_digest が中身と合っていたか、index/by-path/ の下のフォルダでは鍵の元の
     _place の文字列 (作業フォルダを NFC にして casefold したものを <<ROOT>> にしたもの)。blobs は同じ path の前の snapshot で返した鍵を省く。
+- check の run の記録用 (使わなければ前と一字も同じ出力):
+  - capture で本家の check の main を呼んだ後も、op pycli と同じく by-path の鍵の元を覚える (run が書いた木を op snapshot に通すため。
+    作業フォルダの外の状態フォルダ (--state-dir ../) にも書くので、実行の作業フォルダ全体から探す)。
+  - op pyexe は、本家の check が lint と diff の子に使う sys.executable を path (子の代わりの shell script) にし、本物の python3 の
+    パスを環境変数 JA_REAL に入れる。path が空なら sys.executable を戻す (JA_REAL は restoreenv で戻る)。
 """
 import argparse
 import base64
@@ -204,6 +210,7 @@ def plain_objects(value):
 
 INTERNAL_ERROR = "yomiyasu_check.py: 内部エラー"
 check_patched = []
+real_executable = []
 check_clock = ["2026-01-01T00:00:00Z"]
 check_places = {}
 snapshot_blobs = {}
@@ -269,9 +276,9 @@ def capture_main(function, args):
     return {"rc": rc, "stdout": stdout, "stderr": stderr}
 
 
-def remember_places(module):
-    """作業フォルダの下の記録から、by-path の鍵とその元の文字列を覚える (op pycli の説明)。"""
-    for top, _, names in os.walk(os.getcwd()):
+def remember_places(module, start=None):
+    """start (省くと作業フォルダ) の下の記録から、by-path の鍵とその元の文字列を覚える (op pycli の説明)。"""
+    for top, _, names in os.walk(start or os.getcwd()):
         if os.path.basename(os.path.dirname(top)) != "runs":
             continue
         for name in names:
@@ -338,8 +345,11 @@ def edit_json(path, spec):
                         entry[digest] = module._sha256(handle.read())
     if spec.get("redigest"):
         value["record_digest"] = module._record_digest(value)
+    before = os.stat(path).st_mtime_ns
     with open(path, "wb") as handle:
         handle.write((json.dumps(value, ensure_ascii=True, indent=1) + "\n").encode("ascii"))
+    if spec.get("keep_mtime"):
+        os.utime(path, ns=(before, before))
 
 
 def snapshot(top, ties):
@@ -534,6 +544,15 @@ def run_op(op):
         edit_json(path, json.loads(op["value"]))
     elif kind == "snapshot":
         return snapshot(path, json.loads(op["value"])["ties"] if op.get("value") else [])
+    elif kind == "pyexe":
+        if not real_executable:
+            real_executable.append(sys.executable)
+        remember_env("JA_REAL")
+        if path:
+            os.environ["JA_REAL"] = real_executable[0]
+            sys.executable = path
+        else:
+            sys.executable = real_executable[0]
     else:
         raise ValueError("未知の op: " + kind)
     return None
@@ -552,6 +571,8 @@ for call in plan["calls"]:
                 args = resolve(call.get("args", []))
                 if call.get("capture"):
                     value = capture_main(getattr(check_module() if call["module"] == "yomiyasu_check" else module, call["function"]), args)
+                    if call["module"] == "yomiyasu_check":
+                        remember_places(check_module(), ROOT)
                 else:
                     value = getattr(module, call["function"])(*args, **resolve(call.get("kwargs", {})))
                 if call.get("method"):

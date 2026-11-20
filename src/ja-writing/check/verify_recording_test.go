@@ -240,7 +240,11 @@ func (e *interp) capture(c oracle.Call) outcome {
 	}
 	var stdout, stderr bytes.Buffer
 	// 標準入力は op stdin が決めたもの (op stdin none の後は無い)。記録の case は、標準入力を読む呼び出しの前に op stdin を置く
-	rc := Main(context.Background(), cmdenv.Env{Args: argv, Stdin: e.stdin, Stdout: &stdout, Stderr: &stderr, Cwd: cwd, Getenv: os.Getenv})
+	rt := DefaultRuntime()
+	if e.sim != nil {
+		rt = e.sim.runtime()
+	}
+	rc := MainWith(context.Background(), cmdenv.Env{Args: argv, Stdin: e.stdin, Stdout: &stdout, Stderr: &stderr, Cwd: cwd, Getenv: os.Getenv}, rt)
 	o := pyjson.NewObject()
 	o.Set("rc", int64(rc))
 	o.Set("stdout", stdout.String())

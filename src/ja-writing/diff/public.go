@@ -3,6 +3,7 @@ package diff
 import (
 	"fmt"
 	"maps"
+	"slices"
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
@@ -143,3 +144,6 @@ func ExtractNumberDicts(text string) ([]pyjson.Value, error) {
 	}
 	return out, nil
 }
+
+// StanceNames は本家の STANCES の鍵 (定義の順。--stance の誤りの文に並べる)。
+func StanceNames() []string { return slices.Clone(stanceNames) }
