@@ -125,7 +125,8 @@ Go のテストの待ちを `testwait.Recv` に機械的に寄せたとき、`ca
 - retro 833: 「同じ窓では高い方を残す」で 利用枠のキャッシュが 7d=99% に張り付き、正しい 38% が来てもリセットまで戻らない状態だった
 - retro 833: 99 を書いたセッションを特定できなかった
 - obaket retro 1347: URLProtocol の stub が 206 を Content-Type なしで返し、URLSession が中身の推し量りのため本文が届くまで応答を渡さなかった。「header の後で本文が止まる」状態を作るつもりの取り消しのテストが header の段で止まり、取り消しの退行を当てた変異が緑だった
-- issue 1002 (2026-11-08 に本文から移した): dotfiles の treefiler の `readBulk` を goroutine へ移した後、テストが package 変数の seam を差し替えて走っている処理と競合した
+- issue 1002 (2026-11-08 に本文から移した): dotfiles の treefiler の `readBulk` を goroutine へ移した後、テストが package 変数の seam を差し替えて走っている処理と競合した data race の検出器は、その経路を通るテストを有効にして回したときしか見えない (2026-11-20 に本文から移した)
+- vlc-multi-video-player retro 594 (2026-11-20): DerivedData を作り直す指紋を project.yml の行から取り、`make setup` を忘れると pbxproj とずれたまま指紋を書く形を敵対的レビューが見つけた。xcodebuild が読む pbxproj から取り直した
 - vlc-multi-video-player retro 417 (2026-11-08 に本文から移した): タブ切替の追い越しで、敵対的レビューのたびに直前の修正が退行を入れた
 - retro 876 (2026-11-08 に本文から移した): 終了の扱いを指摘ごとに直し、敵対的レビューが 5 周した
 - obaket retro 1401: Task の連鎖を helper へ寄せたとき closure を `@Sendable` にして MainActor を離し、actor への到着が旧実装より遅れた。関係する suite だけでは見えず、全体テストの 2 本で分かった
