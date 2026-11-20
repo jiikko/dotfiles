@@ -1,7 +1,5 @@
 # 1077 (feat): yomiyasu の check (検査の記録と最終稿の照合) を Go で作り直す
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-12〜）
-
 起票日: 2026-11-12
 
 ## 概要
@@ -64,7 +62,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 
 ## 受け入れ条件
 
-- [ ] `run` / `verify` / `start` / `export` / `end` が入力の集まりで本家と同じ出力と rc を返す。違ってよいのは 1073 の表で置き換えた字だけ
+- [x] `run` / `verify` / `start` / `export` / `end` が入力の集まりで本家と同じ出力と rc を返す。違ってよいのは 1073 の表で置き換えた字だけ
   - 2026-11-21: 5 つとも写し、記録で本家と突き合わせた。ただし README の check の「揃わない範囲」に、1073 の表の外の差が残る。主なものは次のとおり
     - 内部エラーのトレースバック
     - Windows の枝
@@ -72,7 +70,7 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
     - シグナルで止まる場所
     - export_hash の競合・VerifyQuick の空の状態フォルダ・標準エラーに書けないときの OSError・FORCE_COLOR の色付きの使い方の行
     - `--version` にほかの引数を続けた形 (まだ rc 2 の stub)
-  - この差を受け入れるかはユーザーが判断する。受け入れたら印を付ける
+  - 2026-11-21: ユーザーがこの差を受け入れた (「受け入れてok」)。`--version` にほかの引数を続けた形の stub も、受け入れた差に含む
 - [x] `verify --replay` が lint と diff を動かし直し、本家と同じ結果を返す (4 本目の後半。記録 `check-replay.json`)
 - [x] 状態フォルダの選び方・書けないときの振る舞いが本家と同じ (記録 `check-base.json` の書き込みと、4a の `gettempdir`)
 - [x] 上の「決めること」の 3 つを決め、理由をこの issue と README に書く (issue には「決めたこと」に、README には check の節に書いた。2026-11-15)

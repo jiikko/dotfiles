@@ -89,6 +89,7 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 - 本家: `skills/yomiyasu/scripts/yomiyasu_hook.py`
 - `bin/ja-textlint`・`_claude/hooks/ja-textlint-on-edit.sh`・`_claude/skills/ja-writing/`・`tests/bin/test_ja_textlint.sh`・`tests/claude/test_ja_textlint_on_edit.sh`
 - 1075 (lint)・1076 (diff)・1077 (check)
+  - 1077 で解消 (2026-11-21): hook が呼ぶ check の口 (`ArmedEntries`・`ArmedUpdate`・`StartRun`・`VerifyQuick`・`RunKnownTexts`・`LatestFinalPath`・`TextSHA256Of`・`DefaultLimits`) を公開した。呼び方は `src/ja-writing/README.md` の check の節「1078 の hook から呼ぶ口」。本家の hook は標準出力を backslashreplace にしているので、hook を写すときは check と違う出口の規則にする (1077 の 4b の節)
 
 ## 進捗
 
