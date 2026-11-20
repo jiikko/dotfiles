@@ -31,13 +31,15 @@ func TestMainUnknownSubcommandIsUsageError(t *testing.T) {
 
 // 各 subcommand は、未実装の間は rc=2 を返し、どの subcommand が未実装かを標準エラーに出す (別の subcommand の入口へ迷い込まない)。lint は実装済みで、入力のファイルを開けない誤りを返す。
 func TestMainRoutesEachSubcommandToItsOwnEntry(t *testing.T) {
-	for _, name := range []string{"check", "hook"} {
-		rc, stdout, stderr := run(t, name, "--json", "x.md")
-		if rc != cmdenv.ExitUsage || stdout != "" || !strings.Contains(stderr, "ja-writing "+name+":") {
-			t.Errorf("%s: rc=%d stdout=%q stderr=%q", name, rc, stdout, stderr)
-		}
+	rc, stdout, stderr := run(t, "hook", "--json", "x.md")
+	if rc != cmdenv.ExitUsage || stdout != "" || !strings.Contains(stderr, "ja-writing hook:") {
+		t.Errorf("hook: rc=%d stdout=%q stderr=%q", rc, stdout, stderr)
 	}
-	rc, stdout, stderr := run(t, "diff", "--json", "x.md")
+	rc, stdout, stderr = run(t, "check", "verify", "--json")
+	if rc != cmdenv.ExitUsage || stdout != "" || !strings.Contains(stderr, "yomiyasu_check.py verify: error:") {
+		t.Errorf("check: rc=%d stdout=%q stderr=%q", rc, stdout, stderr)
+	}
+	rc, stdout, stderr = run(t, "diff", "--json", "x.md")
 	if rc != cmdenv.ExitUsage || stdout != "" || !strings.Contains(stderr, "yomiyasu_diff.py: error:") {
 		t.Errorf("diff: rc=%d stdout=%q stderr=%q", rc, stdout, stderr)
 	}

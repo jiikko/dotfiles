@@ -38,7 +38,8 @@ type interp struct {
 	fx    *oracle.Fixture
 	saved map[string]any
 	files ToolFiles
-	stdin io.Reader // op stdin が決めた、本家の sys.stdin の代わり (nil は標準入力が無い)
+	stdin io.Reader         // op stdin が決めた、本家の sys.stdin の代わり (nil は標準入力が無い)
+	blobs map[string][]byte // op snapshot が返した中身 (同じ case の前の snapshot の分も持つ)
 }
 
 func (e *interp) sub(s string) string {
@@ -109,6 +110,9 @@ func (e *interp) call(c oracle.Call) outcome {
 		return e.posixpath(c)
 	case c.Module == "os" && c.Function == "strerror":
 		return outcome{value: visibility.OSErrorReason("", syscall.Errno(c.Args[0].(int)))}
+	}
+	if c.Capture {
+		return e.capture(c)
 	}
 	if out, ok := e.writeCall(c); ok {
 		return out
@@ -511,7 +515,7 @@ func clip(s string, n int) string {
 
 func runCase(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats map[string]*stat) (mismatches []string) {
 	t.Helper()
-	e := &interp{t: t, saved: map[string]any{}, files: Released{}}
+	e := &interp{t: t, saved: map[string]any{}, files: Released{}, blobs: map[string][]byte{}}
 	if hasOp(c) {
 		fx, err := oracle.NewFixture(fixtureRoot(t))
 		if err != nil {
@@ -535,6 +539,12 @@ func runCase(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats map
 			canon, digest, _ = e.digest(call, outcome{value: v})
 		case call.Op != nil && call.Op.Kind == "stdin":
 			e.stdinOp(*call.Op)
+			canon, digest, _ = e.digest(call, outcome{})
+		case call.Op != nil && call.Op.Kind == "snapshot":
+			// 本家の run が書いた木を作業フォルダに戻す (結果は記録のものなので、digest は比べない)
+			e.materialize(*call.Op, kept[i])
+			canon, digest = "(snapshot)", rec.Digests[i*oracle.DigestWidth:(i+1)*oracle.DigestWidth]
+		case call.Op != nil && driverOnly[call.Op.Kind]:
 			canon, digest, _ = e.digest(call, outcome{})
 		case call.Op != nil:
 			if err := e.fx.Apply(context.Background(), *call.Op); err != nil {

@@ -5,7 +5,7 @@
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
 lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
-`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,154 件を出力の全体と rc まで全件比べて通る)。`check` は部品 (issue 1077 の 1 本目: 小道具・パスと状態フォルダの場所・似かた・記録の `tools` の欄) だけが入っていて、subcommand はまだ stub。hook は stub (`まだ実装していません` と標準エラーに出して rc 2 を返す)で、1078 で実装する。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,072 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,154 件を出力の全体と rc まで全件比べて通る)。`check` は部品 (issue 1077 の 1〜3 本目: 小道具・パスと状態フォルダの場所・似かた・記録の `tools` の欄・書き込み・入力の読み・記録の形の検査) と `verify` (`--replay` を除く) と `--version` が入っていて、`run`・`start`・`export`・`end` はまだ (`まだ実装していません` と出して rc 2)。hook は stub (`まだ実装していません` と標準エラーに出して rc 2 を返す)で、1078 で実装する。
 
 ## 構成
 
@@ -13,7 +13,7 @@ lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り�
 |---|---|
 | `main.go` | subcommand の振り分け (`Main(ctx, env) int`) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
-| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (check と hook の `Main` はいまは未実装の stub。`check/` には 1077 の 1 本目の部品が入っている。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
+| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (hook の `Main` はいまは未実装の stub。check の `Main` は `verify` と `--version` だけ。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
 | `internal/pycli/` | lint と diff が共有する CLI の部品: argparse の写し (`Spec.Parse`。位置引数とオプションを混ぜてよい形も同じ答え)・使い方の誤りの文・`--fail-on` の値の正規化・出力先が閉じたときの終了コード・入力 (ファイルか標準入力) の読み。本家の lint・diff・check は同じ `_ArgumentParser` と `_read_input` を写しで持つ (ast が同じ) |
 | `lint/pausecomma/` | lint の群 G13 (規則 `pause_comma`: 短い主語・主題・目的語のすぐあとの読点)。本家の `_pause_comma_hits`・`_pause_comma_object_hits`・`_pause_comma_line_hits` の写しで、記録は `testdata/golden/pause_comma.json` (issue 1084)。骨組みは `Fallback` と `LineHits` を呼び、G16 は `TENotVerb`、G17 は `TEAttrObject` を使う |
 | `visibility/` | 本家の `markdown_visibility.py` (Markdown の読み方・語の一覧・入力の扱い) の Go 実装。本家の名前との対応表は package doc (`visibility/doc.go`)。下の「markdown_visibility の Go 実装」 |
@@ -305,7 +305,7 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 
 ## check (`check/`。issue 1077 の 1 本目)
 
-本家の `yomiyasu_check.py` (5,639 行) の Go 実装の、部品だけが入っている (subcommand の `Main` はまだ stub)。後の実装 (diff の資料との照合・書き込みと入力・run・verify・start / end / export) が使う。
+本家の `yomiyasu_check.py` (5,639 行) の Go 実装の、部品と `verify` (`--replay` を除く) が入っている。`run`・`start`・`export`・`end` と `verify --replay` は後の本が足す。
 本家の名前との対応は `check/check.go` の package の冒頭のコメントに表がある。
 
 決めたこと (理由は issue 1077 の「決めたこと」に詳しい):
@@ -329,11 +329,13 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 | 書き込み | `_mkstemp` `_replace` `_write_atomic` `_raise_if_hidden` `_still_placed` `_place_new_file` `_write_state_files` `_add_state_files` `_ensure_state` `_write_problem` (Windows の枝は写さない。`src/atomicfile` は一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わるので使わない) | `write.go` |
 | 記録の読み | `_read_record_status` `_read_record` | `record_read.go` |
 | 記録の形の検査 | `_record_shape` `_fact_gaps_shape` `_words_shape` (と使う `_mode_checks` `_record_treated` `_known_value`)。本家は 1 つの関数に条件を並べるが、Go は項目を本家と同じ順の表 `recordRules` に並べ、1 本の検査器で回す。鍵や集合の要素になれない値 (list・dict) を検査の名前や fact_gaps の kind に持つ記録は、本家と同じ文の TypeError を error で返す | `record_shape.go` |
+| verify (`--replay` を除く) | `_Found` `_index_found` `_by_path_entries` `_attempt_numbers` `_origin` `_final_matches` `_source_matches` `_expected_token` `_only_line_endings` `_same_final_place` `_ambiguity` `_place_origin` `_continues_to` `_other_origin_at_place` `_find` `_newer_attempt` `_recorded_as_input` `_previous_treated` `_snapshot_text` `_treated_again` `_treated_label` `_recheck_problem` `_required_for` `_diff_source_item` `_expected_target` `_verify_record` (と、記録の件数をレポートと照らす `_summary_problems` `_report_value` `_report_words` `_review_count` `_kept_marks` `_record_kept_marks` `_kept_marks_text`)・出力 (`_verify` `_tool_changed_line` `_record_summary_count` `_verified_contents_line`)・verify の parser (lint・diff と同じ `internal/pycli` の argparse の写し。`--final` が無い誤りは、知らない引数の誤りより先に出す) | `verify.go` `verify_summary.go` `verify_cli.go` |
 | 入力の読み | `_Input` `_make_input` `_read_stdin_bytes` `_read_named` `_material_marker` `_split_material` `_split_stdin` `_path_problem` `_read_inputs` `_Target` `_read_target` (開けない・UTF-8 でない・標準入力を読めないときの文と、標準入力を全部読む所は、lint と diff の `_read_input` と同じ `internal/pycli` の口を使う) | `input.go` |
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
 | `check-base.json` (49 case・35,361 呼び出し。大きさ 590 KB) | 上の関数を固定の入力で本家に通した digest。時刻・実行 ID・`--fail-on`・`--timeout`・`--since` は受ける形と受けない形 (全角などの数字・空白・`_`・境の値) を、似かたはしきい値 0.53 の前後 (2 字組の数を決めた入力) を、パスは作業フォルダの fixture (大文字小文字だけ違う綴り・NFD の名前・シンボリックリンク (輪を含む)・読めないファイル・消えた作業フォルダ・`.git` の置き場・環境変数) を、tools の欄は `_HERE` を fixture の置き場に差し替えて (ファイルが無い・フォルダ・読めない・バージョンの行の書き方) 通す。casefold した綴りを返す関数 (`_disk_path` `_place`) は、作業フォルダを NFC にして casefold した綴りも作業フォルダの印に戻してから比べる (`call_function.py` の `folded`)。書き込みは、作業フォルダの fixture (空の・指定した・`.gitignore` か `state.json` だけがある・リンクの状態フォルダ、ファイルや壊れたリンクの名前、書けない親と状態フォルダ、途中がファイルの親) で関数を呼び、呼んだ後の木 (名前・mode・中身・リンクの先。`call_function.py` の op `tree`) と、例外と、その例外から `_write_problem` が作る文を比べる (一時ファイルの名前は伏せる。`temporaries`)。記録の読みは、壊れた JSON・dict でない値・空・BOM・UTF-16・不正なバイト・NaN と無限大・大きい整数・重なった鍵・サロゲート・深さ 300 の入れ子・読めない名前を読ませる。errno の文は `os.strerror(0)`〜`(120)` を visibility の表と比べる。入力の読みは、ファイル (改行の種類・BOM・空・UTF-8 でない・サロゲート・フォルダ・読めない・`/dev/null`・末尾の `/`・リンク・作業フォルダの外と点で始まる名前) を役割ごとに読ませ、`--stdin` の区切り (書き損じ・全角空白や U+2028 で始まる行・60 字を超える行・出典の 200 字・`>>>`) と、ファイルと `-` を並べた `_read_inputs` を通す。`_Input` と `_Target` は driver の `objects` で record・label・本文と `as_json` にして比べ、標準入力は op `stdin` で渡す。記録の形の検査は、形の合う記録 2 つ (推敲で資料・語の一覧 7 つのキー・fact_gaps がある記録と、新規作成で資料を原文とみなした記録) の欄を 1 か所ずつ別の値 (型の違う値・境の値・末尾に改行を付けた 16 進・NaN・無限大・大きい整数・入れ子) に替える・消す・list の要素を足す・減らした記録を全部 (14,789 件)、`json.loads` で読んでから渡す (鍵の順と NaN を本家と同じに持つため)。`fact_gaps` と `options.words` の部分だけを替えたものも `_fact_gaps_shape`・`_words_shape` に直接渡す | `check/base_recording_test.go` の `TestBaseMatchesPythonRecording` |
+| `check-verify.json` (14 case・702 呼び出し。うち本家の main の呼び出し 306 (verify 305・`--version` 1)。人が読む出力を残した 222 件の終了コードは 0 が 78・1 が 111・2 が 30・3 (本家の内部エラー) が 3。大きさ 863 KB) | 本家の run を driver の中で動かして作った状態フォルダ (同じ作業フォルダで複数回起動した木・最終稿を書き換えた形・索引を消した形・記録を壊した形 (読めない JSON・format・形・場所・digest・最終稿のハッシュ・写しとレポートの欠けと食い違い・件数の食い違い・tool_changed (スクリプトだけ・一覧だけ・両方・fact-gaps)・Unicode のバージョンの違い・終わらなかった検査・target の違い)・新規作成で資料を原文とみなした記録とその印を書き換えた記録・標準入力の記録・語の一覧の記録・種類と読者) に、本家の verify を当てた stdout・stderr・終了コード (人が読む出力と `--json`)。driver は時刻・実行 ID・`time.monotonic` を固定して run を動かし (op `pycli`。記録の `duration_ms` は 0)、木を op `snapshot` で記録に残す。テストは木を自分の作業フォルダに戻してから check の `Main` を呼ぶ。戻すときに、作業フォルダの印を自分のパスにし、by-path の鍵を自分のパスの `_place` から作り直し、作業フォルダを中身に持つファイル (語の一覧のパスを書いたレポート) の SHA-256 と、中身と合っていた `record_digest` を自分の式で求め直す (どれも作業フォルダのパスで値が変わる)。中身と合っていなかった `record_digest` は 0 の 64 字にする。ファイルの mtime は元の順を保った決まった値にそろえる (記録の並べ方が mtime を見る)。本家の verify の関数の行 (`def` の行を除く 795 行) のうち 780 行を通る。通らない 15 行は `--replay` の 11 行・export が使う `_return` の 2 行・届かない 2 行 (`_record_kept_marks` の記録が None の枝 = verify は記録があるときだけ呼ぶ、`_continues_to` の原文が分からない記録をさかのぼる枝 = 記録を作っていない) | `check/verify_recording_test.go` の `TestVerifyMatchesPythonRecording` |
 | `casemap.json` | `str.casefold` `lower` `swapcase` `upper` を全コードポイント (サロゲートを除く) で。語末の Σ の規則に使う cased と case_ignorable の範囲 (Python は直接出さないので `"<字>Σ"` と `"a<字>Σ"` の小文字化から求めた)・十進数字の値 | `internal/pyunicode/case_test.go`・`oracle/casemap_test.go` (表を作り直した結果と `case_gen.go` が同じ) |
 
 揃わない範囲 (表の外の差は不一致として落とす):
@@ -344,6 +346,11 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - 入れ子が深すぎる記録の JSON (`pyjson.MaxDepth` を超えるもの) は、本家の `_read_record_status` が `RecursionError` で落ちる (捕まえていない) 所を、Go は error で返して呼び出し側が落とす。記録に入れない (本家の例外は driver の中で起き、Go と比べる形にならない)。深さ 300 までは記録で揃うことを見ている。
 - 状態フォルダへの書き込みの、本物のファイルシステムで起こせない失敗 (一時ファイルの名前が 100 回重なる・ハードリンクを作れないファイルシステム・作ったフォルダに `.gitignore` を書けない) は記録に入らない。check の単体のテストで、乱数と link を差し替えて通す (本家と比べてはいない)。O_EXCL で作ったファイルに書けなかったときに消す枝は、通していない。
 - 記録の木の mode は umask で変わる。記録は umask 022 で取り、`TestBaseMatchesPythonRecording` は umask を 022 にしてから比べる。
+- `verify -h` の文は、本家の argparse が幅 80 で組んだ字を持つ。本家は端末の幅 (`COLUMNS`) で折り返しを変えるので、幅 80 でない端末では本家と折り返しが違う (lint・diff の `-h` と同じ扱い)。
+- `verify --replay` は、作り直しの前までの照らしで食い違いが無ければ、`yomiyasu_check.py: 内部エラー: --replay はまだ実装していません（ja-writing）。` と出して rc 3 にする (本家は lint と diff を動かし直す。4 本目で写す)。
+- 本家が例外で止まる記録 (レポートの `findings` が数・`message` が数・`rule` が list など) は、本家が `yomiyasu_check.py: 内部エラー: <型>: <文>` とトレースバックを出して rc 3、Go は `yomiyasu_check.py: 内部エラー: <Go の誤り>` で rc 3。記録の比べは標準エラーを「内部エラー」の行までにそろえてから比べる (例外の型と文は比べない)。
+- 回の番号 (`attempt-<n>.json` の n) が int64 に収まらない名前は、Go は読み飛ばす (本家は大きい整数として読む)。
+- 逆向き (Go が書いた状態フォルダを本家の verify が読む) は、Go がまだ記録 (`attempt-<n>.json`) を書かないので、記録では比べていない。Go が今書けるもの (状態フォルダの `.gitignore` と `state.json`) は `check-base.json` の木の比べで本家とバイト列まで同じ。
 - 本家の `_getcwd` が `os.getcwd` の失敗の理由 (`strerror`) を文に入れる所は、`ENOENT` の文 (`No such file or directory`) だけを出す (`EACCES` で読めない作業フォルダは試していない)。
 
 ## 標準ライブラリを写す package (`internal/`)

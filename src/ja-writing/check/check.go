@@ -1,5 +1,5 @@
 // Package check は ja-writing check (lint と diff をまとめて実行して記録を残す) の Main と、その部品を持つ。
-// Main はまだ stub。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの。
+// Main は verify (--replay を除く) と --version だけを写した (run・start・export・end はまだ)。部品は本家 yomiyasu_check.py (v3.1.0) の関数を、本家と同じ答えを返すように写したもの。
 //
 // 本家の名前と Go の名前の対応 (本家の名前は先頭の _ を持つ非公開のもの。state_dir_for だけ公開):
 //
@@ -19,17 +19,10 @@
 //	_record_shape → RecordShape / _fact_gaps_shape → FactGapsShape / _words_shape → WordsShape (検査の項目は record_shape.go の recordRules の表)
 //	_mode_checks・_record_treated・_known_value → modeChecks・recordTreated・knownValue
 //	_TOOL_NAMES → ToolNames / _LIST_NAMES → ListNames / _FACT_GAPS_KEY → FactGapsKey / _DEFAULT_TIMEOUT → DefaultTimeout / _GITIGNORE → GitignoreText
+//	verify (verify.go・verify_summary.go・verify_cli.go): _Found → found / _find → find / _verify_record → verifyRecord / _verify → runVerify・verifyOutcome /
+//	_summary_problems → summaryProblems / _kept_marks → keptMarks / _record_kept_marks → recordKeptMarks / _kept_marks_text → keptMarksText (使う語なし) /
+//	_file_sha256 → fileSHA256 / _label → label / _tool_changed_line → toolChangedLine / _verified_contents_line → verifiedContentsLine。ほかの verify の関数は同じ名前の非公開の関数
+//	(_index_found → indexFound・_by_path_entries → byPathEntries・_origin → originOf など。名前の対応は各関数の doc コメント)
 //
-// まだ写していない部品 (後の本が足す): _utc_now・_file_sha256・_label・_skill_version (SKILL.md を持たないので使わない)・_materials_format_version・_version_line。
+// まだ写していない部品 (後の本が足す): _utc_now・_skill_version (SKILL.md を持たないので使わない)・_replay と verify --replay。
 package check
-
-import (
-	"context"
-
-	"ja-writing/cmdenv"
-)
-
-// Main は subcommand の入口。終了コードの意味は本家の argparse の定義に合わせる。
-func Main(_ context.Context, env cmdenv.Env) int {
-	return cmdenv.Unimplemented(env, "check")
-}
