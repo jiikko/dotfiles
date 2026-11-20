@@ -94,14 +94,26 @@ make_fake_root() {
   # 🚨 `local a="$1" b="$work/$a"` と書かない。bash は local の引数を**先に全部展開**するので
   # $a はまだ未割り当てで、set -u の下では unbound で落ちる (呼び出し元に同名の local が
   # 在ると dynamic scope でたまたま通るため、テストの後段でだけ露出する)。
-  local name expr fake
-  name="$1"; expr="$2"; fake="$work/$name"
+  # $3 (任意): 変異を当てる scripts/ からの相対パス (無ければ issue_done.sh)。リンクの規則は scripts/lib/issue_*.awk に置いてあるので、
+  # そこへ当てるときは lib を写してから当てる (当てないときは本物への symlink)
+  local name expr fake target src
+  name="$1"; expr="$2"; target="${3:-issue_done.sh}"; fake="$work/$name"
   mkdir -p "$fake/scripts"
   ln -s "$ROOT_DIR/tests" "$fake/tests"
-  ln -s "$ROOT_DIR/scripts/lib" "$fake/scripts/lib" # バナーの判定規則 (claim_banner.awk) は本物を通す
   ln -s "$ROOT_DIR/bin" "$fake/bin"                 # git_location_env.sh も本物を通す
-  if [ -n "$expr" ]; then sed "$expr" "$SCRIPT" > "$fake/scripts/issue_done.sh"
-  else cp "$SCRIPT" "$fake/scripts/issue_done.sh"; fi
+  if [ "$target" = issue_done.sh ]; then
+    ln -s "$ROOT_DIR/scripts/lib" "$fake/scripts/lib" # バナーの判定規則とリンクの規則は本物を通す
+  else
+    cp -R "$ROOT_DIR/scripts/lib" "$fake/scripts/lib"
+  fi
+  cp "$SCRIPT" "$fake/scripts/issue_done.sh"
+  if [ -n "$expr" ]; then
+    src="$ROOT_DIR/scripts/$target"
+    sed "$expr" "$src" > "$fake/scripts/$target.mut" && mv "$fake/scripts/$target.mut" "$fake/scripts/$target"
+    # 当て先が動くと sed は何も変えずに成功し、変異は黙って緑になる (リンクの規則を lib へ移したときに一度起きた)。
+    # この関数は $(...) の中で呼ばれるので、fail はサブシェルを抜けるだけ。呼び出し側の `|| exit 1` で止める
+    if cmp -s "$src" "$fake/scripts/$target"; then fail "変異 [$name] が $target に当たっていない (sed の当て先がずれた)"; fi
+  fi
   chmod +x "$fake/scripts/issue_done.sh"
   printf '%s' "$fake"
 }
@@ -209,7 +221,7 @@ banner_check "$d29/issues/done/347-refactor-a.md" || fail "不正なバイトを
 
 # 2.9 ISSUES_DIR を渡さないときは cwd の repo の issues/ を相手にする (他の repo から ~/dotfiles/scripts/issue_done.sh で呼ぶ形)。
 #     🚨 道具は fake root (issues/ を持たない) から呼ぶ。既定が置き場の issues/ に戻る退行で、この checkout の issue を動かさないため
-fake_cwd="$(make_fake_root root-cwd '')"
+fake_cwd="$(make_fake_root root-cwd '')" || exit 1
 dw="$work/cwd"; mkdir -p "$dw"; make_fixture "$dw"
 ( cd "$dw/docs" && env -u ISSUES_DIR "$fake_cwd/scripts/issue_done.sh" 347 ) > "$work/cwd.log" 2>&1 ||
   { cat "$work/cwd.log" >&2; fail "ISSUES_DIR なし: cwd の repo (サブディレクトリから) の issue を動かせない"; }
@@ -251,7 +263,7 @@ check_mutant() {  # $1=名前 $2=sed 式 $3=赤くなるべき検査のキーワ
   name="$1"; expr="$2"; want="$3"
   dm="$work/mut-$name"; mkdir -p "$dm"; make_fixture "$dm"
   before="$(snapshot "$dm")"
-  fake="$(make_fake_root "root-$name" "$expr")"
+  fake="$(make_fake_root "root-$name" "$expr")" || exit 1
   # 🚨 変異が当たっていることを先に確かめる。当たっていない変異の緑を「守られていない」と
   # 読むと、効いている手順を作り替える方向に走る (mutation-verify-new-tests.md 手順 1.6)
   if diff -q "$SCRIPT" "$fake/scripts/issue_done.sh" >/dev/null; then
@@ -296,7 +308,7 @@ check_mutant empty-scan 's|^  grep -rlF --binary-files=without-match .*|  return
 # ③ のバナー除去を外す → done/ にバナーが残る。issue_done.sh 自身の判定 (リンク検査) は見ないので緑のまま終わり、
 #    捕まえるのは上の banner_check とバナー検査 (目印の無いバナー) の 2 つ
 db="$work/mut-banner"; mkdir -p "$db"; make_fixture "$db"
-fake_b="$(make_fake_root root-banner 's|^  awk -v mode=strip -f "$BANNER_AWK" "$dest" .*|  banner_rc=1|')"
+fake_b="$(make_fake_root root-banner 's|^  awk -v mode=strip -f "$BANNER_AWK" "$dest" .*|  banner_rc=1|')" || exit 1
 diff -q "$SCRIPT" "$fake_b/scripts/issue_done.sh" >/dev/null && fail "変異 [no-banner-strip] が当たっていない"
 ISSUES_DIR="$db/issues" "$fake_b/scripts/issue_done.sh" 347 > "$work/mut-banner.log" 2>&1 ||
   { cat "$work/mut-banner.log" >&2; fail "変異 [no-banner-strip] が移動そのものを落とした (想定は緑のまま終わる)"; }
@@ -310,7 +322,7 @@ fi
 # ---------------------------------------------------------------------------
 dc="$work/mut-canary"; mkdir -p "$dc"; make_fixture "$dc"
 before_c="$(snapshot "$dc")"
-fake_c="$(make_fake_root root-canary 's|^  return nl frag$|  return lnk|')"
+fake_c="$(make_fake_root root-canary 's|^  return nl frag$|  return lnk|' lib/issue_done_links.awk)" || exit 1
 if ISSUES_DIR="$dc/issues" "$fake_c/scripts/issue_done.sh" 347 > "$work/mut-canary.log" 2>&1; then
   fail "変異 [canary] が緑のまま通った"
 fi

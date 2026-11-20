@@ -100,96 +100,14 @@ usage: scripts/issue_done.sh <NNN> [<NNN>...]
 USAGE
 }
 
-# ---------------------------------------------------------------------------
-# リンク書き換えの本体。canary と本走査の**両方**がこの awk を通る。
-#   -v old_base : そのファイルの中のリンクを解決するディレクトリ (repo 相対)
-#   -v new_base : 書き直すときの起点ディレクトリ (repo 相対)。動かした当人だけ old と違う
-#   -v moved_old / -v moved_new : 今回動かす issue の repo 相対パス (空なら差し替えなし)
-# 出力は書き換え後の全文。1 本でも書き換えたら stderr へ "REWROTE" を出す (呼び出し側が数える)。
-# ---------------------------------------------------------------------------
-# shellcheck disable=SC2016  # awk のプログラム本文。$1 等はシェルに展開させない
-AWK_REBASE='
-function normalize(p,   n, i, a, st, top, out) {
-  n = split(p, a, "/")
-  top = 0
-  for (i = 1; i <= n; i++) {
-    if (a[i] == "" || a[i] == ".") continue
-    if (a[i] == "..") {
-      if (top > 0 && st[top] != "..") { top-- } else { st[++top] = ".." }
-      continue
-    }
-    st[++top] = a[i]
-  }
-  out = ""
-  for (i = 1; i <= top; i++) out = (out == "" ? st[i] : out "/" st[i])
-  return out
-}
-function relpath(target, base,   nt, nb, t, b, i, up, out) {
-  if (base == "") return target
-  nt = split(target, t, "/")
-  nb = split(base, b, "/")
-  i = 1
-  while (i <= nt && i <= nb && t[i] == b[i]) i++
-  out = ""
-  for (up = i; up <= nb; up++) out = out "../"
-  for (; i <= nt; i++) out = out t[i] (i < nt ? "/" : "")
-  return out
-}
-function newlink(lnk,   frag, path, t, nl) {
-  frag = ""
-  if (index(lnk, "#") > 0) { frag = substr(lnk, index(lnk, "#")); path = substr(lnk, 1, index(lnk, "#") - 1) }
-  else path = lnk
-  if (path == "") return lnk
-  t = normalize(old_base "/" path)
-  # repo の外へ出るリンクは触らない (計算の外なので、黙って壊すより残す)
-  if (substr(t, 1, 3) == "../" || t == "..") return lnk
-  if (moved_old != "" && t == moved_old) t = moved_new
-  else if (old_base == new_base) return lnk   # 動かした当人以外は、指し先が変わらないなら触らない
-  nl = relpath(t, new_base)
-  if (nl == "") return lnk
-  return nl frag
-}
-# report モード: そのリンクが want (repo 相対) を指しているか。書き換えと同じ解決経路を通す
-function resolves_to(lnk, w,   path, t) {
-  path = (index(lnk, "#") > 0) ? substr(lnk, 1, index(lnk, "#") - 1) : lnk
-  if (path == "") return 0
-  t = normalize(old_base "/" path)
-  return (t == w)
-}
-function process(seg,   out, rest, pre, whole, lnk, nl) {
-  out = ""; rest = seg
-  while (match(rest, /\]\((\.\.\/)*[A-Za-z0-9_.\/-]+\.[A-Za-z0-9]+(#[A-Za-z0-9_-]+)?\)/)) {
-    pre   = substr(rest, 1, RSTART - 1)
-    whole = substr(rest, RSTART, RLENGTH)
-    rest  = substr(rest, RSTART + RLENGTH)
-    lnk   = substr(whole, 3, length(whole) - 3)
-    if (report) { if (resolves_to(lnk, want)) print "HIT " lnk; out = out pre whole; continue }
-    nl    = newlink(lnk)
-    if (nl != lnk) changed++
-    out = out pre "](" nl ")"
-  }
-  return out rest
-}
-# インラインコード (`…`) の中は書式の説明であって参照ではない (test_issue_links_valid.sh と同じ扱い)
-function rewrite_line(line,   out, i, j) {
-  out = ""
-  while ((i = index(line, "`")) > 0) {
-    j = index(substr(line, i + 1), "`")
-    if (j == 0) break
-    out = out process(substr(line, 1, i - 1)) substr(line, i, j + 1)
-    line = substr(line, i + j + 1)
-  }
-  return out process(line)
-}
-# report モードは走査だけで、本文は出さない (HIT 行だけを返す)
-function emit(l) { if (!report) print l }
-# コードフェンスの中も同じ理由で触らない (判定は test_issue_links_valid.sh の extract_links と同形)
-/^[[:space:]]*```[^`]*$/ { fence = !fence; emit($0); next }
-/^[[:space:]]*~~~/       { fence = !fence; emit($0); next }
-fence { emit($0); next }
-{ emit(rewrite_line($0)) }
-END { if (!report && changed > 0) print "REWROTE " changed > "/dev/stderr" }
-'
+# リンク書き換えの本体。canary と本走査と事後条件のオラクルが**全部**この awk を通る。
+# 読み方 (どのリンクを対象にするか) は scripts/lib/issue_links.awk、張り直しの規則は scripts/lib/issue_done_links.awk
+# (obaket の bin/issue-done・bin/issue-resolve-link-conflicts も同じ 2 本を読む)。
+#   -v old_base / -v new_base / -v moved_old / -v moved_new / -v report=1 -v want=<repo 相対> の意味は issue_done_links.awk の冒頭
+AWK_LINKS=(-f "$ROOT_DIR/scripts/lib/issue_links.awk" -f "$ROOT_DIR/scripts/lib/issue_done_links.awk")
+for f in "$ROOT_DIR/scripts/lib/issue_links.awk" "$ROOT_DIR/scripts/lib/issue_done_links.awk"; do
+  [ -r "$f" ] || { echo "issue_done: $f を読めない" >&2; exit 2; }
+done
 
 # rebase_file <file> <old_base> <new_base> <moved_old> <moved_new>
 # 書き換えたら 0、変化が無ければ 1 を返す。書き込みは一時ファイル経由 (途中で死んでも半端に残さない)
@@ -198,7 +116,7 @@ rebase_file() {
   tmp="$(mktemp "${TMPDIR:-/tmp}/issue_done.XXXXXX")"
   awk -v old_base="$old_base" -v new_base="$new_base" \
       -v moved_old="$moved_old" -v moved_new="$moved_new" \
-      "$AWK_REBASE" "$f" > "$tmp" 2>"$tmp.err" || { rm -f "$tmp" "$tmp.err"; return 2; }
+      "${AWK_LINKS[@]}" "$f" > "$tmp" 2>"$tmp.err" || { rm -f "$tmp" "$tmp.err"; return 2; }
   if grep -q '^REWROTE ' "$tmp.err" 2>/dev/null; then
     cat "$tmp" > "$f"
   else
@@ -231,7 +149,7 @@ canary() {
     '~~~' \
     | awk -v old_base="issues" -v new_base="issues/done" \
           -v moved_old="issues/345-retro.md" -v moved_new="issues/done/345-retro.md" \
-          "$AWK_REBASE" 2>/dev/null)"
+          "${AWK_LINKS[@]}" 2>/dev/null)"
   # shellcheck disable=SC2016  # fixture の期待値。リテラルとして比較する
   want='上向き: [rule](../../_claude/rules/x.md)
 下向き: [old](312-x.md)
@@ -254,7 +172,7 @@ canary() {
   got="$(printf '%s\n' '参照: [x](347-x.md) と [y](340-y.md)' \
     | awk -v old_base="issues" -v new_base="issues" \
           -v moved_old="issues/347-x.md" -v moved_new="issues/done/347-x.md" \
-          "$AWK_REBASE" 2>/dev/null)"
+          "${AWK_LINKS[@]}" 2>/dev/null)"
   if [ "$got" != '参照: [x](done/347-x.md) と [y](340-y.md)' ]; then
     printf '✗ canary: 他ファイルからの参照の張り直しが想定と違う: %s\n' "$got" >&2
     return 1
@@ -264,7 +182,7 @@ canary() {
   got="$(printf '%s\n' '無関係: [z](./done/311-b.md)' \
     | awk -v old_base="issues" -v new_base="issues" \
           -v moved_old="issues/347-x.md" -v moved_new="issues/done/347-x.md" \
-          "$AWK_REBASE" 2>/dev/null)"
+          "${AWK_LINKS[@]}" 2>/dev/null)"
   if [ "$got" != '無関係: [z](./done/311-b.md)' ]; then
     printf '✗ canary: 無関係なリンクを書き換えている: %s\n' "$got" >&2
     return 1
@@ -272,7 +190,7 @@ canary() {
   # report モード (事後条件のオラクル) も同じ awk で固定する
   got="$(printf '%s\n' '[a](347-x.md) [b](done/311-b.md)' \
     | awk -v old_base="issues" -v new_base="issues" -v report=1 -v want="issues/347-x.md" \
-          "$AWK_REBASE" 2>/dev/null)"
+          "${AWK_LINKS[@]}" 2>/dev/null)"
   if [ "$got" != 'HIT 347-x.md' ]; then
     printf '✗ canary: report モードが想定と違う: %s\n' "$got" >&2
     return 1
@@ -325,7 +243,7 @@ stale_ref_report() {
       [ -n "$hit" ] || continue
       printf '%s: %s\n' "${f#"$BASE_DIR/"}" "${hit#HIT }"
     done < <(awk -v old_base="$(relbase "$f")" -v new_base="$(relbase "$f")" \
-                 -v report=1 -v want="$want" "$AWK_REBASE" "$f" 2>/dev/null)
+                 -v report=1 -v want="$want" "${AWK_LINKS[@]}" "$f" 2>/dev/null)
   done < <(scan_candidates "$needle")
 }
 
