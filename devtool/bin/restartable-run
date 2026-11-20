@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# restartable-run — restartable (dotfiles の src/restartable) を決めたバージョンで <dir> に入れ、残りの引数で起こす。
+#
+#   restartable-run --bin-dir <dir> [--] [restartable の引数…]
+#
+# 各 app の bin/dev-fg-loop (obaket・vlc-multi-video-player・dropbox-multi-video-player-electron) が呼ぶ。app に固有の指定
+# (--build・--stop-cmd・--ready-cmd・--pull-cmd・--id-env と起動するコマンド) は呼び口が restartable の引数として渡す。
+# ここが持つのは restartable のバージョンと、入れ方 (go install して <dir>/restartable.version に印を書く) だけ。
+# 各 app の bin/dev-restart は同じ <dir>/restartable を status / restart で叩くので、<dir> は呼び口が決める (普段は app の tmp/bin)。
+#
+# バージョンを上げるときは dotfiles に push した commit の pseudo-version に書き換える
+#   (`go list -m -f '{{.Version}}' github.com/jiikko/dotfiles/src/restartable@<commit>`)。上げた後の確かめ方は各 app の make dev-fg-loop
+#
+# 印が無い・違うバージョンなら go install し直す (印は書き終わってから置き換える。途中で止まっても古い印のまま残らない)。
+# go が無い・go install が落ちたら restartable を起こさずに rc 1。
+set -uo pipefail
+unset CDPATH
+
+prog="${0##*/}"
+case "${1:-}" in
+  -h|--help) sed -n '2,/^set -uo pipefail$/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+readonly RESTARTABLE_VERSION="v0.0.0-20261107035918-7556ea433fa4"
+
+[ "${1:-}" = --bin-dir ] && [ -n "${2:-}" ] || { echo "$prog: 使い方: $prog --bin-dir <dir> [--] [restartable の引数…]" >&2; exit 2; }
+bin_dir="$2"
+shift 2
+[ "${1:-}" = -- ] && shift
+restartable_bin="$bin_dir/restartable"
+version_file="$bin_dir/restartable.version"
+
+install_restartable() {
+  if ! mkdir -p "$bin_dir"; then
+    echo "$prog: restartable の保存先を作れない: $bin_dir" >&2
+    return 1
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    echo "$prog: Go が見つからない。Go をインストールしてから make dev-fg-loop を再実行してください。" >&2
+    echo "             restartable は固定のバージョンを go install して $restartable_bin に配置します。" >&2
+    return 1
+  fi
+  if ! GOBIN="$bin_dir" go install "github.com/jiikko/dotfiles/src/restartable@$RESTARTABLE_VERSION"; then
+    echo "$prog: restartable のインストールに失敗した。Go の設定とネットワークを確認して再実行してください。" >&2
+    return 1
+  fi
+  if [ ! -x "$restartable_bin" ]; then
+    echo "$prog: go install は成功したが実行ファイルが見つからない: $restartable_bin" >&2
+    return 1
+  fi
+  local marker_tmp="$version_file.$$.tmp"
+  if ! printf '%s\n' "$RESTARTABLE_VERSION" > "$marker_tmp" || ! mv -f "$marker_tmp" "$version_file"; then
+    rm -f "$marker_tmp"
+    echo "$prog: restartable のバージョンの印を書けない: $version_file" >&2
+    return 1
+  fi
+}
+
+if [ ! -x "$restartable_bin" ] || [ ! -f "$version_file" ] || [ "$(cat "$version_file" 2>/dev/null)" != "$RESTARTABLE_VERSION" ]; then
+  install_restartable || exit 1
+fi
+exec "$restartable_bin" "$@"
