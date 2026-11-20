@@ -103,6 +103,8 @@ func At(v pyjson.Value, i int) pyjson.Value {
 }
 
 // Slice は v[lo:hi] (list と str。hi < 0 は終わりまで)。dict は Python 3.12 からの slice を鍵にした KeyError (鍵の repr は slice(lo, hi, None))。
+// 本家の v[:n] は slice(None, n, None) だが、引数では v[:n] と v[0:n] を見分けられないので slice(0, n, None) を出す。
+// 呼び出し元 (diff の new_lines[:3]・shortened、check の text[:40]) は内部で作った list と str しか渡さず、dict は届かない。
 func Slice(v pyjson.Value, lo, hi int) pyjson.Value {
 	clip := func(n int) (int, int) {
 		l, h := min(lo, n), n
