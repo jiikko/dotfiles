@@ -34,7 +34,8 @@ type runSim struct {
 }
 
 // watchedTrees は restore のとき (verify を呼ぶ記録)、作業フォルダ (状態フォルダを含む) と一時フォルダの木。ほかの記録では nil。
-// verify は読むだけ: 本家の verify は状態フォルダにも一時フォルダにも書かないので、記録の stdout・stderr が合っても、Go が書いていれば食い違い。
+// 本家の verify の後には、状態フォルダにも一時フォルダにも残るものが無いので、記録の stdout・stderr が合っても、Go が書き残していれば食い違い。
+// 前後の比べなので、書いた後に mtime まで戻す書き込みと、この 2 つの木の外への書き込みは見えない (名前を作って消すと親のフォルダの mtime が変わる)。
 func (e *interp) watchedTrees() map[string]string {
 	if e.sim == nil || !e.sim.restore {
 		return nil
@@ -71,8 +72,10 @@ func (e *interp) treeChanges(before map[string]string) string {
 	return strings.Join(lines, "\n")
 }
 
-// treeFingerprint は top の下の全部 (top を含む) を、パス → 種類・mode・中身の SHA-256 (リンクは先) にして trees へ入れる。
-// mtime と atime は入れない (読むだけで atime が変わる)。読めないフォルダは、その誤りを値にして中へ入らない。
+// treeFingerprint は top の下の全部 (top を含む) を、パス → 種類・mode・mtime (ナノ秒)・中身の SHA-256 (リンクは先) にして trees へ入れる。
+// mtime を入れるのは、同じ中身で書き直したファイルと、中で名前を作って消したフォルダを見つけるため (どちらも中身と名前の一覧は前と同じ。
+// verify は mtime で「最新」の記録を並べるので、書き直しは答えを変えうる)。atime は入れない: 読むだけで変わる (mtime は変わらない)。
+// 読めないフォルダは、その誤りを値にして中へ入らない。
 func treeFingerprint(top string, trees map[string]string) error {
 	return filepath.WalkDir(top, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -86,7 +89,7 @@ func treeFingerprint(top string, trees map[string]string) error {
 		if err != nil {
 			return err
 		}
-		mode := fmt.Sprintf("%o", info.Sys().(*syscall.Stat_t).Mode)
+		mode := fmt.Sprintf("%o %d", info.Sys().(*syscall.Stat_t).Mode, info.ModTime().UnixNano())
 		switch {
 		case d.Type()&fs.ModeSymlink != 0:
 			target, err := os.Readlink(path)

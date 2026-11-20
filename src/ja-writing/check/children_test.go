@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"ja-writing/cmdenv"
@@ -88,8 +89,8 @@ func TestChildrenStopWhenParentWorkPanics(t *testing.T) {
 
 // 本家の Popen が起動の前に断る形は、子を起動せずに本家と同じ文にする。文は python3.15 (3.15.0) の subprocess.Popen で実測した:
 // NUL はどの引数でも「ValueError: embedded null byte」(作業フォルダが無いときも同じ)。argv の U+DC80..U+DCFF でない単独のサロゲートは
-// 「UnicodeEncodeError: 'utf-8' codec can't encode character …」。断りの順は argv を前から (1 つの字の並びでは bytes にするのが NUL より先)、
-// そのあと環境変数と作業フォルダの NUL。
+// 「UnicodeEncodeError: 'utf-8' codec can't encode character …」(環境変数の名前と値・作業フォルダも同じ)。断りの順は、環境変数を前から
+// bytes にする (名前が値より先)、argv を前から (1 つの字の並びでは bytes にするのが NUL より先)、環境変数の NUL、作業フォルダ。
 func TestChildrenRefuseWhatPopenRefuses(t *testing.T) {
 	h := newHangFixture(t)
 	exe := testExecutable(t)
@@ -120,6 +121,18 @@ func TestChildrenRefuseWhatPopenRefuses(t *testing.T) {
 		{"環境変数の NUL と引数のサロゲート", h.dir, []string{exe, "lint", d801}, append(slices.Clone(environ), "JA_NUL=\x00"), encode("ud801", 0)},
 		{"作業フォルダの NUL と引数のサロゲート", h.dir + "/\x00", []string{exe, "lint", d801}, environ, encode("ud801", 0)},
 		{"作業フォルダが無いときの引数のサロゲート", h.dir + "/nowhere", []string{exe, "lint", d801}, environ, encode("ud801", 0)},
+		{"環境変数の値のサロゲートと引数のサロゲート", h.dir, []string{exe, "lint", d801}, append(slices.Clone(environ), "JA="+d800), encode("ud800", 0)},
+		{"環境変数の名前のサロゲート", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "J"+d800+"=1"), encode("ud800", 1)},
+		{"環境変数の名前と値のサロゲート", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "A"+d800+"="+d801), encode("ud800", 1)},
+		{"前の環境変数の値と後の環境変数の名前のサロゲート", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "A="+d800, "B"+d801+"=1"), encode("ud800", 0)},
+		{"前の環境変数の NUL と後の環境変数のサロゲート", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "A=\x00", "B="+d801), encode("ud801", 0)},
+		{"環境変数のサロゲートと実行ファイルのサロゲート", h.dir, []string{exe + d801, "lint"}, append(slices.Clone(environ), "A="+d800), encode("ud800", 0)},
+		{"作業フォルダのサロゲート", h.dir + "/a" + d800 + d801 + "b", []string{exe, "lint"}, environ,
+			fmt.Sprintf("UnicodeEncodeError: 'utf-8' codec can't encode characters in position %d-%d: surrogates not allowed", pyunicode.RuneCount(h.dir)+2, pyunicode.RuneCount(h.dir)+3)},
+		{"作業フォルダのサロゲートと引数の NUL", h.dir + "/" + d800, []string{exe, "lint", "a\x00"}, environ, null},
+		{"作業フォルダのサロゲートと環境変数の NUL", h.dir + "/" + d800, []string{exe, "lint"}, append(slices.Clone(environ), "A=\x00"), null},
+		{"作業フォルダのサロゲートと実行ファイルのサロゲート", h.dir + "/" + d800, []string{exe + d801, "lint"}, environ, encode("ud801", pyunicode.RuneCount(exe))},
+		{"作業フォルダの NUL の後のサロゲート", h.dir + "/\x00" + d800, []string{exe, "lint"}, environ, encode("ud800", pyunicode.RuneCount(h.dir)+2)},
 	} {
 		kids := newChildren(h.rt, 60, c.cwd, c.env)
 		kids.start("lint", c.argv)
@@ -158,5 +171,89 @@ func TestChildrenPassEscapedSurrogatesAsBytes(t *testing.T) {
 	}
 	if string(got) != "a\xff\x80b" {
 		t.Fatalf("子が受け取った引数 % x、本家は 61 ff 80 62", got)
+	}
+}
+
+// 環境変数の名前と値の U+DC80..U+DCFF のサロゲートも、argv と同じく 1 バイトで子に渡す (python3.15 (3.15.0) の Popen で env={"JA": "a\udcffb"}
+// を渡した子の $JA は b"a\xffb"、env={"J\udcff": "1"} の子の env には b"J\xff=1")。
+func TestChildrenPassEscapedSurrogatesInEnvironmentAsBytes(t *testing.T) {
+	h := newHangFixture(t)
+	out := h.dir + "/env.bin"
+	dcff := pyunicode.FromRunes([]rune{0xDCFF})
+	environ := append(h.rt.ChildEnv(cmdenv.Env{Cwd: h.dir, Environ: h.environ}), "JA=a"+dcff+"b", "J"+dcff+"=1", "OUT="+out)
+	kids := newChildren(h.rt, 60, h.dir, environ)
+	kids.start("lint", []string{"/bin/sh", "-c", `{ printf %s "$JA"; printf '\n'; /usr/bin/env; } > "$OUT"`})
+	results, err := kids.wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := results["lint"]; r.status != "ran" {
+		t.Fatalf("結果 %+v", r)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(got), "\n")
+	if lines[0] != "a\xffb" {
+		t.Errorf("子の $JA は % x、本家は 61 ff 62", lines[0])
+	}
+	if !slices.Contains(lines[1:], "J\xff=1") {
+		t.Errorf("子の環境に J\\xff=1 が無い: %q", lines[1:])
+	}
+}
+
+// 子に渡すバイト列: 作り直した値 (記録の JSON の "\udcff" など) は os.fsencode と同じバイトにし、OS から受けた値 (os.Environ・os.Getwd。
+// UTF-8 として読めるバイトと、読めないバイト) はそのまま渡す。nil の環境変数は nil のまま (exec で今の環境を引き継ぐ形。本家の env=None)。
+func TestPopenEncodeKeepsOSValues(t *testing.T) {
+	dcff := pyunicode.FromRunes([]rune{0xDCFF})
+	for _, c := range []struct {
+		name    string
+		env     []string
+		cwd     string
+		wantEnv []string
+		wantCwd string
+	}{
+		{"UTF-8 の値", []string{"LANG=ja_JP.UTF-8", "JA=日本語", "EMPTY="}, "/tmp/日本語", []string{"LANG=ja_JP.UTF-8", "JA=日本語", "EMPTY="}, "/tmp/日本語"},
+		{"UTF-8 として読めない生のバイト", []string{"JA=a\xff\x80b", "J\xfe=1", "CUT=\xe6\x97"}, "/tmp/\xffx", []string{"JA=a\xff\x80b", "J\xfe=1", "CUT=\xe6\x97"}, "/tmp/\xffx"},
+		{"= の無い並び", []string{"NOVALUE"}, "/", []string{"NOVALUE"}, "/"},
+		{"値の中の =", []string{"A=b=c"}, "/", []string{"A=b=c"}, "/"},
+		{"作り直したサロゲート", []string{"JA=a" + dcff + "b"}, "/tmp/" + dcff, []string{"JA=a\xffb"}, "/tmp/\xff"},
+		{"nil の環境変数", nil, "/", nil, "/"},
+	} {
+		got, exc := popenEncode([]string{"/bin/echo"}, c.env, c.cwd)
+		if exc != nil {
+			t.Errorf("%s: 断った %v", c.name, exc)
+			continue
+		}
+		if !slices.Equal(got.env, c.wantEnv) || (got.env == nil) != (c.wantEnv == nil) || got.cwd != c.wantCwd {
+			t.Errorf("%s: env %q cwd %q、期待は env %q cwd %q", c.name, got.env, got.cwd, c.wantEnv, c.wantCwd)
+		}
+	}
+}
+
+// 起動できないときの文のパスは、bytes にする前の字で出す。作業フォルダと実行ファイルの U+DC80..U+DCFF のサロゲートは 1 バイトにして
+// 起動に使うが、python3.15 (3.15.0) の Popen は cwd・実行ファイルが "/tmp/nonexist-\udcff" で無いとき
+// 「FileNotFoundError: [Errno 2] No such file or directory: '/tmp/nonexist-\udcff'」を出す (両方無いときは作業フォルダ)。
+func TestChildrenCannotRunShowsPathAsGiven(t *testing.T) {
+	h := newHangFixture(t)
+	dcff := pyunicode.FromRunes([]rune{0xDCFF})
+	for _, c := range []struct {
+		name, cwd, exe, want string
+	}{
+		{"作業フォルダが無い", h.dir + "/nowhere-" + dcff, testExecutable(t), h.dir + "/nowhere-\\udcff"},
+		{"実行ファイルが無い", h.dir, h.dir + "/missing-" + dcff, h.dir + "/missing-\\udcff"},
+		{"両方無い", h.dir + "/nowhere-" + dcff, h.dir + "/missing-" + dcff, h.dir + "/nowhere-\\udcff"},
+	} {
+		kids := newChildren(h.rt, 60, c.cwd, h.rt.ChildEnv(cmdenv.Env{Cwd: h.dir, Environ: h.environ}))
+		kids.start("lint", []string{c.exe, "lint"})
+		results, err := kids.wait(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "子プロセスを動かせません（FileNotFoundError: [Errno 2] No such file or directory: '" + c.want + "'）"
+		if r := results["lint"]; r.status != "error" || r.err != want {
+			t.Errorf("%s: 結果 %+v", c.name, r)
+		}
 	}
 }

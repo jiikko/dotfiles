@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -146,34 +145,94 @@ func osException(err error) (*pyops.Exception, bool) {
 	return &pyops.Exception{Type: visibility.OSErrorType(errno), Msg: fmt.Sprintf("[Errno %d] %s: %s", int(errno), visibility.OSErrorReason("", errno), pystr.Repr(pathErr.Path))}, true
 }
 
-// popenArgv は、本家の Popen が子を起こす前に argv・実行ファイル・環境変数・作業フォルダを bytes にする所を写し、子に渡す argv を返す。
-// argv の字は os.fsencode と同じく U+DC80..U+DCFF のサロゲートを 1 バイトに戻す (記録の JSON の "\udcff" は 0xff で渡る)。ほかのサロゲートは
+// popenArgs は本家の Popen が bytes にした argv・環境変数・作業フォルダ (子にこのバイト列で渡す)。
+type popenArgs struct {
+	argv, env []string
+	cwd       string
+}
+
+// popenEncode は、本家の Popen が子を起こす前に argv・実行ファイル・環境変数・作業フォルダを bytes にする所を写す。
+// 字は os.fsencode と同じく U+DC80..U+DCFF のサロゲートを 1 バイトに戻す (記録の JSON の "\udcff" は 0xff で渡る)。ほかのサロゲートは
 // UnicodeEncodeError、NUL は ValueError("embedded null byte") で、子を起こさずに断る。Go の exec のまま起動すると、サロゲートは WTF-8 の
 // 3 バイトで渡り、NUL は EINVAL の PathError (実行ファイルのパスつき) になる。
-// 断りの順は本家と同じ: argv を前から 1 つずつ (字を bytes にしてから NUL を見る)、そのあと環境変数と作業フォルダの NUL。
-// 環境変数と作業フォルダは字を bytes に直さない: どちらも OS から受けたバイト列で、本家の str は os.fsdecode で読んだ値なので、
-// os.fsencode で同じバイト列に戻り、UnicodeEncodeError にならない。
+// 断りの順は本家と同じ: 環境変数を前から (名前、値の順に bytes にする)、argv を前から 1 つずつ (字を bytes にしてから NUL を見る)、
+// 環境変数の NUL、作業フォルダ (bytes にしてから NUL を見る)。
+// OS から受けた値 (os.Environ・os.Getwd) は、UTF-8 として読めるバイトと読めないバイトはそのまま戻る (本家の str は os.fsdecode で
+// 読んだ値なので、os.fsencode で同じバイト列に戻る)。WTF-8 のサロゲートの形 (ED A0..BF xx) の生のバイトだけは字として読むので、
+// 本家と答えが違う (EncodeSurrogateEscape の doc comment)。
 // 本家の「illegal environment variable name」(名前に = のある環境変数) は写さない: Go の環境変数は「名前=値」の 1 つの文字列で、
 // 最初の = で切った名前は = を持てない。
-func popenArgv(argv, env []string, cwd string) ([]string, *pyops.Exception) {
+func popenEncode(argv, env []string, cwd string) (popenArgs, *pyops.Exception) {
 	nullByte := &pyops.Exception{Type: "ValueError", Msg: "embedded null byte"}
-	out := make([]string, len(argv))
-	for i, s := range argv {
+	encode := func(s string) (string, *pyops.Exception) {
 		encoded, err := pyunicode.EncodeSurrogateEscape(s)
 		if err != nil {
-			return nil, &pyops.Exception{Type: "UnicodeEncodeError", Msg: err.Error()}
+			return "", &pyops.Exception{Type: "UnicodeEncodeError", Msg: err.Error()}
+		}
+		return encoded, nil
+	}
+	out := popenArgs{argv: make([]string, len(argv))}
+	if env != nil { // nil は exec で今のプロセスの環境を引き継ぐ形なので、空の並びにしない
+		out.env = make([]string, len(env))
+	}
+	for i, entry := range env {
+		name, value, hasValue := strings.Cut(entry, "=")
+		encoded, exc := encode(name)
+		if exc != nil {
+			return popenArgs{}, exc
+		}
+		if hasValue {
+			v, exc := encode(value)
+			if exc != nil {
+				return popenArgs{}, exc
+			}
+			encoded += "=" + v
+		}
+		out.env[i] = encoded
+	}
+	for i, s := range argv {
+		encoded, exc := encode(s)
+		if exc != nil {
+			return popenArgs{}, exc
 		}
 		if strings.IndexByte(encoded, 0) >= 0 {
-			return nil, nullByte
+			return popenArgs{}, nullByte
 		}
-		out[i] = encoded
+		out.argv[i] = encoded
 	}
-	for _, s := range append(slices.Clip(env), cwd) {
+	for _, s := range out.env {
 		if strings.IndexByte(s, 0) >= 0 {
-			return nil, nullByte
+			return popenArgs{}, nullByte
 		}
 	}
+	encoded, exc := encode(cwd)
+	if exc != nil {
+		return popenArgs{}, exc
+	}
+	if strings.IndexByte(encoded, 0) >= 0 {
+		return popenArgs{}, nullByte
+	}
+	out.cwd = encoded
 	return out, nil
+}
+
+// pathAsGiven は起動の誤りのパスを、bytes にする前の字に戻す。本家の OSError の filename は str の作業フォルダか実行ファイルで、
+// bytes にしたパスのままだと、U+DC80..U+DCFF のサロゲートが 1 バイトの生のバイトになり、repr が本家と違う。
+func (p popenArgs) pathAsGiven(err error, executable, cwd string) error {
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		return err
+	}
+	given := *pathErr
+	switch {
+	case pathErr.Op == "chdir" && pathErr.Path == p.cwd:
+		given.Path = cwd
+	case pathErr.Path == p.argv[0]:
+		given.Path = executable
+	default:
+		return err
+	}
+	return &given
 }
 
 // runOne は _run_one。子を 1 つ動かし、どの道でも結果を残す。
@@ -192,17 +251,17 @@ func (c *children) runOne(name string, argv []string) {
 		c.set(name, childResult{status: "error", err: "子プロセスを動かす前に止められました"})
 		return
 	}
-	argv, refused := popenArgv(argv, c.env, c.cwd)
+	popen, refused := popenEncode(argv, c.env, c.cwd)
 	if refused != nil {
 		c.mu.Unlock()
 		c.set(name, childResult{status: "error", elapsed: elapsed(), err: "子プロセスを動かせません（" + refused.Error() + "）"})
 		return
 	}
-	cmd := subproc.Command(argv[0], argv[1:]...)
-	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = c.cwd, c.env, &stdout, &stderr
+	cmd := subproc.Command(popen.argv[0], popen.argv[1:]...)
+	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = popen.cwd, popen.env, &stdout, &stderr
 	if err := cmd.Start(); err != nil {
 		c.mu.Unlock()
-		c.set(name, childResult{status: "error", stderr: "", elapsed: elapsed(), err: cannotRun(err)})
+		c.set(name, childResult{status: "error", stderr: "", elapsed: elapsed(), err: cannotRun(popen.pathAsGiven(err, argv[0], c.cwd))})
 		return
 	}
 	c.processes = append(c.processes, cmd)
