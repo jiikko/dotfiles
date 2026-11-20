@@ -370,5 +370,101 @@ else
   fail "--stdin-filename 値なし: $(cat "$work/jsn.err")"
 fi
 
+# 引数は textlint (optionator) と同じに読む: `-f=json`・`-o=FILE`・`-o FILE` は textlint だけで、標準出力に ja-writing lint を混ぜない
+for form in '-f=json' '-o=OUT' '-o OUT'; do
+  rm -f "$work/o.txt"
+  set -- ${form/OUT/$work/o.txt}
+  rc=0
+  "$BIN" "$@" "$work/w.md" >"$work/jo.out" 2>"$work/jo.err" || rc=$?
+  set --
+  if [ "$rc" -eq 0 ] && ! grep -qF 'ja-writing lint: ' "$work/jo.out" && grep -qF 'ja-writing lint は掛けない' "$work/jo.err" \
+    && { [ "$form" = '-f=json' ] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$work/jo.out" || [ -s "$work/o.txt" ]; }; then
+    ok "$form は textlint だけを掛け、標準出力に ja-writing lint を混ぜない"
+  else
+    fail "$form: rc=$rc: $(cat "$work/jo.out" "$work/jo.err")"
+  fi
+done
+
+# 標準入力が空でなければ textlint はファイルを読まないので、ファイルには掛けない (jb.md は ja-writing lint だけが error を出す)
+rc=0
+printf 'これは普通の文です。\n' | "$BIN" --stdin --stdin-filename s.md "$work/jb.md" >"$work/jsf.out" 2>"$work/jsf.err" || rc=$?
+if [ "$rc" -eq 0 ] && jw_ran "$work/jsf.out" s.md && ! grep -qF "ja-writing lint: $work/jb.md" "$work/jsf.out"; then
+  ok "--stdin とファイルを一緒に渡すと、標準入力だけに掛ける (rc 0)"
+else
+  fail "--stdin とファイル: rc=$rc (期待 0): $(cat "$work/jsf.out" "$work/jsf.err")"
+fi
+
+rc=0
+printf 'これは普通の文です。\n' | "$BIN" --stdin --stdin-filename s.go "$work/jb.md" >"$work/jsf2.out" 2>"$work/jsf2.err" || rc=$?
+if ! grep -qF 'ja-writing lint: ' "$work/jsf2.out"; then
+  ok "--stdin の名前が対象外でも、一緒に渡したファイルには掛けない (rc=$rc は textlint のまま)"
+else
+  fail "--stdin とファイル (対象外の名前): rc=$rc: $(cat "$work/jsf2.out" "$work/jsf2.err")"
+fi
+
+# 標準入力の名前が対象でない拡張子なら掛けない
+rc=0
+printf 'ただし**「x」**と書く。\n' | "$BIN" --stdin --stdin-filename x.go >"$work/jsg.out" 2>"$work/jsg.err" || rc=$?
+if ! grep -qF 'ja-writing lint: ' "$work/jsg.out" && grep -qF 'x.go が textlint の対象の拡張子でない' "$work/jsg.err"; then
+  ok "--stdin-filename x.go の標準入力には ja-writing lint を掛けない (rc=$rc は textlint のまま)"
+else
+  fail "--stdin-filename x.go: rc=$rc: $(cat "$work/jsg.out" "$work/jsg.err")"
+fi
+
+# 名前に glob の文字があると textlint は別のファイル (x.md) を読む。名前のファイル ([x].md) には掛けない
+gl="$work/gl"
+mkdir -p "$gl"
+cp "$work/jb.md" "$gl/[x].md"
+cp "$work/ok.md" "$gl/x.md"
+rc=0
+(cd "$gl" && "$BIN" '[x].md') >"$work/jgl.out" 2>"$work/jgl.err" || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -qF 'ja-writing lint: [x].md' "$work/jgl.out" && grep -qF '[x].md は textlint の対象でない' "$work/jgl.err"; then
+  ok "glob の文字を含む名前 ([x].md) には、textlint が読まないので掛けない (rc 0)"
+else
+  fail "[x].md: rc=$rc (期待 0): $(cat "$work/jgl.out" "$work/jgl.err")"
+fi
+
+# `--` の後ろの - で始まる名前もファイルとして掛ける
+cp "$work/jb.md" "$gl/-d.md"
+rc=0
+(cd "$gl" && "$BIN" -- -d.md) >"$work/jdd.out" 2>"$work/jdd.err" || rc=$?
+if [ "$rc" -eq 1 ] && jw_ran "$work/jdd.out" -d.md; then
+  ok "-- の後ろの -d.md にも掛ける (rc 1)"
+else
+  fail "-- -d.md: rc=$rc (期待 1): $(cat "$work/jdd.out" "$work/jdd.err")"
+fi
+
+# 対象を判定する補助が失敗したら、textlint の指摘は出し、ja-writing lint は掛けずに rc 3 (偽の緑にしない)
+bad="$work/badhelper"
+mkdir -p "$bad/bin/lib" "$bad/_claude/skills/ja-writing"
+cp "$ROOT_DIR/bin/ja-textlint" "$ROOT_DIR/bin/ja-writing" "$bad/bin/"
+cp "$ROOT_DIR/bin/lib/go_autobuild.zsh" "$bad/bin/lib/"
+ln -s "$ROOT_DIR/src" "$bad/src"
+ln -s "$ROOT_DIR/_claude/skills/ja-writing/textlint" "$bad/_claude/skills/ja-writing/textlint"
+printf 'process.exitCode = 2;\n' >"$bad/bin/lib/ja_textlint_targets.cjs"
+rc=0
+"$bad/bin/ja-textlint" "$work/jb.md" >"$work/jbh.out" 2>"$work/jbh.err" || rc=$?
+if [ "$rc" -eq 3 ] && ! grep -qF 'ja-writing lint: ' "$work/jbh.out" && grep -qF '判定できない' "$work/jbh.err"; then
+  ok "補助が失敗したら ja-writing lint を掛けずに rc 3"
+else
+  fail "補助の失敗: rc=$rc (期待 3): $(cat "$work/jbh.out" "$work/jbh.err")"
+fi
+
+# textlint の依存が無いとき: 対象でない拡張子 (.go) には掛けず、オプションがあれば引数を読めないので掛けない
+rc=0
+XDG_CACHE_HOME="$work/nocache" JA_TEXTLINT_NO_INSTALL=1 "$BIN" "$work/w.md" "$work/m.go" >"$work/jn.out" 2>"$work/jn.err" || rc=$?
+if [ "$rc" -eq 3 ] && jw_ran "$work/jn.out" "$work/w.md" && ! grep -qF "ja-writing lint: $work/m.go" "$work/jn.out"; then
+  ok "textlint の依存が無いときも .go には掛けない (rc 3)"
+else
+  fail "依存なしの .go: rc=$rc (期待 3): $(cat "$work/jn.out" "$work/jn.err")"
+fi
+rc=0
+XDG_CACHE_HOME="$work/nocache" JA_TEXTLINT_NO_INSTALL=1 "$BIN" -f=json "$work/w.md" >"$work/jnf.out" 2>"$work/jnf.err" || rc=$?
+if [ "$rc" -eq 3 ] && ! grep -qF 'ja-writing lint: ' "$work/jnf.out" && grep -qF '引数を読めず' "$work/jnf.err"; then
+  ok "textlint の依存が無くオプションがあるときは掛けない (rc 3)"
+else
+  fail "依存なしのオプション: rc=$rc (期待 3): $(cat "$work/jnf.out" "$work/jnf.err")"
+fi
+
 [ "$fails" -eq 0 ] || { printf '✗ %d 件失敗\n' "$fails" >&2; exit 1; }
 echo "OK: ja-textlint"
