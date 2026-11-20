@@ -5,9 +5,9 @@ package reportshape
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ja-writing/internal/pyjson"
@@ -16,50 +16,130 @@ import (
 
 // Stats は Check が数えた件数。
 type Stats struct {
-	Mutations int // 通した書き換えの数
+	Mutations int // 通した書き換えの数 (書き換えない基準を含む)
 	Raised    int // 本家が例外になった呼び出しの数
 	Compared  int // 例外にならず、戻り値を比べた呼び出しの数
 }
 
-// Check は prefix ("lint/" か "diff/") の基準の書き換えを全部 call に通し、本家の記録と食い違ったものを返す。call は関数の添字 (記録の Results の並び) と
-// dict を受け、戻り値の文字列 (本家の driver が SHA-256 を取ったのと同じ文字列) か error を返す。条件は「本家が例外 ⇔ error」と、例外にならないときの戻り値の一致。
-func Check(g oracle.ReportShapeGolden, prefix string, fns int, call func(i int, d *pyjson.Object) (string, error)) (Stats, []string, error) {
-	bases := map[string]json.RawMessage{}
-	for _, b := range g.Bases {
-		bases[b.Name] = b.D
+// variants は py/record_report_shape.py の VARIANTS の名前の順 (書き換えの並びはこの順)。
+var variants = []string{"del", "null", "empty_str", "str", "empty_list", "empty_dict", "zero", "neg", "true", "false", "float", "big", "huge", "case_str"}
+
+// maxDepth は py/record_report_shape.py の MAX_DEPTH (位置は最上位から maxDepth+1 段まで)。
+const maxDepth = 4
+
+// Mutation は書き換え 1 つ。Path の要素は dict の鍵 (string) か list の先頭 (int の 0)。Variant が "base" なら書き換えない。
+type Mutation struct {
+	Path    []any
+	Variant string
+}
+
+// Plans は基準の書き換えの並び (py/record_report_shape.py の plans と同じ順)。
+func Plans(base *pyjson.Object) []Mutation {
+	out := []Mutation{{Variant: "base"}}
+	var walk func(v pyjson.Value, prefix []any, depth int)
+	add := func(path []any) {
+		for _, name := range variants {
+			out = append(out, Mutation{Path: path, Variant: name})
+		}
 	}
+	walk = func(v pyjson.Value, prefix []any, depth int) {
+		if depth > maxDepth {
+			return
+		}
+		switch x := v.(type) {
+		case *pyjson.Object:
+			for _, key := range x.Keys() {
+				path := append(slices.Clone(prefix), key)
+				add(path)
+				child, _ := x.Get(key)
+				walk(child, path, depth+1)
+			}
+		case []pyjson.Value:
+			if len(x) > 0 {
+				path := append(slices.Clone(prefix), 0)
+				add(path)
+				walk(x[0], path, depth+1)
+			}
+		}
+	}
+	walk(base, nil, 0)
+	return out
+}
+
+// planDigest は書き換えの並びの digest (本家の json.dumps(list(path)) + " " + 種類 を "\n" でつないだもの)。
+func planDigest(plans []Mutation) (string, error) {
+	lines := make([]string, len(plans))
+	for i, m := range plans {
+		path := make([]pyjson.Value, len(m.Path))
+		for j, step := range m.Path {
+			if n, ok := step.(int); ok {
+				step = int64(n)
+			}
+			path[j] = step
+		}
+		text, err := pyjson.Dumps(path, pyjson.Options{})
+		if err != nil {
+			return "", err
+		}
+		lines[i] = text + " " + m.Variant
+	}
+	return digest(strings.Join(lines, "\n")), nil
+}
+
+// Check は prefix ("lint/" か "diff/") の基準の書き換えを全部 call に通し、本家の記録と食い違ったものを返す。call は関数の添字 (記録の関数の順) と
+// dict を受け、戻り値の文字列 (本家の driver が SHA-256 を取ったのと同じ文字列) か error を返す。条件は「本家が例外 ⇔ error」と、例外にならないときの戻り値の一致で、
+// 書き換えごとの digest と、基準ごとの例外と戻り値の数で比べる。書き換えの並びが記録と違うときは比べずに error を返す。
+func Check(g oracle.ReportShapeGolden, prefix string, fns int, call func(i int, d *pyjson.Object) (string, error)) (Stats, []string, error) {
 	var st Stats
 	var bad []string
-	for _, m := range g.Mutations {
-		if !strings.HasPrefix(m.Base, prefix) {
+	for _, b := range g.Bases {
+		if !strings.HasPrefix(b.Name, prefix) {
 			continue
 		}
-		if len(m.Results) != fns {
-			return st, nil, fmt.Errorf("%s %v %s: 結果が %d 個 (関数は %d 個)", m.Base, m.Path, m.Variant, len(m.Results), fns)
+		v, err := pyjson.Loads(string(b.D))
+		if err != nil {
+			return st, nil, fmt.Errorf("%s: %w", b.Name, err)
 		}
-		st.Mutations++
-		for i, want := range m.Results {
-			d, err := Input(bases[m.Base], m)
-			if err != nil {
-				return st, nil, fmt.Errorf("%s %v %s: %w", m.Base, m.Path, m.Variant, err)
+		base, ok := v.(*pyjson.Object)
+		if !ok {
+			return st, nil, fmt.Errorf("%s: 基準が dict ではありません", b.Name)
+		}
+		plans := Plans(base)
+		plan, err := planDigest(plans)
+		if err != nil {
+			return st, nil, fmt.Errorf("%s: %w", b.Name, err)
+		}
+		if plan != b.Plan || len(plans) != len(b.Digests) {
+			return st, nil, fmt.Errorf("%s: 書き換えの並びが記録と違う (Go は %d 件・%s、記録は %d 件・%s)", b.Name, len(plans), plan, len(b.Digests), b.Plan)
+		}
+		var raised, compared int
+		for i, m := range plans {
+			results := make([]string, fns)
+			for fn := range fns {
+				d, err := Input(base, m)
+				if err != nil {
+					return st, nil, fmt.Errorf("%s 書き換え %d %v %s: %w", b.Name, i, m.Path, m.Variant, err)
+				}
+				got, err := call(fn, d)
+				if err != nil {
+					raised++
+					results[fn] = "E"
+					continue
+				}
+				compared++
+				results[fn] = digest(got)
 			}
-			got, err := call(i, d)
-			where := fmt.Sprintf("%s %v %s 関数 %d", m.Base, m.Path, m.Variant, i)
-			switch {
-			case strings.HasPrefix(want, "E:"):
-				st.Raised++
-				if err == nil {
-					bad = append(bad, where+": 本家は "+want+" だが Go は error を返さない")
-				}
-			case err != nil:
-				bad = append(bad, where+": 本家は例外にならないが Go は error: "+err.Error())
-			default:
-				st.Compared++
-				if digest(got) != want {
-					bad = append(bad, where+": 戻り値が本家と違う")
-				}
+			st.Mutations++
+			if want := b.Digests[i]; digest(strings.Join(results, "\n")) != want {
+				bad = append(bad, fmt.Sprintf("%s 書き換え %d %v %s: Go の結果 %v が記録 %s と違う (本家の結果は go run ./oracle/cmd/golden -shape-detail '%s:%d')",
+					b.Name, i, m.Path, m.Variant, results, want, b.Name, i))
 			}
 		}
+		if raised != b.Raised || compared != b.Compared {
+			bad = append(bad, fmt.Sprintf("%s: Go は error %d・戻り値 %d、本家は例外 %d・戻り値 %d", b.Name, raised, compared, b.Raised, b.Compared))
+		}
+		st.Raised += raised
+		st.Compared += compared
 	}
 	return st, bad, nil
 }
@@ -69,16 +149,9 @@ func digest(s string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-// Input は書き換えた dict を作る (基準を pyjson.Loads で読み直して、path の位置を書き換える)。
-func Input(base json.RawMessage, m oracle.ReportShapeMutation) (*pyjson.Object, error) {
-	v, err := pyjson.Loads(string(base))
-	if err != nil {
-		return nil, err
-	}
-	d, ok := v.(*pyjson.Object)
-	if !ok {
-		return nil, errors.New("基準が dict ではありません")
-	}
+// Input は基準を写して m の位置を書き換えた dict を作る (基準は変えない)。
+func Input(base *pyjson.Object, m Mutation) (*pyjson.Object, error) {
+	d, _ := deepCopy(base).(*pyjson.Object)
 	if m.Variant == "base" {
 		return d, nil
 	}
@@ -108,7 +181,7 @@ func Input(base json.RawMessage, m oracle.ReportShapeMutation) (*pyjson.Object, 
 			p.Set(key, value)
 		}
 	case []pyjson.Value:
-		if last != float64(0) {
+		if last != 0 {
 			return nil, fmt.Errorf("list の位置が 0 ではありません: %v", last)
 		}
 		if m.Variant == "del" {
@@ -122,6 +195,26 @@ func Input(base json.RawMessage, m oracle.ReportShapeMutation) (*pyjson.Object, 
 	return d, nil
 }
 
+// deepCopy は dict と list を作り直した写し (口の関数が受けた dict を書き換えても、次の呼び出しの基準が変わらない)。
+func deepCopy(v pyjson.Value) pyjson.Value {
+	switch x := v.(type) {
+	case *pyjson.Object:
+		out := pyjson.NewObject()
+		for _, key := range x.Keys() {
+			child, _ := x.Get(key)
+			out.Set(key, deepCopy(child))
+		}
+		return out
+	case []pyjson.Value:
+		out := make([]pyjson.Value, len(x))
+		for i, child := range x {
+			out[i] = deepCopy(child)
+		}
+		return out
+	}
+	return v
+}
+
 func descend(v pyjson.Value, step any) (pyjson.Value, error) {
 	switch x := v.(type) {
 	case *pyjson.Object:
@@ -132,7 +225,7 @@ func descend(v pyjson.Value, step any) (pyjson.Value, error) {
 		}
 		return child, nil
 	case []pyjson.Value:
-		if step != float64(0) || len(x) == 0 {
+		if step != 0 || len(x) == 0 {
 			return nil, fmt.Errorf("list の位置 %v はたどれません", step)
 		}
 		return x[0], nil

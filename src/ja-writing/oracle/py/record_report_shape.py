@@ -1,19 +1,22 @@
 """本家の lint の render_report・render_findings と、diff の report・report_parts・detector_summary に、欄を 1 つずつ書き換えた dict を通し、
-例外になったか (ならなければ戻り値の SHA-256 の先頭 16 字) を JSON で返す driver。check はこの 5 つに子の --json を読んだ dict を渡し、例外を
-「子の JSON から人が読む形を作れません」の誤りにする。Go の側は「本家が例外 ⇔ Go が error」を確かめる。
+書き換え 1 つごとの結果を JSON で返す driver。check はこの 5 つに子の --json を読んだ dict を渡し、例外を「子の JSON から人が読む形を作れません」の
+誤りにする。Go の側は「本家が例外 ⇔ Go が error」と、例外にならない呼び出しの戻り値の一致を確かめる。
 
 標準入力: {"scripts_dir": "...", "diff_inputs": [{"name", "old", "new", "doc_type"}], "lint_inputs": [{"name", "text", "doc_type", "reader", "words"}],
-          "words": {"allow.txt": 中身, ...}, "words_path": context.words.path に書く文字列}
-標準出力: {"bases": {名前: 書き換える前の dict}, "mutations": [{"base", "path", "variant", "results": [関数ごとに "E:<例外の型>" か 16 字]}]}
-記録に残す書き換えは、どれかの関数が例外になったもの全部と、書き換えない基準の dict と、例外にならなかったもののうち (lint か diff, 位置から list の
-添字を外した鍵の並び全体, 位置をたどる途中の dict の kind と subkind, 書き換えの種類) ごとに最初の 1 つ (全部を残すと約 11MB になる)。
-位置の最後の 2 段で束ねない: 別の節の同じ名前の欄 (stiffness と tone の候補の subkind) が 1 つに束ねられ、片方の節だけを壊す退行が記録から消える。
-kind と subkind を鍵から外さない: 同じ位置の欄が subkind ごとに別の分岐で読まれ (stiffness の sentence と sentence_nominal)、代表に選ばれなかった
-subkind の分岐だけを壊す退行が記録から消える。"all" が真なら全部を返す (手で回す突き合わせ用)。
+          "words": {"allow.txt": 中身, ...}, "words_path": context.words.path に書く文字列, "detail": 省略可 {"base": 名前, "index": 書き換えの番号}}
+標準出力: {"bases": [{"name", "d": 書き換える前の dict, "plan": 書き換えの並びの digest, "raised": 本家が例外になった呼び出しの数,
+          "compared": 例外にならなかった呼び出しの数, "digests": [書き換えごとの digest]}]}
+書き換えは代表を選ばず全部を記録に残す。代表を選ぶ鍵 (位置・節の kind と subkind) は、鍵に入れていない欄 (hunk の tag など) で分かれる分岐の退行を
+落とし、欄を足しても次の欄で同じ形が残る。全部の呼び出しの結果 (例外の型か戻り値) をそのまま残すと約 11.6MB になるので、書き換え 1 つごとに、
+その書き換えでの全部の呼び出しの結果 (例外なら "E"、ならなければ戻り値の SHA-256 の先頭 16 字) を "\n" でつないだものの SHA-256 の先頭 16 字を 1 つ残す
+(例外の型は入れない: check は型を見ず、Go は型を持たない)。plan は書き換えの位置と種類の並び (json.dumps(path) + " " + 種類を "\n" でつないだもの) の
+SHA-256 の先頭 16 字で、Go が同じ並びを作れているかを結果と分けて確かめる。
+"detail" を渡すと、その 1 件の位置・種類と、呼び出しごとの結果 (例外の型か digest) と戻り値の文字列を返す (食い違った書き換えを調べる用)。
 
 基準の dict は diff_inputs を本家の diff() に、lint_inputs を lint_text() に通した値 (語の一覧は一時フォルダに書いて読み、path を words_path に置き換える) を
 JSON に書いて読み直したもの (diff() の値は節どうしで同じ list を共有することがあり、そのまま書き換えると 2 か所が変わる。check が読む子の出力は共有しない)。
-書き換えは、dict の鍵と list の先頭 (添字 0) を深さ 5 までたどった各位置に、VARIANTS の 14 通り (del は鍵か要素を消す) を 1 つずつ当てる。
+書き換えの並びは、書き換えない基準 ("base") のあとに、dict の鍵と list の先頭 (添字 0) を深さ 5 までたどった各位置 (dict は鍵の順、位置ごとに中へ
+たどる前) に、VARIANTS の 14 通り (del は鍵か要素を消す) を 1 つずつ当てたもの。
 huge は float に変える所で OverflowError になる int、case_str は upper() が複数字に展開する字 (ß・ﬁ・ŉ) と単独のサロゲートを含む文字列。
 """
 import copy
@@ -74,6 +77,7 @@ def digest(text):
 
 
 def call(fn, key, d):
+    """(例外なら "E:<例外の型>"、ならなければ戻り値の digest, 戻り値の文字列か None)。"""
     try:
         if fn == "render_report":
             out = L.render_report(d)
@@ -87,8 +91,8 @@ def call(fn, key, d):
             summary = D.detector_summary(d, key)
             out = "None" if summary is None else "str:" + summary
     except Exception as error:  # noqa: BLE001 -- check と同じく、例外の型を問わず誤りとして受ける
-        return "E:" + type(error).__name__
-    return digest(out)
+        return "E:" + type(error).__name__, None
+    return digest(out), out
 
 
 def lint_base(item, words_dir):
@@ -110,36 +114,39 @@ for item in plan["diff_inputs"]:
     name = item["name"] + ("@" + item["doc_type"] if item["doc_type"] else "")
     bases["diff/" + name] = json.loads(json.dumps(D.diff(item["old"], item["new"], doc_type=item["doc_type"])))
 
-mutations = []
-for base_name, base in bases.items():
+
+def plans(base):
+    return [((), "base")] + [(path, name) for path in paths(base) for name, _ in VARIANTS]
+
+
+def run(base_name, base, path, name):
     fns = LINT_FNS if base_name.startswith("lint/") else DIFF_FNS
-    plans = [((), "base")] + [(path, name) for path in paths(base) for name, _ in VARIANTS]
-    for path, name in plans:
-        d = base if name == "base" else mutate(base, path, name, dict(VARIANTS)[name])
-        mutations.append({"base": base_name, "path": list(path), "variant": name, "results": [call(fn, key, d) for fn, key in fns]})
+    d = base if name == "base" else mutate(base, path, name, dict(VARIANTS)[name])
+    return [call(fn, key, d) for fn, key in fns]
 
 
-def sections(base, path):
-    """path をたどる途中の dict (書き換える欄を持つ dict を含む) の kind と subkind (str のもの)。"""
-    out, d = [], base
-    for key in path:
-        if isinstance(d, dict):
-            out.extend((name, d[name]) for name in ("kind", "subkind") if isinstance(d.get(name), str))
-        d = d[key]
-    return tuple(out)
+def summary(results):
+    return digest("\n".join("E" if result.startswith("E:") else result for result, _ in results))
 
 
-def kept(items):
-    seen = set()
-    for item in items:
-        if item["variant"] == "base" or any(result.startswith("E:") for result in item["results"]):
-            yield item
-            continue
-        group = (item["base"].split("/")[0], tuple(key for key in item["path"] if not isinstance(key, int)),
-                 sections(bases[item["base"]], item["path"]), item["variant"])
-        if group not in seen:
-            seen.add(group)
-            yield item
+detail = plan.get("detail")
+if detail:
+    path, name = plans(bases[detail["base"]])[detail["index"]]
+    results = run(detail["base"], bases[detail["base"]], path, name)
+    json.dump({"base": detail["base"], "index": detail["index"], "path": list(path), "variant": name, "digest": summary(results),
+               "results": [result for result, _ in results], "outputs": [text for _, text in results]}, sys.stdout, ensure_ascii=True)
+    sys.exit(0)
 
-
-json.dump({"bases": bases, "mutations": mutations if plan.get("all") else list(kept(mutations))}, sys.stdout, ensure_ascii=True)
+out = []
+for base_name, base in bases.items():
+    items = plans(base)
+    entry = {"name": base_name, "d": base, "plan": digest("\n".join(json.dumps(list(path)) + " " + name for path, name in items)),
+             "raised": 0, "compared": 0, "digests": []}
+    for path, name in items:
+        results = run(base_name, base, path, name)
+        raised = sum(1 for result, _ in results if result.startswith("E:"))
+        entry["raised"] += raised
+        entry["compared"] += len(results) - raised
+        entry["digests"].append(summary(results))
+    out.append(entry)
+json.dump({"bases": out}, sys.stdout, ensure_ascii=True)

@@ -32,7 +32,7 @@ func TestRenderShapeMatchesPythonRecording(t *testing.T) {
 		}
 		t.Error(b)
 	}
-	if st.Mutations < 800 || st.Raised < 400 || st.Compared < 1000 {
+	if st.Mutations < 1800 || st.Raised < 500 || st.Compared < 3000 {
 		t.Errorf("書き換え %d・本家の例外 %d・比べた戻り値 %d (少なすぎる)", st.Mutations, st.Raised, st.Compared)
 	}
 	t.Logf("書き換え %d・本家の例外 %d・比べた戻り値 %d", st.Mutations, st.Raised, st.Compared)

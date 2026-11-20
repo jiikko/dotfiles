@@ -2,6 +2,8 @@
 //
 //	golden           記録を作る。記録の Python / unicodedata のバージョンか本家の commit が今と違えば止まる (UPDATE=1 で上書き)
 //	golden -pin      本家のファイルを固定の commit から取り直し、oracle/upstream.sha256 を書く
+//	golden -shape-detail diff/actor-added:123
+//	                 report-shape の記録の基準 diff/actor-added の 123 番目の書き換えを本家に通し、呼び出しごとの結果と戻り値を出す (記録は書かない)
 //
 // 記録は PYTHONHASHSEED を変えて 2 回作り、同じバイト列になることを確かめてから書く (パターンの記録は選択肢の並びだけ違ってよい)。
 package main
@@ -18,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,12 +39,16 @@ func main() {
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	pin := flag.Bool("pin", false, "本家のファイルを取り直して oracle/upstream.sha256 を書く")
 	only := flag.String("only", "", "記録を 1 本だけ作り直す ("+strings.Join(goldenNames(), "・")+" のどれか。ほかは作り直さない)")
+	shapeDetail := flag.String("shape-detail", "", "report-shape の書き換え 1 つ (基準の名前:番号) を本家に通して結果を出す (記録は書かない)")
 	flag.Parse()
 	p := paths{corpus: "testdata/corpus", words: "testdata/words", diff: "testdata/diff", golden: "testdata/golden", manifest: "oracle/upstream.sha256"}
 	var err error
-	if *pin {
+	switch {
+	case *pin:
 		err = runPin(ctx, p)
-	} else {
+	case *shapeDetail != "":
+		err = runShapeDetail(ctx, p, *shapeDetail)
+	default:
 		err = runGolden(ctx, p, os.Getenv("UPDATE") == "1", *only)
 	}
 	cancel()
@@ -64,19 +71,49 @@ func runPin(ctx context.Context, p paths) error {
 	return nil
 }
 
+func runShapeDetail(ctx context.Context, p paths, arg string) error {
+	i := strings.LastIndex(arg, ":")
+	index, err := strconv.Atoi(arg[i+1:])
+	if i < 0 || err != nil || index < 0 {
+		return fmt.Errorf("-shape-detail は 基準の名前:番号 を受けます: %q", arg)
+	}
+	runner, err := newRunner(ctx)
+	if err != nil {
+		return err
+	}
+	corpus, err := oracle.LoadCorpus(p.corpus)
+	if err != nil {
+		return err
+	}
+	d, err := runner.ReportShapeDetailOf(ctx, corpus, p.diff, p.words, arg[:i], index)
+	if err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
+func newRunner(ctx context.Context) (oracle.Runner, error) {
+	cache, err := oracle.DefaultCacheRoot()
+	if err != nil {
+		return oracle.Runner{}, err
+	}
+	tree, err := oracle.Fetch(ctx, cache, oracle.HTTPGetter)
+	if err != nil {
+		return oracle.Runner{}, err
+	}
+	return oracle.NewRunner(tree)
+}
+
 func runGolden(ctx context.Context, p paths, update bool, only string) error {
 	if only != "" && !slices.ContainsFunc(goldens, func(g golden) bool { return g.name == only }) {
 		return fmt.Errorf("-only は %s のどれかを受けます: %q", strings.Join(goldenNames(), "・"), only)
 	}
-	cache, err := oracle.DefaultCacheRoot()
-	if err != nil {
-		return err
-	}
-	tree, err := oracle.Fetch(ctx, cache, oracle.HTTPGetter)
-	if err != nil {
-		return err
-	}
-	runner, err := oracle.NewRunner(tree)
+	runner, err := newRunner(ctx)
 	if err != nil {
 		return err
 	}

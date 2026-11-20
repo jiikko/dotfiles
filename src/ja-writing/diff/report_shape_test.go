@@ -1,3 +1,8 @@
+//go:build !race
+
+// 記録との突き合わせの重い検査。1 つの goroutine で順に呼ぶだけで、-race を付けても見つけられるデータ競争は無く、時間だけが数倍になる
+// (-race で約 42 秒)。make test が race なしで別に回す (Makefile の NORACE_CHECKS)。
+
 package diff
 
 import (
@@ -43,8 +48,8 @@ func TestReportShapeMatchesPythonRecording(t *testing.T) {
 		}
 		t.Error(b)
 	}
-	if st.Mutations < 5000 || st.Raised < 5000 || st.Compared < 5000 {
-		t.Errorf("書き換え %d・本家の例外 %d・比べた戻り値 %d (どれも 5000 以上のはず)", st.Mutations, st.Raised, st.Compared)
+	if st.Mutations < 44000 || st.Raised < 19000 || st.Compared < 330000 {
+		t.Errorf("書き換え %d・本家の例外 %d・比べた戻り値 %d (少なすぎる)", st.Mutations, st.Raised, st.Compared)
 	}
 	t.Logf("書き換え %d・本家の例外 %d・比べた戻り値 %d", st.Mutations, st.Raised, st.Compared)
 }
