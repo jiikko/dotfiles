@@ -214,6 +214,31 @@ func clipStderr(data []byte) string {
 	return string(runes)
 }
 
+// childCommand は子 1 つの名前と argv。
+type childCommand struct {
+	name string
+	argv []string
+}
+
+// run は commands の子を起こし、親の中の work (資料との照合) を動かしてから、全部の子を待つ。
+// work が panic したら、動いている子を止めてから panic を流し直す (本家の _run_checks の except BaseException: children.stop(); raise)。
+// 止めずに流すと、子は親を失ったまま締め切りまで動き続ける。
+func (c *children) run(ctx context.Context, commands []childCommand, work func()) (map[string]childResult, error) {
+	for _, cmd := range commands {
+		c.start(cmd.name, cmd.argv)
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				c.stop()
+				panic(r)
+			}
+		}()
+		work()
+	}()
+	return c.wait(ctx)
+}
+
 // wait は全部の子を待つ。ctx が取り消されたら、動いている子を止めてから ctx の誤りを返す。
 func (c *children) wait(ctx context.Context) (map[string]childResult, error) {
 	finished := c.finished()
@@ -245,6 +270,8 @@ func (c *children) stop() {
 	c.stopped = true
 	processes := append([]*exec.Cmd(nil), c.processes...)
 	c.mu.Unlock()
+	// SIGTERM にしない: 本家と同じ kill (SIGKILL)。今の lint・diff は SIGTERM でも終わるのでテストでは見分けられないが、子がシグナルを
+	// 受ける作りに変わっても (entry.Run の subcommands の stops) 止められるようにする。
 	for _, p := range processes {
 		_ = p.Process.Kill()
 	}

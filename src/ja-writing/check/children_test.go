@@ -59,3 +59,24 @@ func TestWaitSecondsDropsHugeLimits(t *testing.T) {
 		t.Fatalf("waitSeconds(上限) = %v", got)
 	}
 }
+
+// 親の中の仕事 (資料との照合) が panic しても、動いている子を止めてから panic を流し直す (本家の except BaseException の枝)。
+func TestChildrenStopWhenParentWorkPanics(t *testing.T) {
+	h := newHangFixture(t)
+	kids := newChildren(h.rt, 60, h.dir)
+	pid := 0
+	recovered := func() (r any) {
+		defer func() { r = recover() }()
+		_, _ = kids.run(context.Background(), []childCommand{{"lint", []string{testExecutable(t), "lint"}}}, func() {
+			pid = h.childPID(t)
+			panic("照合の途中の panic")
+		})
+		return nil
+	}()
+	if recovered != "照合の途中の panic" {
+		t.Fatalf("panic が流し直されない: %v", recovered)
+	}
+	if alive(pid) {
+		t.Fatalf("panic の後に子 %d が止まっていない", pid)
+	}
+}

@@ -395,11 +395,7 @@ func runChecks(ctx context.Context, rt Runtime, c *runContext, snapshots map[*In
 	}
 	finalName := names[c.final]
 	args := append(contextArguments(c.docType, c.reader), wordsArguments(c.words)...)
-	type command struct {
-		name string
-		argv []string
-	}
-	commands := []command{{"lint", append(append([]string{exe, "lint", "--json"}, args...), finalName)}}
+	commands := []childCommand{{"lint", append(append([]string{exe, "lint", "--json"}, args...), finalName)}}
 	if slices.Contains(c.required, "diff") {
 		argv := []string{exe, "diff", "--json"}
 		if stance != nil {
@@ -409,10 +405,10 @@ func runChecks(ctx context.Context, rt Runtime, c *runContext, snapshots map[*In
 			argv = append(argv, "--material", names[item])
 		}
 		argv = append(append(argv, args...), names[c.diffSource()], finalName)
-		commands = append(commands, command{"diff", argv})
+		commands = append(commands, childCommand{"diff", argv})
 	}
 	if c.diffSource() != nil {
-		commands = append(commands, command{"source_lint", append(append([]string{exe, "lint", "--json"}, args...), names[c.diffSource()])})
+		commands = append(commands, childCommand{"source_lint", append(append([]string{exe, "lint", "--json"}, args...), names[c.diffSource()])})
 	}
 	targets := map[string]*pyjson.Object{}
 	t := pyjson.NewObject()
@@ -439,33 +435,30 @@ func runChecks(ctx context.Context, rt Runtime, c *runContext, snapshots map[*In
 		c.setEntry(name, checkEntry(name, targets[name]))
 	}
 
-	kids := newChildren(rt, timeout, folder)
-	for _, cmd := range commands {
-		kids.start(cmd.name, cmd.argv)
-	}
-	if slices.Contains(c.required, "materials") {
-		entry := c.entries["materials"]
-		started := rt.Monotonic()
-		texts := make([]string, len(c.materials))
-		labels := make([]*string, len(c.materials))
-		for i, item := range c.materials {
-			texts[i], labels[i] = item.Text, item.Label
+	results, err := newChildren(rt, timeout, folder).run(ctx, commands, func() {
+		if slices.Contains(c.required, "materials") {
+			entry := c.entries["materials"]
+			started := rt.Monotonic()
+			texts := make([]string, len(c.materials))
+			labels := make([]*string, len(c.materials))
+			for i, item := range c.materials {
+				texts[i], labels[i] = item.Text, item.Label
+			}
+			var original *string
+			if s := c.diffSource(); s != nil {
+				original = &s.Text
+			}
+			result, err := diff.Ground(c.final.Text, texts, original, labels)
+			if err == nil {
+				c.materialsResult = result
+				entry.Set("status", "ran")
+			} else {
+				entry.Set("error", pyErrorText(err))
+				entry.Set("stderr", clipTail(pyErrorText(err)))
+			}
+			entry.Set("duration_ms", int64((rt.Monotonic()-started)*1000))
 		}
-		var original *string
-		if s := c.diffSource(); s != nil {
-			original = &s.Text
-		}
-		result, err := diff.Ground(c.final.Text, texts, original, labels)
-		if err == nil {
-			c.materialsResult = result
-			entry.Set("status", "ran")
-		} else {
-			entry.Set("error", pyErrorText(err))
-			entry.Set("stderr", clipTail(pyErrorText(err)))
-		}
-		entry.Set("duration_ms", int64((rt.Monotonic()-started)*1000))
-	}
-	results, err := kids.wait(ctx)
+	})
 	if err != nil {
 		return err
 	}
