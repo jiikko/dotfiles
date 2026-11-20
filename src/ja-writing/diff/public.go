@@ -126,3 +126,20 @@ func reportParts(d *pyjson.Object) *pyjson.Object {
 	}
 	return o
 }
+
+// Diff は本家の diff(orig, rw) を、ほかの引数を渡さずに呼んだ結果 (立場・注記・文書の種類・読者・語の一覧・資料はどれも None)。
+// check は Diff("", "") を、子の diff の結果が無いときの節の土台にする。
+func Diff(orig, rw string) (*pyjson.Object, error) { return diffDocument(request{old: orig, new: rw}) }
+
+// ExtractNumberDicts は本家の extract_numbers の戻り値 (text・value・unit・start・end の dict の並び)。
+func ExtractNumberDicts(text string) ([]pyjson.Value, error) {
+	items, err := ExtractNumbers(text)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]pyjson.Value, len(items))
+	for i, item := range items {
+		out[i] = item.JSON()
+	}
+	return out, nil
+}

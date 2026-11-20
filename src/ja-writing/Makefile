@@ -10,10 +10,10 @@ lint:
 	../../scripts/go_module_graph.sh
 	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
 
-# 記録との突き合わせの重い検査 (internal/pyre の全パターン・lint の CLI と検出の記録・diff の関数の記録) は -race を付けると時間の上限を超えるので
+# 記録との突き合わせの重い検査 (internal/pyre の全パターン・lint の CLI と検出の記録・diff の関数の記録と資料との照合の記録) は -race を付けると時間の上限を超えるので
 # build tag で race から外し、race なしで別に回す。どれも 1 つの goroutine で順に呼ぶだけで、race で見つけられるものが無い。
 # 走った証拠として、それぞれの成功の行が出たことも見る (テストの名前を変えて 0 件実行になっても rc=0 になるため)。
-NORACE_CHECKS := ./internal/pyre/:TestPatternsMatchPythonRecording ./lint/:TestCLIMatchesPythonRecording ./lint/:TestRawFindingsMatchPythonRecording ./diff/:TestBaseMatchesPythonRecording ./diff/:TestCLIMatchesPythonRecording ./diff/:TestReportShapeMatchesPythonRecording
+NORACE_CHECKS := ./internal/pyre/:TestPatternsMatchPythonRecording ./lint/:TestCLIMatchesPythonRecording ./lint/:TestRawFindingsMatchPythonRecording ./diff/:TestBaseMatchesPythonRecording ./diff/:TestCLIMatchesPythonRecording ./diff/:TestReportShapeMatchesPythonRecording ./diff/:TestGroundMatchesPythonRecording
 
 test:
 	go test -race ./...

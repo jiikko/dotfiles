@@ -115,7 +115,7 @@ func invokeTone(t *testing.T, c oracle.Call, build []any) (pyjson.Value, error) 
 	a := c.Args
 	switch c.Function {
 	case "tone":
-		v, err := Tone(argString(t, a[0]), argString(t, a[1]), optionalDocType(t, a[2]))
+		v, err := Tone(argString(t, a[0]), argString(t, a[1]), argOptString(t, a[2]))
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func invokeTone(t *testing.T, c oracle.Call, build []any) (pyjson.Value, error) 
 		if a[1] != nil {
 			subkind = argString(t, a[1])
 		}
-		return toneLevel(optionalDocType(t, a[0]), subkind), nil
+		return toneLevel(argOptString(t, a[0]), subkind), nil
 	case "_pseudo_heading":
 		heading, ok := PseudoHeading(argString(t, a[0]), argString(t, a[1]))
 		if !ok {

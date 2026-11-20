@@ -256,6 +256,21 @@ var goldens = []golden{
 		}
 		return oracle.MarshalVisibility(g)
 	}},
+	{name: "diff-ground", file: oracle.DiffGroundFile, what: "資料との照合と事実の穴の候補の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+		inputs, err := oracle.LoadDiffInputs(e.p.diff)
+		if err != nil {
+			return nil, err
+		}
+		cases, err := oracle.DiffGroundCases(e.corpus, e.p.diff, inputs)
+		if err != nil {
+			return nil, err
+		}
+		g, err := r.RecordVisibility(e.ctx, e.header, cases)
+		if err != nil {
+			return nil, err
+		}
+		return oracle.MarshalVisibility(g)
+	}},
 	{name: "lint-raw", file: oracle.LintRawFile, what: "lint の検出の生の並びの記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		files, err := oracle.LintCLIFiles(e.corpus, e.p.words)
 		if err != nil {

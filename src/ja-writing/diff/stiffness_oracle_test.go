@@ -58,7 +58,7 @@ func stiffConstantValue(t *testing.T, name string) pyjson.Value {
 	return nil
 }
 
-func optionalDocType(t *testing.T, a any) *string {
+func argOptString(t *testing.T, a any) *string {
 	t.Helper()
 	if a == nil {
 		return nil
@@ -73,7 +73,7 @@ func invokeStiff(t *testing.T, c oracle.Call) pyjson.Value {
 	a := c.Args
 	switch c.Function {
 	case "stiffness":
-		v, err := Stiffness(argString(t, a[0]), argString(t, a[1]), optionalDocType(t, a[2]))
+		v, err := Stiffness(argString(t, a[0]), argString(t, a[1]), argOptString(t, a[2]))
 		if err != nil {
 			t.Fatalf("stiffness: %v", err)
 		}

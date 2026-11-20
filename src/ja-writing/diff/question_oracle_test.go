@@ -133,7 +133,7 @@ func invokeQuestion(t *testing.T, c oracle.Call, build []any) pyjson.Value {
 		for i, sp := range list.spans {
 			spans[i] = replay.List(int64(sp.left), int64(sp.right), sp.kind)
 		}
-		return replay.List(spans, replay.MapList(list.lefts, func(n int) pyjson.Value { return int64(n) }))
+		return replay.List(spans, intsValue(list.lefts))
 	case "_find_line":
 		_, s, err := buildFullDiff(orig, rw, nil)
 		if err != nil {

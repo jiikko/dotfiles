@@ -271,7 +271,7 @@ func numberMask(text []rune, a *visibility.Analysis, maskedKinds map[string]bool
 		}
 	}
 	masked := runesText(chars)
-	out := mustSubFunc(listNumber, masked, func(m *pyre.Match) string { return strings.Repeat(" ", m.End(0)-m.Start(0)) })
+	out := mustSubFunc(listNumber, masked, blankMatch)
 	return pyunicode.Runes(out)
 }
 
@@ -551,6 +551,11 @@ func withNotation(masked []rune, found []number) []number {
 // findNumbers は数値の取り出し方で、文書の中の数値を位置の順に返す。英字が続く数 (3D、5G、30s、8GiB) は、一覧の単位が続かなければ単位なしの数として取る。
 // 数と単位の間の強調の記号 (**) は読み飛ばす。maskedKinds は伏せる protected_spans の種類 (空なら伏せない)。
 func findNumbers(text []rune, a *visibility.Analysis, maskedKinds map[string]bool) []number {
+	return findNumbersWith(text, a, maskedKinds, unitPattern)
+}
+
+// findNumbersWith は単位の正規表現 units を指定する findNumbers (本家の _find_numbers の unit_pattern。資料との照合は秒の書き方を足した groundUnit を渡す)。
+func findNumbersWith(text []rune, a *visibility.Analysis, maskedKinds map[string]bool, units *pyre.Lazy) []number {
 	masked := numberMask(text, a, maskedKinds)
 	t := runesText(masked)
 	var found []number
@@ -569,10 +574,10 @@ func findNumbers(text []rune, a *visibility.Analysis, maskedKinds map[string]boo
 		if thousand != nil {
 			after = thousand.End(0)
 		}
-		unit := mustMatch(unitPattern, t, after)
+		unit := mustMatch(units, t, after)
 		if unit == nil {
 			if emphasis := mustMatch(emphasisMark, t, after); emphasis != nil {
-				unit = mustMatch(unitPattern, t, emphasis.End(0))
+				unit = mustMatch(units, t, emphasis.End(0))
 			}
 		}
 		if unit == nil && thousand == nil {

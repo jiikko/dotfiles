@@ -104,7 +104,16 @@ func maskLastChar(m *pyre.Match) string {
 	return pyunicode.FromRunes(rs[:len(rs)-1]) + "＃"
 }
 
-func repeatMask(m *pyre.Match) string { return strings.Repeat("＃", m.End(0)-m.Start(0)) }
+// maskWith は当たった範囲を fill の同じ数の並びにする置き換え (位置を変えずに伏せる)。
+func maskWith(fill string) func(*pyre.Match) string {
+	return func(m *pyre.Match) string { return strings.Repeat(fill, m.End(0)-m.Start(0)) }
+}
+
+// repeatMask は「＃」で、blankMatch は空白で伏せる。
+var (
+	repeatMask = maskWith("＃")
+	blankMatch = maskWith(" ")
+)
 
 // negativeZu は text に打ち消しの「ず」があれば真 (副詞の「まず」「あえず」「かならず」は打ち消しにしない)。
 func negativeZu(text string) bool {

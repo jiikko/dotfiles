@@ -51,7 +51,11 @@ var wordLists = map[string]struct{ pattern, third bool }{
 	"intensifiers":   {},
 	"feelings":       {pattern: true, third: true},
 	"hedges":         {},
+	"fact-gaps":      {pattern: true},
 }
+
+// factGapKinds は事実の穴の一覧 (fact-gaps) の種類として受ける名前 (本家の _load_list の検査)。
+var factGapKinds = []string{"degree", "change", "effect", "figure"}
 
 // WordList は読んだ一覧。pattern の一覧は Items、語の一覧は Words に入る。
 type WordList struct {
@@ -64,7 +68,7 @@ var (
 	wordListCache = map[string]*WordList{}
 )
 
-// LoadList は埋め込んだ一覧を読む (本家の _load_list の items)。名前は nominalization・intensifiers・feelings・hedges のどれか。
+// LoadList は埋め込んだ一覧を読む (本家の _load_list の items)。名前は nominalization・intensifiers・feelings・hedges・fact-gaps のどれか。
 // 埋め込みの一覧は固定で、読めないのも 3 つ目の欄の置き違いも組み立ての誤りなので panic する (記録との突き合わせとビルドの検査が見つける)。
 func LoadList(name string) *WordList {
 	wordListMu.Lock()
@@ -88,6 +92,9 @@ func LoadList(name string) *WordList {
 		}
 		if !spec.third && slices.ContainsFunc(items, func(i ListItem) bool { return i.Third != "" }) {
 			panic(name + ".txt: 3つ目の欄はこの一覧では使えません")
+		}
+		if name == "fact-gaps" && slices.ContainsFunc(items, func(i ListItem) bool { return !slices.Contains(factGapKinds, i.Name) }) {
+			panic(name + ".txt: 事実の穴の種類は degree、change、effect、figure です")
 		}
 		l.Items = items
 	} else {

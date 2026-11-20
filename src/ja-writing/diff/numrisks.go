@@ -865,6 +865,11 @@ func groupIndex(g *sentenceGroup, sn *sentence, side int) int {
 	return g.hunk.index
 }
 
+// intsValue は整数の並びの list。
+func intsValue(xs []int) pyjson.Value {
+	return pyjson.MapList(xs, func(n int) pyjson.Value { return int64(n) })
+}
+
 // riskItem は意味が変わる恐れ 1 件と、並べる位置 (hunk の番号, 塊の中の順)。
 type riskItem struct {
 	index, order int
