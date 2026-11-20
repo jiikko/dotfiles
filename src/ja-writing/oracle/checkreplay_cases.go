@@ -1,5 +1,7 @@
 package oracle
 
+import "encoding/json"
+
 // CheckReplayFile は本家 yomiyasu_check.py の verify --replay (と --since・--timeout) を、本家の run が書いた状態フォルダに当てた記録 (testdata/golden/ の中)。
 // 形は check-verify.json と同じ。状態フォルダは op snapshot の結果 (keep) で持ち、Go のテストはそれを自分の作業フォルダに戻してから verify を呼ぶ。
 // 作り直しの子 (lint と diff) の振る舞いは、run の記録と同じ子の代わり (op pyexe と fakeChild) で決める。
@@ -97,7 +99,7 @@ func replaySinceCase() VisCase {
 
 // replayMismatchCase は作り直しが記録と合わない形と、作り直しの前に止まる形。レポートのファイル (lint・diff・資料との照合の .json と .txt) を
 // 値を変えずに書き換え、記録のハッシュと record_digest を求め直す (件数の照らしは通り、作り直しで食い違う)。事実の穴の記録を書き換える。
-// 記録の tools の SHA-256 (道具・語の一覧) を変える (tool_changed で作り直さない)。立場に NUL を入れる (子を起動できない内部エラー)。
+// 記録の tools の SHA-256 (道具・語の一覧) を変える (tool_changed で作り直さない)。立場に NUL・単独のサロゲートを入れる (子を起動できない内部エラーと、0xff で子に渡る字)。
 func replayMismatchCase() VisCase {
 	f := newFixtureCase("replay-mismatch")
 	f.write("src.md", rRich).write("final.md", rRich2).write("mat.md", vMaterial).write("comp.md", vComposed).write("gaps.md", rGaps)
@@ -129,6 +131,14 @@ func replayMismatchCase() VisCase {
 	// 立場に NUL を入れた (diff の子を起動できない。本家の Popen は起動の前に ValueError。内部エラーの文は伏せるので TestReplayCannotRunChildren が比べる)
 	pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "n", "--stance", "報告", "--state-dir", "sn")
 	redigest(f, firstRecord("sn", "n"), set("a\x00b", "options", "stance"))
+	// 立場に単独のサロゲートを入れた (JSON の escape のまま driver に渡す。Go の json.Marshal は単独のサロゲートを U+FFFD にする)。
+	// U+D800 は本家の Popen が UnicodeEncodeError で断る (rc 3)。U+DCFF は os.fsencode で 0xff になって子に渡る。
+	// NUL と U+D800 が並ぶと、本家は字を bytes にするのが先なので UnicodeEncodeError になる。文は TestReplayCannotRunChildren が比べる
+	for _, c := range [][2]string{{"su", `"a\ud800b"`}, {"se", `"a\udcffb"`}, {"sv", `"\u0000\ud800"`}} {
+		state, stance := c[0], c[1]
+		pycli(f, "0", "run", "--source", "src.md", "--final", "final.md", "--run-id", "n", "--stance", "報告", "--state-dir", state)
+		redigest(f, firstRecord(state, "n"), set(json.RawMessage(stance), "options", "stance"))
+	}
 	snapshot(f)
 	for _, state := range []string{"ma", "mb", "mc", "md", "me", "mf", "mz", "fg", "tl", "tg"} {
 		final := "final.md"
@@ -138,7 +148,9 @@ func replayMismatchCase() VisCase {
 		verifyBoth(f, "--final", final, "--state-dir", state, "--replay")
 	}
 	verify(f, "--final", "final.md", "--state-dir", "ma")
-	verifyBoth(f, "--final", "final.md", "--state-dir", "sn", "--replay")
+	for _, state := range []string{"sn", "su", "se", "sv"} {
+		verifyBoth(f, "--final", "final.md", "--state-dir", state, "--replay")
+	}
 	return f.done()
 }
 

@@ -36,7 +36,7 @@ func TestCaseMapsMatchPythonForEveryCodePoint(t *testing.T) {
 		}
 		var lines strings.Builder
 		for r := rune(0); r <= MaxRune; r++ {
-			if isSurrogate(r) {
+			if IsSurrogate(r) {
 				continue
 			}
 			got := c.fn(string(r))

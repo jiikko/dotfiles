@@ -2,11 +2,13 @@ package check
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"testing"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pyunicode"
 )
 
 // 締め切りを使い切ってから動かす子は、起動せずに時間切れにする (本家の remaining <= 0 の枝)。
@@ -84,22 +86,40 @@ func TestChildrenStopWhenParentWorkPanics(t *testing.T) {
 	}
 }
 
-// argv・実行ファイル・環境変数・作業フォルダのどれかに NUL があると、子を起動せずに本家の Popen と同じ ValueError の文にする
-// (python3.15 (3.15.0) の subprocess.Popen で実測: どの引数の NUL でも「ValueError: embedded null byte」で、作業フォルダが無いときも同じ)。
-func TestChildrenRefuseEmbeddedNull(t *testing.T) {
+// 本家の Popen が起動の前に断る形は、子を起動せずに本家と同じ文にする。文は python3.15 (3.15.0) の subprocess.Popen で実測した:
+// NUL はどの引数でも「ValueError: embedded null byte」(作業フォルダが無いときも同じ)。argv の U+DC80..U+DCFF でない単独のサロゲートは
+// 「UnicodeEncodeError: 'utf-8' codec can't encode character …」。断りの順は argv を前から (1 つの字の並びでは bytes にするのが NUL より先)、
+// そのあと環境変数と作業フォルダの NUL。
+func TestChildrenRefuseWhatPopenRefuses(t *testing.T) {
 	h := newHangFixture(t)
 	exe := testExecutable(t)
 	environ := h.rt.ChildEnv(cmdenv.Env{Cwd: h.dir, Environ: h.environ})
+	const null = "ValueError: embedded null byte"
+	d800 := pyunicode.FromRunes([]rune{0xD800})
+	d801 := pyunicode.FromRunes([]rune{0xD801})
+	encode := func(char string, position int) string {
+		return fmt.Sprintf("UnicodeEncodeError: 'utf-8' codec can't encode character '\\%s' in position %d: surrogates not allowed", char, position)
+	}
 	for _, c := range []struct {
 		name, cwd string
 		argv, env []string
+		want      string
 	}{
-		{"引数", h.dir, []string{exe, "lint", "a\x00b"}, environ},
-		{"実行ファイル", h.dir, []string{exe + "\x00", "lint"}, environ},
-		{"環境変数の値", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "JA_NUL=a\x00b")},
-		{"環境変数の名前", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "JA\x00NUL=1")},
-		{"作業フォルダ", h.dir + "/no\x00where", []string{exe, "lint"}, environ},
-		{"作業フォルダが無いときの引数", h.dir + "/nowhere", []string{exe, "lint", "a\x00b"}, environ},
+		{"引数の NUL", h.dir, []string{exe, "lint", "a\x00b"}, environ, null},
+		{"実行ファイルの NUL", h.dir, []string{exe + "\x00", "lint"}, environ, null},
+		{"環境変数の値の NUL", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "JA_NUL=a\x00b"), null},
+		{"環境変数の名前の NUL", h.dir, []string{exe, "lint"}, append(slices.Clone(environ), "JA\x00NUL=1"), null},
+		{"作業フォルダの NUL", h.dir + "/no\x00where", []string{exe, "lint"}, environ, null},
+		{"作業フォルダが無いときの引数の NUL", h.dir + "/nowhere", []string{exe, "lint", "a\x00b"}, environ, null},
+		{"引数のサロゲート", h.dir, []string{exe, "lint", "x" + d800}, environ, encode("ud800", 1)},
+		{"続いたサロゲート", h.dir, []string{exe, "lint", "ab" + d800 + d801 + "c"}, environ,
+			"UnicodeEncodeError: 'utf-8' codec can't encode characters in position 2-3: surrogates not allowed"},
+		{"前の引数の NUL と後の引数のサロゲート", h.dir, []string{exe, "a\x00", d800}, environ, null},
+		{"前の引数のサロゲートと後の引数の NUL", h.dir, []string{exe, d800, "a\x00"}, environ, encode("ud800", 0)},
+		{"同じ引数の NUL の後のサロゲート", h.dir, []string{exe, "lint", "\x00" + d800}, environ, encode("ud800", 1)},
+		{"環境変数の NUL と引数のサロゲート", h.dir, []string{exe, "lint", d801}, append(slices.Clone(environ), "JA_NUL=\x00"), encode("ud801", 0)},
+		{"作業フォルダの NUL と引数のサロゲート", h.dir + "/\x00", []string{exe, "lint", d801}, environ, encode("ud801", 0)},
+		{"作業フォルダが無いときの引数のサロゲート", h.dir + "/nowhere", []string{exe, "lint", d801}, environ, encode("ud801", 0)},
 	} {
 		kids := newChildren(h.rt, 60, c.cwd, c.env)
 		kids.start("lint", c.argv)
@@ -108,11 +128,35 @@ func TestChildrenRefuseEmbeddedNull(t *testing.T) {
 			t.Fatal(err)
 		}
 		r := results["lint"]
-		if r.status != "error" || r.code != nil || r.stderr != "" || r.err != "子プロセスを動かせません（ValueError: embedded null byte）" {
+		if r.status != "error" || r.code != nil || r.stderr != "" || r.err != "子プロセスを動かせません（"+c.want+"）" {
 			t.Errorf("%s: 結果 %+v", c.name, r)
 		}
 		if _, err := os.Stat(h.pidFile); err == nil {
-			t.Fatalf("%s: NUL のある子を起動した", c.name)
+			t.Fatalf("%s: 断るはずの子を起動した", c.name)
 		}
+	}
+}
+
+// argv の U+DC80..U+DCFF のサロゲート (記録の JSON の "\udcff") は、本家の os.fsencode と同じく下位 8 ビットの 1 バイトで子に渡す
+// (python3.15 (3.15.0) の Popen で "x\udcff" を渡した子が受け取るのは b"x\xff")。WTF-8 の 3 バイトのままでは渡さない。
+func TestChildrenPassEscapedSurrogatesAsBytes(t *testing.T) {
+	h := newHangFixture(t)
+	out := h.dir + "/argv.bin"
+	arg := "a" + pyunicode.FromRunes([]rune{0xDCFF, 0xDC80}) + "b"
+	kids := newChildren(h.rt, 60, h.dir, h.rt.ChildEnv(cmdenv.Env{Cwd: h.dir, Environ: h.environ}))
+	kids.start("lint", []string{"/bin/sh", "-c", `printf %s "$1" > "$2"`, "sh", arg, out})
+	results, err := kids.wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := results["lint"]; r.status != "ran" {
+		t.Fatalf("結果 %+v", r)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "a\xff\x80b" {
+		t.Fatalf("子が受け取った引数 % x、本家は 61 ff 80 62", got)
 	}
 }

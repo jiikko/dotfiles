@@ -43,7 +43,7 @@ func wsEncode(v reflect.Value) any {
 		return wsEncode(v.Elem())
 	case reflect.String:
 		rs := pyunicode.Runes(v.String())
-		if slices.ContainsFunc(rs, func(r rune) bool { return r >= 0xD800 && r <= 0xDFFF }) {
+		if slices.ContainsFunc(rs, pyunicode.IsSurrogate) {
 			return map[string]any{"ws": rs}
 		}
 		return v.String()

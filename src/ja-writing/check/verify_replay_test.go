@@ -13,6 +13,7 @@ import (
 	"ja-writing/cmdenv"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
+	"ja-writing/internal/pyunicode"
 
 	"github.com/jiikko/dotfiles/src/testwait"
 )
@@ -39,15 +40,18 @@ func TestReplayCannotRunChildren(t *testing.T) {
 	}
 	missing := h.dir + "/nope.sh"
 	const tail = "）。記録の食い違いではありません。子プロセスを動かせる環境で verify --replay をもう一度実行してください。\n"
-	for _, c := range []struct{ exe, want string }{
-		{killer, "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（lint: シグナル9で止まりました" + tail},
-		{missing, "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（lint: 子プロセスを動かせません（FileNotFoundError: [Errno 2] No such file or directory: '" + missing + "'）" + tail},
-		{"", "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（diff: 子プロセスを動かせません（ValueError: embedded null byte）" + tail},
+	d800 := pyunicode.FromRunes([]rune{0xD800})
+	for _, c := range []struct{ exe, stance, want string }{
+		{killer, "", "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（lint: シグナル9で止まりました" + tail},
+		{missing, "", "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（lint: 子プロセスを動かせません（FileNotFoundError: [Errno 2] No such file or directory: '" + missing + "'）" + tail},
+		// 記録の立場を書き換えて digest を求め直す (本家の run の記録を同じく書き換え、本家の verify --replay で実測した文)
+		{"", "a\x00b", "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（diff: 子プロセスを動かせません（ValueError: embedded null byte）" + tail},
+		{"", "a" + d800 + "b", "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（diff: 子プロセスを動かせません（UnicodeEncodeError: 'utf-8' codec can't encode character '\\ud800' in position 1: surrogates not allowed）" + tail},
+		{"", "\x00" + d800, "yomiyasu_check.py: 内部エラー: --replay で検査を動かせません（diff: 子プロセスを動かせません（UnicodeEncodeError: 'utf-8' codec can't encode character '\\ud800' in position 1: surrogates not allowed）" + tail},
 	} {
-		if c.exe == "" {
-			// 記録の立場に NUL を入れて digest を求め直す (本家の run の記録を同じく書き換え、本家の verify --replay で実測した文)
+		if c.stance != "" {
 			h = recordedHangFixture(t)
-			setRecordedOption(t, h.dir+"/.yomiyasu/runs/r1/attempt-1.json", "stance", "a\x00b")
+			setRecordedOption(t, h.dir+"/.yomiyasu/runs/r1/attempt-1.json", "stance", c.stance)
 			c.exe = testExecutable(t)
 			h.rt.ChildEnv = childRuntime(t).ChildEnv // lint は止まらずに最後まで動く子にする
 		}

@@ -130,8 +130,6 @@ func TestCombiningClassMatchesPythonForEveryCodePoint(t *testing.T) {
 	}
 }
 
-func isSurrogate(r rune) bool { return r >= 0xD800 && r <= 0xDFFF }
-
 // サロゲートを除く全コードポイントの 1 字ずつの正規化。NFC / NFKC は元と違う字を記録の一覧と照らし (診断のため)、4 形式とも記録の digest と照らす。
 func TestNormalizeSingleCharactersMatchPython(t *testing.T) {
 	g := loadGolden(t)
@@ -153,7 +151,7 @@ func TestNormalizeSingleCharactersMatchPython(t *testing.T) {
 		h := sha256.New()
 		var line strings.Builder
 		for r := rune(0); r <= MaxRune; r++ {
-			if isSurrogate(r) {
+			if IsSurrogate(r) {
 				continue
 			}
 			got := Runes(Normalize(c.form, string(r)))

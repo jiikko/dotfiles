@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
 	"ja-writing/internal/pystr"
+	"ja-writing/internal/pyunicode"
 	"ja-writing/visibility"
 )
 
@@ -144,19 +146,34 @@ func osException(err error) (*pyops.Exception, bool) {
 	return &pyops.Exception{Type: visibility.OSErrorType(errno), Msg: fmt.Sprintf("[Errno %d] %s: %s", int(errno), visibility.OSErrorReason("", errno), pystr.Repr(pathErr.Path))}, true
 }
 
-// embeddedNull は、本家の Popen が子を起こす前に ValueError("embedded null byte") で断る形 (argv・実行ファイル・環境変数・作業フォルダの
-// どれかに NUL がある)。Go の exec は同じ形を EINVAL の PathError (実行ファイルのパスつき) で返すので、起動の前に本家と同じ文で断る。
+// popenArgv は、本家の Popen が子を起こす前に argv・実行ファイル・環境変数・作業フォルダを bytes にする所を写し、子に渡す argv を返す。
+// argv の字は os.fsencode と同じく U+DC80..U+DCFF のサロゲートを 1 バイトに戻す (記録の JSON の "\udcff" は 0xff で渡る)。ほかのサロゲートは
+// UnicodeEncodeError、NUL は ValueError("embedded null byte") で、子を起こさずに断る。Go の exec のまま起動すると、サロゲートは WTF-8 の
+// 3 バイトで渡り、NUL は EINVAL の PathError (実行ファイルのパスつき) になる。
+// 断りの順は本家と同じ: argv を前から 1 つずつ (字を bytes にしてから NUL を見る)、そのあと環境変数と作業フォルダの NUL。
+// 環境変数と作業フォルダは字を bytes に直さない: どちらも OS から受けたバイト列で、本家の str は os.fsdecode で読んだ値なので、
+// os.fsencode で同じバイト列に戻り、UnicodeEncodeError にならない。
 // 本家の「illegal environment variable name」(名前に = のある環境変数) は写さない: Go の環境変数は「名前=値」の 1 つの文字列で、
 // 最初の = で切った名前は = を持てない。
-func embeddedNull(argv, env []string, cwd string) bool {
-	for _, list := range [][]string{argv, env, {cwd}} {
-		for _, s := range list {
-			if strings.IndexByte(s, 0) >= 0 {
-				return true
-			}
+func popenArgv(argv, env []string, cwd string) ([]string, *pyops.Exception) {
+	nullByte := &pyops.Exception{Type: "ValueError", Msg: "embedded null byte"}
+	out := make([]string, len(argv))
+	for i, s := range argv {
+		encoded, err := pyunicode.EncodeSurrogateEscape(s)
+		if err != nil {
+			return nil, &pyops.Exception{Type: "UnicodeEncodeError", Msg: err.Error()}
+		}
+		if strings.IndexByte(encoded, 0) >= 0 {
+			return nil, nullByte
+		}
+		out[i] = encoded
+	}
+	for _, s := range append(slices.Clip(env), cwd) {
+		if strings.IndexByte(s, 0) >= 0 {
+			return nil, nullByte
 		}
 	}
-	return false
+	return out, nil
 }
 
 // runOne は _run_one。子を 1 つ動かし、どの道でも結果を残す。
@@ -175,9 +192,10 @@ func (c *children) runOne(name string, argv []string) {
 		c.set(name, childResult{status: "error", err: "子プロセスを動かす前に止められました"})
 		return
 	}
-	if embeddedNull(argv, c.env, c.cwd) {
+	argv, refused := popenArgv(argv, c.env, c.cwd)
+	if refused != nil {
 		c.mu.Unlock()
-		c.set(name, childResult{status: "error", elapsed: elapsed(), err: "子プロセスを動かせません（ValueError: embedded null byte）"})
+		c.set(name, childResult{status: "error", elapsed: elapsed(), err: "子プロセスを動かせません（" + refused.Error() + "）"})
 		return
 	}
 	cmd := subproc.Command(argv[0], argv[1:]...)
