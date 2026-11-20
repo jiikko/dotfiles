@@ -112,17 +112,20 @@ diff の群 AE (`ground` 7555〜7957・`fact_gaps` 9370〜9475・`detector_summa
 答えが変わらない書き換え (採らない): `HomePath` の 2 つの `~` の検査はどちらか一方で足りる (本家も同じ二重の形)・`CaseInsensitive(probe)` を `(real)` にしても同じファイルシステムの中では同じ答え。
 未確認リスク: 大文字小文字を区別するファイルシステム・EACCES の getcwd・NUL を含むパス。共有の部品 (pyjson の設定・pyunicode の表) を変えたことで lint と diff の答えが変わっていないかは、レビューでは見ていない (push 前の `make -C src/ja-writing lint test` は lint と diff の記録の試験を含めて rc 0)。
 
-### 2026-11-20 の並列の作業で、まだ統合していないもの (worktree に commit がある。push していない)
+### 2026-11-20 の並列の作業で進めた 2 本目と 3 本目
 
 2 本目と 3 本目を別の worktree で同時に進めた (ユーザー指示 2026-11-20: 40 分で並列を最大にして weekly の枠を使い切る。それまでの「opus で 1 体ずつ直列」はこの回だけ外した)。
 どちらも敵対的レビューを通していないので master に入れていない。worktree は消さずに残した (detached。commit は下の hash)。再開するときは、各 worktree で `git rebase origin/master` してから続ける。
 
-- **2 本目** (`/Users/koji/wt-1072-ae-1120`。commit 5 本: 03b2d601d・9c2e87aa1・eff3f6622・39059cf1a・95a67a4ee)
-  - 入れた口: diff の `DetectorSummary`・`ReportParts`・`Report`・`ShowsRewrittenOnly`・`HunkHeading`・`FailOnCount`・`Stances()`・`ListProblems()` (Go は語の一覧を埋め込むので常に空)・`DiffFormatVersion`・`MaterialsFormatVersion`・`DetectorKeys`。lint の `RenderReport`・`RenderFindings`・`LintFormatVersion` (CLI の出力も同じ実装を通す)。`visibility.WordsContextFromValue`・`pyjson.Object.Field`
-  - 記録: `diff-report.json` 164 → 178 case (`report_parts` と `detector_summary`。既存の case の値は python で照合して変化 0)
-  - 検査: 最後の木 95a67a4ee で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0
-  - 変異: diff 側 7 本は red。lint 側 5 本は red 3・構文エラー 2 (`lint-findings-unsorted`・`lint-allow-removed-zero`。当て直しが要る)
-  - 残り: `ground` (本家 7844〜。約 400 行)・`fact_gaps` (9430〜) の写しと記録・`diff("", "")` の公開口・`extract_numbers` の dict の口・敵対的レビュー。本家は `detector_summary` に dict でない節や `candidate_count: null` を渡すと例外で止まるので、その入力は記録に無い (Go の答えは未確認)
+- **2 本目 (途中まで master に入れた。2026-11-20)**: check が lint と diff から使う口の公開と、子の JSON の形の誤りの扱い。敵対的レビュー (opus) を 4 周当てた
+  - 入れた口: diff の `DetectorSummary`・`ReportParts`・`Report`・`ShowsRewrittenOnly`・`HunkHeading`・`FailOnCount`・`Stances()`・`ListProblems()` (Go は語の一覧を埋め込むので常に空)・`DiffFormatVersion`・`MaterialsFormatVersion`・`DetectorKeys`。lint の `RenderReport`・`RenderFindings`・`LintFormatVersion` (CLI の出力も同じ実装を通す)。`pyjson.Object` の `Field`・`Clone`・`Delete`、`visibility.WordsLabelOf`・`ContextLabelOf`、`pyunicode.Upper`
+  - **決めたこと: 子の JSON の形の誤りは、本家と同じく error にする** (verify が本家の書いた記録も読むため)。口は `(…, error)` を返す。条件は「本家が例外 ⇔ Go が error」で、例外にならない呼び出しは戻り値も一致させる (例外の型と文は比べない)。Python の演算と例外は `internal/pyops` に写し、例外は panic で運んで口の `pyops.Catch` で error に戻す (自分で投げた例外以外の panic は投げ直す)
+  - 記録 `report-shape.json`: 基準 23 個 (diff 20 組・lint) の欄を 1 か所ずつ書き換えた全部 (書き換え 46,279・呼び出し 359,126・本家の例外 20,290) を、書き換えごとの digest で持つ (1.07MB)。食い違いは `go run ./oracle/cmd/golden -shape-detail '<基準>:<番号>'` で調べる (README)。代表を選んで残す形は、レビューの周ごとに束ね方の穴 (path の 2 段 → kind・subkind → hunk の tag 等) が出たのでやめた。diff の shape のテストは race で 42 秒かかるので `NORACE_CHECKS` で race なしで回す
+  - レビューで直したもの: 1 周目 = 形の誤りで error を返さない・panic する、`FailOnCount` の wrapper のテストの穴、`Object` の写し。2 周目 = 記録の束ね方・severity の大文字化 (`ß` など)・float に収まらない int の OverflowError・int と float の比べの精度・`FailOnCount` の途中の数。3 周目 = 記録の束ね方・`sum` (CPython の補正つきの和。本物を oracle にした 3,017 件の記録 `internal/pyops/testdata/sum.json`)・NaN のコメントの理由。4 周目 = 記録の束ね方 (全件にして閉じた)。CLI の出力 (lint・diff・report) は、3 通りの比べ (988 呼び出し・語の一覧・1.9MB の diff) で master と変わらなかった
+  - 直さないもの: NaN の扱い (list の == の identity・並べ方)。本家にも Go の子にも nan を作る式が無い (割り算は分母 0 を先に除き、float() は check の引数で 0<v<inf に限る)。理由と再提起の条件 (NaN を含む子の JSON が実際に出る経路) は `pyops.Equal` の直前のコメント
+  - 4 周目の後は、記録を全件にして代表を選ぶ処理を無くした直しなので、5 周目のレビューは当てていない (直しの後に 2〜4 周目の変異 `tone-lookup-default`・`stiffness-sentence-linewhere`・`hunkheading-delete-oldend-or` が全部 red)
+  - 検査: 最後の木で `make -C src/ja-writing lint test`・`make test-unused-excluding-tests`・`make test-lint`・`make test-dupscan-gate` が rc 0。root の `make test` は赤 2 本 (`tests/githooks/test_pre_push.sh` は master でも同じく赤・`tests/zshrc/av1ify/test_av1ify_vfr_e2e.sh` は bin の道具を PATH から呼んだ検査。どちらも src/ja-writing の外で、この変更は触っていない)
+  - 残り: `ground` (本家 7844〜。約 400 行)・`fact_gaps` (9430〜) の写しと記録・`diff("", "")` の公開口・`extract_numbers` の dict の口。記録は 1 か所ずつの書き換えで、2 か所以上を同時に壊す形と list の 2 番目以降の要素は試していない
 - **3 本目** (`/Users/koji/wt-1072-s3-1120`。commit 5 本: abb62bc52・ca6a9cdaf・cd85062ce・e3953b77b・6beefaa5c)
   - 入れた関数: 書き込み (本家 465〜800・2859 の `_mkstemp`・`_replace`・`_write_atomic`・`_raise_if_hidden`・`_still_placed`・`_place_new_file`・`_write_state_files`・`_add_state_files`・`_ensure_state`・`_write_problem`) と記録の読み (864〜890 の `_read_record_status`・`_read_record`)
   - 決めたこと: `src/atomicfile` は使わない (一時ファイルの名前が本家の `.tmp-<16進>` と違い、`_write_problem` の文が変わる)。`os.Rename` でなく `syscall.Rename` (宛先がフォルダのとき Go は EEXIST を返し、本家の EISDIR と文が変わる)
