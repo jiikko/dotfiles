@@ -1,10 +1,12 @@
 package check
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -126,6 +128,39 @@ func stopped(ctx context.Context) error {
 	return errStopped{syscall.SIGINT}
 }
 
+// readStdinOrStop は標準入力を EOF まで読み、読んだものを返す。読んでいる間に ctx が取り消されたら、読み終わりを待たずに stopped の誤りを返す
+// (本家はシグナルのハンドラが read の途中で例外を投げ、状態フォルダに何も書かずに止まる)。読めなかったときは同じ誤りを返す reader を返し、
+// 誤りの文は ReadStdinBytes に作らせる。r が nil なら nil (標準入力が無い誤りの文も ReadStdinBytes が作る)。
+// 止めたときは読む goroutine を残す (プロセスはこの後すぐ終わる)。
+func readStdinOrStop(ctx context.Context, r io.Reader) (io.Reader, error) {
+	if r == nil {
+		return nil, nil
+	}
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(r)
+		done <- result{data, err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil {
+			return failingReader{got.err}, nil
+		}
+		return bytes.NewReader(got.data), nil
+	case <-ctx.Done():
+		return nil, stopped(ctx)
+	}
+}
+
+// failingReader は読むと err を返す。
+type failingReader struct{ err error }
+
+func (f failingReader) Read([]byte) (int, error) { return 0, f.err }
+
 // runMain は run の入口 (引数の parse と _run_impl)。(終了コード, 誤り)。
 func runMain(ctx context.Context, env cmdenv.Env, rt Runtime, argv []string) (code int, err error) {
 	defer pyops.Catch(&err)
@@ -246,7 +281,13 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 			in.Source = &a.source[0]
 		}
 	}
-	loaded, problem, err := ReadInputs(in, env.Stdin)
+	stdin := env.Stdin
+	if a.stdin || slices.Contains(slices.Concat(a.final, a.source, a.materials), "-") {
+		if stdin, err = readStdinOrStop(ctx, stdin); err != nil {
+			return 0, err
+		}
+	}
+	loaded, problem, err := ReadInputs(in, stdin)
 	if err != nil {
 		return 0, err
 	}

@@ -137,8 +137,12 @@ func dispatch(ctx context.Context, env cmdenv.Env, rt Runtime) (int, error) {
 		}
 		return code, nil
 	case args[0] == "verify":
-		code, err := runVerify(env, args[1:])
+		code, err := runVerify(ctx, env, args[1:])
 		var noCwd *NoWorkingDirectoryError
+		var stop errStopped
+		if errors.As(err, &stop) {
+			return 0, stop
+		}
 		if errors.As(err, &noCwd) {
 			pycli.Eprintln(env, noCwd.Message)
 			return cmdenv.ExitUsage, nil
@@ -160,7 +164,7 @@ func dispatch(ctx context.Context, env cmdenv.Env, rt Runtime) (int, error) {
 }
 
 // runVerify は _verify。(終了コード, 誤り)。
-func runVerify(env cmdenv.Env, argv []string) (code int, err error) {
+func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, err error) {
 	defer pyops.Catch(&err)
 	defer catchFailure(&err)
 	a, help, perr := parseVerify(argv)
@@ -193,7 +197,11 @@ func runVerify(env cmdenv.Env, argv []string) (code int, err error) {
 	}
 	var stdin []byte
 	if *a.final == "-" || (a.source != nil && *a.source == "-") {
-		if stdin, problem = ReadStdinBytes(env.Stdin); problem != "" {
+		reader, err := readStdinOrStop(ctx, env.Stdin)
+		if err != nil {
+			return 0, err
+		}
+		if stdin, problem = ReadStdinBytes(reader); problem != "" {
 			return pycli.Fail(env, problem)
 		}
 	}

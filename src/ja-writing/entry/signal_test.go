@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 }
 
 type signalChild struct {
+	dir            string
 	cmd            *exec.Cmd
 	stdin          io.WriteCloser
 	stdout, stderr *bytes.Buffer
@@ -43,7 +44,7 @@ func startReading(t *testing.T, args ...string) *signalChild {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	c := &signalChild{cmd: exec.Command(exe, args...), stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, done: make(chan error, 1)}
+	c := &signalChild{dir: dir, cmd: exec.Command(exe, args...), stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, done: make(chan error, 1)}
 	c.cmd.Dir = dir
 	c.cmd.Env = append(os.Environ(), entryChildEnv+"=1")
 	c.cmd.Stdout, c.cmd.Stderr = c.stdout, c.stderr
@@ -110,22 +111,25 @@ func TestLintAndDiffEndBySignal(t *testing.T) {
 }
 
 // check は本家の main と同じく SIGINT・SIGTERM・SIGHUP を受け、「止められました」の文を出して 128+番号で終わる (verify も)。
+// 標準入力を読んでいる間に届いても、読み終わり (EOF) を待たずに止まり、状態フォルダを作らない (本家は入力を読み終えるまで何も書かない)。
 func TestCheckStopsWithMessageOnSignal(t *testing.T) {
-	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP} {
-		t.Run(sig.String(), func(t *testing.T) {
-			c := startReading(t, "check", "verify", "--final", "-")
-			if err := c.cmd.Process.Signal(sig); err != nil {
-				t.Fatal(err)
-			}
-			if err := c.stdin.Close(); err != nil {
-				t.Fatal(err)
-			}
-			state := c.wait(t)
-			name := map[syscall.Signal]string{syscall.SIGINT: "SIGINT", syscall.SIGTERM: "SIGTERM", syscall.SIGHUP: "SIGHUP"}[sig]
-			want := "yomiyasu_check.py: 止められました（" + name + "）。動いていた検査を止めて終わります。\n"
-			if state.ExitCode() != 128+int(sig) || !strings.HasSuffix(c.stderr.String(), want) {
-				t.Fatalf("rc=%d stdout=%q stderr=%q", state.ExitCode(), c.stdout.String(), c.stderr.String())
-			}
-		})
+	for _, args := range [][]string{{"check", "verify", "--final", "-"}, {"check", "run", "--stdin"}, {"check", "run", "--source", "-", "--final", "f.md"}} {
+		for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP} {
+			t.Run(strings.Join(args[1:], " ")+"/"+sig.String(), func(t *testing.T) {
+				c := startReading(t, args...)
+				if err := c.cmd.Process.Signal(sig); err != nil {
+					t.Fatal(err)
+				}
+				state := c.wait(t)
+				name := map[syscall.Signal]string{syscall.SIGINT: "SIGINT", syscall.SIGTERM: "SIGTERM", syscall.SIGHUP: "SIGHUP"}[sig]
+				want := "yomiyasu_check.py: 止められました（" + name + "）。動いていた検査を止めて終わります。\n"
+				if state.ExitCode() != 128+int(sig) || c.stderr.String() != want || c.stdout.String() != "" {
+					t.Fatalf("rc=%d stdout=%q stderr=%q", state.ExitCode(), c.stdout.String(), c.stderr.String())
+				}
+				if _, err := os.Lstat(c.dir + "/.yomiyasu"); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("止められた check が状態フォルダを作った: %v", err)
+				}
+			})
+		}
 	}
 }
