@@ -46,7 +46,21 @@ func childEnv(exe string) func(cmdenv.Env) []string {
 	}
 }
 
-// processEnv は今のプロセスの引数以外の外の世界を写した Env (本番の cmdenv.FromProcess と同じく環境変数の全部を持つ)。
-func processEnv(args []string, cwd string, stdout, stderr io.Writer) cmdenv.Env {
-	return cmdenv.Env{Args: args, Stdout: stdout, Stderr: stderr, Cwd: cwd, Environ: os.Environ()}
+// isolatedEnv は本物の check を動かす Env (環境変数は isolatedEnviron)。
+func isolatedEnv(t *testing.T, args []string, cwd string, stdout, stderr io.Writer) cmdenv.Env {
+	t.Helper()
+	return cmdenv.Env{Args: args, Stdout: stdout, Stderr: stderr, Cwd: cwd, Environ: isolatedEnviron(t)}
+}
+
+// isolatedEnviron は、テストで本物の check (と子) を動かすときの環境変数。プロセスの環境を継がない: 継ぐと、YOMIYASU_STATE_DIR の
+// ある環境では本物の状態フォルダに書き (作業フォルダの状態フォルダを見る確かめが空振りする)、HOME と TMPDIR も本物を使う。
+func isolatedEnviron(t *testing.T) []string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"home", "tmp"} {
+		if err := os.Mkdir(dir+"/"+name, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return []string{"PATH=/usr/bin:/bin", "HOME=" + dir + "/home", "TMPDIR=" + dir + "/tmp"}
 }

@@ -45,17 +45,26 @@ func startReading(t *testing.T, args ...string) *signalChild {
 	return c
 }
 
-// newSignalChild は args の子を、まだ起こさずに用意する (作業フォルダは c.dir)。
+// newSignalChild は args の子を、まだ起こさずに用意する (作業フォルダは c.dir。状態フォルダは c.dir/.yomiyasu になる)。
 func newSignalChild(t *testing.T, args ...string) *signalChild {
 	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
+	// 子の環境はプロセスの環境を継がずに組み、作業フォルダに .git を置く: 継いだ YOMIYASU_STATE_DIR や、git の repo の中の TMPDIR
+	// (作業フォルダから上へ辿って repo の .yomiyasu を選ぶ) があると、状態フォルダを作らないことの確かめが c.dir の外を向いて空振りし、
+	// 退行したときに本物の状態フォルダへ書く。
+	base := t.TempDir()
+	dir := base + "/work"
+	for _, sub := range []string{dir + "/.git", base + "/home", base + "/tmp"} {
+		if err := os.MkdirAll(sub, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	c := &signalChild{dir: dir, cmd: exec.Command(exe, args...), stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, done: make(chan error, 1)}
 	c.cmd.Dir = dir
-	c.cmd.Env = append(os.Environ(), entryChildEnv+"=1")
+	c.cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + base + "/home", "TMPDIR=" + base + "/tmp", entryChildEnv + "=1"}
 	c.cmd.Stdout, c.cmd.Stderr = c.stdout, c.stderr
 	if c.stdin, err = c.cmd.StdinPipe(); err != nil {
 		t.Fatal(err)

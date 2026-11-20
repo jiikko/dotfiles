@@ -64,7 +64,7 @@ func runFlip(t *testing.T, flip bool, data []byte, readErr error, args ...string
 	var stdout, stderr bytes.Buffer
 	env := cmdenv.Env{
 		Args: append(args, "--state-dir", dir+"/state"), Stdin: &flipReader{ctx: ctx, flip: flip, data: data, err: readErr},
-		Stdout: &stdout, Stderr: &stderr, Cwd: dir, Environ: []string{"HOME=" + dir},
+		Stdout: &stdout, Stderr: &stderr, Cwd: dir, Environ: isolatedEnviron(t),
 	}
 	rc := MainWith(ctx, env, childRuntime(t))
 	return dir, runOutcome{rc, stdout.String(), stderr.String()}

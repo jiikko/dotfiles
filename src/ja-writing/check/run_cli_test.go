@@ -27,7 +27,7 @@ func TestRunStopsWhereUpstreamWouldReadArmedEntries(t *testing.T) {
 	rt := childRuntime(t)
 	call := func(args ...string) (int, string) {
 		var stdout, stderr bytes.Buffer
-		rc := MainWith(context.Background(), processEnv(append([]string{"run"}, args...), dir, &stdout, &stderr), rt)
+		rc := MainWith(context.Background(), isolatedEnv(t, append([]string{"run"}, args...), dir, &stdout, &stderr), rt)
 		return rc, stderr.String()
 	}
 	for _, args := range [][]string{
@@ -65,8 +65,9 @@ func TestRunReadsEnvironmentFromEnv(t *testing.T) {
 	rt := childRuntime(t)
 	rt.ChildEnv = DefaultRuntime().ChildEnv
 	// 先に置いた値が勝つ (Lookup は同じ名前の先のものを読む)。プロセスの環境に YOMIYASU_STATE_DIR があっても Env の値を使う
-	environ := append([]string{"YOMIYASU_STATE_DIR=" + dir + "/from-env"}, os.Environ()...)
-	environ = append(environ, childEnvName+"="+childReal, "JA_REAL="+exe)
+	t.Setenv(stateDirEnv, dir+"/from-process")
+	environ := append([]string{"YOMIYASU_STATE_DIR=" + dir + "/from-env"}, isolatedEnviron(t)...)
+	environ = append(environ, "YOMIYASU_STATE_DIR="+dir+"/later", childEnvName+"="+childReal, "JA_REAL="+exe)
 	var stdout, stderr bytes.Buffer
 	env := cmdenv.Env{Args: []string{"run", "--source", "src.md", "--final", "final.md"}, Stdout: &stdout, Stderr: &stderr, Cwd: dir, Environ: environ}
 	if rc := MainWith(context.Background(), env, rt); rc != 0 {
@@ -75,8 +76,10 @@ func TestRunReadsEnvironmentFromEnv(t *testing.T) {
 	if _, err := os.Stat(dir + "/from-env/state.json"); err != nil {
 		t.Fatalf("Env の YOMIYASU_STATE_DIR に書いていない: %v", err)
 	}
-	if _, err := os.Stat(dir + "/.yomiyasu"); err == nil {
-		t.Fatal("プロセスの環境で状態フォルダを決めた")
+	for _, other := range []string{"/.yomiyasu", "/from-process", "/later"} {
+		if _, err := os.Stat(dir + other); err == nil {
+			t.Fatalf("Env の先の YOMIYASU_STATE_DIR でない %s に書いた", other)
+		}
 	}
 }
 
@@ -86,7 +89,7 @@ func TestRunRefusesEnvCwdOtherThanProcess(t *testing.T) {
 	other := t.TempDir()
 	for _, args := range [][]string{{"run", "--source", "src.md", "--final", "final.md"}, {"verify", "--final", "final.md"}} {
 		var stdout, stderr bytes.Buffer
-		rc := MainWith(context.Background(), processEnv(args, other, &stdout, &stderr), childRuntime(t))
+		rc := MainWith(context.Background(), isolatedEnv(t, args, other, &stdout, &stderr), childRuntime(t))
 		if rc != 3 || !strings.Contains(stderr.String(), "内部エラー: 作業フォルダ (Env.Cwd) "+other+" が、プロセスの作業フォルダと違います") {
 			t.Fatalf("%v: rc=%d stdout=%q stderr=%q (cwd %s)", args, rc, stdout.String(), stderr.String(), dir)
 		}
