@@ -133,6 +133,9 @@ func stopped(ctx context.Context) error {
 // 例外を投げ、何も出さず何も書かずに止まるため。経路ごとに読み方を変えて守らない (守り漏れた経路だけが止まらなくなる)。
 // read は出力も書き込みもしない (止めた後も走り続けるので、書くと止まった後に出る)。止めたときは goroutine を残す (プロセスはこの後すぐ終わる)。
 // 既に取り消されていれば read を始めない。read の panic は呼んだ goroutine で投げ直す (pyops.Catch と catchFailure に届かせる)。
+// read が終わった後にも ctx を見て、取り消されていれば read の結果 (誤りと panic も) を捨てて止める: 本家はハンドラが read の中で例外を
+// 投げるので、読み終わりとシグナルが重なっても誤りの文も結果も出さない。呼び出し元ごとに出力の前で ctx を見ると、見落とした経路だけが
+// 誤りの文を出してから止まる。
 func untilStopped(ctx context.Context, read func()) error {
 	if err := stopped(ctx); err != nil {
 		return err
@@ -152,6 +155,9 @@ func untilStopped(ctx context.Context, read func()) error {
 	}()
 	select {
 	case got := <-done:
+		if err := stopped(ctx); err != nil {
+			return err
+		}
 		if p, ok := got.(readPanic); ok {
 			panic(p.value)
 		}

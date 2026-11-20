@@ -99,8 +99,8 @@ func Main(ctx context.Context, env cmdenv.Env) int { return MainWith(ctx, env, D
 
 // MainWith は Main の、run が外の世界から取る値 (子の実行ファイル・時刻など) を渡せる形。
 // 外から止められた (ctx の取り消し) ときは、どの subcommand でも本家の main の _Stopped・KeyboardInterrupt の枝と同じく
-// 「止められました」の文を出して 128+番号で終わる。本家はどの行でもハンドラが例外を投げるが、Go は入力と記録を開く・読む間 (untilStopped)・
-// run の途中の決まった所・結果を出す直前と、subcommand が戻った後に ctx を見る (出力の後に届いたシグナルも 128+番号にする。本家も出力の後の
+// 「止められました」の文を出して 128+番号で終わる。本家はどの行でもハンドラが例外を投げるが、Go は入力と記録を開く・読む間と読み終わった直後 (untilStopped)・
+// run の途中の決まった所・run の結果を出す直前と、subcommand が戻った後に ctx を見る (出力の後に届いたシグナルも 128+番号にする。本家も出力の後の
 // シグナルで 128+番号になる)。
 func MainWith(ctx context.Context, env cmdenv.Env, rt Runtime) int {
 	code, err := dispatch(ctx, env, rt)
@@ -199,7 +199,8 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	if problem := must(PathProblem("verify", []*string{a.final, a.source})); problem != "" {
 		return pycli.Fail(env, problem)
 	}
-	// 入力と状態フォルダの記録を読み、結果を組むまで (verify は書かない)。読み終わる前に止められたら、読み終わりを待たない (untilStopped)
+	// 入力と状態フォルダの記録を読み、結果を組むまで (verify は書かない)。読み終わる前に止められたら読み終わりを待たず、読み終わった後に
+// 止められていたら結果も誤りの文も出さない (untilStopped。本家の _verify は読み終えて結果を組んでから出力する)
 	var out *verifyResult
 	var final *Target
 	if stop := untilStopped(ctx, func() { out, final, problem, err = readVerify(env, a, since) }); stop != nil {
@@ -210,11 +211,6 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	}
 	if problem != "" {
 		return pycli.Fail(env, problem)
-	}
-	// 本家の _verify は読み終えて結果を組んでから出力するので、その間に届いたシグナルでは何も出さずに止まる。出力の直前に ctx を見る
-	// (出力の後に届いたものは MainWith が見る)
-	if err := stopped(ctx); err != nil {
-		return 0, err
 	}
 	if a.json {
 		return out.code(), pycli.PrintTo(env, must(pyjson.Dumps(out.json(final), pyjson.Indent1()))+"\n")
