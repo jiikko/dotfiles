@@ -197,6 +197,13 @@ var goldens = []golden{
 		}
 		return oracle.MarshalDiffReport(g)
 	}},
+	{name: "report-shape", file: oracle.ReportShapeFile, what: "子の --json の形が崩れたときの人が読む出力の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
+		g, err := r.RecordReportShape(e.ctx, e.header, e.corpus, e.p.diff, e.p.words)
+		if err != nil {
+			return nil, err
+		}
+		return oracle.MarshalReportShape(g)
+	}},
 	{name: "diff-base", file: oracle.DiffBaseFile, what: "diff の関数の記録", build: func(e genEnv, r oracle.Runner) ([]byte, error) {
 		inputs, err := oracle.LoadDiffInputs(e.p.diff)
 		if err != nil {

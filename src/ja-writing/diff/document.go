@@ -16,11 +16,16 @@ var failOnKinds = []string{"number", "negation", "swap", "sentence_type", "citat
 func failOnCount(risks []*pyjson.Object) int {
 	n := 0
 	for _, r := range risks {
-		if slices.Contains(failOnKinds, riskKind(r)) || (riskKind(r) == "unsupported" && riskString(r, "subkind") == "number") {
+		if failOnCounted(riskKind(r), riskString(r, "subkind")) {
 			n++
 		}
 	}
 	return n
+}
+
+// failOnCounted は --fail-on=meaning-risk が数える恐れか (kind が failOnKinds か、unsupported の number)。
+func failOnCounted(kind, subkind string) bool {
+	return slices.Contains(failOnKinds, kind) || (kind == "unsupported" && subkind == "number")
 }
 
 func endingFlagsOf(flags []EndingFlag) pyjson.Value {

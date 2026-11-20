@@ -3,6 +3,7 @@ package diff
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ja-writing/internal/bold"
@@ -44,7 +45,7 @@ func endingsReport(text, stance string) (string, error) {
 		lines = append(lines, boldHead(""))
 		items := make([]string, len(problems))
 		for i, p := range problems {
-			items[i] = boldProblemLine(p.Line, p.Found, p.Suggest, p.How)
+			items[i] = boldProblemLine(strconv.Itoa(p.Line), p.Found, p.Suggest, p.How)
 		}
 		lines = append(lines, strings.Join(items, "\n"))
 	}
@@ -52,11 +53,11 @@ func endingsReport(text, stance string) (string, error) {
 }
 
 // boldProblemLine は本家の bold_lines の 1 行 (suggest が空なら「（手で直す）」)。
-func boldProblemLine(line int, found, suggest, how string) string {
+func boldProblemLine(line, found, suggest, how string) string {
 	if suggest == "" {
 		suggest = "（手で直す）"
 	}
-	return fmt.Sprintf("- %d行目: %s → %s（%s）", line, found, suggest, how)
+	return fmt.Sprintf("- %s行目: %s → %s（%s）", line, found, suggest, how)
 }
 
 // boldHead は本家の bold_head。where は見出しの「（」の直後に足す文 (--endings は空)。

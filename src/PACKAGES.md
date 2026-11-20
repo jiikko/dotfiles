@@ -75,6 +75,7 @@
 - `src/ja-writing/internal/difflib` (`ja-writing/internal/difflib`) — Package difflib は Python 3.15.0 の difflib.SequenceMatcher と、本家 yomiyasu の速い照合 (yomiyasu_diff.py の _ExactSequenceMatcher) を Go で再現する。 (internal)
 - `src/ja-writing/internal/pycli` (`ja-writing/internal/pycli`) — Package pycli は lint と diff の CLI が共有する部品: Python の argparse の写し・使い方の誤りの文・出力先が閉じたときの扱い・入力を読む処理。 (internal)
 - `src/ja-writing/internal/pyjson` (`ja-writing/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
+- `src/ja-writing/internal/pyops` (`ja-writing/internal/pyops`) — Package pyops は、json.loads で読んだ値に Python の演算 (d[key]・d.get・for・len・+・join・format) を当てた結果と、例外になるかを写す。 (internal)
 - `src/ja-writing/internal/pyre` (`ja-writing/internal/pyre`) — Package pyre は Python 3.15.0 の re (str のパターン) を regexp2 の上に写す。 (internal)
 - `src/ja-writing/internal/pystr` (`ja-writing/internal/pystr`) — Package pystr は Python の str の振る舞い (splitlines・strip・isspace などの分類・len) を Go で再現する。 (internal)
 - `src/ja-writing/internal/pyunicode` (`ja-writing/internal/pyunicode`) — Package pyunicode は Python 3.15.0 (unicodedata 17.0.0) の文字の性質を Go で再現する。 (internal)
@@ -85,6 +86,7 @@
 - `src/ja-writing/oracle/cmd/golden` (`ja-writing/oracle/cmd/golden`) — Command golden は本家 yomiyasu (Python) を環境を固定して動かし、testdata/golden/ の記録を作り直す (make golden)。 (main)
 - `src/ja-writing/oracle/cmd/worstcase` (`ja-writing/oracle/cmd/worstcase`) — Command worstcase は flag-patterns.txt の試す数の上限 (PATTERNS_MAX_COST = 512) の最悪の組を、本家 (Python の re) と Go (internal/pyre) で測る。 (main)
 - `src/ja-writing/oracle/replay` (`ja-writing/oracle/replay`) — Package replay は、本家の関数の記録 (結果は digest だけ) と Go の実装の結果を突き合わせるテストの道具。
+- `src/ja-writing/oracle/reportshape` (`ja-writing/oracle/reportshape`) — Package reportshape は report-shape.json の記録 (oracle.ReportShapeFile) を読む側の道具。
 - `src/ja-writing/visibility` (`ja-writing/visibility`) — Package visibility は yomiyasu v3.1.0 の markdown_visibility.py (lint・diff・check が共有する、Markdown の読み方・語の一覧・入力の扱い) を Go で作り直したもの。
 - `src/lockman` (`lockman`) — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
 - `src/mac-lan-manager` (`mac-lan-manager`) — mac-lan-manager は手元の Mac 同士を内部の網で繋いで管理する道具 (bin/mac-lan-manager)。 (main)

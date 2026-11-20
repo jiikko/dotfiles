@@ -30,7 +30,8 @@ func TestReportMatchesPythonRecording(t *testing.T) {
 		}
 		checkParts(t, c, d)
 		risks, _ := d.Get("meaning_risks")
-		if got := failOnLine(fieldInt(d, "meaning_risk_count"), fieldInt(d, "fail_on_meaning_risk_count"), risks.([]pyjson.Value)); got != c.FailOnLine {
+		total, counted := d.Field("meaning_risk_count").(int64), d.Field("fail_on_meaning_risk_count").(int64)
+		if got := failOnLine(int(total), int(counted), risks.([]pyjson.Value)); got != c.FailOnLine {
 			t.Errorf("%s: 終了コード 1 の行が本家と違う: %q (本家 %q)", c.Name, got, c.FailOnLine)
 		}
 		got, err := report(d)
@@ -70,7 +71,11 @@ func checkSummaries(t *testing.T, c oracle.DiffReportCase, d *pyjson.Object) {
 		if !ok {
 			t.Fatalf("%s: detector_summary の %s の記録が無い", c.Name, key)
 		}
-		got := DetectorSummary(d, key)
+		got, err := DetectorSummary(d, key)
+		if err != nil {
+			t.Errorf("%s: detector_summary(%s): %v", c.Name, key, err)
+			continue
+		}
 		if (got == nil) != (want == nil) || (got != nil && *got != *want) {
 			t.Errorf("%s: detector_summary(%s) が本家と違う: %s (本家 %s)", c.Name, key, showPtr(got), showPtr(want))
 		}
@@ -80,7 +85,12 @@ func checkSummaries(t *testing.T, c oracle.DiffReportCase, d *pyjson.Object) {
 // checkParts は report_parts を本家と比べる (鍵の順も比べる)。
 func checkParts(t *testing.T, c oracle.DiffReportCase, d *pyjson.Object) {
 	t.Helper()
-	got, err := pyjson.Dumps(ReportParts(d), pyjson.Compact())
+	parts, err := ReportParts(d)
+	if err != nil {
+		t.Errorf("%s: report_parts: %v", c.Name, err)
+		return
+	}
+	got, err := pyjson.Dumps(parts, pyjson.Compact())
 	if err != nil {
 		t.Fatal(err)
 	}

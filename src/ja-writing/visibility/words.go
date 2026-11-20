@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyops"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
 )
@@ -511,33 +512,16 @@ func (c WordsContext) Value() *pyjson.Object {
 	return o
 }
 
-// WordsContextFromValue は context.words の dict (Value の形) から words_label に渡す値を作る (本家の words_label は dict を読む)。
-func WordsContextFromValue(words *pyjson.Object) WordsContext {
-	str := func(key string) string {
-		v, _ := words.Get(key)
-		s, _ := v.(string)
-		return s
-	}
-	num := func(key string) int {
-		v, _ := words.Get(key)
-		n, _ := v.(int64)
-		return int(n)
-	}
-	c := WordsContext{Path: str("path"), AllowLines: num("allow_lines"), FlagLines: num("flag_lines")}
-	if v, _ := words.Get("flag_patterns_sha256"); v != nil {
-		if sha, ok := v.(string); ok {
-			c.PatternsSHA256 = &sha
-		}
-		c.PatternsLines = num("flag_patterns_lines")
-	}
-	return c
-}
-
 // WordsLabel は words_label (人が読む出力の「語の一覧: <パス>（allow N語、flag N語）。」。flag-patterns.txt があれば「、flag-patterns N行」を足す)。
-func WordsLabel(c WordsContext) string {
+func WordsLabel(c WordsContext) string { return WordsLabelOf(c.Value()) }
+
+// WordsLabelOf は words_label を context.words の dict に当てる (子の --json を読んだ dict も渡る)。本家と同じく、鍵が欠けると KeyError を
+// pyops の例外として投げるので、呼び出し元は pyops.Catch で受ける。
+func WordsLabelOf(words pyjson.Value) string {
 	patterns := ""
-	if c.PatternsSHA256 != nil {
-		patterns = fmt.Sprintf("、flag-patterns %d行", c.PatternsLines)
+	if pyops.Get(words, "flag_patterns_sha256") != nil {
+		patterns = "、flag-patterns " + pyops.Format(pyops.Index(words, "flag_patterns_lines")) + "行"
 	}
-	return fmt.Sprintf("語の一覧: %s（allow %d語、flag %d語%s）。", c.Path, c.AllowLines, c.FlagLines, patterns)
+	return fmt.Sprintf("語の一覧: %s（allow %s語、flag %s語%s）。", pyops.Format(pyops.Index(words, "path")),
+		pyops.Format(pyops.Index(words, "allow_lines")), pyops.Format(pyops.Index(words, "flag_lines")), patterns)
 }

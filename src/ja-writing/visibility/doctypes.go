@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyops"
 	"ja-writing/internal/pyunicode"
 )
 
@@ -117,6 +119,23 @@ func ContextLabel(docType, reader *string) (string, error) {
 		return names[*v] + "（" + *v + "）"
 	}
 	return "文書の種類: " + label(dt, kinds) + "、読者: " + label(rd, readers) + "。", nil
+}
+
+// ContextLabelOf は context_label を dict の値に当てる (子の --json を読んだ dict も渡る)。本家と同じく、str でない値は str() にしてから正規化し、
+// 使えない値は ValueError を pyops の例外として投げるので、呼び出し元は pyops.Catch で受ける。
+func ContextLabelOf(docType, reader pyjson.Value) string {
+	text := func(v pyjson.Value) *string {
+		if v == nil {
+			return nil
+		}
+		s := pyops.Format(v)
+		return &s
+	}
+	label, err := ContextLabel(text(docType), text(reader))
+	if err != nil {
+		pyops.Raise(TypeValueError, "%s", err)
+	}
+	return label
 }
 
 // DocTypeValues は DocTypes の値 (--doc-type に使える名前) の並び。

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyops"
 	"ja-writing/visibility"
 )
 
@@ -25,19 +26,18 @@ const (
 
 // statusLine は _status_line (状態の行。変更の数は hunk の数)。最後の行 (above) では、硬化と勢いと新しい節の添え書きが「上の節」になる。
 func statusLine(d *pyjson.Object, above bool) string {
-	status := fieldStr(d, "status")
-	if status == "no_change" {
+	if pyops.Equal(idx(d, "status"), "no_change") {
 		return "状態: 変更なし"
 	}
-	places := len(fieldList(fieldObj(d, "full_diff"), "hunks"))
+	places := pyops.Len(idx(idx(d, "full_diff"), "hunks"))
 	var line string
-	switch {
-	case status == "changed_without_candidates" && places == 0:
-		return "状態: 変更はあるが、専用の規則に当たる見直し候補はない（変更 0か所。改行コード・BOM・末尾の改行だけが違う）"
-	case status == "changed_without_candidates":
+	if pyops.Equal(idx(d, "status"), "changed_without_candidates") {
+		if places == 0 {
+			return "状態: 変更はあるが、専用の規則に当たる見直し候補はない（変更 0か所。改行コード・BOM・末尾の改行だけが違う）"
+		}
 		line = fmt.Sprintf("状態: 変更はあるが、専用の規則に当たる見直し候補はない（変更 %dか所）", places)
-	default:
-		line = fmt.Sprintf("状態: 変更あり（%dか所）。見直し候補 %d件、うち意味が変わる恐れ %d件", places, fieldInt(d, "candidate_count"), fieldInt(d, "meaning_risk_count"))
+	} else {
+		line = fmt.Sprintf("状態: 変更あり（%dか所）。見直し候補 %s件、うち意味が変わる恐れ %s件", places, pyStr(idx(d, "candidate_count")), pyStr(idx(d, "meaning_risk_count")))
 	}
 	position := "下"
 	if above {
@@ -46,60 +46,47 @@ func statusLine(d *pyjson.Object, above bool) string {
 	if reviews := detectorReviewCount(d); reviews > 0 {
 		line += fmt.Sprintf("（文体の硬化と勢いの見直し候補 %d件は%sの節）", reviews, position)
 	}
-	extra := 0
+	candidateCount := func(key string) pyjson.Value { return pyops.GetOr(getDict(d, key), "candidate_count", int64(0)) }
+	var extra pyjson.Value = int64(0)
 	for _, key := range newReviewSections {
-		extra += fieldInt(fieldObj(d, key), "candidate_count")
+		extra = pyops.Add(extra, candidateCount(key))
 	}
-	if extra > 0 {
+	if pyops.Truthy(extra) {
 		label := "慎重表現・値・敬語"
-		if fieldInt(fieldObj(d, "register"), "candidate_count") > 0 {
+		if pyops.Truthy(candidateCount("register")) {
 			label += "・文体の切り替え"
 		}
-		line += fmt.Sprintf("（%sの見直し候補 %d件は%sの節）", label, extra, position)
+		line += fmt.Sprintf("（%sの見直し候補 %s件は%sの節）", label, pyStr(extra), position)
 	}
 	return line
 }
 
-func stringPtr(v pyjson.Value) *string {
-	s, ok := v.(string)
-	if !ok {
-		return nil
-	}
-	return &s
-}
-
 // report は人が読むレポート。1 行目、状態の行、断り、意味が変わる恐れ、規則の見直し候補、足した人や担当、見出しの形、読点の増加、硬化、勢い、
-// 慎重表現・値・敬語・文体の切り替え、全文差分、状態の行の順。末尾に改行は付けない。
-func report(d *pyjson.Object) (string, error) {
-	parts := []string{riskSection(d), ruleSection(d), addedActorSection(d), headingShapeSection(d), commaSection(d),
-		detectorSection(d, "stiffness"), detectorSection(d, "tone")}
-	for _, key := range newReviewSections {
-		parts = append(parts, newReviewSection(d, key))
-	}
-	parts = append(parts, fullDiffSection(d))
+// 慎重表現・値・敬語・文体の切り替え、全文差分、状態の行の順。末尾に改行は付けない。本家が例外になる dict は error。
+func report(d *pyjson.Object) (out string, err error) {
+	defer pyops.Catch(&err)
+	status := statusLine(d, false)
+	parts := reportParts(d)
 	var body []string
-	for _, part := range parts {
-		if part != "" {
+	for _, key := range []string{"risks", "rules", "added_actors", "heading_shapes", "comma_increase", "stiffness", "tone",
+		"hedges", "immutable", "politeness", "register", "full_diff"} {
+		if part := parts.Field(key).(string); part != "" {
 			body = append(body, part)
 		}
 	}
-	head := []string{reportFirstLine, statusLine(d, false), reportDisclaimer}
-	context := fieldObj(d, "context")
-	docType, reader := field(context, "doc_type"), field(context, "reader")
+	head := []string{reportFirstLine, status, reportDisclaimer}
+	context := getDict(d, "context")
+	docType, reader := get(context, "doc_type"), get(context, "reader")
 	if docType != nil || reader != nil {
-		label, err := visibility.ContextLabel(stringPtr(docType), stringPtr(reader))
-		if err != nil {
-			return "", err
-		}
-		line := label + reportContextTail
+		line := visibility.ContextLabelOf(docType, reader) + reportContextTail
 		if s, ok := docType.(string); ok && slices.Contains(countedTypes, s) {
 			line += reportCountedTail
 		}
 		head = append(head, line)
 	}
-	if words := fieldObj(context, "words"); words != nil {
+	if words, ok := get(context, "words").(*pyjson.Object); ok {
 		// 語の一覧を使ったときだけ (種類と読者の行のあと)
-		head = append(head, visibility.WordsLabel(visibility.WordsContextFromValue(words)))
+		head = append(head, visibility.WordsLabelOf(words))
 	}
 	return strings.Join(head, "\n") + "\n\n" + strings.Join(body, "\n\n") + "\n\n" + statusLine(d, true), nil
 }
@@ -111,7 +98,10 @@ func failOnLine(total, counted int, risks []pyjson.Value) string {
 	}
 	var labels strings.Builder
 	for _, kl := range [][2]string{{"certainty", "・確度"}, {"state", "・状態の語"}, {"promise", "・約束"}, {"modality", "・許可の言い方"}, {"choice", "・選ぶ範囲"}, {"causality", "・因果"}} {
-		if slices.ContainsFunc(risks, func(r pyjson.Value) bool { return fieldStr(asObj(r), "kind") == kl[0] }) {
+		if slices.ContainsFunc(risks, func(r pyjson.Value) bool {
+			o, ok := r.(*pyjson.Object)
+			return ok && riskKind(o) == kl[0]
+		}) {
 			labels.WriteString(kl[1])
 		}
 	}

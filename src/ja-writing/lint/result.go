@@ -59,7 +59,7 @@ func (w *wordsReport) value() pyjson.Value {
 }
 
 // renderReport は通常の出力の全体。--json の dict と同じ値を RenderReport に通す (check が子の lint --json を読んで使う口と同じ実装)。
-func renderReport(r *result) string { return RenderReport(r.value().(*pyjson.Object)) }
+func renderReport(r *result) (string, error) { return RenderReport(r.value().(*pyjson.Object)) }
 
 // dumpResult は json.dumps(result, ensure_ascii=True, indent=2)。
 func dumpResult(r *result) (string, error) {

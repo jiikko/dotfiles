@@ -12,7 +12,9 @@ package pyjson
 
 import (
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"strings"
 )
 
@@ -78,6 +80,20 @@ func (o *Object) Field(key string) Value {
 
 // Len は鍵の数。
 func (o *Object) Len() int { return len(o.keys) }
+
+// Delete は鍵を消す (無ければ何もしない。残りの鍵の順は変えない。本家の del d[key] から KeyError を除いたもの)。
+func (o *Object) Delete(key string) {
+	if _, ok := o.vals[key]; !ok {
+		return
+	}
+	delete(o.vals, key)
+	o.keys = slices.DeleteFunc(o.keys, func(k string) bool { return k == key })
+}
+
+// Clone は浅い写し (本家の dict(d)。値の list と dict は元と共有する)。本家の dict(d, key=value) は Clone した写しに Set する (元の d に Set すると呼び出し元の dict が変わる)。
+func (o *Object) Clone() *Object {
+	return &Object{keys: slices.Clone(o.keys), vals: maps.Clone(o.vals)}
+}
 
 // Keys は鍵を挿入順で返す (呼び出し側が書き換えても Object は変わらない)。
 func (o *Object) Keys() []string { return append([]string(nil), o.keys...) }

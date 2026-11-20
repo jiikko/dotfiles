@@ -115,8 +115,11 @@ func run(env cmdenv.Env, lint lintFunc) (int, error) {
 			return 0, err
 		}
 	} else {
-		text := renderReport(res) + "\n" + exitLine(hit, res.counts)
-		if err := printTo(env, text); err != nil {
+		report, err := renderReport(res)
+		if err != nil {
+			return 0, err
+		}
+		if err := printTo(env, report+"\n"+exitLine(hit, res.counts)); err != nil {
 			return 0, err
 		}
 	}

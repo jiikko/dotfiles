@@ -18,14 +18,14 @@
 //	DOC_TYPES / READER_LEVELS   DocTypes / ReaderLevels
 //	normalize_doc_type          NormalizeDocType (None は nil)
 //	normalize_reader            NormalizeReader
-//	context_label               ContextLabel
+//	context_label               ContextLabel (dict の値は ContextLabelOf)
 //	WordsError                  *Error (Type が TypeWordsError)
 //	find_words_folder           FindWordsFolder
 //	load_words                  LoadWords (戻り値の dict は *Words)
 //	resolve_words               ResolveWords
 //	current_directory           CurrentDirectory
 //	words_context               WordsContextOf (戻り値は WordsContext)
-//	words_label                 WordsLabel
+//	words_label                 WordsLabel (dict の値は WordsLabelOf)
 //	check_pattern               CheckPattern (戻り値は *CheckedPattern)
 //	input_path_problem          InputPathProblem
 //	absolute_path               AbsolutePath
