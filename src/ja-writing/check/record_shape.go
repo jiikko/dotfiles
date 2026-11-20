@@ -568,17 +568,22 @@ func sameKeySet(o *pyjson.Object, keys []string) bool {
 	return o.Len() == len(keys) && hasKeys(o, keys)
 }
 
-// distinctCount は len(set(items))。list と dict は TypeError (本家と同じ)。数は 1 == 1.0 == True で 1 つに数え、nan はどれも別に数える
-// (json.loads が作る nan はそれぞれ別の object で、set は identity の次に == を見るため)。
+// distinctCount は len(set(items))。list と dict は TypeError (本家と同じ)。数は 1 == 1.0 == True で 1 つに数え、nan は全部で 1 つに数える
+// (json.loads は綴りの NaN にいつも json.decoder の同じ 1 つの object を返し、set は == の前に identity を見るので、記録の nan どうしは同じ要素になる)。
 func distinctCount(items []pyjson.Value) int {
 	var seen []pyjson.Value
 	for _, item := range items {
 		hashable(item, "a set element")
-		if !slices.ContainsFunc(seen, func(v pyjson.Value) bool { return pyops.Equal(v, item) }) {
+		if !slices.ContainsFunc(seen, func(v pyjson.Value) bool { return pyops.Equal(v, item) || (isNaN(v) && isNaN(item)) }) {
 			seen = append(seen, item)
 		}
 	}
 	return len(seen)
+}
+
+func isNaN(v pyjson.Value) bool {
+	f, ok := v.(float64)
+	return ok && math.IsNaN(f)
 }
 
 // hashable は v が dict の鍵や set の要素になれるか確かめる。list と dict は本家と同じ文の TypeError (Python 3.15 の文。use は "a dict key" か "a set element")。

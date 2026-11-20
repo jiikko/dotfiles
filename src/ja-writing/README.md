@@ -273,6 +273,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
   - 読む側が閉じたパイプ: 本文の出力は本家と同じ rc 3 と 1 行。`-h`・`--version`・使い方の誤りは、本家では書き込みが Python の終わり際の flush まで遅れるので、
     同じく rc 120 (標準出力なら「Exception ignored while flushing sys.stdout:」の 2 行) にする (Python 3.15.0 で実測)。EPIPE を受けるため、入口 (`main.go`) が SIGPIPE を `signal.Notify` で受ける。
     EPIPE 以外の書き込みの誤り (ENOSPC など) は内部エラーの rc 3。
+  - 閉じた標準入力 (`<&-`) は、本家が rc 2「標準入力を読めません（標準入力がありません）」、Go は空の入力として検査する (diff・check の `--stdin` も同じ)。Go の runtime は起動の時点で閉じた fd 0 を /dev/null で開き直すので、`main` からは `</dev/null` と区別できない (os.Stdin.Stat が両方とも文字デバイスを返すことを Go 1.26 で実測)。check の `ReadStdinBytes` の「標準入力が無い」の枝はこのため CLI からは届かない。
   - 入力のパスの検査 (`visibility.InputPathProblem`) とファイルを開く処理は、プロセスの cwd を見る。語の一覧の探し方だけが `Env.Cwd` を見る。`Main` を cwd の違う `Env` で呼ぶテストは、プロセスの cwd も移す。
   - allow で語の一部だけを外すときの message の作り直し (`calqueMessage`・`aiPhraseMessage`・`projectTermMessage`・`renyoMessage`) は、本家に作り直させた記録 (`lint-post.json` の `allow-partial|`) を置いてあり、`TestPostProcessingMatchesPythonRecording` が全件比べる。
   - `run` は検査の本体を引数で受ける (`lintFunc`)。rc と「終了コード1」の行の配線は、候補を注入した `TestRunExitCodeAndExitLine` が見る (CLI の記録は全件を比べる)。
