@@ -213,6 +213,7 @@ func Usage() string {
                             Enter で開く (.md は viewer 内に積んで h で戻る、他は nvim -R)、
                             e で編集、y でパスコピー、Esc で戻る) /
                             J・K 本文を開いたまま次・前の issue へ (本文表示中のみ) /
+                            w 規約から外れた issue の修正指示をコピー (本文表示中のみ) /
                             e・v $VISUAL・$EDITOR で開く (既定 nvim) /
                             r 再読込 /
                             Tab・h・l タブ移動 / s status viewer へ切り替え /

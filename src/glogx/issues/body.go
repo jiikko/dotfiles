@@ -28,6 +28,9 @@ type Body struct {
 	progress     string // Progress() の結果キャッシュ ("" も有効な値なので下のフラグと対で持つ)
 	progressDone bool
 
+	facts     bodyFacts // Conformance の結果キャッシュ (本文の走査は 1 回)。factsDone と対で持つ
+	factsDone bool
+
 	// base は本文中の相対パスの基準。**本文を読んだ時点**の値を ReadBody が入れる (viewer は
 	// 移動を追って開いている Issue を差し替えるが、本文は読み直すまで古い場所の書き方のまま。
 	// 基準を後から Issue 側で引くと、古い本文を新しい場所で解決してしまう)。Repo は FileLinks が入れる。

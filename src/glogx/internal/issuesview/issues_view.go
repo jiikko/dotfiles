@@ -1704,6 +1704,9 @@ func (v *IssuesView) handleBodyKey(key string, vp IssuesViewport, rows int) tea.
 		v.close()
 	case "u":
 		v.openURLPicker()
+	case "w":
+		// glogx 全体の w (直近の警告をコピー) と同じ語彙。本文ではこの issue の規約外の警告を、直す指示の形でコピーする
+		v.copyFixPrompt()
 	case "tab":
 		// 本文中のファイルパスのジャンプモード (ユーザー要望 2026-09-28)。w3m / lynx / ブラウザの
 		// 「Tab = 次のリンク」。一覧の Tab はカテゴリ移動だが、本文ではカテゴリが無いので衝突しない
@@ -2189,13 +2192,57 @@ func (v *IssuesView) bodyHeadLines(width int, colored bool) []string {
 			status = v.linkJumpStatus(fl, cur)
 		}
 	}
-	return []string{
+	head := []string{
 		// Rel はファイル名 = 外部由来。ファイルを開く同一性は v.open.Path 側が持つので、
 		// 画面に出すこちらだけ無害化する (worktreeRow.dispPath と同じ分け方)。
 		term.Paint(term.ClipToWidth(term.SanitizePlainLine(v.open.Rel), width), term.AnsiBold, colored),
 		term.Paint(term.ClipToWidth(status, width), term.AnsiDim, colored),
-		"",
 	}
+	// 規約外の警告は行を足す (状態の行へ混ぜると進捗・ジャンプ中の案内と 1 行を奪い合う)。🚨 行数は
+	// 開いている issue と本文だけで決まり、幅では変わらない (headLines の doc の約束)。
+	// w の案内はこの行に書き、最下行の hint には足さない (足すと予算の幅で u / Tab が押し出される)
+	if vs := v.openViolations(); len(vs) > 0 {
+		labels := make([]string, len(vs))
+		for i, x := range vs {
+			labels[i] = x.Label
+		}
+		w := "🚨 規約外 (w で修正指示をコピー): " + strings.Join(labels, " / ")
+		head = append(head, term.Paint(term.ClipToWidth(w, width), term.AnsiYellow, colored))
+	}
+	return append(head, "")
+}
+
+// openViolations は開いている issue が issue の規約から外れている点 (issues.Body.Conformance)。
+// Tab のジャンプで開いた doc (README など issue でない md) は見ない。
+func (v *IssuesView) openViolations() []issues.Violation {
+	if v.open == nil || v.body == nil || len(v.docStack) > 0 {
+		return nil
+	}
+	return v.body.Conformance(v.open)
+}
+
+// copyFixPrompt は規約外の点を直す指示文をクリップボードへ入れる (本文の w)。貼り先は Claude Code。
+//
+// 🚨 copyText を通さない: 指示文は複数行で、copyText は通知に全文を載せる (トーストは 1 行なので枠が壊れる)。
+// 制御文字を含むなら断るのは copyText と同じ (指示文にはファイル名とタイトルが入る)。
+func (v *IssuesView) copyFixPrompt() {
+	vs := v.openViolations()
+	if len(vs) == 0 {
+		v.setNotice("この issue に規約から外れた点はありません", app.NoticeRefused)
+		return
+	}
+	text := v.body.FixPrompt(v.open, v.root, issues.NextNumber(v.all))
+	for _, l := range strings.Split(text, "\n") {
+		if !term.IsCopySafe(l) {
+			v.refuseUnsafeCopy("修正指示")
+			return
+		}
+	}
+	if err := extcmd.CopyToClipboard(text); err != nil {
+		v.setNotice(app.ClipboardFailText(err), app.NoticeRefused)
+		return
+	}
+	v.setNotice("修正指示をコピーしました ("+strconv.Itoa(len(vs))+" 件): "+vs[0].Label, app.NoticeOK)
 }
 
 // listHeadLines は一覧のヘッダー (タブ + スキャン警告)。
