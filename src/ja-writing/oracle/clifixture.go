@@ -85,7 +85,7 @@ func RunMain(t TB, main func(context.Context, cmdenv.Env) int, root, cwd string,
 	dir := filepath.Join(root, filepath.FromSlash(cwd))
 	t.Chdir(dir)
 	var out, errOut bytes.Buffer
-	env := cmdenv.Env{Args: args, Stdin: bytes.NewReader(stdin), Stdout: &out, Stderr: &errOut, Cwd: dir, Getenv: func(string) string { return "" }}
+	env := cmdenv.Env{Args: args, Stdin: bytes.NewReader(stdin), Stdout: &out, Stderr: &errOut, Cwd: dir}
 	rc = main(t.Context(), env)
 	return strings.ReplaceAll(out.String(), root, RootToken), strings.ReplaceAll(errOut.String(), root, RootToken), rc
 }

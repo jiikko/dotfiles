@@ -64,17 +64,11 @@ func TestRunReadsEnvironmentFromEnv(t *testing.T) {
 	exe := testExecutable(t)
 	rt := childRuntime(t)
 	rt.ChildEnv = DefaultRuntime().ChildEnv
-	given := map[string]string{"YOMIYASU_STATE_DIR": dir + "/from-env"}
-	environ := append(os.Environ(), childEnvName+"="+childReal, "JA_REAL="+exe)
-	lookup := func(name string) (string, bool) {
-		if value, ok := given[name]; ok {
-			return value, true
-		}
-		return os.LookupEnv(name)
-	}
+	// 先に置いた値が勝つ (Lookup は同じ名前の先のものを読む)。プロセスの環境に YOMIYASU_STATE_DIR があっても Env の値を使う
+	environ := append([]string{"YOMIYASU_STATE_DIR=" + dir + "/from-env"}, os.Environ()...)
+	environ = append(environ, childEnvName+"="+childReal, "JA_REAL="+exe)
 	var stdout, stderr bytes.Buffer
-	env := cmdenv.Env{Args: []string{"run", "--source", "src.md", "--final", "final.md"}, Stdout: &stdout, Stderr: &stderr, Cwd: dir,
-		Getenv: func(name string) string { value, _ := lookup(name); return value }, LookupEnv: lookup, Environ: func() []string { return environ }}
+	env := cmdenv.Env{Args: []string{"run", "--source", "src.md", "--final", "final.md"}, Stdout: &stdout, Stderr: &stderr, Cwd: dir, Environ: environ}
 	if rc := MainWith(context.Background(), env, rt); rc != 0 {
 		t.Fatalf("rc=%d stdout=%q stderr=%q", rc, stdout.String(), stderr.String())
 	}
@@ -111,12 +105,18 @@ func TestGettempdirSkipsUnusableCandidates(t *testing.T) {
 	if err := os.Mkdir(readOnly, 0o555); err != nil {
 		t.Fatal(err)
 	}
-	usable := base + "/ok"
-	if err := os.Mkdir(usable, 0o700); err != nil {
-		t.Fatal(err)
+	usable, usable2, usable3 := base+"/ok", base+"/ok2", base+"/ok3"
+	for _, dir := range []string{usable, usable2, usable3} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	lookupOf := func(values map[string]string) cmdenv.Env {
-		return cmdenv.Env{LookupEnv: func(name string) (string, bool) { v, ok := values[name]; return v, ok }}
+		var environ []string
+		for name, value := range values {
+			environ = append(environ, name+"="+value)
+		}
+		return cmdenv.Env{Environ: environ}
 	}
 	for _, tc := range []struct {
 		values map[string]string
@@ -125,14 +125,19 @@ func TestGettempdirSkipsUnusableCandidates(t *testing.T) {
 		{map[string]string{"TMPDIR": base + "/missing", "TEMP": file, "TMP": usable}, usable},
 		{map[string]string{"TMPDIR": readOnly, "TEMP": "", "TMP": usable}, usable},
 		{map[string]string{"TMPDIR": file}, "/tmp"},
+		// 使える候補が 2 つ以上なら、TMPDIR・TEMP・TMP の順の先のもの
+		{map[string]string{"TMPDIR": usable, "TEMP": usable2, "TMP": usable3}, usable},
+		{map[string]string{"TEMP": usable2, "TMP": usable3}, usable2},
 	} {
 		got, err := gettempdir(lookupOf(tc.values))
 		if err != nil || got != tc.want {
 			t.Errorf("%v: %q %v (期待 %q)", tc.values, got, err, tc.want)
 		}
 	}
-	entries, err := os.ReadDir(usable)
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("試しのファイルが残った: %v %v", entries, err)
+	for _, dir := range []string{usable, usable2, usable3} {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("試しのファイルが残った: %v %v", entries, err)
+		}
 	}
 }

@@ -11,7 +11,7 @@ import (
 func run(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	env := cmdenv.Env{Args: args, Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut, Cwd: t.TempDir(), Getenv: func(string) string { return "" }}
+	env := cmdenv.Env{Args: args, Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut, Cwd: t.TempDir()}
 	return Main(t.Context(), env), out.String(), errOut.String()
 }
 

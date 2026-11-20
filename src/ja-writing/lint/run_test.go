@@ -26,7 +26,7 @@ func injecting(findings ...finding) lintFunc {
 func runInjected(t *testing.T, lint lintFunc, stdin string, args ...string) (stdout, stderr string, rc int) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	env := cmdenv.Env{Args: args, Stdin: strings.NewReader(stdin), Stdout: &out, Stderr: &errOut, Getenv: func(string) string { return "" }}
+	env := cmdenv.Env{Args: args, Stdin: strings.NewReader(stdin), Stdout: &out, Stderr: &errOut}
 	rc, err := run(env, lint)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestWriteFailuresFollowPythonExitPaths(t *testing.T) {
 	}
 	for _, c := range cases {
 		var out, errOut bytes.Buffer
-		env := cmdenv.Env{Args: c.args, Stdin: strings.NewReader("本文です。\n"), Stdout: &out, Stderr: &errOut, Getenv: func(string) string { return "" }}
+		env := cmdenv.Env{Args: c.args, Stdin: strings.NewReader("本文です。\n"), Stdout: &out, Stderr: &errOut}
 		if c.stdout != nil {
 			env.Stdout = failingWriter{c.stdout}
 		}

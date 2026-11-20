@@ -48,5 +48,5 @@ func childEnv(exe string) func(cmdenv.Env) []string {
 
 // processEnv は今のプロセスの引数以外の外の世界を写した Env (本番の cmdenv.FromProcess と同じく環境変数の全部を持つ)。
 func processEnv(args []string, cwd string, stdout, stderr io.Writer) cmdenv.Env {
-	return cmdenv.Env{Args: args, Stdout: stdout, Stderr: stderr, Cwd: cwd, Getenv: os.Getenv, LookupEnv: os.LookupEnv, Environ: os.Environ}
+	return cmdenv.Env{Args: args, Stdout: stdout, Stderr: stderr, Cwd: cwd, Environ: os.Environ()}
 }
