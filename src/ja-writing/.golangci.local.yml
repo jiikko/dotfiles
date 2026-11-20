@@ -18,6 +18,10 @@ linters:
           msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
         - pattern: ^syscall\.(Symlink|Readlink|Chmod|Chown|Lchown|Truncate|Access|Exec)$
           msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
+        - pattern: ^os\.(Chdir|OpenRoot|OpenInRoot)$|^syscall\.(Chdir|Mkfifo|Mknod|Openat)$
+          msg: パスは ja-writing/internal/pyos を通して OS に渡す (os.fsencode し、受けた名前を os.fsdecode する)
+        - pattern: ^filepath\.(Walk|WalkDir|Glob|Abs|EvalSymlinks)$
+          msg: OS を読む filepath の関数は字のまま OS に渡すので、ja-writing/internal/pyos を通す
   exclusions:
     rules:
       # pyos は口そのもの。oracle (本家を動かす道具) とテストは fixture を OS のバイトで組む

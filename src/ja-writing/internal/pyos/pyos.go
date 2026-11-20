@@ -6,7 +6,7 @@
 // 誤りの *fs.PathError の Path は渡された字に戻す (読み手は誤りの文に本家と同じ字を出し、標準エラーの口が \udcff の形にする)。
 //
 // os・syscall のパスの関数を直接呼ばない: 字のまま渡すと、U+DCFF は 0xff でなく WTF-8 の 3 バイト (ED B3 BF) で OS に届き、本家と別の名前を開く。
-// 迂回は src/.golangci.yml の forbidigo が止める (ja-writing の oracle とテストを除く)。
+// 迂回は src/ja-writing/.golangci.local.yml の forbidigo が止める (ja-writing の oracle とテストを除く)。
 package pyos
 
 import (
