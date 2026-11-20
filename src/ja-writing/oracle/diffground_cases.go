@@ -271,6 +271,17 @@ func groundHandCases() []groundHand {
 		{name: "list-number", final: "1. 最初\n2) 次\n(3) 三つ目\n", materials: []string{"1"}},
 		{name: "letter-unit", final: "100Mbps と 30s と 8GiB", materials: []string{"100Mbps、30秒"}},
 		{name: "compose-not-weak-number", final: "部品は1つです。", materials: nil},
+		{name: "emphasis-unit", final: "待ち時間は30**sec**です。", materials: []string{"待ち時間は30秒。"}},
+		{name: "emphasis-unit-rev", final: "待ち時間は30秒です。", materials: []string{"待ち時間は30**sec**。"}},
+		{name: "emphasis-unit-ms", final: "遅れは200**ms**です。間隔は5**min**です。", materials: []string{"遅れは200ミリ秒。間隔は5分。"}},
+		{name: "bare-setting-code-fullwidth", final: "値は3です。", materials: []string{"```\nＡ＝３\n```\n"}},
+		{name: "bare-setting-code-fullwidth-colon", final: "値は7です。", materials: []string{"```\nｂ：７\n```\n"}},
+		{name: "bare-setting-code-fraction", final: "上限は30です。", materials: []string{"```\nlimit = 30.0\n```\n"}},
+		{name: "bare-setting-code-fraction-two", final: "上限は5です。", materials: []string{"```\nlimit = 5.00\n```\n", "```\nmax: 5.0\n```\n"}},
+		{name: "value-certainty-range-unit", final: "期間は3〜5sです。", materials: []string{"期間はたぶん3秒から5秒です。"}},
+		{name: "value-certainty-range-unit-rev", final: "期間は3〜5秒です。", materials: []string{"期間はたぶん3sから5sです。"}},
+		{name: "range-cluster-unit", final: "3-5sです。", materials: []string{"3から5秒5 分"}},
+		{name: "range-cluster-unit-min", final: "3〜5minです。", materials: []string{"3から5分5 秒"}},
 	}
 }
 
@@ -375,6 +386,10 @@ func factGapHandCases() []factGapHand {
 		{name: "int-limit", text: "大幅に改善しました。" + strings.Repeat("1", 4301) + "千件。\n", raises: true},
 		{name: "int-limit-next", text: "大幅に改善しました。\n" + strings.Repeat("1", 4301) + "千件。\n", raises: true},
 		{name: "cr", text: "大幅に改善しました。\r\n品質が向上しました。\r\n"},
+		{name: "footnote-number", text: "a。[^1]: 短くしました。\n"},
+		{name: "footnote-number-change", text: "[^2]: 時間を短縮しました。\n本文です。[^2]\n"},
+		{name: "second-match", text: "大幅に変えず桁違い。\n"},
+		{name: "second-match-other", text: "大きく変えず格段に速くなりました。\n"},
 	}
 }
 
