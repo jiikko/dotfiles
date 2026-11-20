@@ -18,7 +18,7 @@ import (
 )
 
 // verify の記録を探す所 (本家の _Found・_index_found・_find とそれが呼ぶもの)。記録は形を確かめる前のものも読むので、
-// 欄の読みは pyops で本家と同じ例外を起こす (例外は panic で運び、verifyCore の入口で error に戻す)。
+// 欄の読みは pyops で本家と同じ例外を起こす (例外は panic で運び、runVerify の入口で error に戻す)。
 
 var (
 	indexEntryPattern  = pyre.NewLazy(`^(.+)\.([0-9]+)$`, 0)
@@ -29,7 +29,7 @@ var (
 // lineageLimit は _LINEAGE_LIMIT (原文をさかのぼって調べる記録の数の上限)。
 const lineageLimit = 20
 
-// failure は verifyCore の中で起きた Go の誤り (作業フォルダが消えた・深すぎる JSON)。panic で運び、入口で error に戻す。
+// failure は runVerify の中で起きた Go の誤り (作業フォルダが消えた・深すぎる JSON)。panic で運び、入口で error に戻す。
 type failure struct{ err error }
 
 func must[T any](v T, err error) T {
