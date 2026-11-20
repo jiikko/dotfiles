@@ -321,6 +321,10 @@ type Call struct {
 	Objects bool `json:"objects,omitempty"`
 	// Capture は標準出力と標準エラーを取り込み、結果を {"rc", "stdout", "stderr"} にする (CLI の main を呼ぶ用。call_function.py の冒頭)。
 	Capture bool `json:"capture,omitempty"`
+	// Stderr は標準エラーを取り込み、sys.argv[0] を Argv0 にして呼び、結果を {"value" か "exception", "stderr"} にする
+	// (hook が呼ぶ関数の、標準エラーに書く誤りを記録する用。call_function.py の冒頭)。
+	Stderr bool   `json:"stderr,omitempty"`
+	Argv0  string `json:"argv0,omitempty"`
 }
 
 // TemporaryName は本家の一時ファイルの名前 (_mkstemp の .tmp-<16 桁の 16 進>)。call_function.py の TEMPORARY と同じ。

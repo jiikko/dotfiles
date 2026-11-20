@@ -131,7 +131,7 @@ func pathKey(final, source *Input, materials []*Input) string {
 		slices.Sort(digests)
 		base = "stdin:" + strings.Join(digests, "")
 	}
-	return SHA256([]byte(base))
+	return textKey(base)
 }
 
 // latestByPath は _latest_by_path (index/by-path/<キー>/ の最新の 1 件だけを見る)。

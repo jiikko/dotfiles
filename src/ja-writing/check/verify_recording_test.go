@@ -179,7 +179,7 @@ func byPathRenamer(entries []snapshotEntry, root string) func(string) string {
 	for _, en := range entries {
 		if place, ok := en.extra.(string); ok && strings.Contains(place, oracle.RootToken) {
 			dir := en.rel[:strings.LastIndex(en.rel, "/")+1]
-			renamed[en.rel] = dir + SHA256([]byte(strings.ReplaceAll(place, oracle.RootToken, folded)))
+			renamed[en.rel] = dir + textKey(strings.ReplaceAll(place, oracle.RootToken, folded))
 		}
 	}
 	return func(rel string) string {

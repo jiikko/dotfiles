@@ -27,7 +27,8 @@ func TestErrorsKeepGivenSpelling(t *testing.T) {
 	_, checks["ReadDir"] = pyos.ReadDir(given)
 	_, checks["Readlink"] = pyos.Readlink(given)
 	checks["Chmod"] = pyos.Chmod(given, 0o600)
-	checks["Remove"] = pyos.Remove(given)
+	checks["Unlink"] = pyos.Unlink(given)
+	checks["Rmdir"] = pyos.Rmdir(given)
 	checks["Mkdir"] = pyos.Mkdir(given, 0o700)
 	for name, err := range checks {
 		var pe *fs.PathError

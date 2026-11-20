@@ -113,7 +113,7 @@ func usableTempdir(dir string) bool {
 		}
 		_, werr := file.Write([]byte("blat"))
 		cerr := file.Close()
-		rerr := pyos.Remove(name)
+		rerr := pyos.Unlink(name)
 		return werr == nil && cerr == nil && rerr == nil
 	}
 	return false
@@ -164,10 +164,11 @@ func removeTree(path string) error { return osTree.remove(path, true) }
 type treeOps struct {
 	lstat   func(string) (fs.FileInfo, error)
 	readDir func(string) ([]fs.DirEntry, error)
-	delete  func(string) error
+	// unlink はフォルダでないもの、rmdir はフォルダを消す (本家の rmtree の os.unlink と os.rmdir)
+	unlink, rmdir func(string) error
 }
 
-var osTree = treeOps{lstat: pyos.Lstat, readDir: pyos.ReadDir, delete: pyos.Remove}
+var osTree = treeOps{lstat: pyos.Lstat, readDir: pyos.ReadDir, unlink: pyos.Unlink, rmdir: pyos.Rmdir}
 
 // remove は path を中身ごと消す。top は rmtree に渡した根 (本家の orig_entry が None のもの)。
 // 本家の _rmtree_safe_fd_step は、根でないものが歩く途中で消えていれば (FileNotFoundError) onexc を呼ばずに次へ進み、根の失敗は
@@ -181,7 +182,9 @@ func (o treeOps) remove(path string, top bool) error {
 	}, path, top); gone || err != nil {
 		return err
 	}
+	drop := o.unlink
 	if info.IsDir() {
+		drop = o.rmdir
 		var entries []fs.DirEntry
 		if gone, err := o.step(func(p string) error {
 			var err error
@@ -196,7 +199,7 @@ func (o treeOps) remove(path string, top bool) error {
 			}
 		}
 	}
-	_, err := o.step(o.delete, path, top)
+	_, err := o.step(drop, path, top)
 	return err
 }
 
@@ -388,7 +391,7 @@ func saveRun(state string, c *runContext, a saveArgs) (attempt attemptNo, record
 	defer func() {
 		if !committed {
 			for _, path := range created {
-				_ = pyos.Remove(path) // 本家も消せないファイルはそのまま残す
+				_ = pyos.Unlink(path) // 本家も消せないファイルはそのまま残す
 			}
 		}
 	}()

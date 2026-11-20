@@ -67,6 +67,9 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
   - op utime は path の mtime と atime を、今の時刻 (time.time()) に value の秒数を足した時刻にする (古いロックを作る)。
   - args の中の {"$armed_change": {"set": [[鍵の道, 値]...], "write": 真偽}} は、armed_update に渡す change (登録の鍵の道に値を入れ、
     write が偽なら False を返して書かせない)。
+  - "stderr": true の呼び出しは、標準エラーを取り込み、sys.argv[0] を "argv0" にして関数を (kwargs も渡して) 呼び、結果を
+    {"value": 戻り値} か {"exception": {"type", "message"}} (SystemExit も) に "stderr" を足したものにする (hook が呼ぶ関数が、
+    標準エラーに書く誤りと parser.error の使い方の文を記録する用。prog は argv0 の名前)。
   - op snapshot は runs/<実行 ID>/start.json も記録として扱い (record_digest の印)、index/starts/ の下の鍵も by-path と同じく
     元の _place の文字列で名前を付け直す。鍵の元は、start.json の原文のパスからも覚える。
 """
@@ -305,6 +308,28 @@ def capture_main(function, args):
     if at >= 0 and (at == 0 or stderr[at - 1] == "\n"):
         stderr = stderr[:at] + INTERNAL_ERROR + "\n"
     return {"rc": rc, "stdout": stdout, "stderr": stderr}
+
+
+def capture_stderr(function, args, kwargs, argv0):
+    """関数を、標準エラーを取り込み sys.argv[0] を argv0 にして呼ぶ。{"value" か "exception", "stderr"}。"""
+    saved = sys.stderr, sys.argv
+    err = io.BytesIO()
+    wrapped = io.TextIOWrapper(err, encoding="utf-8", newline="\n")
+    sys.stderr, sys.argv = wrapped, [argv0] + sys.argv[1:]
+    try:
+        try:
+            out = {"value": function(*args, **kwargs)}
+        except BaseException as exc:  # noqa: BLE001 - parser.error の SystemExit も例外として記録する
+            out = {"exception": {"type": type(exc).__name__, "message": str(exc)}}
+    finally:
+        try:
+            wrapped.flush()
+        except (OSError, ValueError):
+            pass
+        sys.stderr, sys.argv = saved
+    out["stderr"] = err.getvalue().decode("utf-8")
+    del wrapped
+    return out
 
 
 def remember_places(module, start=None):
@@ -619,7 +644,10 @@ for call in plan["calls"]:
                 value = getattr(module, call["function"])
             else:
                 args = resolve(call.get("args", []))
-                if call.get("capture"):
+                if call.get("stderr"):
+                    value = capture_stderr(getattr(check_module() if call["module"] == "yomiyasu_check" else module, call["function"]), args,
+                                           resolve(call.get("kwargs", {})), call["argv0"])
+                elif call.get("capture"):
                     value = capture_main(getattr(check_module() if call["module"] == "yomiyasu_check" else module, call["function"]), args)
                     if call["module"] == "yomiyasu_check":
                         remember_places(check_module(), ROOT)

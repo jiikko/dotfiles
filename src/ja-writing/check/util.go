@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"ja-writing/internal/pycli"
+	"ja-writing/internal/pyfs"
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyops"
 	"ja-writing/internal/pyos"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
@@ -33,6 +35,17 @@ var (
 
 // SHA256 は _sha256 (16 進の小文字)。
 func SHA256(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }
+
+// textKey は _sha256(text.encode("utf-8", "surrogateescape")) (場所や本文のハッシュから作る鍵: index/by-path・index/starts・原文のロック)。
+// 字の WTF-8 のバイトで作らない: U+DCFF は本家では 0xff の 1 バイトになり、WTF-8 の 3 バイトとは別の鍵になる。U+DC80〜U+DCFF でない
+// サロゲート (記録の JSON から読んだ値でだけ起きる) は本家と同じ UnicodeEncodeError。
+func textKey(text string) string {
+	encoded, err := pyfs.Encode(text)
+	if err != nil {
+		pyops.Raise("UnicodeEncodeError", "%s", err.Error())
+	}
+	return SHA256([]byte(encoded))
+}
 
 // TextSHA256 は _text_sha256。記録の text_sha256 で、decode_source のあとの文字列から末尾の改行を全部外して改行を 1 つ付けた (空なら空の) UTF-8 の SHA-256。
 // text は WTF-8 の文字列 (Python の encode("utf-8", "surrogatepass") のバイト列と同じ)。

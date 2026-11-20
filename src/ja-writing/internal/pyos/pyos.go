@@ -100,9 +100,23 @@ func Chmod(path string, mode fs.FileMode) error {
 	return restore(os.Chmod(encode(path), mode), path)
 }
 
-// Remove は os.remove か os.rmdir (os.Remove)。
-func Remove(path string) error {
-	return restore(os.Remove(encode(path)), path)
+// Unlink は os.unlink (Path.unlink)。フォルダは消さない (macOS は EPERM)。os.Remove を使わない: unlink に失敗すると rmdir に落ち、
+// 本家が PermissionError で止まる所 (名前がフォルダのロック) で空のフォルダを消して先へ進む。
+func Unlink(path string) error {
+	return pathError("unlink", path, syscall.Unlink(encode(path)))
+}
+
+// Rmdir は os.rmdir (Path.rmdir)。空のフォルダだけを消す。
+func Rmdir(path string) error {
+	return pathError("rmdir", path, syscall.Rmdir(encode(path)))
+}
+
+// pathError は syscall の誤りを os の関数と同じ *fs.PathError (Path は渡された字) にする。
+func pathError(op, path string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &fs.PathError{Op: op, Path: path, Err: err}
 }
 
 // Rename は rename(2) (os.rename。syscall.Rename で、誤りは errno のまま)。

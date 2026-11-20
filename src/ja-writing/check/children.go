@@ -51,14 +51,18 @@ type Runtime struct {
 	TempDir func(env cmdenv.Env) (string, error)
 }
 
+// monotonicOrigin は Monotonic の起点 (プロセスで 1 つ。本家の time.monotonic と同じく、どの Runtime の値どうしも比べられる)。
+// DefaultRuntime ごとに起点を取らない: hook が 1 つの Runtime で作った締め切り (budget) を、別の DefaultRuntime() を渡した ArmedUpdate が
+// 0 から測り直し、締め切りが待つ時間の分だけ先へずれる。
+var monotonicOrigin = time.Now()
+
 // DefaultRuntime は本番の Runtime。
 func DefaultRuntime() Runtime {
-	started := time.Now()
 	return Runtime{
 		Executable: os.Executable,
 		ChildEnv:   cmdenv.Env.Environment,
 		Now:        func() time.Time { return time.Now().UTC().Truncate(time.Second) },
-		Monotonic:  func() float64 { return time.Since(started).Seconds() },
+		Monotonic:  func() float64 { return time.Since(monotonicOrigin).Seconds() },
 		RandomHex: func(n int) (string, error) {
 			b := make([]byte, n)
 			if _, err := rand.Read(b); err != nil {

@@ -193,7 +193,7 @@ func runMain(ctx context.Context, env cmdenv.Env, rt Runtime, argv []string) (co
 		case serr != nil:
 			err = serr
 		case info.Size() == 0:
-			if rerr := pyos.Remove(reserved.path); rerr != nil && !errors.Is(rerr, syscall.ENOENT) {
+			if rerr := pyos.Unlink(reserved.path); rerr != nil && !errors.Is(rerr, syscall.ENOENT) {
 				err = rerr
 			}
 		}

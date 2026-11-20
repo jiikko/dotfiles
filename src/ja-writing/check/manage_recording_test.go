@@ -1,6 +1,7 @@
 package check
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"ja-writing/cmdenv"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
 	"ja-writing/oracle"
@@ -84,9 +86,17 @@ func (e *interp) manageCall(c oracle.Call) (outcome, bool) {
 				data = []byte{}
 			}
 		}
-		result, err := VerifyQuick(func(name string) (string, bool) { return os.LookupEnv(name) }, e.str(c.Args[0]), optional("final_path"), data,
-			optional("run_id"), optional("since"))
-		return done(recordValue(result), err), true
+		var stderr bytes.Buffer
+		env := cmdenv.Env{Environ: os.Environ()}
+		if c.Stderr {
+			env.Stderr = &stderr
+		}
+		result, err := VerifyQuick(env, c.Argv0, e.str(c.Args[0]), optional("final_path"), data, optional("run_id"), optional("since"))
+		out := done(recordValue(result), err)
+		if !c.Stderr {
+			return out, true
+		}
+		return withStderr(out, stderr.String()), true
 	case "run_known_texts":
 		texts, paths, err := RunKnownTexts(e.str(c.Args[0]), e.str(c.Args[1]))
 		return done([]pyjson.Value{sortedSet(texts), sortedSet(paths)}, err), true
@@ -98,6 +108,21 @@ func (e *interp) manageCall(c oracle.Call) (outcome, bool) {
 		return done(digest, err), true
 	}
 	return outcome{}, false
+}
+
+// withStderr は driver の "stderr" の呼び出しの結果の形 ({"value" か "exception", "stderr"})。
+func withStderr(out outcome, stderr string) outcome {
+	o := pyjson.NewObject()
+	if out.exc != nil {
+		exc := pyjson.NewObject()
+		exc.Set("type", out.exc.Type)
+		exc.Set("message", out.exc.Message)
+		o.Set("exception", exc)
+	} else {
+		o.Set("value", out.value)
+	}
+	o.Set("stderr", stderr)
+	return outcome{value: o}
 }
 
 // pyError は公開の関数の誤りを、本家の例外 (型の名前と文) にする。

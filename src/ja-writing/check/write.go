@@ -148,7 +148,7 @@ func WriteAtomic(path string, data []byte) error {
 		err = replace(temporary, path)
 	}
 	if err != nil {
-		_ = pyos.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
+		_ = pyos.Unlink(temporary) // 本家も消せなければそのまま元の例外を出す
 	}
 	return err
 }
@@ -179,11 +179,11 @@ func placeNewFile(path string, data []byte) (bool, error) {
 		err = pyos.Chmod(temporary, 0o600)
 	}
 	if err != nil {
-		_ = pyos.Remove(temporary) // 本家も消せなければそのまま元の例外を出す
+		_ = pyos.Unlink(temporary) // 本家も消せなければそのまま元の例外を出す
 		return false, err
 	}
 	linkErr := linkFile(temporary, path)
-	_ = pyos.Remove(temporary) // 本家の finally と同じく、消せなくても続ける
+	_ = pyos.Unlink(temporary) // 本家の finally と同じく、消せなくても続ける
 	if linkErr == nil {
 		return true, nil
 	}
@@ -215,7 +215,7 @@ func placeExclusive(path string, data []byte) (bool, error) {
 		// テストしない: O_EXCL で作ったファイルへの書き込みの失敗と、その間の入れ替えは、本物のファイルシステムで決まって起こせず、
 		// 起こすには書き込みと stat の差し替え口が要る。
 		if stillPlaced(path, info) {
-			_ = pyos.Remove(path) // 本家も消せなければそのまま元の例外を出す
+			_ = pyos.Unlink(path) // 本家も消せなければそのまま元の例外を出す
 		}
 		return false, err
 	}
@@ -295,7 +295,7 @@ func EnsureState(state string, defaultPlace bool) error {
 		err = writeStateFiles(state)
 	}
 	if err != nil {
-		_ = pyos.Remove(state) // 空でなければ消えない (本家の rmdir と同じ)
+		_ = pyos.Rmdir(state) // 空でなければ消えない
 	}
 	return err
 }

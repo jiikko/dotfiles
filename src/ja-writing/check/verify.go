@@ -530,7 +530,7 @@ func continuesTo(state string, record *pyjson.Object, target string) bool {
 
 // placeKey は by-path のキー (_place の綴りの SHA-256)。
 func placeKey(path string) string {
-	return SHA256([]byte(must(Place(path))))
+	return textKey(must(Place(path)))
 }
 
 // otherOriginAtPlace は _other_origin_at_place (今の最終稿のパスの最新の記録が、見つけた記録と別の原文なら、その記録)。
@@ -610,6 +610,9 @@ func find(state string, final *Target, runID *string, source *Target) findResult
 	}
 	kind, key := "by-final", final.SHA256
 	if final.Via == "stdin" {
+		if final.TextSHA256 == nil {
+			pyops.Raise("AssertionError", "") // 本家の assert key is not None (verify_quick に UTF-8 でないバイト列を渡したとき)
+		}
 		kind, key = "by-text", *final.TextSHA256
 	}
 	if candidates := indexFound(state, kind, key); len(candidates) > 0 {
@@ -655,7 +658,7 @@ func find(state string, final *Target, runID *string, source *Target) findResult
 	case final.Via == "file":
 		key2 = placeKey(*final.Path)
 	case source != nil && source.TextSHA256 != nil:
-		key2 = SHA256([]byte("stdin:" + *source.TextSHA256))
+		key2 = textKey("stdin:" + *source.TextSHA256)
 	default:
 		return findResult{kind: "no_record"}
 	}

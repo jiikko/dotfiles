@@ -12,6 +12,7 @@ import (
 
 	"ja-writing/internal/pycli"
 	"ja-writing/internal/pyjson"
+	"ja-writing/internal/pyops"
 	"ja-writing/internal/pyos"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
@@ -510,9 +511,13 @@ func newTarget(path *string, data []byte) *Target {
 	return t
 }
 
-// Token は状態の行の final=。ファイルはバイト列の SHA-256、標準入力は本文のハッシュ。
+// Token は状態の行の final=。ファイルはバイト列の SHA-256、標準入力は本文のハッシュ。本文のハッシュが無い (UTF-8 として読めない) 標準入力は、
+// 本家の assert と同じ AssertionError (verify_quick に渡したバイト列でだけ起きる。コマンドの標準入力は読む所で断る)。
 func (t *Target) Token() string {
 	if t.Via == "stdin" {
+		if t.TextSHA256 == nil {
+			pyops.Raise("AssertionError", "")
+		}
 		return "text-sha256:" + (*t.TextSHA256)[:12]
 	}
 	return "sha256:" + t.SHA256[:12]

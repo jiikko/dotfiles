@@ -235,7 +235,7 @@ func (l *armedLock) acquire(ctx context.Context, rt Runtime) error {
 				l.identity = [2]uint64{uint64(st.Dev), st.Ino}
 				return nil
 			}
-			_ = pyos.Remove(l.path) // 作った直後に失敗しても、ロックを残さない (本家も消せなければそのまま元の例外を出す)
+			_ = pyos.Unlink(l.path) // 作った直後に失敗しても、ロックを残さない (本家も消せなければそのまま元の例外を出す)
 			return cmpErr(serr, cerr)
 		}
 		if !errors.Is(err, fs.ErrExist) {
@@ -248,7 +248,7 @@ func (l *armedLock) acquire(ctx context.Context, rt Runtime) error {
 		case serr != nil:
 			return serr
 		case time.Since(info.ModTime()).Seconds() > armedStale:
-			if rerr := pyos.Remove(l.path); rerr != nil && !errors.Is(rerr, syscall.ENOENT) {
+			if rerr := pyos.Unlink(l.path); rerr != nil && !errors.Is(rerr, syscall.ENOENT) {
 				return rerr
 			}
 			continue
@@ -281,7 +281,7 @@ func (l *armedLock) release() error {
 	if [2]uint64{uint64(st.Dev), st.Ino} != l.identity {
 		return nil
 	}
-	if err := pyos.Remove(l.path); err != nil && !errors.Is(err, syscall.ENOENT) {
+	if err := pyos.Unlink(l.path); err != nil && !errors.Is(err, syscall.ENOENT) {
 		return err
 	}
 	return nil
@@ -305,16 +305,25 @@ func withArmedLock(ctx context.Context, rt Runtime, state, runID string, budget 
 	return body()
 }
 
-// armedWrite は _armed_write (log を最後の 50 件にして、armed/<実行ID>.json に書く)。
+// armedWrite は _armed_write (log を最後の 50 件にして、armed/<実行ID>.json に書く)。式の順も本家と同じ (log の切り出し → 名前の
+// entry["run_id"] + ".json" → json.dumps)。hook の change が壊した値は、そこで本家と同じ例外 (TypeError・KeyError・ValueError) になる。
 func armedWrite(state string, entry *pyjson.Object) error {
 	trimLog(entry)
-	data := must(pyjson.Dumps(entry, pyjson.Indent1()))
-	return WriteAtomic(armedFile(state, pyops.Str(pyops.Index(entry, "run_id"))+".json"), []byte(data+"\n"))
+	name := pyops.Str(pyops.Add(pyops.Index(entry, "run_id"), ".json"))
+	data, err := pyjson.Dumps(entry, pyjson.Indent1())
+	var dumpErr *pyjson.Error
+	if errors.As(err, &dumpErr) {
+		return &pyops.Exception{Type: dumpErr.Class, Msg: dumpErr.Msg}
+	}
+	if err != nil {
+		return err
+	}
+	return WriteAtomic(armedFile(state, name), []byte(data+"\n"))
 }
 
+// trimLog は entry["log"] = entry["log"][-50:]。
 func trimLog(entry *pyjson.Object) {
-	log := pyops.Index(entry, "log")
-	entry.Set("log", pyops.Slice(log, max(0, pyops.Len(log)-armedLogLimit), -1))
+	entry.Set("log", pyops.Tail(pyops.Index(entry, "log"), armedLogLimit))
 }
 
 // armedLog は _armed_log (log に 1 件足し、最後の 50 件にする)。
@@ -486,7 +495,7 @@ func StartRun(ctx context.Context, rt Runtime, state, sourcePath string, o Start
 		return nil, err
 	}
 	// 同じ原文の start を直列にする (鍵は原文の実際の場所の SHA-256)
-	sourceLock := SHA256([]byte(armedPlace(*source.Path)))
+	sourceLock := textKey(armedPlace(*source.Path))
 	err = withArmedLock(ctx, rt, state, sourceLock, nil, true, func() error {
 		return withArmedLock(ctx, rt, state, runID, nil, false, func() error {
 			if taken() {
@@ -593,7 +602,7 @@ func startWrite(ctx context.Context, rt Runtime, state string, source *Input, en
 	if err := WriteAtomic(visibility.PathJoin(runDir, "start.json"), []byte(must(pyjson.Dumps(record, pyjson.Indent1()))+"\n")); err != nil {
 		return err
 	}
-	starts, err := ensureDir(state, "index", "starts", SHA256([]byte(must(Place(*source.Path)))))
+	starts, err := ensureDir(state, "index", "starts", placeKey(*source.Path))
 	if err != nil {
 		return err
 	}
@@ -684,7 +693,7 @@ func startSnapshot(rt Runtime, state, sourcePath string, runID *string, cwd *str
 	if runID != nil && *runID != "" {
 		ids = []string{*runID}
 	} else {
-		key := SHA256([]byte(must(Place(sourcePath))))
+		key := placeKey(sourcePath)
 		names, _ := listNames(visibility.PathJoin(visibility.PathJoin(visibility.PathJoin(state, "index"), "starts"), key))
 		slices.SortFunc(names, func(a, b string) int { return pyStrCompare(b, a) })
 		for _, name := range names {
@@ -756,13 +765,4 @@ func managedRunCount(runDir string) int {
 type reservedAttempt struct {
 	number attemptNo
 	path   string
-}
-
-// concatText は "<head>" + value (value が str でなければ本家と同じ TypeError)。
-func concatText(head string, value pyjson.Value) string {
-	s, ok := value.(string)
-	if !ok {
-		pyops.Raise("TypeError", "can only concatenate str (not \"%s\") to str", pyops.TypeName(value))
-	}
-	return head + s
 }

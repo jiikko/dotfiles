@@ -102,7 +102,7 @@ func At(v pyjson.Value, i int) pyjson.Value {
 	return nil
 }
 
-// Slice は v[lo:hi] (list と str。hi < 0 は終わりまで)。
+// Slice は v[lo:hi] (list と str。hi < 0 は終わりまで)。dict は Python 3.12 からの slice を鍵にした KeyError (鍵の repr は slice(lo, hi, None))。
 func Slice(v pyjson.Value, lo, hi int) pyjson.Value {
 	clip := func(n int) (int, int) {
 		l, h := min(lo, n), n
@@ -120,7 +120,23 @@ func Slice(v pyjson.Value, lo, hi int) pyjson.Value {
 		l, h := clip(len(rs))
 		return pyunicode.FromRunes(rs[l:h])
 	case *pyjson.Object:
-		Raise("TypeError", "unhashable type: 'slice'")
+		end := "None"
+		if hi >= 0 {
+			end = strconv.Itoa(hi)
+		}
+		Raise("KeyError", "slice(%d, %s, None)", lo, end)
+	}
+	Raise("TypeError", "'%s' object is not subscriptable", TypeName(v))
+	return nil
+}
+
+// Tail は v[-n:] (最後の n 個。list と str。dict は slice(-n, None, None) を鍵にした KeyError、ほかは TypeError)。
+func Tail(v pyjson.Value, n int) pyjson.Value {
+	switch v.(type) {
+	case []pyjson.Value, string:
+		return Slice(v, max(0, Len(v)-n), -1)
+	case *pyjson.Object:
+		Raise("KeyError", "slice(%d, None, None)", -n)
 	}
 	Raise("TypeError", "'%s' object is not subscriptable", TypeName(v))
 	return nil
@@ -399,14 +415,18 @@ func Sub(a, b pyjson.Value) pyjson.Value { return arith(a, b, "-") }
 func arith(a, b pyjson.Value, op string) pyjson.Value {
 	if op == "+" {
 		if x, ok := a.(string); ok {
-			if y, ok := b.(string); ok {
-				return x + y
+			y, ok := b.(string)
+			if !ok {
+				Raise("TypeError", "can only concatenate str (not \"%s\") to str", TypeName(b))
 			}
+			return x + y
 		}
 		if x, ok := a.([]pyjson.Value); ok {
-			if y, ok := b.([]pyjson.Value); ok {
-				return append(slices.Clip(x), y...)
+			y, ok := b.([]pyjson.Value)
+			if !ok {
+				Raise("TypeError", "can only concatenate list (not \"%s\") to list", TypeName(b))
 			}
+			return append(slices.Clip(x), y...)
 		}
 	}
 	if x, ok := bigOf(a); ok {

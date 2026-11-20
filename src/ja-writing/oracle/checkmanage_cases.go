@@ -43,6 +43,11 @@ func hook(f *fixtureCase, fn string, args []any, kwargs map[string]any) {
 	f.call(Call{Module: CheckModule, Function: fn, Args: args, Kwargs: kwargs, Digest: true, Keep: true})
 }
 
+// hookStderr は hook と同じく呼び、標準エラーも残す (本家が標準エラーに書く誤り。使い方の文の prog は hook のプログラム名)。
+func hookStderr(f *fixtureCase, fn string, args []any, kwargs map[string]any) {
+	f.call(Call{Module: CheckModule, Function: fn, Args: args, Kwargs: kwargs, Digest: true, Keep: true, Stderr: true, Argv0: "yomiyasu_hook.py"})
+}
+
 // utime は rel の mtime を今から seconds 秒ずらす。
 func utime(f *fixtureCase, rel, seconds string) {
 	f.op(Op{Kind: "utime", Path: f.dir(rel), Value: seconds})
@@ -212,7 +217,8 @@ func manageStartCase() VisCase {
 	return f.done()
 }
 
-// manageLockCase はロック: 使用中のロック (時間切れで rc 3。待つ時計を進める)・古いロック (取り直す)・ロックの名前がフォルダ・start の 2 つ目のロック。
+// manageLockCase はロック: 使用中のロック (時間切れで rc 3。待つ時計を進める)・古いロック (取り直す)・ロックの名前がフォルダ (新しい・古い)・
+// start の 2 つ目のロック。
 func manageLockCase() VisCase {
 	f := newFixtureCase("manage-lock")
 	f.write("src.md", vSource).write("final.md", vFinal)
@@ -230,6 +236,14 @@ func manageLockCase() VisCase {
 	f.op(Op{Kind: "remove", Path: f.dir(".yomiyasu/armed/k2.lock")})
 	f.mkdir(".yomiyasu/armed/k2.lock")
 	start(f, "--source", "src.md", "--run-id", "k2")
+	// 古いロックの名前が空のフォルダ: 本家は Path.unlink が PermissionError (EPERM) で rc 3。フォルダを消して進まない
+	utime(f, ".yomiyasu/armed/k2.lock", "-60")
+	start(f, "--source", "src.md", "--run-id", "k2")
+	f.write("src2.md", vSourceB)
+	start(f, "--source", "src2.md", "--run-id", "k5")
+	f.mkdir(".yomiyasu/armed/k5.lock")
+	utime(f, ".yomiyasu/armed/k5.lock", "-60")
+	both(f, "end", "--run-id", "k5")
 	f.op(Op{Kind: "monotonic"})
 	snapshot(f)
 	return f.done()
@@ -347,7 +361,9 @@ func manageArgsCase() VisCase {
 	chdir(f)
 	for _, args := range [][]string{
 		{"start", "-h"}, {"export", "--help"}, {"end", "-h"},
-		{"start"}, {"start", "--source", "src.md", "--host", "x"}, {"start", "--source", "src.md", "--max-runs", "x"},
+		{"start"}, {"start", "--source", "src.md", "--host", "x"}, {"start", "--source", "src.md", "--host", "Codex"},
+		{"start", "--source", "src.md", "--host", "claude"}, {"start", "--source", "src.md", "--host", "CLAUDE-CODE"},
+		{"start", "--host", "codexx", "--source", "src.md"}, {"start", "--source", "src.md", "--max-runs", "x"},
 		{"start", "--source", "src.md", "--max-runs", "3", "--max-runs", "zz", "--bogus"}, {"start", "--bogus", "--source", "src.md"},
 		{"start", "--max-runs", "x", "-h"}, {"start", "-h", "--max-runs", "x"}, {"start", "--source"},
 		{"start", "--source", "src.md", "--max-runs", "0"}, {"start", "--source", "src.md", "--max-runs", "11"},
@@ -426,8 +442,15 @@ func manageHookCase() VisCase {
 	hook(f, "armed_update", []any{state, "h2", ArmedChange{Write: true}, 999.0}, nil)
 	hook(f, "armed_update", []any{state, "h2", ArmedChange{Write: true}, 1000.0}, nil)
 	hook(f, "armed_update", []any{state, "h1", ArmedChange{Set: [][]any{{[]any{"status"}, "nope"}}, Write: true}, nil}, nil)
+	// change が壊した値: _armed_write の log[-50:]・entry["run_id"] + ".json" が投げる例外 (書かない)。str の log は切り出せるので書く
+	for _, set := range [][]any{
+		{[]any{"log"}, 5}, {[]any{"log"}, map[string]any{"a": 1}}, {[]any{"log"}, nil}, {[]any{"log"}, true},
+		{[]any{"run_id"}, 5}, {[]any{"run_id"}, []any{"x"}}, {[]any{"log"}, "abc"},
+	} {
+		hook(f, "armed_update", []any{state, "h2", ArmedChange{Set: [][]any{set}, Write: true}, nil}, nil)
+	}
 	hook(f, "armed_entries", []any{state}, nil)
-	hook(f, "verify_quick", []any{state}, map[string]any{"final_path": "final.md"})
+	hookStderr(f, "verify_quick", []any{state}, map[string]any{"final_path": "final.md"})
 	run(f, "--source", "src.md", "--final", "final.md", "--run-id", "h3")
 	f.write("final.md", vFinal2)
 	run(f, "--source", "src.md", "--final", "final.md", "--run-id", "h3")
@@ -445,10 +468,25 @@ func manageHookCase() VisCase {
 		{},
 		{"final_path": "final.md", "run_id": "bad/id"},
 		{"final_path": "final.md", "run_id": "H3"},
+		// 誤りの順 (本家の _verify): 実行 ID → since → 大文字小文字だけ違う実行 ID → 本文のハッシュが無い標準入力の assert
+		{"final_path": "final.md", "run_id": "bad/id", "since": "nope"},
+		{"final_bytes": Bytes([]byte{0xff}), "since": "nope"},
+		{"final_bytes": Bytes([]byte{0xff}), "run_id": "H3"},
+		{"final_bytes": Bytes([]byte{0xff}), "run_id": "h3"},
 	} {
-		hook(f, "verify_quick", []any{state}, kwargs)
+		hookStderr(f, "verify_quick", []any{state}, kwargs)
 	}
-	hook(f, "verify_quick", []any{f.dir("nowhere")}, map[string]any{"final_path": "final.md"})
+	hookStderr(f, "verify_quick", []any{f.dir("nowhere")}, map[string]any{"final_path": "final.md"})
+	hookStderr(f, "verify_quick", []any{f.dir("nowhere")}, map[string]any{"final_bytes": Bytes([]byte{0xff})})
+	// 空の状態フォルダは、ほかのどの誤りより先に parser.error (使い方の文と SystemExit)。最終稿を読む誤りはそれより先
+	for _, kwargs := range []map[string]any{
+		{"final_bytes": Bytes([]byte{0xff}), "run_id": "bad/id", "since": "nope"},
+		{"final_path": "final.md"},
+		{"final_path": "missing.md"},
+	} {
+		hookStderr(f, "verify_quick", []any{" "}, kwargs)
+	}
+	hookStderr(f, "verify_quick", []any{""}, map[string]any{"final_path": "final.md"})
 	for _, runID := range []string{"h1", "h3", "nope", "bad/id"} {
 		hook(f, "run_known_texts", []any{state, runID}, nil)
 		hook(f, "latest_final_path", []any{state, runID}, nil)

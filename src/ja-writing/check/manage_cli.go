@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"strings"
@@ -103,8 +104,8 @@ func parseManagement(cmd managementCommand, argv []string) (managementArgs, bool
 		case "--session":
 			a.session = &value
 		case "--host":
-			if !slices.Contains(hostChoices, value) {
-				return a, false, pycli.Error("argument --host: invalid choice: " + pystr.Repr(value) + " (choose from 'claude-code', 'codex')")
+			if err := pycli.CheckChoice(o.Name, value, hostChoices); err != nil {
+				return a, false, err
 			}
 			a.host = &value
 		case "--max-stop-blocks", "--max-runs", "--deadline-min":
@@ -460,7 +461,7 @@ func exportCopy(state, given string, out *verifyResult, final *Target) (string, 
 		return "", err
 	}
 	if written != final.SHA256 {
-		_ = pyos.Remove(path) // 本家も消してから OSError を出す
+		_ = pyos.Unlink(path) // 本家も消してから OSError を出す
 		return "", &visibility.Error{Type: "OSError", Message: "export_hash"}
 	}
 	return path, nil
@@ -539,7 +540,7 @@ func managedLimit(ctx context.Context, env cmdenv.Env, rt Runtime, state string,
 		}
 		current.Set("status", "unverified")
 		current.Set("status_reason", reason)
-		armedLog(rt, current, "run", concatText("unverified:", reason), 0)
+		armedLog(rt, current, "run", pyops.Str(pyops.Add("unverified:", reason)), 0)
 		return true, nil
 	}
 	entry, err := ArmedUpdate(ctx, rt, state, pyops.Str(pyops.Index(managed, "run_id")), check, nil)
@@ -640,12 +641,20 @@ func LatestFinalPath(state, runID string) (path *string, err error) {
 	return nil, nil
 }
 
-// VerifyQuick は verify_quick (verify と同じ照らし方で、出力しない。lint と diff は動かさない)。最終稿は finalBytes か、無ければ finalPath を読む。
+// VerifyQuick は verify_quick (verify と同じ照らし方で、標準出力には書かない。lint と diff は動かさない)。最終稿は finalBytes か、無ければ finalPath を読む。
 // 返す dict の鍵は status・attempt・final_sha256・text_sha256・problems・record_path・message (本家と同じ順)。
-// verify が入力の誤りで 2 を返す形は ValueError("verify の入力が不正です（終了コード2）")。lookup は状態フォルダを決める環境変数を読む。
-func VerifyQuick(lookup func(string) (string, bool), state string, finalPath *string, finalBytes []byte, runID, since *string) (result *pyjson.Object, err error) {
+// 誤りは本家の _verify と同じ順で、標準エラー (env.Stderr。nil なら書かない) にも同じ文を書く:
+//   - 空の状態フォルダ: parser.error の使い方の文 (prog は本家の sys.argv[0] の名前に当たる、hook のプログラム名) を書き、SystemExit(2)
+//   - 実行 ID・since・大文字小文字だけ違う実行 ID: その文を 1 行書き、ValueError("verify の入力が不正です（終了コード2）")
+//   - 本文のハッシュが無い (UTF-8 でない) 標準入力の最終稿: 状態の行を作る所で AssertionError (本家の _Target.token)
+//
+// 状態フォルダを決める環境変数は env から読む。
+func VerifyQuick(env cmdenv.Env, prog, state string, finalPath *string, finalBytes []byte, runID, since *string) (result *pyjson.Object, err error) {
 	defer pyops.Catch(&err)
 	defer catchFailure(&err)
+	if env.Stderr == nil {
+		env.Stderr = io.Discard // 本家の _error と parser.error も、標準エラーが無ければ書かない
+	}
 	if finalBytes == nil {
 		if finalPath == nil {
 			return nil, valueError("final_path or final_bytes is required")
@@ -660,19 +669,18 @@ func VerifyQuick(lookup func(string) (string, bool), state string, finalPath *st
 		path = &abs
 	}
 	target := newTarget(path, finalBytes)
-	if target.Via == "stdin" && target.TextSHA256 == nil {
-		// 本家は状態の行の final= を作る所 (_Target.token) の assert で止まる (本文のハッシュが無い標準入力の最終稿)
-		return nil, &pyops.Exception{Type: "AssertionError", Msg: ""}
-	}
 	if pystr.Strip(state) == "" {
-		// 本家は parser.error で SystemExit(2) を投げる
+		// 本家は _verify が作り直した素の parser (allow_abbrev=False) の error で、その使い方を書いて SystemExit(2) を投げる。
+		// 書けなかったときの本家の OSError (write が投げる) は写さない (README の「揃わない範囲」)
+		_, _ = pycli.UsageTo(env, "usage: "+prog+" [-h]\n", prog, "--state-dir に空の値は使えません")
 		return nil, &pyops.Exception{Type: "SystemExit", Msg: "2"}
 	}
-	v := verify(lookup, state, target, runID, since, nil)
+	v := verify(env.Lookup, state, target, runID, since, nil)
 	switch {
 	case v.err != nil:
 		return nil, v.err
 	case v.problem != "":
+		pycli.Eprintln(env, v.problem)
 		return nil, valueError("verify の入力が不正です（終了コード2）")
 	}
 	verified := v.out.json(target)

@@ -85,3 +85,37 @@ func TestNumbersMatchPython(t *testing.T) {
 		}
 	}
 }
+
+// 切り出しと + の例外が本家と同じ (Python 3.15.0 の実測。dict の切り出しは 3.12 から slice を鍵にした KeyError)。
+func TestSliceAndConcatErrorsMatchPython(t *testing.T) {
+	dict := pyjson.NewObject()
+	dict.Set("a", int64(1))
+	for _, c := range []struct {
+		name, typ, msg string
+		f              func() pyjson.Value
+	}{
+		{"{'a': 1}[1:]", "KeyError", "slice(1, None, None)", func() pyjson.Value { return Slice(dict, 1, -1) }},
+		{"{'a': 1}[0:3]", "KeyError", "slice(0, 3, None)", func() pyjson.Value { return Slice(dict, 0, 3) }},
+		{"{'a': 1}[-50:]", "KeyError", "slice(-50, None, None)", func() pyjson.Value { return Tail(dict, 50) }},
+		{"5[-50:]", "TypeError", "'int' object is not subscriptable", func() pyjson.Value { return Tail(int64(5), 50) }},
+		{"None[-50:]", "TypeError", "'NoneType' object is not subscriptable", func() pyjson.Value { return Tail(nil, 50) }},
+		{"'abc' + 5", "TypeError", `can only concatenate str (not "int") to str`, func() pyjson.Value { return Add("abc", int64(5)) }},
+		{"[1] + 'x'", "TypeError", `can only concatenate list (not "str") to list`, func() pyjson.Value { return Add([]pyjson.Value{int64(1)}, "x") }},
+		{"None + '.json'", "TypeError", "unsupported operand type(s) for +: 'NoneType' and 'str'", func() pyjson.Value { return Add(nil, ".json") }},
+	} {
+		_, err := outcome(c.f)
+		var e *Exception
+		if !errors.As(err, &e) || e.Type != c.typ || e.Msg != c.msg {
+			t.Errorf("%s: %v、本家は %s: %s", c.name, err, c.typ, c.msg)
+		}
+	}
+	for _, c := range []struct {
+		v    pyjson.Value
+		want string
+	}{{"abc", "bc"}, {[]pyjson.Value{int64(1), int64(2), int64(3)}, "[2, 3]"}} {
+		got, err := outcome(func() pyjson.Value { return Tail(c.v, 2) })
+		if text, _ := pyjson.Dumps(got, pyjson.Options{}); err != nil || (text != `"`+c.want+`"` && text != c.want) {
+			t.Errorf("Tail(%v, 2) = %v %v、本家は %s", c.v, got, err, c.want)
+		}
+	}
+}

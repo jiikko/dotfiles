@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"ja-writing/internal/difflib"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
@@ -153,6 +154,47 @@ func (s Spec) Parse(args []string) (Result, error) {
 // UsageError は parser.error(message) が標準エラーに出す文 (使い方・誤りの 1 行・案内の 1 行)。usage は末尾に改行を持つ使い方の文。
 func UsageError(usage, prog, message string) string {
 	return usage + prog + ": error: " + message + "\n引数の誤りです。" + prog + " -h で使い方を確かめてください。\n"
+}
+
+// CheckChoice は argparse の _check_value (choices を持つオプションの値の確かめ)。choices に無い値は、近い候補があれば
+// 「maybe you meant」を添えた誤りにする (Python 3.14 から suggest_on_error が真の parser の形。本家の parser は指定しないので真)。
+func CheckChoice(option, value string, choices []string) error {
+	if slices.Contains(choices, value) {
+		return nil
+	}
+	quoted := make([]string, len(choices))
+	for i, c := range choices {
+		quoted[i] = pystr.Repr(c)
+	}
+	message := "invalid choice: " + pystr.Repr(value)
+	if closest, ok := closeMatch(value, choices); ok {
+		message += ", maybe you meant " + pystr.Repr(closest) + "?"
+	}
+	return Error("argument " + option + ": " + message + " (choose from " + strings.Join(quoted, ", ") + ")")
+}
+
+// closeMatch は difflib.get_close_matches(word, possibilities, 1) (cutoff 0.6。比が最も高いもの、同じ比なら字の順で後のもの = heapq.nlargest の tuple の比べ)。
+// get_close_matches の SequenceMatcher は autojunk=True だが、difflib.New (autojunk=False) で同じ答えになる: autojunk が効くのは word が
+// 200 字以上のときだけで、そのとき real_quick_ratio が 0.6 に届くのは 86 字以上の候補だけ。choices にそういう長い値を足すなら autojunk を写す。
+func closeMatch(word string, possibilities []string) (string, bool) {
+	const cutoff = 0.6
+	m := difflib.New(nil, pyunicode.Runes(word))
+	best, bestRatio, found := []rune(nil), 0.0, false
+	for _, x := range possibilities {
+		candidate := pyunicode.Runes(x)
+		m.SetSeq1(candidate)
+		if m.RealQuickRatio() < cutoff || m.QuickRatio() < cutoff {
+			continue
+		}
+		ratio := m.Ratio()
+		if ratio < cutoff {
+			continue
+		}
+		if !found || ratio > bestRatio || (ratio == bestRatio && slices.Compare(candidate, best) > 0) {
+			best, bestRatio, found = candidate, ratio, true
+		}
+	}
+	return pyunicode.FromRunes(best), found
 }
 
 // FailOnWord は --fail-on の値の 1 要素の正規化 (`piece.strip().lower().replace("_", "-")`)。使える値は ASCII の語だけなので、小文字化の違いは使えない値の文に出る字だけに現れる。
