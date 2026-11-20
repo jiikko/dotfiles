@@ -126,7 +126,7 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
     - P2 `-f=json`・`-o=FILE` で標準出力に ja-writing lint が混ざる: 対応済み。optionator の解釈 (`o.format`・`o.outputFile`) で決める。textlint が引数を読めないときも textlint だけ
     - P3 `--stdin` とファイルを一緒に渡すとファイルにも掛かる: 対応済み。標準入力が空でなければファイルに掛けない (textlint の `cli.js` の execute と同じ。空なら textlint と同じくファイルを読む)
     - P3 `--stdin-filename x.go` でも掛かる: 対応済み。名前の拡張子を `separateByAvailability` で見る (textlint は「Not found available plugin」で rc 1)
-    - P3 glob の文字を含む名前 (`[x].md`): 対応済み。`found.items` に `path.resolve(name)` があるときだけ掛ける
+    - P3 glob の文字を含む名前 (`[x].md`): 対応済み。`found.items` にその名前のファイルそのものがあるときだけ掛ける (比べ方は下の 3 周目で実体に変えた)
     - P3 `--` の後ろの `-x.md`: 対応済み。`options.parse` の `_` をそのまま使う
     - 変異で緑のまま通った 3 つの分岐 (補助の失敗の rc 3・依存が無いときの拡張子の絞り込み・`-o`) にテストを足した
   - textlint の依存が無いとき (補助を起こせない) の扱い: 引数を textlint と同じには読めないので、オプションの無い形 (ファイルだけ) のときだけ既定の plugin の拡張子で選んで掛け、
@@ -135,6 +135,11 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
   - ja-writing lint のビルドの確かめは、掛ける対象があるときだけ行う (対象が 0 件ならビルドの失敗で rc 3 にしない)
   - 変異 (mutate-verify-list、ログは本体 checkout の `tmp/1078-fix2-1120/mv/`): -o の分岐・標準入力の拡張子・glob の名前・`--` の後ろの名前・補助の失敗の rc 3・依存が無いときの拡張子の絞り込みとオプションの扱い・標準入力とファイルの組 (2 本) の 9 本は名指しのテストが red。
     format の判定を外す変異は、先にある `-f json` の JSON を読むテストが `set -e` で全体を止める (rc 7。既存の検査が同じ退行を拾う)
+  - 3 周目の敵対的レビュー (2026-11-20、証拠は本体 checkout の `tmp/1078-rv3-1120/`)。生存 2 件、どちらも直した (commit「fix(ja-textlint): 対象の判定をパスの字面でなく実体 (dev, ino) で比べ、stat が落ちる名前で残りを止めない」)
+    - P2 (偽の緑): 対象の判定を `path.resolve(name)` の字面で比べていたので、ディスク上と大小の違う綴り (`../SUB2/in/jb.md`・先頭を小文字にした絶対パス) で外れ、textlint が読んだファイルに掛けずに rc 0 だった (darwin の glob は大小を区別せず、絶対パスや `..` を含む形ではディスク上の綴りを返す)。`(dev, ino)` で比べる。テスト「大小の違う綴り (../SUB/jb.md) でも掛ける」、変異 (字面の比べに戻す) で red
+    - P3: `x.md/` (ENOTDIR) が 1 つあると補助ごと落ちて全部のファイルで掛からず rc 3 だった (`throwIfNoEntry` は ENOENT しか黙らせない)。その名前だけを「読めない」として外す。テストと変異 (投げ直す) で red
+    - 壊せなかった観点: textlint の引数の読み (`-f=json`・`-o=FILE`・`--format=stylish`・`-- -x.md`・`--no-color`・`--stdin=true`。`-fjson` と `-qf json` は optionator が読めず textlint だけで終える)・補助と bash の受け渡し (改行を含む名前・空の引数・`-`)・依存が無いときの rc 3・hook の契約 (`--ignore-path /dev/null -f json` で標準出力は JSON だけ)・`/bin/bash` 3.2
+    - 指摘に数えなかったもの: `--dry-run` を `--fix` 無しで付けると textlint は普通に lint するが ja-writing lint は掛けない (usage に書いた設計どおり)。`ja-textlint '' x.md` で textlint 自体が `/` から glob して止まらない (textlint 本体の挙動。この変更が原因ではない)
   - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
