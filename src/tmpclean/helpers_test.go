@@ -165,7 +165,7 @@ func (f *fakeSys) run(_ context.Context, name string, args ...string) (string, s
 type fixture struct {
 	t                           *testing.T
 	session, tmpdir, trash, out string
-	derivedData                 string
+	derivedData, prefs          string
 	sys                         *fakeSys
 	d                           deps
 }
@@ -183,8 +183,9 @@ func newFixture(t *testing.T) *fixture {
 		trash:       filepath.Join(root, "Trash"),
 		out:         filepath.Join(root, "out"),
 		derivedData: filepath.Join(root, "DerivedData"),
+		prefs:       filepath.Join(root, "Preferences"),
 	}
-	for _, dir := range []string{f.session, f.tmpdir, f.trash, f.out, f.derivedData} {
+	for _, dir := range []string{f.session, f.tmpdir, f.trash, f.out, f.derivedData, f.prefs} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -204,6 +205,7 @@ func newFixture(t *testing.T) *fixture {
 		tmpDirEnv:       f.tmpdir,
 		trashRoot:       f.trash,
 		derivedDataRoot: f.derivedData,
+		prefsRoot:       f.prefs,
 		selfSID:         selfSID,
 		selfPID:         selfPID,
 		now:             func() time.Time { return testNow },
@@ -269,10 +271,10 @@ func (f *fixture) runCLI(args ...string) (int, string, string) {
 	return rc, out.String(), errb.String()
 }
 
-// plan は plan を作り、ID と plan ファイルのパスを返す (rc が 0 でなければ落とす)。
-func (f *fixture) plan(kinds string) (string, string) {
+// plan は plan を作り、ID と plan ファイルのパスを返す (rc が 0 でなければ落とす)。extra は plan に足す引数。
+func (f *fixture) plan(kinds string, extra ...string) (string, string) {
 	f.t.Helper()
-	rc, out, errOut := f.runCLI("plan", "-kinds", kinds, "-out", f.out)
+	rc, out, errOut := f.runCLI(append([]string{"plan", "-kinds", kinds, "-out", f.out}, extra...)...)
 	if rc != exitOK {
 		f.t.Fatalf("plan rc=%d\nstdout:\n%s\nstderr:\n%s", rc, out, errOut)
 	}

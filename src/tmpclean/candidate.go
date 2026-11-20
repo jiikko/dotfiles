@@ -24,6 +24,8 @@ type entry struct {
 	Path string `json:"path"`
 	Dev  uint64 `json:"dev"`
 	Ino  uint64 `json:"ino"`
+	// MtimeNs は選んだ時点の mtime (prefs だけが持つ。apply が作り直した候補と移す直前に照合する)
+	MtimeNs int64 `json:"mtime_ns,omitempty"`
 }
 
 type kept struct {
@@ -36,6 +38,10 @@ type selection struct {
 	Kinds       []string `json:"kinds"`
 	SessionDays int      `json:"session_days"`
 	TmpdirDays  int      `json:"tmpdir_days"`
+	// prefs の条件。形 (prefsShape の返す名前)・日数・中身のあるものも候補にするか
+	PrefsShapes   []string `json:"prefs_shapes,omitempty"`
+	PrefsDays     int      `json:"prefs_days,omitempty"`
+	PrefsNonEmpty bool     `json:"prefs_nonempty,omitempty"`
 }
 
 func (s selection) has(kind string) bool {
@@ -53,7 +59,7 @@ func (s selection) validate() error {
 	}
 	seen := map[string]bool{}
 	for _, k := range s.Kinds {
-		if k != kindSession && k != kindTmpdir && k != kindDerivedData {
+		if k != kindSession && k != kindTmpdir && k != kindDerivedData && k != kindPrefs {
 			return stopf("知らない種類: %q", k)
 		}
 		if seen[k] {
@@ -63,6 +69,32 @@ func (s selection) validate() error {
 	}
 	if s.has(kindSession) && s.SessionDays < 1 || s.has(kindTmpdir) && s.TmpdirDays < 1 {
 		return stopf("日数は 1 以上 (session=%d, tmpdir=%d)", s.SessionDays, s.TmpdirDays)
+	}
+	return s.validatePrefs()
+}
+
+func (s selection) validatePrefs() error {
+	if !s.has(kindPrefs) {
+		if len(s.PrefsShapes) > 0 || s.PrefsNonEmpty || s.PrefsDays != 0 { // CLI の -prefs-days だけの誤りは runPlan が止める
+			return stopf("prefs の条件は -kinds に prefs があるときだけ使える")
+		}
+		return nil
+	}
+	if len(s.PrefsShapes) == 0 {
+		return stopf("prefs は形 (-prefs-shape) を 1 つ以上選ぶ")
+	}
+	if s.PrefsDays < 1 || s.PrefsDays > prefsMaxDays {
+		return stopf("prefs の日数は 1〜%d (prefs=%d)", prefsMaxDays, s.PrefsDays)
+	}
+	seen := map[string]bool{}
+	for _, x := range s.PrefsShapes {
+		if err := validPrefsShape(x); err != nil {
+			return err
+		}
+		if seen[x] {
+			return stopf("形が重複している: %q", x)
+		}
+		seen[x] = true
 	}
 	return nil
 }
@@ -80,7 +112,10 @@ type world struct {
 	derivedDataRoot string
 	// derivedDataMovedGone は同じ apply の中で、持ち主が消えていると確かめて移した info.plist の hash (移した後は読み直しても見えない)
 	derivedDataMovedGone map[string]bool
-	now                  time.Time
+	// prefsRoot は Preferences の根 (prefs を選んだときだけ。空なら根が無い = 0 件)、prefsNames はその直下の名前
+	prefsRoot  string
+	prefsNames []string
+	now        time.Time
 }
 
 func gatherWorld(ctx context.Context, d deps, sel selection) (world, error) {
@@ -108,6 +143,16 @@ func gatherWorld(ctx context.Context, d deps, sel selection) (world, error) {
 		}
 		if w.derivedDataRoot != "" {
 			w.derivedData = collectDerivedData(ctx, d, w.derivedDataRoot, "")
+		}
+	}
+	if sel.has(kindPrefs) {
+		if w.prefsRoot, err = resolvePrefsRoot(d); err != nil {
+			return world{}, err
+		}
+		if w.prefsRoot != "" {
+			if w.prefsNames, err = readPrefsNames(w.prefsRoot); err != nil {
+				return world{}, err
+			}
 		}
 	}
 	return w, nil
@@ -185,6 +230,9 @@ func candidates(w world, sel selection) ([]entry, []kept) {
 	}
 	if sel.has(kindDerivedData) {
 		out = append(out, derivedDataCandidates(w, keep)...)
+	}
+	if sel.has(kindPrefs) {
+		out = append(out, prefsCandidates(w, sel, keep)...)
 	}
 	return out, ks
 }

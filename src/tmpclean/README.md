@@ -1,12 +1,15 @@
 # tmpclean
 
-一時領域 (Claude Code の scratchpad = `/private/tmp/claude-<uid>/<project>/<session-id>/`、`$TMPDIR` の直下) と、Xcode の DerivedData のうち持ち主の消えたものを数え、
+一時領域 (Claude Code の scratchpad = `/private/tmp/claude-<uid>/<project>/<session-id>/`、`$TMPDIR` の直下) と、Xcode の DerivedData のうち持ち主の消えたもの、
+`~/Library/Preferences` の UUID 入りの plist のうち選んだ形のものを数え、
 **ユーザーが承認した plan の範囲だけ**、**生きているもの・使用中のものを避けて**、**ゴミ箱へ移す** CLI `bin/tmpclean`。
 手順 (数える → 候補を見せる → 承認 → 移す) は skill `cleanup-tmp-dir`。dotfiles の `tmp/` は扱わない (`make clean-tmp`)。
 
 ```
 tmpclean count [-json]
-tmpclean plan  -kinds session,tmpdir,derived-data -out <dir> [-session-days 7] [-tmpdir-days 3] [-json]
+tmpclean prefs-shapes [-days 7] [-json]
+tmpclean plan  -kinds session,tmpdir,derived-data,prefs -out <dir> [-session-days 7] [-tmpdir-days 3]
+               [-prefs-shape <形> ...] [-prefs-days 7] [-prefs-nonempty] [-json]
 tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
 tmpclean sweep [-days 3] [-json]
 ```
@@ -38,6 +41,24 @@ tmpclean sweep [-days 3] [-json]
   持ち主の確認から移すまでの窓 (1 件ぶん) / 数十万ファイルの DerivedData で `lsof +D` が 60 秒の上限を超えると「判定できない」で移せない (rc=1。大きいものでは未実測) /
   検査点は根の和で見る (種類ごとに根を分けない。session・tmpdir と同じ)
 
+## prefs (issue 1101)
+
+`~/Library/Preferences` の直下の、名前が `.plist` で終わり、UUID を含み、`com.apple.` で始まらない通常のファイル。テストが `UserDefaults(suiteName:)` で作った
+suite の plist が溜まる (2026-11-20 にこの機械で 30 形・11,469 件)。本物の設定が同じ dir に並び、名前に UUID を含む本物の設定もあるので、
+「UUID を含めば候補」にはしない。`.plist` を除いた名前の UUID を `<UUID>` に置き換えた形ごとに `prefs-shapes` で数え、`plan` は `-prefs-shape` で選んだ形だけを見る
+(形がテストの残骸かを決めるのは、ソースを読む skill の手順)。
+
+- 候補: 選んだ形・通常のファイル・`-prefs-days` (1〜3650) より古い・全体の lsof の写しに出ない・空の dict (binary は trailer と offset table の範囲を確かめてから top の object の marker、
+  XML は `<plist>` の下の dict が子を持たないか)。中身があるもの・空かを判定できないもの (形式が違う・壊れている・1 MiB 超) は `-prefs-nonempty` を付けたときだけ候補
+- plan の項目は選んだ時点の mtime を持つ。apply は作り直した候補と、移す直前の `Lstat` の両方で、通常のファイル・mtime が plan と同じかを確かめる
+  (dev/ino だけでは、同じ inode のまま書かれたものを見分けられない)。1 件ずつの lsof は取らない (plist は cfprefsd が読み書きし、開いたままにしない。
+  1 件 0.3 秒の lsof は 1 万件で 1 時間かかり、何も検出しない)
+- 検査点は、prefs を選んだ plan でだけ Preferences の根を受け付け、根の直下・選んだ形の名前・通常のファイルのものだけを通す。移し先は `~/.Trash/tmpclean-<日時>-<ID>/prefs/<名前>`
+- 根を読めなければ止める (2。0 件に丸めない)。根が無ければ 0 件
+- 検出しないもの: 形をユーザーが選ぶので、本物の設定の形を選べば移す (ゴミ箱から戻せる) / 古さの閾値の内側で使われている suite / 移した suite を開いたままの process が
+  書けば cfprefsd が plist を作り直す / 最後の `Lstat` から rename までの窓 (1 件ぶん) / container の中の Preferences と `ByHost/` の下 /
+  根は `os.UserHomeDir()` (`$HOME`) から決める (DerivedData と同じ) / prefs だけを選んでも scratchpad の根の実在と全体の lsof を前提にする (他の種類と同じ)
+
 ## sweep (承認なしで消す唯一の経路。issue 851)
 
 `$TMPDIR` の直下に Swift のツールチェーン (swift-driver の `ArgsResolver`。sourcekit-lsp・SwiftPM・`swiftc -c`・`swift -e`) が残す
@@ -64,7 +85,7 @@ tmpclean sweep [-days 3] [-json]
 | 使用中 | lsof の全体の写し (100 件未満なら失敗とみなす) と、移す直前の 1 件の取り直し (stdout・stderr・rc の 3 つで判定。判定不能は残す) |
 | 古さ | 自身と中の全部 (ファイルも dir も) が N 日より前。走査に失敗したら残す。`$TMPDIR` では socket / FIFO を含むもの・`com.apple.*`・rename を拒む属性 (immutable・append・SIP の restricted / nounlink) が付いたもの・symlink も残す |
 | plan を信用しない | apply は候補を作り直して plan との交わりだけを移す。dev/ino が変わったものは残す |
-| 検査点 | `safefs.TrashMove` に渡す Guard が、根の配下の決まった深さ (session = 根/project/セッション、tmpdir・derived-data = 根の直下) 以外と今回の移し先の外を拒否する。ゴミ箱の経路の symlink は何も作る前に断る |
+| 検査点 | `safefs.TrashMove` に渡す Guard が、根の配下の決まった深さ (session = 根/project/セッション、tmpdir・derived-data = 根の直下、prefs = 根の直下の選んだ形の通常のファイル) 以外と今回の移し先の外を拒否する。ゴミ箱の経路の symlink は何も作る前に断る |
 
 ## 検出しないもの
 

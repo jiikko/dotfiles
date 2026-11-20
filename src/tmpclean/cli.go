@@ -23,9 +23,14 @@ const (
 const usage = `使い方:
   tmpclean count [-json]
       一時領域 (Claude Code の scratchpad の根・$TMPDIR) を数える。何も動かさない
-  tmpclean plan -kinds session,tmpdir,derived-data -out <dir> [-session-days 7] [-tmpdir-days 3] [-json]
+  tmpclean prefs-shapes [-days 7] [-json]
+      ~/Library/Preferences の直下の、名前に UUID を含む plist (com.apple. を除く) を、名前の形 (UUID を <UUID> に置き換えた名前) ごとに数える。
+      形ごとに件数・N 日より古い件数・空 / 中身あり / 判定できない の件数を出す。何も動かさない
+  tmpclean plan -kinds session,tmpdir,derived-data,prefs -out <dir> [-session-days 7] [-tmpdir-days 3]
+                [-prefs-shape <形> ...] [-prefs-days 7] [-prefs-nonempty] [-json]
       移す候補を選び、<dir>/plan-<ID>.json に書く。何も動かさない。
-      derived-data は Xcode の DerivedData のうち、持ち主 (info.plist の WorkspacePath) が消えたもの (古さでは選ばない)
+      derived-data は Xcode の DerivedData のうち、持ち主 (info.plist の WorkspacePath) が消えたもの (古さでは選ばない)。
+      prefs は prefs-shapes の形を -prefs-shape で 1 つ以上選び、その形の N 日より古い空の plist を選ぶ (-prefs-nonempty で中身のあるものも)
   tmpclean apply -plan <dir>/plan-<ID>.json -approve <ID> [-json]
       plan に載っていて今も候補であるものだけを、1 件ずつ判定し直してからゴミ箱 (~/.Trash/tmpclean-…) へ移す。
       移した記録は plan と同じ dir の moved-<ID>.jsonl
@@ -52,6 +57,8 @@ func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) i
 		return runCount(d, args[1:], stdout, stderr)
 	case "plan":
 		return runPlan(ctx, d, args[1:], stdout, stderr)
+	case "prefs-shapes":
+		return runPrefsShapes(d, args[1:], stdout, stderr)
 	case "apply":
 		return runApply(ctx, d, args[1:], stdout, stderr)
 	case "sweep":
@@ -136,10 +143,17 @@ type planOutput struct {
 
 func runPlan(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("plan", stderr)
-	kinds := fs.String("kinds", "", "session,tmpdir,derived-data のどれか (カンマ区切り)")
+	kinds := fs.String("kinds", "", "session,tmpdir,derived-data,prefs のどれか (カンマ区切り)")
 	out := fs.String("out", "", "plan を書く dir")
 	sessionDays := fs.Int("session-days", 7, "")
 	tmpdirDays := fs.Int("tmpdir-days", 3, "")
+	var prefsShapesArg []string
+	fs.Func("prefs-shape", "prefs の形 (繰り返せる)", func(v string) error {
+		prefsShapesArg = append(prefsShapesArg, v)
+		return nil
+	})
+	prefsDays := fs.Int("prefs-days", 7, "")
+	prefsNonEmpty := fs.Bool("prefs-nonempty", false, "")
 	asJSON := fs.Bool("json", false, "")
 	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
 		return exitStopped
@@ -149,6 +163,16 @@ func runPlan(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 		return exitStopped
 	}
 	sel := selection{Kinds: splitKinds(*kinds), SessionDays: *sessionDays, TmpdirDays: *tmpdirDays}
+	prefsDaysSet := false
+	fs.Visit(func(f *flag.Flag) { prefsDaysSet = prefsDaysSet || f.Name == "prefs-days" })
+	if prefsDaysSet && !sel.has(kindPrefs) {
+		fmt.Fprintln(stderr, "-prefs-days は -kinds に prefs があるときだけ使える")
+		return exitStopped
+	}
+	if sel.has(kindPrefs) || len(prefsShapesArg) > 0 || *prefsNonEmpty {
+		// prefs を選ばない plan の selection (と ID) には、prefs の条件を何も書かない
+		sel.PrefsShapes, sel.PrefsDays, sel.PrefsNonEmpty = prefsShapesArg, *prefsDays, *prefsNonEmpty
+	}
 	if err := sel.validate(); err != nil {
 		return stopped(stderr, err, false)
 	}
@@ -263,6 +287,33 @@ func runApply(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 		fmt.Fprintf(stderr, "止めた: %v\n", res.stopped)
 	}
 	return code
+}
+
+func runPrefsShapes(d deps, args []string, stdout, stderr io.Writer) int {
+	fs := newFlags("prefs-shapes", stderr)
+	days := fs.Int("days", 7, "")
+	asJSON := fs.Bool("json", false, "")
+	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
+		return exitStopped
+	}
+	rep, err := prefsShapes(d, *days)
+	if err != nil {
+		return stopped(stderr, err, false)
+	}
+	if *asJSON {
+		return writeJSON(stdout, stderr, rep)
+	}
+	if rep.Root == "" {
+		fmt.Fprintln(stdout, "prefs: (Preferences の dir が無い)")
+		return exitOK
+	}
+	fmt.Fprintf(stdout, "prefs: %s\n  total: %d / shapes: %d / old は %d 日より古い件数\n", rep.Root, rep.Total, len(rep.Shapes), rep.Days)
+	fmt.Fprintf(stdout, "  %7s %7s %7s %9s %7s %10s  %-10s  %s\n", "count", "old", "empty", "non_empty", "unknown", "bytes", "newest", "shape")
+	for _, s := range rep.Shapes {
+		fmt.Fprintf(stdout, "  %7d %7d %7d %9d %7d %10d  %-10s  %s\n", s.Count, s.Old, s.Empty, s.NonEmpty, s.Unknown, s.Bytes,
+			s.Newest.Format("2006-01-02"), s.Shape)
+	}
+	return exitOK
 }
 
 func splitKinds(s string) []string {

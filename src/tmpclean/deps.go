@@ -23,9 +23,12 @@ type deps struct {
 	trashRoot   string // ゴミ箱 (~/.Trash)
 	// derivedDataRoot は Xcode の DerivedData の根 (~/Library/Developer/Xcode/DerivedData)
 	derivedDataRoot string
-	selfSID         string // 自分の CLAUDE_CODE_SESSION_ID
-	selfPID         int    // 祖先をたどって自分の claude を探す起点
-	now             func() time.Time
+	prefsRoot       string // ~/Library/Preferences (prefs の根)
+	// beforeRecheck は apply が 1 件ずつ判定し直す直前に呼ぶ (テストだけが、候補を作り直した後の変化を作るために入れる。production は nil)
+	beforeRecheck func(path string)
+	selfSID       string // 自分の CLAUDE_CODE_SESSION_ID
+	selfPID       int    // 祖先をたどって自分の claude を探す起点
+	now           func() time.Time
 	// inner は safefs に渡す検査点の内側。production は safefs.ProductionGuard (テストのバイナリの中では拒否する)、
 	// テストは safefs/sandbox。tmpclean 自身の検査 (根の中・深さちょうど) はこの外側に必ず被せる (trashGuard)
 	inner safefs.Guard
@@ -36,10 +39,11 @@ type deps struct {
 
 func prodDeps() deps {
 	home, _ := os.UserHomeDir()
-	trash, derivedData := "", ""
+	trash, derivedData, prefs := "", "", ""
 	if home != "" {
 		trash = filepath.Join(home, ".Trash")
 		derivedData = filepath.Join(home, "Library/Developer/Xcode/DerivedData")
+		prefs = filepath.Join(home, "Library/Preferences")
 	}
 	return deps{
 		run:             runner.Exec,
@@ -47,6 +51,7 @@ func prodDeps() deps {
 		tmpDirEnv:       os.Getenv("TMPDIR"),
 		trashRoot:       trash,
 		derivedDataRoot: derivedData,
+		prefsRoot:       prefs,
 		selfSID:         os.Getenv("CLAUDE_CODE_SESSION_ID"),
 		selfPID:         os.Getpid(),
 		now:             time.Now,

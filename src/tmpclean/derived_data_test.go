@@ -146,7 +146,7 @@ func TestDerivedDataRootSymlinkStops(t *testing.T) {
 
 func TestTrashGuardDerivedDataDepth(t *testing.T) {
 	r := roots{session: "/s"}
-	g := trashGuard(r, "/h/DerivedData", "/h/.Trash/tmpclean-x", func(string, string) error { return nil })
+	g := trashGuard(r, "/h/DerivedData", prefsScope{}, "/h/.Trash/tmpclean-x", func(string, string) error { return nil })
 	if err := g("trash", "/h/DerivedData/App-"+ddHashA); err != nil {
 		t.Errorf("DerivedData の直下を拒否した: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestTrashGuardDerivedDataDepth(t *testing.T) {
 			t.Errorf("DerivedData の直下でないものを通した: %s", p)
 		}
 	}
-	if err := trashGuard(r, "", "/h/.Trash/tmpclean-x", func(string, string) error { return nil })("trash", "/h/DerivedData/App-"+ddHashA); err == nil {
+	if err := trashGuard(r, "", prefsScope{}, "/h/.Trash/tmpclean-x", func(string, string) error { return nil })("trash", "/h/DerivedData/App-"+ddHashA); err == nil {
 		t.Errorf("derived-data を扱わないときに DerivedData を通した")
 	}
 }

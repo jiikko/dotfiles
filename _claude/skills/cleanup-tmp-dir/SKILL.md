@@ -1,10 +1,10 @@
 ---
 name: cleanup-tmp-dir
-version: 2.3.0
-description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDIR・dotfiles の tmp/) と、Xcode の DerivedData・Apple container・使っていない git worktree に溜まったものを数え、どれを対象にするかを聞いてから、消す候補を種類ごとに見せる。ユーザーが承認した plan の古くて使用中でないもの (DerivedData は持ち主の消えたもの) だけを bin/tmpclean でゴミ箱へ移す (dotfiles の tmp/ は make clean-tmp、Apple container は container prune、worktree は bin/wt remove か git worktree remove で、それぞれ別の承認を取って消す)。「/tmp を掃除して」「一時ファイルを片付けて」「TMPDIR が溜まっていないか見て」「DerivedData を片付けて」「container を掃除して」「使っていない worktree を片付けて」「cleanup-tmp-dir」で発火。消す前に必ず承認を取る。
+version: 2.4.0
+description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDIR・dotfiles の tmp/) と、Xcode の DerivedData・~/Library/Preferences の UUID 入りの plist (テストの残骸)・Apple container・使っていない git worktree に溜まったものを数え、どれを対象にするかを聞いてから、消す候補を種類ごとに見せる。ユーザーが承認した plan の古くて使用中でないもの (DerivedData は持ち主の消えたもの、Preferences は選んだ名前の形のもの) だけを bin/tmpclean でゴミ箱へ移す (dotfiles の tmp/ は make clean-tmp、Apple container は container prune、worktree は bin/wt remove か git worktree remove で、それぞれ別の承認を取って消す)。「/tmp を掃除して」「一時ファイルを片付けて」「TMPDIR が溜まっていないか見て」「DerivedData を片付けて」「Preferences に溜まったテストの plist を片付けて」「container を掃除して」「使っていない worktree を片付けて」「cleanup-tmp-dir」で発火。消す前に必ず承認を取る。
 ---
 
-# cleanup-tmp-dir — 一時領域・DerivedData・Apple container・worktree の掃除
+# cleanup-tmp-dir — 一時領域・DerivedData・Preferences の残骸・Apple container・worktree の掃除
 
 一時領域に件数が溜まると、起動時の削除が長引いて再起動が遅くなるとされる (`_claude/rules-rationale/global-claude-md.md` の「本文から移した実例」)。
 判定と移動は **`bin/tmpclean` だけが行う** (本体と守りの一覧・検出しないものは `src/tmpclean/README.md`)。
@@ -18,12 +18,16 @@ description: 一時領域 (/private/tmp の Claude Code の作業場所・$TMPDI
 | `tmpdir` | `$TMPDIR` の直下 | tmpclean。既定は 3 日より古いもの |
 | `repo-tmp` | dotfiles の本体 checkout の `tmp/` | `make clean-tmp` (既定 30 日)。dotfiles 以外の repo の `tmp/` は容量を見せるだけ |
 | `derived-data` | Xcode の DerivedData (`~/Library/Developer/Xcode/DerivedData/<名前>-<hash>/`) | tmpclean。持ち主 (info.plist の WorkspacePath) が消えたものだけ。古さでは選ばない (判定は `src/tmpclean/README.md`) |
+| `prefs` | `~/Library/Preferences` の直下の、名前に UUID を含む plist (`com.apple.` を除く) | tmpclean。名前の形 (UUID を `<UUID>` に置き換えた名前) ごとに数え、テストの残骸と確かめた形の 7 日より古いものだけ。空のものと中身のあるものは別の plan と承認 (手順 4・5、下の「Preferences の形の分け方」) |
 | `container` | Apple container (`container` CLI) の停止中の container と使われていない image | `container prune` / `container image prune`。**volume は消さない** (手順 5) |
 | `worktree` | `~/src` と `~/dotfiles` の下の repo (言われればその dir) の使っていない git worktree。worktree 自体は根の外にもある | repo の道具で消す (`bin/wt remove` / `git worktree remove`)。数え方と分け方は下の「worktree の数え方と分け方」 |
 
 🚨 **DerivedData を手で消さない・container の volume を一括で消さない**。DerivedData は持ち主の在るものを消すと次のビルドが全部やり直しになり、
 見分けは tmpclean が持つ。container の volume は cache ではなくデータ (DB の中身など) のことがある (2026-11-03 にこの機械で
 `monolink-mysql-data` を確認。`container volume prune` は container から参照されていない volume を全部消す)。
+
+🚨 **Preferences の plist を手で消さない・`defaults delete` を打たない**。同じ dir に本物の設定が並び、名前に UUID を含む本物の設定もある
+(アプリの profile の suite など)。形を選ぶのはユーザーで、移すのは tmpclean (検査点が選んだ形の外を移さない)。
 
 🚨 **worktree のディレクトリを `rm -rf` で消さない・`--force` を付けない**。登録が残るうえ、未コミットの変更と、どの branch / remote にも無い
 commit を確かめずに消す。消すのは repo の道具に任せ、判定は下の「worktree の数え方と分け方」で行う。
@@ -40,15 +44,18 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
    (`<本体>` は `<D>` の 3 つ上の dir)。dotfiles (`<本体>/scripts/clean_tmp.sh` が在る) なら `make -C <本体> clean-tmp DRY_RUN=1` も取る。
    それ以外の repo では `make clean-tmp` を打たず、容量を見せるだけにする (同名の target が `DRY_RUN` を解釈するとは限らない)。
    DerivedData は `du -sh ~/Library/Developer/Xcode/DerivedData` (`tmpclean count` は数えない。dir が無ければ「無い」と書く)。
+   Preferences は `tmpclean prefs-shapes -json > <D>/prefs-shapes-before.json 2> <D>/prefs-shapes-before.err` (読み取りのみ。stderr を JSON に混ぜない。形ごとの件数・7 日より古い件数・空 / 中身あり / 判定できない の件数。
+   `tmpclean count` は数えない。手順 7 で前後を並べるので残す)。`total` が 0 なら「無い」と書く。
    Apple container は `command -v container` が在るときだけ、`container system status` が running なら `container system df`・`container ls -a`・
    `container image ls`・`container volume ls` を `<D>/container-before.txt` に取る (どれも読み取りのみ)。running でなければ
    「container の service が止まっている」と書いて数えない (数えるために `container system start` を打たない)。
    worktree は下の「worktree の数え方と分け方」で数え、`<D>/worktrees.txt` に 1 件 1 行で残す
 3. **何を対象にするかを聞く**: AskUserQuestion (`multiSelect: true`) で、手順 2 の数と容量を添えて対象を選ばせる。選択肢は
    「一時領域 (scratchpad・`$TMPDIR`)」「Xcode の DerivedData (持ち主の消えたもの)」「Apple container (停止中の container・使われていない image)」
-   「使っていない git worktree (件数と容量)」と、dotfiles なら「dotfiles の `tmp/`」。無いもの (DerivedData の dir が無い・container が無い・
-   service が止まっている・worktree が 0 件) は選択肢に出さない。AskUserQuestion の選択肢は 4 つまでなので、5 つになるときは worktree を 2 問目
-   (「使っていない git worktree も対象にするか」。選択肢は「対象にする」「対象にしない」) に分ける。
+   「使っていない git worktree (件数と容量)」「Preferences の UUID 入りの plist (件数と形の数)」と、dotfiles なら「dotfiles の `tmp/`」。無いもの (DerivedData の dir が無い・container が無い・
+   service が止まっている・worktree が 0 件・Preferences の `total` が 0) は選択肢に出さない。AskUserQuestion の選択肢は 4 つまでなので、5 つ以上になるときは worktree と Preferences を、同じ呼び出しの 2 問目
+   (`questions` の 2 つ目。「次も対象にするか」、`multiSelect: true`、選択肢は「使っていない git worktree (件数と容量)」「Preferences の UUID 入りの plist (件数と形の数)」の
+   うち手順 2 で在ったもの) に分ける。1 問目と 2 問目は 1 回の呼び出しで一緒に聞く。
    ここで選ばれたものだけを以降で扱う。何も選ばれない・回答が無いなら、何も消さずに数えた結果だけを報告して終える
 4. **候補を作る**: 一時領域か DerivedData が選ばれていたら `tmpclean plan -kinds <種類> -out <D> > <D>/plan-out.txt 2>&1; echo rc=$?` (何も動かさない)。
    種類は一時領域なら `session,tmpdir`、DerivedData なら `derived-data` (両方なら `session,tmpdir,derived-data`)。どちらも選ばれていなければ plan は作らない。候補は 1 件 1 行で出るので
@@ -56,10 +63,16 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
    rc≠0 なら止まった理由が出力の `止めた:` の行にある (rc=2 = 生きている claude を見分けられない等、rc=3 = 実行環境の失敗)。理由を伝えて先へ進まない。
    ただし `止めた:` が claude の cwd・project の行 (`session` を止める判定。`src/tmpclean/README.md` の「判定不能で止める」) なら、
    止まるのは `session` だけなので、`-kinds` から `session` を外して作り直してよい。手順 5 の質問に、`session` を外した理由 (止めた claude の pid と cwd) を書く。
-   worktree が選ばれていたら、下の「worktree の数え方と分け方」で、候補・別に聞くもの・実体の無い登録・残すものに分ける (tmpclean は使わない)
+   worktree が選ばれていたら、下の「worktree の数え方と分け方」で、候補・別に聞くもの・実体の無い登録・残すものに分ける (tmpclean は使わない)。
+   Preferences が選ばれていたら、下の「Preferences の形の分け方」で形を「根拠あり」「根拠なし」に分け、根拠ありの形を `-prefs-shape <形>` で全部並べて
+   `tmpclean plan -kinds prefs -prefs-shape <形> … -out <D> > <D>/plan-prefs-out.txt 2>&1; echo rc=$?` を打つ (空のものだけが候補になる)。
+   同じ形に中身あり・判定できないもの (`non_empty` + `unknown`) があれば、`-prefs-nonempty` を足した plan を別に作る (`<D>/plan-prefs-nonempty-out.txt`。空のものも含む)。
+   根拠ありの形が 1 つも無ければ plan を作らず、手順 5 で形の表だけを見せる。
+   prefs は他の種類と同じ plan に混ぜない (承認の単位を分けるため)。全体の `lsof` を取るので 30〜60 秒かかる
 5. **見せて承認を取る**: AskUserQuestion で「この plan (ID と種類ごとの件数) を移してよいか」を聞く。選択肢は「移す」と「移さない」。
-   AskUserQuestion は 1 回に 4 問までなので、下の別の質問と合わせて 4 問を超えるなら、worktree の問いを次の呼び出しに分ける。
-   plan を作っていない (手順 3 で一時領域も DerivedData も選ばれていない) なら、この質問と手順 6 の apply は飛ばし、下の別の質問だけを聞く。
+   AskUserQuestion は 1 回に 4 問までなので、下の別の質問と合わせて 4 問を超えるなら、後ろの問い (worktree・Preferences の中身ありの plan) を次の呼び出しに分ける。
+   一時領域・DerivedData の plan を作っていない (手順 3 でどちらも選ばれていない) なら、この最初の質問は飛ばし、下の別の質問だけを聞く。
+   承認された plan が 1 つも無ければ手順 6 の apply も飛ばす。
    「移す」の説明に **ID・種類ごとの件数・失うもの・移し先** を書く:
    - 失うもの: 終わったセッションの scratchpad (`--resume` で再開したときの作業ファイル)、`$TMPDIR` の古いテストの残骸とアプリの一時ファイル。
      `derived-data` を含むなら、消えた worktree・checkout のビルド成果物と索引 (持ち主が無いので、それを使うビルドはもう無い)。
@@ -67,6 +80,12 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
    - 移し先: `~/.Trash/tmpclean-<日時>-<ID>/` (Finder から戻せる。容量はゴミ箱を空にするまで減らない)
    - 所要: 件数 × 0.3 秒 (1 件ごとに `lsof` を取り直す)。🚨 数万件なら数時間かかる (12 万件で約 8 時間。2026-10-21 実測)。
      `$TMPDIR` と scratchpad だけなら、再起動 (起動時に macOS が消す) の方が早いと添える
+   - 手順 3 で Preferences が選ばれていたら**別の質問**にする。形ごとの表 (形・件数・空・中身あり・判定できない・一番新しい日付・根拠の出典) を質問文に出し、
+     選択肢は「根拠ありの形の空の plist を移す (plan の ID・件数)」と「移さない」。根拠なしの形は表の下に件数だけ並べ、「候補にしていない。移すなら Other に形を書く」と書く
+     (Other に形が書かれたら、その形の根拠を確かめ直して手順 4 から plan を作り直し、承認を取り直す)。
+     中身ありの plan を作ったなら、それを**さらに別の問い**にし、「空のものに加えて、中身のある plist (テストの値) も移す (plan の ID・件数)」と「移さない」から選ばせる。
+     失うもの: テストが残した suite の値 (中身ありの plan だけ)。移し先は同じ `~/.Trash/tmpclean-<日時>-<ID>/prefs/`。
+     所要: 1 件ずつの `lsof` を取らない (1 件ごとに移した記録を fsync する。1 万件での所要は未実測なので、数百件を超えるなら手順 6 のとおり背景で走らせる)
    - 手順 3 で dotfiles の `tmp/` (`repo-tmp`) が選ばれていたら**別の質問**にする。🚨 こちらはゴミ箱を経由せず**消す** (戻せない) と説明に書く。`make clean-tmp DRY_RUN=1` の件数と、
      `grep -rn 'tmp/' <本体>/issues <本体>/_claude` で issue や doc が指しているパスを見せる。plan の ID に結び付かないので、承認の直後に打つ
    - 手順 3 で Apple container が選ばれていたら**別の質問**にする。🚨 こちらもゴミ箱を経由せず**消す** (戻せない)。`<D>/container-before.txt` から
@@ -90,6 +109,7 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
    候補が数百件を超えるなら Bash ツールの `run_in_background` で走らせ、完了の通知の後に `.rc` と `.json` を読む (1 件ごとに `lsof` を取り直すので
    1 件 0.3 秒ほど。通知そのものは rc を保証しない)。plan は作ってから 1 時間で使えなくなる: rc=2 で「plan が古い」と出たら手順 4 から作り直し、
    新しい ID で承認を取り直す (古い ID の承認を流用しない)。
+   Preferences の plan は、承認されたもの (空の plan・中身ありの plan) ごとに上と同じ apply のコマンドで打つ (中身ありの plan は空のものも含むので、両方が承認されたら中身ありの plan だけを打つ。空の plan が「移さない」なら、中身ありの plan も打たない)。
    `repo-tmp` は別の質問で承認されたときだけ、打つ直前に `make -C <本体> clean-tmp DRY_RUN=1` を取り直して見せた一覧から増えていないかを確かめ、
    `make -C <本体> clean-tmp DAYS=30` を打つ (増えていたら、増えた分を見せて承認を取り直す)。
    Apple container は別の質問で承認された操作だけを、打つ直前に `container ls -a` と `container image ls` を取り直して、見せた一覧から
@@ -105,9 +125,25 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
    plan を読む段で止まったとき (古い plan・ID の不一致) は `.json` が空で、理由は `apply-<ID>.err` の `止めた:` の行にある。
    移した件数 (`moved`)・残した理由ごとの件数 (`kept`)・移し先を出し、`tmpclean count` を取り直して `count-before.txt` と前後を並べる。
    何をどこへ移したかは `<D>/moved-<ID>.jsonl`。手で消すのが続くようなら、溜めている元 (テストの後始末の漏れ) を 1 行で添える。
-   DerivedData を移したなら、容量はゴミ箱を空にするまで減らないと添える。Apple container を消したなら `container system df` を取り直して前後を並べる。
+   DerivedData を移したなら、容量はゴミ箱を空にするまで減らないと添える。
+   Preferences を移したなら、`tmpclean prefs-shapes -json > <D>/prefs-shapes-after.json 2> <D>/prefs-shapes-after.err` を取り直して `prefs-shapes-before.json` と形ごとに前後を並べ、次の 2 つを添える:
+   その suite を開いたままの process が居れば、メモリに残った値を書いて plist を元の場所に作り直すことがある (UserDefaults は先にメモリを書き、ディスクへは後で書く)。
+   戻すときは `moved-<ID>.jsonl` で元の場所を見て、同じ名前が作り直されていたら上書きせずに比べる (tmpclean は Finder の「戻す」の情報を付けない)。
+   溜めている元 (テストの helper) が分かっていれば、その repo と helper を 1 行で添えるApple container を消したなら `container system df` を取り直して前後を並べる。
    worktree を消したなら、消した path が無いこと・`git -C <repo> worktree list` から消えたこと・作った `attic/` の branch を確かめ、消した件数と
    容量の合計、残した branch を出す (`attic/` の branch は push していない。要らなくなったら消すと添える)
+
+## Preferences の形の分け方
+
+形がテストの残骸かは、その形を作るソースを読んで決める (tmpclean は決めない)。`<D>/prefs-shapes-before.json` の形ごとに、
+`<UUID>` の前の部分 (接頭辞) で `~/src` と `~/dotfiles` を探す (`rg -n --fixed-strings '<接頭辞>'`。`.git` と `tmp/` の下は除く)。
+
+- **根拠あり**: テストのコード (`*Tests*`・`*_test.go`・`test/`・`tests/` の下) に、その形の完全な名前を UUID と連結して suite・domain を作る箇所がある
+  (`"test.favorites.\(UUID().uuidString)"`・`"SyncLogStoreTests-" + UUID().uuidString` の形)。今のコードに無くても、repo の issue か git の履歴
+  (`git log -S '<接頭辞>'`) に、その形を作っていたテストの helper の記録があれば根拠にしてよい。どちらも出典 (repo・パス・行か issue 番号) を表に書く
+- **根拠なし**: 接頭辞が出てくるだけのもの (掃除の対象から断る assert・コメント・文書)・production のコードが同じ接頭辞の名前を組み立てているもの
+  (アプリの profile の suite など。テストも同じ接頭辞を使っていても根拠なしにする)・どこにも出てこないもの
+- 1 つの形を両方の repo が作っていてもよい (根拠はどちらか 1 つで足りる)。根拠なしの形は候補にしない
 
 ## worktree の数え方と分け方
 

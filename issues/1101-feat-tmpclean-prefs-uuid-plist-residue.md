@@ -96,4 +96,36 @@
 
 ## 進捗
 
-- [ ] 実装
+### 2026-11-20: 実装 (commit「feat(tmpclean): ~/Library/Preferences の UUID 入りの plist を形ごとに数え、選んだ形だけをゴミ箱へ移す prefs を足す」)
+
+- [x] `tmpclean prefs-shapes` が形ごとの集計を出し、名前に UUID の無いもの・`com.apple.` で始まるもの・dir・symlink を数えない (`TestPrefsShapesReport`)
+- [x] `plan -kinds prefs` が選んだ形の古い空のものだけを候補にし (`-prefs-nonempty` で中身ありも)、形を選ばない・`<UUID>` を含まない形・`com.apple.` の形・範囲外の日数・
+      prefs を選ばない plan の prefs の条件は rc=2 で止める (`TestPrefsMovesOnlySelectedOldShapes`・`TestPrefsNonEmptyOnlyWithFlag`・`TestPrefsPlanStopsOnBadShapes`)
+- [x] `apply` が plan の後に更新された plist (apply が候補を作り直した後に書かれたものを含む)・形の外のものを移さない
+      (`TestPrefsKeptWhenUpdatedAfterPlan`・`TestPrefsKeptWhenUpdatedAfterApplyRebuiltCandidates`。後者のためにテスト用の `deps.beforeRecheck` を足した)
+- [x] 検査点が Preferences の根の直下以外・選んでいない形・形を持たない名前・通常のファイルでないものを拒否する (`TestPrefsGuardOnlyRootDirectChildren`・`TestPrefsScopeRejectsShapelessNames`)
+- [x] 変異で red を確かめた (`bin/mutate-verify-list`、15 本すべて red): 形の照合を外す / 中身の判定を外す / 作り直した候補の mtime の照合を外す / 移す直前の `prefsUnchanged` を外す /
+      検査点を深さだけにする / 検査点の通常のファイルの判定を外す / 日数の上限を外す / XML の子の判定を外す / binary の object の数の判定を外す / XML を EOF で空と読む /
+      検査点で形の無い名前を通す / lsof の写しの判定を外す / XML の top が dict でないものを空と読む / `-prefs-days` だけを黙って捨てる (2 本)。
+      最初の 1 周で「形の照合を外す」が緑のまま通った (形の外のものが全部、中身あり・dir・symlink で別の条件でも残っていた)。形の外で古い空のものを fixture に足して red にした
+- [x] skill に種類と手順を足し、`bin/skill-eval cleanup-tmp-dir` を回した: `fires`・`fires-prefs` (新規)・`fires-worktree` は合格。`offers-targets` は 2 回中 1 回が全部合格・
+      1 回が Preferences に触れずに終わった (score 0.875)。手順 3 の 2 問目への分け方を曖昧に書いた版では、worktree にも触れずに落ちた (master の skill では合格) ので、
+      「同じ呼び出しの 2 問目」と書き直した
+- [x] ホストで `prefs-shapes` を取り直した (2026-11-20、所要 2 秒): 30 形・11,469 件。上位は `test.favorites.<UUID>` 3,186 (全部空)・`test.shortcuts.<UUID>` 1,593 (全部空)・
+      `test.suite.<UUID>` 1,569 (全部空)・`test.settings.<UUID>` 1,287 (全部空)・`test.favorites.bookmark.sync.<UUID>` 748 (全部空)・`test.obaket.transferconcurrency.<UUID>` 588 (全部中身あり)。
+      一番新しいものは 2026-09-05
+
+### レビュー
+
+- 実装の敵対的レビュー (codex gpt-6.2-sol): 最終回答を出す前に、OpenAI 側の判定 (cybersecurity risk) で止まった。途中のメモから 2 件を拾った:
+  ①同じ inode に書いて mtime を元の値に戻すと照合を通る → 意図して時刻を戻す書き手 (`touch -t`) が要るので脅威モデルの外として README の「検出しないもの」に入れた
+  ②壊れた plist を空と読む入力 → XML を Strict で読み (閉じていないものは判定できない)、binary は object が 1 つのときだけ空と読むようにした
+- 実装の敵対的レビュー (opus のサブエージェント、2 周): P1・P2 は 0 件。P3 が 1 周目 4 件・2 周目 1 件で、全部直した
+  (検査点が形の空文字の検証を選定側に頼っていた・XML の top が dict でないテストが無い・`-prefs-days` だけを黙って捨てる・lsof の写しの判定のテストが無い・`-prefs-days 0` がすり抜ける)。
+  記録だけにしたもの: Lstat の後に FIFO へ差し替えられると ReadFile が止まる (悪意ある書き手が要る) / `<dict>x</dict>` を空と読む (CF は parse error にする形で、値を持たない)
+- skill の整合チェック 3 周 (中の整合・外との整合・使う人の目): 直したもの 6 件 (prefs だけを選んだときの手順 5 の分岐・4 問を超えたときの分け方・`-json` に stderr を混ぜていた・
+  根拠ありの形が 0 のとき・「同じ形で打つ」の読み違い・未実測の所要)。直した後の読み直しで 1 件 (中身ありの plan は空の plan も承認されたときだけ打つ)
+
+### 残り
+
+- ホストの 11,469 件を実際に片付けるのは、この skill を起動して承認を取る別の作業 (この issue では移していない)。1 万件の apply の所要は未実測

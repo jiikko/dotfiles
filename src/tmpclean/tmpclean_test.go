@@ -433,7 +433,7 @@ func TestPreconditionsStop(t *testing.T) {
 // tmpclean 自身の検査点: 根の配下の決まった深さだけを移し、今回の移し先の外へは移さない (候補の選定が壊れても効く 2 段目)。
 func TestTrashGuard(t *testing.T) {
 	r := roots{session: "/r/claude-501", tmpdir: "/r/T"}
-	g := trashGuard(r, "", "/h/.Trash/tmpclean-x", func(string, string) error { return nil })
+	g := trashGuard(r, "", prefsScope{}, "/h/.Trash/tmpclean-x", func(string, string) error { return nil })
 	ok := [][2]string{
 		{"trash", "/r/claude-501/-p/" + deadSID},
 		{"trash", "/r/T/go-build1"},

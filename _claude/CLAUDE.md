@@ -186,7 +186,7 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | start-issues-ops, issue運用を始める, issuesディレクトリを作る | `start-issues-ops` |
 | mac-healthcheck, Mac の健康診断, 暴走プロセス, メモリリーク, 買い替えの判断 | `mac-healthcheck` |
 | mac-uninstall, アンインストール, 使っていないアプリ・formula を消す | `mac-uninstall` |
-| cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている, 使っていない worktree を片付け | `cleanup-tmp-dir` (消す前に承認を取る。dotfiles の tmp/ は `make clean-tmp`) |
+| cleanup-tmp-dir, /tmp を掃除, 一時ファイルを片付け, TMPDIR が溜まっている, 使っていない worktree を片付け, Preferences に溜まったテストの plist | `cleanup-tmp-dir` (消す前に承認を取る。dotfiles の tmp/ は `make clean-tmp`) |
 | claude-md-refresh, CLAUDE.md の refresh, README が古い, ディレクトリの文書の乖離 | `claude-md-refresh` (引数で対象ディレクトリを指定。issues/ は対象外) |
 | claude-md-compact, CLAUDE.md を圧縮, rules を縮める, 常時読み込みを減らす, instruction files の上限 | `claude-md-compact` (規範を残して実例・重複を外へ移す。ずれを直すのは claude-md-refresh) |
 | claude-assets-review, Claude の資産を評価, hooks / skills / agents を公式ドキュメントと照らす, claude 系の設定の改善点 | `claude-assets-review` (提案だけ。直すのは選んだ提案の issue) |

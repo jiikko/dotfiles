@@ -57,7 +57,11 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 	for _, e := range cur {
 		now[e.Path] = e
 	}
-	guard := trashGuard(w.roots, w.derivedDataRoot, base, d.inner)
+	var prefs prefsScope
+	if p.Selection.has(kindPrefs) {
+		prefs = newPrefsScope(w.prefsRoot, p.Selection.PrefsShapes)
+	}
+	guard := trashGuard(w.roots, w.derivedDataRoot, prefs, base, d.inner)
 	keep := func(path, why string) { res.kept = append(res.kept, kept{path: path, reason: why}) }
 	movedGone := map[string]bool{}
 
@@ -74,6 +78,12 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 			// 種類で古さの判定と移し先が変わるので、plan の種類を信用しない
 			keep(e.Path, "plan の後に種類が変わった")
 			continue
+		case c.MtimeNs != e.MtimeNs:
+			keep(e.Path, "plan の後に更新された")
+			continue
+		}
+		if d.beforeRecheck != nil {
+			d.beforeRecheck(e.Path)
 		}
 		dest := filepath.Join(base, e.Kind)
 		if e.Kind == kindSession {
@@ -93,23 +103,34 @@ func apply(ctx context.Context, d deps, p planFile, outDir string) applyResult {
 		// derived-data は古さで選ばない (持ち主が消えたかで選ぶ。候補を作り直した今の判定が candidates にある)
 		if e.Kind != kindDerivedData {
 			days := p.Selection.TmpdirDays
-			if e.Kind == kindSession {
+			switch e.Kind {
+			case kindSession:
 				days = p.Selection.SessionDays
+			case kindPrefs:
+				days = p.Selection.PrefsDays
 			}
 			if why := staleReason(e.Path, d.now().Add(-time.Duration(days)*24*time.Hour), e.Kind == kindTmpdir); why != "" {
 				keep(e.Path, "移す直前に"+why)
 				continue
 			}
 		}
-		switch openNow(ctx, d, e.Path, isRealDir(e.Path)) {
-		case isOpen:
-			keep(e.Path, "移す直前に開かれていた")
-			continue
-		case openUnknown:
-			// 判定できなかったものは残すうえで「移せなかった」に数える (全件が判定不能でも成功に見せない)
-			res.failed = append(res.failed, kept{path: e.Path, reason: "lsof で使用中かを判定できない"})
-			continue
-		case notOpen:
+		if e.Kind == kindPrefs {
+			// 1 件ずつの lsof は取らない (prefs.go の kindPrefs)。代わりに plan の時点の mtime と照合する
+			if !prefsUnchanged(e) {
+				keep(e.Path, "移す直前に更新された・差し替わった")
+				continue
+			}
+		} else {
+			switch openNow(ctx, d, e.Path, isRealDir(e.Path)) {
+			case isOpen:
+				keep(e.Path, "移す直前に開かれていた")
+				continue
+			case openUnknown:
+				// 判定できなかったものは残すうえで「移せなかった」に数える (全件が判定不能でも成功に見せない)
+				res.failed = append(res.failed, kept{path: e.Path, reason: "lsof で使用中かを判定できない"})
+				continue
+			case notOpen:
+			}
 		}
 		plistHash := ""
 		if e.Kind == kindDerivedData {
@@ -172,16 +193,17 @@ func prepareTrash(d deps, now time.Time, id string) (string, error) {
 	return base, nil
 }
 
-// trashGuard は tmpclean 自身の検査点。移す元は根の配下の決まった深さ (session = 根/project/セッション、tmpdir・derived-data = 根の直下) だけ、
-// 移す先は今回の移し先の配下だけを通し、その上で inner (production は safefs.ProductionGuard、テストは sandbox) を呼ぶ。
-// 候補の選定が壊れても、根の外・根そのもの・浅い dir を移せないようにする 2 段目。
-func trashGuard(r roots, derivedDataRoot, base string, inner safefs.Guard) safefs.Guard {
+// trashGuard は tmpclean 自身の検査点。移す元は根の配下の決まった深さ (session = 根/project/セッション、tmpdir・derived-data = 根の直下、
+// prefs = 根の直下の、選んだ形の名前の通常のファイル) だけ、移す先は今回の移し先の配下だけを通し、その上で inner
+// (production は safefs.ProductionGuard、テストは sandbox) を呼ぶ。候補の選定が壊れても、根の外・根そのもの・浅い dir・
+// 本物の設定 (選んでいない形) を移せないようにする 2 段目。prefs の根は prefs を選んだときだけ渡る (それ以外は空の prefsScope)。
+func trashGuard(r roots, derivedDataRoot string, prefs prefsScope, base string, inner safefs.Guard) safefs.Guard {
 	return func(op, path string) error {
 		path = filepath.Clean(path)
 		switch op {
 		case "trash":
 			if !underAtDepth(r.session, path, 2) && (r.tmpdir == "" || !underAtDepth(r.tmpdir, path, 1)) &&
-				(derivedDataRoot == "" || !underAtDepth(derivedDataRoot, path, 1)) {
+				(derivedDataRoot == "" || !underAtDepth(derivedDataRoot, path, 1)) && !prefs.allowsRegularFile(path) {
 				return fmt.Errorf("tmpclean: 根の配下の決まった深さでないので移さない: %s", path)
 			}
 		case "trash-dest":
