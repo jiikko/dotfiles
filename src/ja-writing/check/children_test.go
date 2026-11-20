@@ -18,7 +18,7 @@ func TestChildrenDoNotStartAfterDeadline(t *testing.T) {
 		return now
 	}
 	kids := newChildren(h.rt, 1, h.dir)
-	kids.start("lint", []string{h.dir + "/hang.sh"})
+	kids.start("lint", []string{testExecutable(t), "lint"})
 	results, err := kids.wait(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestChildrenDoNotStartAfterStop(t *testing.T) {
 	h := newHangFixture(t)
 	kids := newChildren(h.rt, 60, h.dir)
 	kids.stop()
-	kids.start("diff", []string{h.dir + "/hang.sh"})
+	kids.start("diff", []string{testExecutable(t), "diff"})
 	results, err := kids.wait(context.Background())
 	if err != nil {
 		t.Fatal(err)

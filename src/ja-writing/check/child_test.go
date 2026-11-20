@@ -1,46 +1,20 @@
 package check
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"testing"
-
-	"ja-writing/cmdenv"
-	"ja-writing/diff"
-	"ja-writing/lint"
 )
 
-// childEnvName は、テストのバイナリを run の子 (lint・diff) として起こし直すときの印。check の run は子に自分自身 (ja-writing) を起こすが、
-// テストでは os.Executable がテストのバイナリになるので、印を見たら ja-writing の lint・diff の Main を走らせて終わる。
-const childEnvName = "JA_WRITING_CHECK_CHILD"
-
-func TestMain(m *testing.M) {
-	if os.Getenv(childEnvName) == "1" {
-		os.Exit(childMain(os.Args[1:]))
-	}
-	os.Exit(m.Run())
-}
-
-func childMain(args []string) int {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "子の subcommand がありません")
-		return 2
-	}
-	env, err := cmdenv.FromProcess(args[1:])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	switch args[0] {
-	case "lint":
-		return lint.Main(context.Background(), env)
-	case "diff":
-		return diff.Main(context.Background(), env)
-	}
-	fmt.Fprintln(os.Stderr, "知らない子の subcommand です: "+args[0])
-	return 2
-}
+// テストのバイナリを run の子 (lint・diff) として起こし直す。check の run は子に自分自身 (ja-writing) を起こすが、テストでは os.Executable が
+// テストのバイナリになるので、印 (childEnvName) を見たら本番の main と同じ入口 (entry.Run) を通って子として走る (main_ext_test.go の TestMain)。
+// 子の本体を関数で直接呼ばない: 本番の子は entry.Run でシグナルの受け方を決めてから走るので、それを飛ばすと子を止める処理の退行が見えない。
+const (
+	childEnvName = "JA_WRITING_CHECK_CHILD"
+	// childReal は本番と同じ ja-writing の Main を走らせる子。
+	childReal = "1"
+	// childHang は止まらない子: entry.Run でシグナルの受け方を本番と同じに整えてから、JA_PIDFILE に pid を書いて眠る (ctx を見ない。lint・diff の Main と同じ)。
+	childHang = "hang"
+)
 
 // testExecutable は子として起こすテストのバイナリ。
 func testExecutable(t *testing.T) string {
@@ -64,5 +38,5 @@ func childRuntime(t *testing.T) Runtime {
 
 // childEnv は子の環境変数 (今のプロセスの環境に、子として走る印と、子の代わりの shell script が渡す本物の実行ファイルを足す)。
 func childEnv(exe string) func() []string {
-	return func() []string { return append(os.Environ(), childEnvName+"=1", "JA_REAL="+exe) }
+	return func() []string { return append(os.Environ(), childEnvName+"="+childReal, "JA_REAL="+exe) }
 }

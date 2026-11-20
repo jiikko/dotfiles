@@ -17,13 +17,9 @@ import (
 	"github.com/jiikko/dotfiles/src/testwait"
 )
 
-// 止まらない子 (pid をファイルに書いてから眠る) を差し込んで、時間切れ・シグナルで run が子を kill して終わることを見る。
+// 止まらない子 (テストのバイナリを本番と同じ入口で起こし、pid をファイルに書いてから眠る。child_test.go の childHang) を差し込んで、
+// 時間切れ・シグナルで run が子を kill して終わることを見る。
 // 時間は assert しない: 待つのは「pid のファイルが書かれた」と「run が戻った」という条件で、上限は止まったときの安全網。
-
-const hangChild = `#!/bin/sh
-echo $$ > "$JA_PIDFILE"
-exec sleep 60
-`
 
 type hangFixture struct {
 	dir, pidFile string
@@ -36,15 +32,14 @@ func newHangFixture(t *testing.T) *hangFixture {
 	if err := os.Mkdir(dir+"/.git", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]string{"src.md": vSourceText, "final.md": vFinalText, "hang.sh": hangChild} {
-		if err := os.WriteFile(dir+"/"+name, []byte(body), 0o755); err != nil {
+	for name, body := range map[string]string{"src.md": vSourceText, "final.md": vFinalText} {
+		if err := os.WriteFile(dir+"/"+name, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	h := &hangFixture{dir: dir, pidFile: dir + "/child.pid"}
 	h.rt = childRuntime(t)
-	h.rt.Executable = func() (string, error) { return dir + "/hang.sh", nil }
-	h.rt.ChildEnv = func() []string { return append(os.Environ(), "JA_PIDFILE="+h.pidFile) }
+	h.rt.ChildEnv = func() []string { return append(os.Environ(), childEnvName+"="+childHang, "JA_PIDFILE="+h.pidFile) }
 	temporary := t.TempDir()
 	h.rt.TempDir = func() string { return temporary }
 	return h
