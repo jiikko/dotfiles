@@ -1,7 +1,5 @@
 # 1101 (feat): tmpclean と cleanup-tmp-dir で ~/Library/Preferences の UUID 入りの plist の残骸を数え、選んだ形だけをゴミ箱へ移す
 
-> 🚨 **担当中: air5 (glogx)**（2026-11-20〜）
-
 起票日: 2026-11-20
 
 ## 概要
