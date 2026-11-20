@@ -81,13 +81,15 @@ func mkdtemp(rt Runtime, prefix string) (string, error) {
 	return "", &namingError{Folder: parent}
 }
 
-// removeTemporary は _remove_temporary (消せないものは権限を戻して消し直し、それでも残れば標準エラーに 1 行で知らせる)。
+// removeTemporary は _remove_temporary (消せないものは BSD のフラグと権限を戻して消し直し、それでも残れば標準エラーに 1 行で知らせる)。
 func removeTemporary(path string, warn func(string)) {
 	if err := os.RemoveAll(path); err == nil {
 		return
 	}
 	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
-		_ = os.Chmod(p, 0o700) // 消し直す前の手当て。戻せないものは次の RemoveAll の誤りで分かる
+		// 消し直す前の手当て。戻せないものは次の RemoveAll の誤りで分かる
+		clearFlags(p)
+		_ = os.Chmod(p, 0o700)
 		return nil
 	})
 	if err := os.RemoveAll(path); err != nil {

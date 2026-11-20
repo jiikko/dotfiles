@@ -6,3 +6,6 @@ package check
 func diskSpelling(string) string { return "" }
 
 const isDarwin = false
+
+// clearFlags は os.chflags の無い環境では何もしない (本家も hasattr(os, "chflags") のときだけ外す)。
+func clearFlags(string) {}

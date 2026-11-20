@@ -29,3 +29,6 @@ func diskSpelling(path string) string {
 
 // isDarwin は _disk_path が F_GETPATH の綴りを使う OS か。
 const isDarwin = true
+
+// clearFlags は os.chflags(path, 0) (BSD のフラグ。uchg などが付いたファイルとフォルダは、権限を戻しても消せない)。外せないときは何もしない。
+func clearFlags(path string) { _ = syscall.Chflags(path, 0) }

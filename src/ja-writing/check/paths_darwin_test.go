@@ -3,6 +3,9 @@
 package check
 
 import (
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -35,5 +38,29 @@ func TestDiskPathDoesNotBlockOnFifoWithoutWriter(t *testing.T) {
 			_ = syscall.Close(fd)
 		}
 		t.Fatal("DiskPath が書き手のいない FIFO の open で止まった (O_NONBLOCK が要る)")
+	}
+}
+
+// 一時フォルダの中に BSD のフラグ (uchg) が付いたファイルとフォルダがあっても、フラグを外して消す (本家の _remove_temporary の chflags(0))。
+func TestRemoveTemporaryClearsFlags(t *testing.T) {
+	dir := t.TempDir() + "/yomiyasu-check-x"
+	if err := os.MkdirAll(dir+"/sub", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+"/sub/copy.bin", []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { // 消せなかったときに t.TempDir の後片付けが落ちないよう、フラグを外しておく
+		_ = filepath.WalkDir(dir, func(p string, _ fs.DirEntry, _ error) error { _ = syscall.Chflags(p, 0); return nil })
+	})
+	for _, p := range []string{dir + "/sub/copy.bin", dir + "/sub"} {
+		if err := syscall.Chflags(p, 0x2); err != nil { // UF_IMMUTABLE (uchg)
+			t.Fatal(err)
+		}
+	}
+	var warned []string
+	removeTemporary(dir, func(m string) { warned = append(warned, m) })
+	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) || len(warned) != 0 {
+		t.Fatalf("消えていない: %v 知らせ=%q", err, warned)
 	}
 }
