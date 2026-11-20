@@ -99,8 +99,9 @@ func Main(ctx context.Context, env cmdenv.Env) int { return MainWith(ctx, env, D
 
 // MainWith は Main の、run が外の世界から取る値 (子の実行ファイル・時刻など) を渡せる形。
 // 外から止められた (ctx の取り消し) ときは、どの subcommand でも本家の main の _Stopped・KeyboardInterrupt の枝と同じく
-// 「止められました」の文を出して 128+番号で終わる。本家はどの行でもハンドラが例外を投げるが、Go は run の途中の決まった所と、subcommand が
-// 戻った後に ctx を見る (戻る前に届いたシグナルは、出力の後でも 128+番号にする。本家も出力の後のシグナルで 128+番号になる)。
+// 「止められました」の文を出して 128+番号で終わる。本家はどの行でもハンドラが例外を投げるが、Go は入力と記録を開く・読む間 (untilStopped)・
+// run の途中の決まった所・結果を出す直前と、subcommand が戻った後に ctx を見る (出力の後に届いたシグナルも 128+番号にする。本家も出力の後の
+// シグナルで 128+番号になる)。
 func MainWith(ctx context.Context, env cmdenv.Env, rt Runtime) int {
 	code, err := dispatch(ctx, env, rt)
 	if err == nil {
@@ -198,30 +199,47 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	if problem := must(PathProblem("verify", []*string{a.final, a.source})); problem != "" {
 		return pycli.Fail(env, problem)
 	}
-	var stdin []byte
-	if *a.final == "-" || (a.source != nil && *a.source == "-") {
-		reader, err := readStdinOrStop(ctx, env.Stdin)
-		if err != nil {
-			return 0, err
-		}
-		if stdin, problem = ReadStdinBytes(reader); problem != "" {
-			return pycli.Fail(env, problem)
-		}
+	// 入力と状態フォルダの記録を読み、結果を組むまで (verify は書かない)。読み終わる前に止められたら、読み終わりを待たない (untilStopped)
+	var out *verifyResult
+	var final *Target
+	if stop := untilStopped(ctx, func() { out, final, problem, err = readVerify(env, a, since) }); stop != nil {
+		return 0, stop
 	}
-	final, problem, err := ReadTarget(*a.final, stdin)
 	if err != nil {
 		return 0, err
 	}
 	if problem != "" {
 		return pycli.Fail(env, problem)
 	}
+	// 本家の _verify は読み終えて結果を組んでから出力するので、その間に届いたシグナルでは何も出さずに止まる。出力の直前に ctx を見る
+	// (出力の後に届いたものは MainWith が見る)
+	if err := stopped(ctx); err != nil {
+		return 0, err
+	}
+	if a.json {
+		return out.code(), pycli.PrintTo(env, must(pyjson.Dumps(out.json(final), pyjson.Indent1()))+"\n")
+	}
+	return out.code(), pycli.PrintTo(env, strings.Join(out.lines(), "\n")+"\n")
+}
+
+// readVerify は _verify の、入力 (標準入力・--final・--source) と状態フォルダを読んで結果を組む所。出力は書かない。
+// (結果, 最終稿, "", nil) か、誤りの文か誤り。
+func readVerify(env cmdenv.Env, a verifyArgs, since *time.Time) (*verifyResult, *Target, string, error) {
+	var stdin []byte
+	if *a.final == "-" || (a.source != nil && *a.source == "-") {
+		var problem string
+		if stdin, problem = ReadStdinBytes(env.Stdin); problem != "" {
+			return nil, nil, problem, nil
+		}
+	}
+	final, problem, err := ReadTarget(*a.final, stdin)
+	if err != nil || problem != "" {
+		return nil, nil, problem, err
+	}
 	var source *Target
 	if a.source != nil {
-		if source, problem, err = ReadTarget(*a.source, stdin); err != nil {
-			return 0, err
-		}
-		if problem != "" {
-			return pycli.Fail(env, problem)
+		if source, problem, err = ReadTarget(*a.source, stdin); err != nil || problem != "" {
+			return nil, nil, problem, err
 		}
 	}
 	option := ""
@@ -231,14 +249,10 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	state := must(StateDir(option, env.Lookup))
 	if a.runID != nil && isDir(state) {
 		if problem := RunIDCaseProblem(state, *a.runID); problem != "" {
-			return pycli.Fail(env, problem)
+			return nil, nil, problem, nil
 		}
 	}
-	out := verifyOutcome(state, final, source, a, since)
-	if a.json {
-		return out.code(), pycli.PrintTo(env, must(pyjson.Dumps(out.json(final), pyjson.Indent1()))+"\n")
-	}
-	return out.code(), pycli.PrintTo(env, strings.Join(out.lines(), "\n")+"\n")
+	return verifyOutcome(state, final, source, a, since), final, "", nil
 }
 
 // verifyResult は _verify の、出力を組む前までの結果。

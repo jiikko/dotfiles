@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"syscall"
 	"testing"
@@ -36,8 +37,16 @@ type signalChild struct {
 }
 
 // startReading は args で子を起こし、子が標準入力を読み始めるまで待つ。標準入力は閉じない (子は読み終わらずに待ち続ける)。
-// 読み始めたことは、パイプの容量より大きい書き込みが戻ったことで知る (戻るのは子が読んで空きを作ったとき。シグナルの受け方は読む前に整っている)。
 func startReading(t *testing.T, args ...string) *signalChild {
+	t.Helper()
+	c := newSignalChild(t, args...)
+	c.start(t)
+	c.waitReading(t)
+	return c
+}
+
+// newSignalChild は args の子を、まだ起こさずに用意する (作業フォルダは c.dir)。
+func newSignalChild(t *testing.T, args ...string) *signalChild {
 	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
@@ -51,6 +60,12 @@ func startReading(t *testing.T, args ...string) *signalChild {
 	if c.stdin, err = c.cmd.StdinPipe(); err != nil {
 		t.Fatal(err)
 	}
+	return c
+}
+
+// start は子を起こす。止まらなかった子は後片付けで kill する。
+func (c *signalChild) start(t *testing.T) {
+	t.Helper()
 	if err := c.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +74,12 @@ func startReading(t *testing.T, args ...string) *signalChild {
 		_ = c.stdin.Close()
 	})
 	go func() { c.done <- c.cmd.Wait() }()
+}
+
+// waitReading は子が標準入力を読み始めるまで待つ。読み始めたことは、パイプの容量より大きい書き込みが戻ったことで知る
+// (戻るのは子が読んで空きを作ったとき。シグナルの受け方は読む前に整っている)。
+func (c *signalChild) waitReading(t *testing.T) {
+	t.Helper()
 	written := make(chan struct{})
 	go func() {
 		_, _ = c.stdin.Write(bytes.Repeat([]byte("あ"), 100000))
@@ -72,7 +93,6 @@ func startReading(t *testing.T, args ...string) *signalChild {
 			return false
 		}
 	})
-	return c
 }
 
 // wait は子が終わるのを待ち、終わった状態を返す。
@@ -120,16 +140,105 @@ func TestCheckStopsWithMessageOnSignal(t *testing.T) {
 				if err := c.cmd.Process.Signal(sig); err != nil {
 					t.Fatal(err)
 				}
-				state := c.wait(t)
-				name := map[syscall.Signal]string{syscall.SIGINT: "SIGINT", syscall.SIGTERM: "SIGTERM", syscall.SIGHUP: "SIGHUP"}[sig]
-				want := "yomiyasu_check.py: 止められました（" + name + "）。動いていた検査を止めて終わります。\n"
-				if state.ExitCode() != 128+int(sig) || c.stderr.String() != want || c.stdout.String() != "" {
-					t.Fatalf("rc=%d stdout=%q stderr=%q", state.ExitCode(), c.stdout.String(), c.stderr.String())
-				}
-				if _, err := os.Lstat(c.dir + "/.yomiyasu"); !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("止められた check が状態フォルダを作った: %v", err)
-				}
+				c.wantStopped(t, sig)
 			})
 		}
+	}
+}
+
+// wantStopped は check が sig で止められ、何も出さず (止めた知らせだけ)・状態フォルダを作らずに 128+番号で終わったことを見る。
+func (c *signalChild) wantStopped(t *testing.T, sig syscall.Signal) {
+	t.Helper()
+	state := c.wait(t)
+	name := map[syscall.Signal]string{syscall.SIGINT: "SIGINT", syscall.SIGTERM: "SIGTERM", syscall.SIGHUP: "SIGHUP"}[sig]
+	want := "yomiyasu_check.py: 止められました（" + name + "）。動いていた検査を止めて終わります。\n"
+	if state.ExitCode() != 128+int(sig) || c.stderr.String() != want || c.stdout.String() != "" {
+		t.Fatalf("rc=%d stdout=%q stderr=%q", state.ExitCode(), c.stdout.String(), c.stderr.String())
+	}
+	if _, err := os.Lstat(c.dir + "/.yomiyasu"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("止められた check が状態フォルダを作った: %v", err)
+	}
+}
+
+// mkfifo は子の作業フォルダに FIFO を作る。
+func (c *signalChild) mkfifo(t *testing.T, name string) string {
+	t.Helper()
+	path := c.dir + "/" + name
+	if err := syscall.Mkfifo(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// パスで渡した入力 (FIFO) を開いている間に届いたシグナルでも、本家と同じく開き終わりを待たずに止まる (書き手の居ない FIFO の open は戻らない)。
+// 子が FIFO を開く所まで来たことは見られないので、標準入力 (FIFO より先に読む) を読み始めたのを見てから閉じ、シグナルを送る。
+// 届くのが標準入力を読み終わる前でも FIFO を開いている間でも、check は止まって同じ答えになる (どちらも入力を読む間)。
+// 守りが無いと、子は FIFO の open で止まったまま終わらない。
+func TestCheckStopsWhileOpeningFifoWithoutWriter(t *testing.T) {
+	for _, args := range [][]string{{"check", "run", "--source", "-", "--material", "m.fifo", "--final", "f.md"}, {"check", "verify", "--source", "-", "--final", "m.fifo"}} {
+		t.Run(strings.Join(args[1:], " "), func(t *testing.T) {
+			c := newSignalChild(t, args...)
+			c.mkfifo(t, "m.fifo")
+			c.start(t)
+			c.waitReading(t)
+			if err := c.stdin.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				t.Fatal(err)
+			}
+			c.wantStopped(t, syscall.SIGTERM)
+		})
+	}
+}
+
+// 書き手が居て読みが続いている FIFO でも、読み終わりを待たずに止まり、結果を出さない。
+// 子が FIFO を開いたことは、書き手を O_NONBLOCK で開けたことで知る (読み手が居ないと ENXIO。読み手の open もこれで戻り、子は read で待つ)。
+func TestCheckStopsWhileReadingFifo(t *testing.T) {
+	for _, args := range [][]string{{"check", "run", "--material", "r.fifo", "--final", "f.md"}, {"check", "verify", "--final", "r.fifo"}} {
+		t.Run(strings.Join(args[1:], " "), func(t *testing.T) {
+			c := newSignalChild(t, args...)
+			fifo := c.mkfifo(t, "r.fifo")
+			c.start(t)
+			writer := -1
+			testwait.Until(t, "子が FIFO を開く", func() bool {
+				fd, err := syscall.Open(fifo, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+				if err != nil {
+					return false
+				}
+				writer = fd
+				return true
+			})
+			t.Cleanup(func() { _ = syscall.Close(writer) })
+			if _, err := syscall.Write(writer, []byte("資料の途中です。")); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				t.Fatal(err)
+			}
+			c.wantStopped(t, syscall.SIGTERM)
+		})
+	}
+}
+
+// 無視して起動された SIGHUP・SIGINT は、本家の _install_stop_handlers と同じく受けない (nohup で起こした check は SIGHUP で止まらない)。
+// 生き残ったことは、続けて送った SIGTERM で止まり、知らせと終了コードが SIGTERM のものであることで見る
+// (無視していなければ、先に送ったシグナルで止まる。Go の runtime は届いたシグナルを番号の小さい順に渡し、HUP と INT は TERM より小さい)。
+func TestCheckKeepsSignalsIgnoredAtStart(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGHUP, syscall.SIGINT} {
+		t.Run(sig.String(), func(t *testing.T) {
+			c := newSignalChild(t, "check", "verify", "--final", "-")
+			// 子は exec のときに無視の設定を引き継ぐ。テストのプロセスが無視するのは子を起こす間だけ
+			signal.Ignore(sig)
+			c.start(t)
+			signal.Reset(sig)
+			c.waitReading(t)
+			for _, s := range []syscall.Signal{sig, syscall.SIGTERM} {
+				if err := c.cmd.Process.Signal(s); err != nil {
+					t.Fatal(err)
+				}
+			}
+			c.wantStopped(t, syscall.SIGTERM)
+		})
 	}
 }

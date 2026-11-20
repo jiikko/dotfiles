@@ -1,16 +1,15 @@
 package check
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"ja-writing/cmdenv"
 	"ja-writing/diff"
@@ -128,44 +127,42 @@ func stopped(ctx context.Context) error {
 	return errStopped{syscall.SIGINT}
 }
 
-// readStdinOrStop は標準入力を EOF まで読み、読んだものを返す。読んでいる間に ctx が取り消されたら、読み終わりを待たずに stopped の誤りを返す
-// (本家はシグナルのハンドラが read の途中で例外を投げ、状態フォルダに何も書かずに止まる)。読めなかったときも同じ誤りを返す reader を返し、
-// 誤りの文は ReadStdinBytes に作らせる。r が nil なら nil (標準入力が無い誤りの文も ReadStdinBytes が作る)。
-// 止めたときは読む goroutine を残す (プロセスはこの後すぐ終わる)。
-func readStdinOrStop(ctx context.Context, r io.Reader) (io.Reader, error) {
-	if r == nil {
-		return nil, nil
+// untilStopped は read を別の goroutine で動かし、終わるのを待つ。終わる前に ctx が取り消されたら、終わりを待たずに stopped の誤りを返す。
+// 入力 (標準入力・--final・--source・--material・--words の一覧・状態フォルダの記録) を開く・読む所は、全部この口を通す:
+// FIFO や端末を開く open と、書き手が居るまま止まる read は ctx を見ずに待ち続けるが、本家はシグナルのハンドラが open・read の途中でも
+// 例外を投げ、何も出さず何も書かずに止まるため。経路ごとに読み方を変えて守らない (守り漏れた経路だけが止まらなくなる)。
+// read は出力も書き込みもしない (止めた後も走り続けるので、書くと止まった後に出る)。止めたときは goroutine を残す (プロセスはこの後すぐ終わる)。
+// 既に取り消されていれば read を始めない。read の panic は呼んだ goroutine で投げ直す (pyops.Catch と catchFailure に届かせる)。
+func untilStopped(ctx context.Context, read func()) error {
+	if err := stopped(ctx); err != nil {
+		return err
 	}
-	type result struct {
-		data []byte
-		err  error
-	}
-	done := make(chan result, 1)
+	done := make(chan any, 1)
 	go func() {
-		data, err := io.ReadAll(r)
-		done <- result{data, err}
+		finished := false
+		defer func() {
+			if finished {
+				done <- nil
+				return
+			}
+			done <- readPanic{recover()}
+		}()
+		read()
+		finished = true
 	}()
 	select {
 	case got := <-done:
-		return readResult{data: bytes.NewReader(got.data), err: got.err}, nil
+		if p, ok := got.(readPanic); ok {
+			panic(p.value)
+		}
+		return nil
 	case <-ctx.Done():
-		return nil, stopped(ctx)
+		return stopped(ctx)
 	}
 }
 
-// readResult は読み終えた標準入力を、読んだときと同じ形 (読めたところまでのバイト列のあとに、読めなかった誤り) で読み直させる。
-type readResult struct {
-	data *bytes.Reader
-	err  error
-}
-
-func (r readResult) Read(p []byte) (int, error) {
-	n, err := r.data.Read(p)
-	if errors.Is(err, io.EOF) && r.err != nil {
-		return n, r.err
-	}
-	return n, err
-}
+// readPanic は untilStopped の read が投げた panic の値 (nil の panic と、panic しなかったことを分ける)。
+type readPanic struct{ value any }
 
 // runMain は run の入口 (引数の parse と _run_impl)。(終了コード, 誤り)。
 func runMain(ctx context.Context, env cmdenv.Env, rt Runtime, argv []string) (code int, err error) {
@@ -246,7 +243,11 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	if a.words != nil && a.noWords {
 		return usage("--words と --no-words は一緒に使えません")
 	}
-	words, found, err := visibility.ResolveWords(&cwd, a.words, a.noWords, env.Lookup)
+	var words *visibility.Words
+	var found bool
+	if stop := untilStopped(ctx, func() { words, found, err = visibility.ResolveWords(&cwd, a.words, a.noWords, env.Lookup) }); stop != nil {
+		return 0, stop
+	}
 	if err != nil {
 		var werr *visibility.Error
 		if errors.As(err, &werr) && werr.Type != visibility.TypeWordsError {
@@ -290,13 +291,10 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 			in.Source = &a.source[0]
 		}
 	}
-	stdin := env.Stdin
-	if a.stdin || slices.Contains(slices.Concat(a.final, a.source, a.materials), "-") {
-		if stdin, err = readStdinOrStop(ctx, stdin); err != nil {
-			return 0, err
-		}
+	var loaded *Inputs
+	if stop := untilStopped(ctx, func() { loaded, problem, err = ReadInputs(in, env.Stdin) }); stop != nil {
+		return 0, stop
 	}
-	loaded, problem, err := ReadInputs(in, stdin)
 	if err != nil {
 		return 0, err
 	}
@@ -383,18 +381,13 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 	var chosen link
 	key := pathKey(c.final, c.source, c.materials)
 	if state != "" {
+		// 状態フォルダの記録と写しを読む所 (書かない)。読み終わる前に止められたら、読み終わりを待たない (untilStopped)
 		problem := ""
-		if a.runID != nil {
-			problem = RunIDCaseProblem(state, *a.runID)
-		}
-		if problem == "" {
-			chosen, problem = linkRun(rt, state, a.runID, a.newRun, c.mode, c.source, c.materials, c.final, moment, cwd)
+		if stop := untilStopped(ctx, func() { chosen, problem = linkState(rt, state, a, c, moment, cwd) }); stop != nil {
+			return 0, stop
 		}
 		if problem != "" {
 			return pycli.Fail(env, problem)
-		}
-		if !a.newRun {
-			mustNotBeArmed(state, c.source)
 		}
 		option := ""
 		if a.stateDir != nil {
@@ -402,17 +395,6 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		}
 		if StateDirGiven(option, env.Lookup) {
 			c.stateDirOption = &state
-		}
-		c.sourceWasFinal = c.source != nil && wasCheckedFinal(state, c.source)
-		if c.mode == "compose" && c.treated == nil {
-			if marked := previousTreated(state, chosen.runID, chosen.attempt); marked != nil {
-				for _, item := range c.materials {
-					if pyops.Equal(pyops.Get(marked, "text_sha256"), item.TextSHA256) {
-						markTreated(c, item, "previous_attempt")
-						break
-					}
-				}
-			}
 		}
 	}
 	c.required = modeChecks(c.mode, len(c.materials) > 0, c.treated != nil)
@@ -448,8 +430,12 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 
 	// 4. 最終稿のファイルを読み直し、検査の途中で変わっていないかを確かめる (標準入力なら省く)
 	if c.final.Via == "file" {
-		data, err := os.ReadFile(*c.final.Path)
-		c.finalChanged = err != nil || SHA256(data) != c.final.SHA256
+		if stop := untilStopped(ctx, func() {
+			data, err := os.ReadFile(*c.final.Path)
+			c.finalChanged = err != nil || SHA256(data) != c.final.SHA256
+		}); stop != nil {
+			return 0, stop
+		}
 	}
 	c.failOnHits = failOnHits(c)
 	if err := stopped(ctx); err != nil {
@@ -475,6 +461,37 @@ func runImpl(ctx context.Context, env cmdenv.Env, rt Runtime, a runArgs) (int, e
 		return 0, err
 	}
 	return printRun(env, c, a, d, recording, savedRun{chosen, attempt, recordPath, fixCount}, writeProblem)
+}
+
+// linkState は _run_impl の 2 の、状態フォルダを読んで実行 ID と回を決める所 (読むだけ)。別の原文の実行 ID などの誤りは文で返す。
+// 回を決めたら、原文が前の最終稿か・前の回が原文とみなした資料も c に入れる。
+func linkState(rt Runtime, state string, a runArgs, c *runContext, moment time.Time, cwd string) (link, string) {
+	problem := ""
+	if a.runID != nil {
+		problem = RunIDCaseProblem(state, *a.runID)
+	}
+	var chosen link
+	if problem == "" {
+		chosen, problem = linkRun(rt, state, a.runID, a.newRun, c.mode, c.source, c.materials, c.final, moment, cwd)
+	}
+	if problem != "" {
+		return chosen, problem
+	}
+	if !a.newRun {
+		mustNotBeArmed(state, c.source)
+	}
+	c.sourceWasFinal = c.source != nil && wasCheckedFinal(state, c.source)
+	if c.mode == "compose" && c.treated == nil {
+		if marked := previousTreated(state, chosen.runID, chosen.attempt); marked != nil {
+			for _, item := range c.materials {
+				if pyops.Equal(pyops.Get(marked, "text_sha256"), item.TextSHA256) {
+					markTreated(c, item, "previous_attempt")
+					break
+				}
+			}
+		}
+	}
+	return chosen, ""
 }
 
 // markTreated は資料を原文とみなす。
