@@ -120,3 +120,7 @@ wait_for() {  # $1=説明, 残り=条件コマンド
 builder_gone() { ! kill -0 "$1" 2>/dev/null; }
 wait_for "builder が終わらない" builder_gone "$pid"
 ```
+
+## 本文から移した実例 (2026-11-20。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
+
+- `.timeLimit` は取り消しに応じない待ちを戻さない項: obaket retro 1115

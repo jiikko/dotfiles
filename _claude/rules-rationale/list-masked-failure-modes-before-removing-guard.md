@@ -71,3 +71,10 @@ rule の paths) を列挙して張り直した。レビューで見つかった�
 
 main を ESM へ移した後、常に exit 1 になった module-boundary の lint を、前提を直さずに warning モード (違反を出しても exit 0) へ落とした。
 戻す条件も期限も無く約 6 か月そのままで、その間は `make lint` のたびに誤検知 (起票時点で 224 件) を出し、本物の違反でも CI が落ちない状態だった。
+
+## 本文から移した実例 (2026-11-20。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
+
+- 移設・改名・可視性の変更が名前・パッケージ・可視性に掛かった検査を外す項: retro 815
+- 同じ種類の検査の張り直しが 2 回続いたら作り替える項: obaket retro 1516
+- テストを module の境界を越えて移す項: vlc-multi-video-player retro 561
+- 常に失敗する検査を黙らせる項: dropbox-player retro 228 (前提のずれで warning にした lint が 6 か月そのままだった)

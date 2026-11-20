@@ -135,3 +135,9 @@ nvim --headless --server "$sock" --remote-expr 'luaeval("...")'
 
 - obaket retro 1161: 止まってから既知の止まりを探し、止まりに気づくまでの待ち (約 1 時間) を丸ごと失った
 - obaket retro 1134: issue / retro に記録した対策が、記録の後に設定ファイルごと消えていた
+
+## 本文から移した実例 (2026-11-20。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
+
+- 出力を読んだ順と処理が起きた順を分ける項: retro 687
+- 「今は X」と書く前に値の時系列を並べる項: screen-share-app retro 926
+- プロセスを止めて読む道具も消える操作になる項: screen-share-app retro 926

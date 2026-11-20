@@ -15,7 +15,7 @@
 - **セッション作成〜計測〜kill を 1 コマンドに詰め込まない**。破壊的操作は影響を確認できる単位で分けて打つ
 - **逆に、隔離サーバは「human に回す」を減らす道具でもある**。tmux の挙動を human issue
   (動作確認待ち) に回そうとしたら、**その前に「隔離 `-L` サーバで測れないか」を一度問う** (人待ちは価値が腐る)
-- 🚨 **`tmux kill-server` は socket ファイルを消さない**（実測 2026-09-10。SIGKILL でも同じ）。
+- 🚨 **`tmux kill-server` は socket ファイルを消さない**（SIGKILL でも同じ）。
   隔離サーバを止めるだけでは**正常終了のたびに socket が 1 個ずつ残る**ので、後片付けは
   「**kill する前に** `display -p '#{socket_path}'` で実パスを控え、kill 後にそのパスだけを
   `rm`」まで含める（正本は `tests/tmux/lib/kill_socket.sh` の `tt_tmux_kill_socket`）。

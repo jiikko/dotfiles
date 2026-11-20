@@ -15,7 +15,7 @@
   (当てずに vacuous と断じた assert が、実は唯一の上限だったことがある)。
   **テスト・describe を「重複」「委譲だけ」として消す・統合するときも同じ**: そのテストだけが捕まえる production の書き換えを当て、残るテストが落ちるかを見る。
   配線 (イベント・IPC・callback の登録)・本物の経路を通す唯一の結合テスト・公開側が試さない境界は、中身のロジックが別に試されていても重複と読まない。
-  削除を委ねるなら、この変異を作業者への指示に入れる (dropbox-player retro 248)
+  削除を委ねるなら、この変異を作業者への指示に入れる
 - 環境変数や DEBUG で出し分ける出力を、seam 無しで assert しない (必ず vacuous になる)
 
 ## なぜ
@@ -35,7 +35,7 @@
 4. commit message に「どの変異で red を確認したか」を書く
 ```
 
-**手で組む前に、対象 repo の `bin/` に固有の変異の道具が無いか (`ls bin | grep -i mutat`。obaket・vlc-multi-video-player の `bin/mutate` は今の木で当てて戻すので incremental build が使われる。本体は dotfiles の `devtool/bin/mutate`) と `bin/mutate-verify` (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585) を見る**。自前の driver を書くと判定の実装が 1 つ増える (obaket retro 1109)。「復元の作法」(`rules-checklists/` 側) と手順 0〜3 の guard
+**手で組む前に、対象 repo の `bin/` に固有の変異の道具が無いか (`ls bin | grep -i mutat`。obaket・vlc-multi-video-player の `bin/mutate` は今の木で当てて戻すので incremental build が使われる。本体は dotfiles の `devtool/bin/mutate`) と `bin/mutate-verify` (dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる) を見る**。自前の driver を書くと判定の実装が 1 つ増える。「復元の作法」(`rules-checklists/` 側) と手順 0〜3 の guard
 (baseline green / 当たったか / 誤ファイル / 構文 = 第 3 の結果 / zero execution / red の帰属 /
 未コミット差分があれば拒否 / 各 run の時間の上限 = `--timeout`、超えたら rc=10) を機械で強制する。使い捨て worktree の中だけで変異させるので作業ツリーを触らず、
 未コミットの変更は持ち込むので「今書いたテスト」も検証できる。変異の当て方 (`--apply`) は呼び出し側の責任。
@@ -43,7 +43,7 @@
 rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、「それだけが落ちた」ではない。
 表示される baseline との出力の差 (消えた行・増えた行) で巻き添えを見てから採用する
 (40 行を超えた分は、終わりに出る「全体のログ」の `diff.txt` にある)。
-**変異を何本も当てるなら `bin/mutate-verify-list`** (issue 580): 一覧 (`defaults` / `mutant` の 2 関数で書く bash の断片) を
+**変異を何本も当てるなら `bin/mutate-verify-list`**: 一覧 (`defaults` / `mutant` の 2 関数で書く bash の断片) を
 全部読んでから 1 本ずつ `mutate-verify` に渡し、名前 / rc / 意味の表を出す。判定は `mutate-verify` のまま (並べ役を手で書かない)。
 
 - **手順 0**: baseline が red のまま変異を当てると、red の増減が変異由来か区別できない
@@ -96,7 +96,7 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 
 **変異で動かすのは production の機構だけで、テストの差し込み口 (seam の呼び出し) は動かさない**。差し込み口が処理の並びの中にあるなら、
 退行で動く処理と差し込み口を同じ関数にまとめておく (処理を動かす変異で差し込み口も一緒に動き、テストが同じ窓を見続ける)。
-差し込み口ごと動かした変異の赤は、退行ではなく差し込み口の移動を検出しただけ (retro 755)。
+差し込み口ごと動かした変異の赤は、退行ではなく差し込み口の移動を検出しただけ。
 
 **当てる前に「この変異で最初に落ちるのはどの assert か」を予測し、実行後に一致を確かめる。**
 別の既存 assert が先に落ちているなら、今回書いたテストの検知力は何も証明できていないので、先に落ちうる assert が落ちない形の変異を設計する。

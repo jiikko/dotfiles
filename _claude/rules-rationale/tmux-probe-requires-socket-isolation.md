@@ -78,3 +78,7 @@ tmux -L probe kill-server
 - **PreToolUse hook** `_claude/hooks/deny-bare-tmux-kill.sh` が、Bash ツールで直接打った bare な kill・`pkill tmux`・`-L default` / `-S <...>/default` を deny する
 - 隔離の実証・依頼外の破壊的操作・`2>/dev/null` は hook で強制できないので、この md が正本
 - hook は引用符・コメントの外の散文も見るので、heredoc の本文 (`git commit -F -` の message) に kill の語と小文字の tmux が並ぶと偽陽性で止まる。message はファイル経由 (`git commit -F <path>`) で渡すか言い換える。パターン自体を書くテストでは、シェル変数でトークンを分割して組む
+
+## 本文から移した実例 (2026-11-20。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
+
+- `tmux kill-server` は socket ファイルを消さない: 実測 2026-09-10

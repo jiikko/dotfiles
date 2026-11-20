@@ -34,6 +34,4 @@
 
 ## なぜ
 
-起源: dotfiles 148 段階 ④ (削除エンジン), 2026-09-03。根拠・起源・実例は
-`~/dotfiles/_claude/rules-rationale/sandbox-real-destructive-test-apis.md` に置く
-(起動時には読まれない。ルールを疑う・改訂するときに読む)。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/sandbox-real-destructive-test-apis.md` (起動時には読まれない。ルールを疑う・改訂するときに読む)。
