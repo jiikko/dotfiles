@@ -6,8 +6,10 @@
           "words": {"allow.txt": 中身, ...}, "words_path": context.words.path に書く文字列}
 標準出力: {"bases": {名前: 書き換える前の dict}, "mutations": [{"base", "path", "variant", "results": [関数ごとに "E:<例外の型>" か 16 字]}]}
 記録に残す書き換えは、どれかの関数が例外になったもの全部と、書き換えない基準の dict と、例外にならなかったもののうち (lint か diff, 位置から list の
-添字を外した鍵の並び全体, 書き換えの種類) ごとに最初の 1 つ (全部を残すと約 11MB になる)。位置の最後の 2 段で束ねない: 別の節の同じ名前の欄
-(stiffness と tone の候補の subkind) が 1 つに束ねられ、片方の節だけを壊す退行が記録から消える。"all" が真なら全部を返す (手で回す突き合わせ用)。
+添字を外した鍵の並び全体, 位置をたどる途中の dict の kind と subkind, 書き換えの種類) ごとに最初の 1 つ (全部を残すと約 11MB になる)。
+位置の最後の 2 段で束ねない: 別の節の同じ名前の欄 (stiffness と tone の候補の subkind) が 1 つに束ねられ、片方の節だけを壊す退行が記録から消える。
+kind と subkind を鍵から外さない: 同じ位置の欄が subkind ごとに別の分岐で読まれ (stiffness の sentence と sentence_nominal)、代表に選ばれなかった
+subkind の分岐だけを壊す退行が記録から消える。"all" が真なら全部を返す (手で回す突き合わせ用)。
 
 基準の dict は diff_inputs を本家の diff() に、lint_inputs を lint_text() に通した値 (語の一覧は一時フォルダに書いて読み、path を words_path に置き換える) を
 JSON に書いて読み直したもの (diff() の値は節どうしで同じ list を共有することがあり、そのまま書き換えると 2 か所が変わる。check が読む子の出力は共有しない)。
@@ -117,13 +119,24 @@ for base_name, base in bases.items():
         mutations.append({"base": base_name, "path": list(path), "variant": name, "results": [call(fn, key, d) for fn, key in fns]})
 
 
+def sections(base, path):
+    """path をたどる途中の dict (書き換える欄を持つ dict を含む) の kind と subkind (str のもの)。"""
+    out, d = [], base
+    for key in path:
+        if isinstance(d, dict):
+            out.extend((name, d[name]) for name in ("kind", "subkind") if isinstance(d.get(name), str))
+        d = d[key]
+    return tuple(out)
+
+
 def kept(items):
     seen = set()
     for item in items:
         if item["variant"] == "base" or any(result.startswith("E:") for result in item["results"]):
             yield item
             continue
-        group = (item["base"].split("/")[0], tuple(key for key in item["path"] if not isinstance(key, int)), item["variant"])
+        group = (item["base"].split("/")[0], tuple(key for key in item["path"] if not isinstance(key, int)),
+                 sections(bases[item["base"]], item["path"]), item["variant"])
         if group not in seen:
             seen.add(group)
             yield item

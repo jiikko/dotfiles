@@ -467,13 +467,81 @@ func Div(a, b pyjson.Value) float64 {
 	return x / y
 }
 
-// Sum は sum(items) (0 から順に Add)。
+// Sum は sum(items)。CPython 3.12 以降の builtin_sum_impl と同じ 3 段で足す: int (bool を含む) が C long に収まるうちは整数で足し、
+// float に移ったら float と int (float に変えて。収まらない int は OverflowError) を補正つきの和 (Neumaier) で足し、それ以外の要素が来たら
+// そこから先は Add を順に当てる。0 から順に Add するだけにしない: float の和の丸めが本家と変わる (sum([0.1, 0.2, 0.3]) は本家 0.6、順の + は 0.6000000000000001)。
 func Sum(items []pyjson.Value) pyjson.Value {
-	var total pyjson.Value = int64(0)
-	for _, item := range items {
-		total = Add(total, item)
+	var acc int64
+	i := 0
+	for ; i < len(items); i++ {
+		if b, ok := longOf(items[i]); ok && ((acc >= 0 && b <= math.MaxInt64-acc) || (acc < 0 && b >= math.MinInt64-acc)) {
+			acc += b
+			continue
+		}
+		break
 	}
-	return total
+	if i == len(items) {
+		return acc
+	}
+	result := Add(acc, items[i])
+	i++
+	if f, ok := result.(float64); ok {
+		hi, lo := f, 0.0
+		for ; i < len(items); i++ {
+			if !isNumber(items[i]) {
+				break
+			}
+			x, _ := Number(items[i])
+			hi, lo = compensatedAdd(hi, lo, x)
+		}
+		if i == len(items) {
+			return compensatedTotal(hi, lo)
+		}
+		result = Add(compensatedTotal(hi, lo), items[i])
+		i++
+	}
+	for ; i < len(items); i++ {
+		result = Add(result, items[i])
+	}
+	return result
+}
+
+// longOf は v が C long (64 ビット) に収まる int か bool なら、その値を返す (sum が整数のまま足す要素)。
+func longOf(v pyjson.Value) (int64, bool) {
+	switch x := v.(type) {
+	case bool:
+		if x {
+			return 1, true
+		}
+		return 0, true
+	case int64:
+		return x, true
+	case *big.Int:
+		if x.IsInt64() {
+			return x.Int64(), true
+		}
+	}
+	return 0, false
+}
+
+// compensatedAdd は CPython の cs_add (和 hi と補正 lo に x を足す)。
+func compensatedAdd(hi, lo, x float64) (float64, float64) {
+	t := hi + x
+	if math.Abs(hi) >= math.Abs(x) {
+		lo += (hi - t) + x
+	} else {
+		lo += (x - t) + hi
+	}
+	return t, lo
+}
+
+// compensatedTotal は CPython の cs_to_double。補正が有限でないなら足さない (inf の和を nan にしない)。CPython の「補正が 0 なら足さない」は
+// 和が -0.0 のときの符号のためで、写さない: Sum は start を取らず 0 から足すので、float の段の和が -0.0 になる入力が無い。
+func compensatedTotal(hi, lo float64) float64 {
+	if !math.IsInf(lo, 0) && !math.IsNaN(lo) {
+		return hi + lo
+	}
+	return hi
 }
 
 // Values は d.values() (dict でなければ AttributeError)。
@@ -493,9 +561,9 @@ func Values(v pyjson.Value) []pyjson.Value {
 // Equal は a == b (数は値で比べる。1 == 1.0 == True)。
 //
 // nan は本家と揃えない所がある: list の == は本家では要素の identity を先に見る (同じ nan の object を持つ list どうしは等しい) が、ここは値だけで比べる。
-// 並べ替え (SortedBy) の nan を含む鍵の順も本家の timsort とは揃えていない。どちらも子の JSON に nan が出ないので届かない: check の子は Go の同じ
-// バイナリで、encoding/json は nan を書けない (書くと error)。本家が書いた記録を読む突き合わせにも出ない (本家の lint・diff の --json の数は数えた数と、
-// 分母が正のときだけ割った比で、nan を作る式が無い)。再提起するなら、nan を含む子の JSON が実際に出る経路 (子を本家の Python にする等) を示すこと。
+// 並べ替え (SortedBy) の nan を含む鍵の順も本家の timsort とは揃えていない。どちらも子の JSON に nan が出ないので届かない: 子の JSON は pyjson.Dumps で
+// NaN を書けるが、本家にも Go の子にも nan を作る式が無い (割り算は分母 0 を先に除き、float() は check の引数で 0<v<inf に限る)。
+// 再提起するなら、nan を含む子の JSON が実際に出る経路を示すこと。
 func Equal(a, b pyjson.Value) bool {
 	if c, unordered, ok := compareNumbers(a, b); ok {
 		return !unordered && c == 0
