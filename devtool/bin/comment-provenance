@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # comment-provenance: Swift のコメントに、変更の経緯やレビュー指摘の出所を書いていないか検査する。
-# obaket (macOS/libexec/check/check-comment-provenance) と ThumbnailThumb (bin/tt-check-comment-provenance) が呼び口から起こす
+# 各 repo の呼び口 (lint の gate・bin/ の検査) から dotfiles の bin/devtool-run 経由で起こす
 #
 # なぜ (各 repo の CLAUDE.md「何をどこに書くか」):
 #   コメントに書くのは Why not (なぜ素直な別の書き方をしないか) だけで、経緯 (「以前は X だった」) と
 #   出所 (「codex review P2」「敵対レビュー指摘」「P1-C」) はコミットログと issue の役目。2026-10-08 に
 #   1000 行超を書き直した。SwiftLint の custom rule にしないのは、plugin が production の target にしか
-#   掛かっておらず、出所ラベルの大半があるテストコードを見ないため (ThumbnailThumb もテストは別の lane の config で、同じ regex を 2 か所に置くことになる)。
+#   掛かっておらず、出所ラベルの大半があるテストコードを見ないため (テストを別の lane の config で回す repo では、同じ regex を 2 か所に置くことになる)。
 #
 # 脅威モデル:
 #   止めるのは、レビューの指摘を直したついでに出所をコメントへ書き足す、いつもの書き癖。意図的な迂回

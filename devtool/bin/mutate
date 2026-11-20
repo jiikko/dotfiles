@@ -14,7 +14,7 @@
 #
 # 例 (未 commit の変更が無い状態で、repo のどこからでも):
 #   bin/mutate --timeout 1500 "再生速度の上限を下げる" \
-#     VLCMultiVideoPlayer/Common/AppConfiguration.swift tmp/<作業名>/mutator.py make test-PlaybackRatePresetsTests
+#     Sources/Config.swift tmp/<作業名>/mutator.py make test-PlaybackRateTests
 #   tmp/<作業名>/mutator.py (対象を 1 か所だけ書き換える。当たらなければ rc≠0 で終わる):
 #     import os, sys
 #     p = os.environ["MUTATE_TARGET"]; s = open(p, encoding="utf-8").read()
@@ -39,11 +39,11 @@
 #   worktree の中の tmp/ に固定名で書かない (worktree と一緒に消え、次の run が前の run の出力を上書きする)。
 #   名前を日時だけで作らない (全 worktree が同じ場所を使い、同じ秒に始めた 2 本が同じ場所を開く。test の共有 lock はリダイレクトの後に
 #   検証コマンドの中で取られるので、この衝突を防がない)。
-#   検証コマンドの出力に `<label>: complete log: <絶対パス>` (obaket の macOS/bin/run-logged-command の行。他の repo では出ない) があれば、そのファイルも run の場所へ写す
+#   検証コマンドの出力に `<label>: complete log: <絶対パス>` (呼ぶ repo の、記録をとりながら実行する道具が出す行。出さない repo もある) があれば、そのファイルも run の場所へ写す
 #   (make test-only / make test の出力は要約で、xcodebuild の全文は worktree の中の macOS/tmp/ にある)。写せなくても判定は変えない。
 #   写すのは repo の中の通常のファイルだけで、同じパスは 1 回だけ (検証コマンドが引用した行で、repo の外や巨大な無関係のファイルを写さない)。
 #   signal・時間切れで終わった run の分も、判定不能で抜ける前に写す (途中まで書かれた全文が、調べる材料として一番要る)。
-# lock 待ち: 判定不能になる分岐でだけ、出力に obaket の macOS/bin/run-with-test-profile-residue の lock の文言があるかを見る (他の repo では出ない)。
+# lock 待ち: 判定不能になる分岐でだけ、出力に、呼ぶ repo のテストの lock を取る道具の文言があるかを見る (出さない repo もある)。
 #   rc では見ない (make を通すと rc 75 が 2 に包まれる)。待って再試行するかは呼び出し側に任せる。
 #   理由を lock 待ちに置き換えるのは、実行件数を抽出できなかった (テストが走っていない) ときだけ。件数が出ている run では元の理由を残し、
 #   lock の文言があったことを注記する (テストが文言を引用しただけの run を「回し直せばよい」と誤読させない)。
@@ -74,9 +74,9 @@
 #     取り除いてから照合する。付いたまま照合すると、その行の失敗を取りこぼす
 #   fixture: dotfiles の tests/devtool/testdata/mutate/ (実際の swift test / xcodebuild の出力。生成元の test も同じ場所にある)。
 #   固定: dotfiles の tests/devtool/test_mutate.sh。
-#   obaket の道具が出す行 (complete log:・parallel test cases:・lock の文言・要約に残す行) を読めるかは、obaket の
-#   macOS/libexec/check/check-mutate-format-contract が本物の書き手を通して突き合わせる (dotfiles では tests/devtool/test_mutate_obaket_contract.sh が回す)。
-#   ここで読む形を変えたら、その検査を回してから obaket の書き手と揃える。
+#   呼ぶ repo の道具が出す行 (complete log:・parallel test cases:・lock の文言・要約に残す行) を読めるかは、その repo の
+#   書式の契約の検査が本物の書き手を通して突き合わせる (dotfiles では tests/devtool/ の書式の契約のテストが回す)。
+#   ここで読む形を変えたら、その検査を回してから書き手と揃える。
 #
 # 未 commit の変更を拒否するのを人の注意に任せない: commit していない実装の上で変異を当てると、
 # `git checkout -- <path>` の復元で実装ごと消える。「変異の前に commit する」を覚えている前提だと 2 回に 1 回は踏む。

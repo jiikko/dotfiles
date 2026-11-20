@@ -101,7 +101,7 @@
 #   その worktree は新しい checkout なので、gitignore されたディレクトリ (`tmp/` 等) は無い。そこへ出力を書くなら
 #   コマンドに `mkdir -p tmp &&` を含める (無いと「No such file」で構文検査が落ち、全部が判定不能になる)
 #   --syntax / --verify の出力先ディレクトリは素の worktree に無いことがある (ignore されたディレクトリは checkout されない)。
-#   各コマンドの中で `mkdir -p` してから書く (例: `cd macOS && mkdir -p tmp && … > tmp/build.log`。obaket 1083)
+#   各コマンドの中で `mkdir -p` してから書く (例: `cd app && mkdir -p tmp && … > tmp/build.log`)
 #   🚨 --verify の rc が判定そのもの (0 = 緑・それ以外 = 赤)。`; exit 0`・`|| true`・`; echo …` で終えると、変異の有無に関係なく
 #   緑になり「検査が変異を捕まえない」という逆の結論になる。rc を表示したいなら `cmd; rc=$?; echo "rc=$rc"; exit $rc`
 #   Node のプロジェクトは worktree に node_modules が無い (gitignore)。子プロセスで検査を起こすテストは baseline から落ちるので、

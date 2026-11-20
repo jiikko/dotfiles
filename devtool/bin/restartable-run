@@ -3,7 +3,7 @@
 #
 #   restartable-run --bin-dir <dir> [--] [restartable の引数…]
 #
-# 各 app の bin/dev-fg-loop (obaket・vlc-multi-video-player・dropbox-multi-video-player-electron) が呼ぶ。app に固有の指定
+# 各 app の bin/dev-fg-loop が呼ぶ。app に固有の指定
 # (--build・--stop-cmd・--ready-cmd・--pull-cmd・--id-env と起動するコマンド) は呼び口が restartable の引数として渡す。
 # ここが持つのは restartable のバージョンと、入れ方 (go install して <dir>/restartable.version に印を書く) だけ。
 # 各 app の bin/dev-restart は同じ <dir>/restartable を status / restart で叩くので、<dir> は呼び口が決める (普段は app の tmp/bin)。
