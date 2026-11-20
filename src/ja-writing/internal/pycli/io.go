@@ -84,26 +84,46 @@ func Finish(env cmdenv.Env, prog string, err error) int {
 	return ExitInternal
 }
 
+// OpenProblem は本家の入力の読みが、ファイルを開けない・読めないときに返す文 ("Error opening file <渡されたパス>: ファイルを開けません（理由）")。
+func OpenProblem(path string, err error) string {
+	return fmt.Sprintf("Error opening file %s: ファイルを開けません（%s）", path, visibility.OSErrorReason(path, err))
+}
+
+// NotUTF8File は本家の入力の読みが、ファイルを UTF-8 として読めないときに返す文。
+func NotUTF8File(path string) string { return fmt.Sprintf("Error opening file %s: UTF-8 として読めません", path) }
+
+// NotUTF8Stdin は本家の入力の読みが、標準入力を UTF-8 として読めないときに返す文。
+const NotUTF8Stdin = "Error reading stdin: UTF-8 として読めません"
+
+// ReadStdinBytes は本家の入力の読みの、標準入力をバイト列で全部読む所。(バイト列, "") か (nil, 誤りの文)。
+func ReadStdinBytes(r io.Reader) ([]byte, string) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Sprintf("Error reading stdin: 標準入力を読めません（%s）", visibility.OSErrorReason("", err))
+	}
+	return data, ""
+}
+
 // ReadInput は本家の _read_input。path か標準入力 (path が nil か "-") を読み、(文字列, decode_source の情報, "") か (_, _, 誤りの文) を返す。
 func ReadInput(env cmdenv.Env, path *string) (string, visibility.SourceInfo, string) {
 	if path != nil && *path != "-" {
 		data, err := os.ReadFile(*path)
 		if err != nil {
-			return "", visibility.SourceInfo{}, fmt.Sprintf("Error opening file %s: ファイルを開けません（%s）", *path, visibility.OSErrorReason(*path, err))
+			return "", visibility.SourceInfo{}, OpenProblem(*path, err)
 		}
 		text, info, derr := visibility.DecodeSourceBytes(data)
 		if derr != nil {
-			return "", visibility.SourceInfo{}, fmt.Sprintf("Error opening file %s: UTF-8 として読めません", *path)
+			return "", visibility.SourceInfo{}, NotUTF8File(*path)
 		}
 		return text, info, ""
 	}
-	data, err := io.ReadAll(env.Stdin)
-	if err != nil {
-		return "", visibility.SourceInfo{}, fmt.Sprintf("Error reading stdin: 標準入力を読めません（%s）", visibility.OSErrorReason("", err))
+	data, problem := ReadStdinBytes(env.Stdin)
+	if problem != "" {
+		return "", visibility.SourceInfo{}, problem
 	}
 	text, info, derr := visibility.DecodeSourceBytes(data)
 	if derr != nil {
-		return "", visibility.SourceInfo{}, "Error reading stdin: UTF-8 として読めません"
+		return "", visibility.SourceInfo{}, NotUTF8Stdin
 	}
 	return text, info, ""
 }

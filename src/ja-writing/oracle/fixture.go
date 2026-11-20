@@ -40,7 +40,16 @@ type Cps []rune
 // MarshalJSON は {"$str": [コードポイント...]} にする。
 func (c Cps) MarshalJSON() ([]byte, error) { return json.Marshal(map[string][]rune{"$str": c}) }
 
-// Op は作業フォルダへの操作。Kind は write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git。
+// Namespace は argparse.Namespace (属性の名前 → 値)。
+type Namespace map[string]any
+
+// MarshalJSON は {"$namespace": {...}} にする。
+func (n Namespace) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]map[string]any{"$namespace": n})
+}
+
+// Op は作業フォルダへの操作。Kind は write・mkdir・symlink・hardlink・mkfifo・chdir・chmod・remove・setenv・unsetenv・restoreenv・git・stdin。
+// stdin は driver の sys.stdin を BytesB64 (か Content) を読む入力にする (Name が "none" なら None)。Go のテストは Apply を通さず、自分の標準入力の代わりに持つ。
 // パスと値の中の RootToken は作業フォルダに置き換わる。git は Path を cwd にして Args を渡す (引数は subproc.GitArgs を通したもの)。
 // restoreenv は setenv・unsetenv で変えた環境変数を戻し、cwd を作業フォルダに戻す。
 type Op struct {

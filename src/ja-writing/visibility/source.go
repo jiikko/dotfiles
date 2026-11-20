@@ -157,6 +157,9 @@ func decodeUTF8Strict(data []byte) (string, *Error) {
 	return string(data), nil
 }
 
+// DecodeReplace は data.decode("utf-8", "replace")。
+func DecodeReplace(data []byte) string { return decodeUTF8Replace(data) }
+
 // decodeUTF8Replace は data.decode("utf-8", errors="replace")。誤り 1 つ (scanUTF8 の範囲) を U+FFFD 1 字にする。
 func decodeUTF8Replace(data []byte) string {
 	var b strings.Builder

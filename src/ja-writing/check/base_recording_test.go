@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ type interp struct {
 	fx    *oracle.Fixture
 	saved map[string]any
 	files ToolFiles
+	stdin io.Reader // op stdin が決めた、本家の sys.stdin の代わり (nil は標準入力が無い)
 }
 
 func (e *interp) sub(s string) string {
@@ -109,6 +111,9 @@ func (e *interp) call(c oracle.Call) outcome {
 		return outcome{value: visibility.OSErrorReason("", syscall.Errno(c.Args[0].(int)))}
 	}
 	if out, ok := e.writeCall(c); ok {
+		return out
+	}
+	if out, ok := e.inputCall(c); ok {
 		return out
 	}
 	a := c.Args
@@ -525,6 +530,9 @@ func runCase(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats map
 				t.Fatalf("case %s の %d 番目の木を読めない: %v", c.Name, i, err)
 			}
 			canon, digest, _ = e.digest(call, outcome{value: v})
+		case call.Op != nil && call.Op.Kind == "stdin":
+			e.stdinOp(*call.Op)
+			canon, digest, _ = e.digest(call, outcome{})
 		case call.Op != nil:
 			if err := e.fx.Apply(context.Background(), *call.Op); err != nil {
 				t.Fatalf("case %s の %d 番目の操作 %s が失敗: %v", c.Name, i, call.Op.Kind, err)

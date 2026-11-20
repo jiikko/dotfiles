@@ -13,6 +13,9 @@
 //	_tool_versions → ToolVersions / _list_sha256 → ListSHA256 / _skill_info → SkillInfo
 //	_write_atomic → WriteAtomic / _ensure_state → EnsureState / _write_problem → WriteProblem / _read_record_status → ReadRecordStatus / _read_record → ReadRecord
 //	_mkstemp・_replace・_raise_if_hidden・_still_placed・_place_new_file・_write_state_files・_add_state_files は同じ名前の非公開の関数 (_raise_if_hidden → hiddenError)
+//	_Input → Input / _read_stdin_bytes → ReadStdinBytes / _path_problem → PathProblem / _read_inputs → ReadInputs (引数は InputArgs)
+//	_Target → Target / _read_target → ReadTarget
+//	_make_input・_read_named・_material_marker・_split_material・_split_stdin は同じ名前の非公開の関数
 //	_TOOL_NAMES → ToolNames / _LIST_NAMES → ListNames / _FACT_GAPS_KEY → FactGapsKey / _DEFAULT_TIMEOUT → DefaultTimeout / _GITIGNORE → GitignoreText
 //
 // まだ写していない部品 (後の本が足す): _utc_now・_file_sha256・_label・_skill_version (SKILL.md を持たないので使わない)・_materials_format_version・_version_line。

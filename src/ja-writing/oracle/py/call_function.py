@@ -29,8 +29,14 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
 - "save_raised": true の呼び出しは、例外になったときも、その例外を save の名前で覚える (書けなかった理由の文を作る _write_problem に渡す)。
 - "temporaries": true の呼び出しは、結果と例外の文の中の一時ファイルの名前 (.tmp-<16 桁の 16 進>) を ".tmp-*" にする (名前は乱数で、実行ごとに変わる)。
   どの 3 つも、付けなければ前と一字も同じ出力。
+- args の中の {"$namespace": {...}} は argparse.Namespace (中の値も同じ印を解く)。op stdin は sys.stdin を bytes_b64 (か content の UTF-8) を読む
+  テキストの入力 (buffer を持つ) にする。name が "none" なら sys.stdin を None にする。
+- "objects": true の呼び出しは、結果の中の本家の _Input を {"record": record(), "label", "text"}、_Target を as_json()、bytes を {"bytes_b64": ...} にする
+  (入力の読みの関数の戻り値を記録する用)。どれも、使わなければ前と一字も同じ出力。
 """
+import argparse
 import base64
+import io
 import hashlib
 import json
 import os
@@ -75,6 +81,8 @@ def resolve(value):
                 return base64.b64decode(inner)
             if key == "$str":
                 return "".join(chr(cp) for cp in inner)
+            if key == "$namespace":
+                return argparse.Namespace(**resolve(inner))
         return {k: resolve(v) for k, v in value.items()}
     if isinstance(value, list):
         return [resolve(v) for v in value]
@@ -157,6 +165,19 @@ def tree(top):
     return entries
 
 
+def plain_objects(value):
+    """objects の呼び出しの結果を JSON にできる形にする (driver の冒頭の objects)。"""
+    if isinstance(value, (list, tuple)):
+        return [plain_objects(v) for v in value]
+    if isinstance(value, bytes):
+        return {"bytes_b64": base64.b64encode(value).decode("ascii")}
+    if type(value).__name__ == "_Input":
+        return {"record": value.record(), "label": value.label, "text": value.text}
+    if type(value).__name__ == "_Target":
+        return value.as_json()
+    return value
+
+
 def remember_env(name):
     if name not in saved_env:
         saved_env[name] = os.environ.get(name)
@@ -214,6 +235,12 @@ def run_op(op):
             raise RuntimeError("git %s が rc=%d: %s" % (" ".join(op["args"]), done.returncode, done.stderr.decode("utf-8", "replace")))
     elif kind == "tree":
         return tree(path)
+    elif kind == "stdin":
+        if op.get("name") == "none":
+            sys.stdin = None
+        else:
+            data = base64.b64decode(op["bytes_b64"]) if "bytes_b64" in op else op.get("content", "").encode("utf-8", "surrogatepass")
+            sys.stdin = io.TextIOWrapper(io.BytesIO(data), encoding="utf-8")
     else:
         raise ValueError("未知の op: " + kind)
     return None
@@ -233,6 +260,8 @@ for call in plan["calls"]:
                 value = getattr(module, call["function"])(*args, **resolve(call.get("kwargs", {})))
                 if call.get("method"):
                     value = getattr(value, call["method"])()
+                if call.get("objects"):
+                    value = plain_objects(value)
                 if call.get("args_out"):
                     value = [value, args]
                 elif call.get("args_out_only") is not None:

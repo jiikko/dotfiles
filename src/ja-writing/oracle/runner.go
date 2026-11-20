@@ -317,6 +317,8 @@ type Call struct {
 	SaveRaised bool `json:"save_raised,omitempty"`
 	// Temporaries は結果と例外の文の中の一時ファイルの名前 (TemporaryName) を TemporaryMask にする (名前は乱数で、実行ごとに変わる)。
 	Temporaries bool `json:"temporaries,omitempty"`
+	// Objects は結果の中の本家の _Input・_Target・bytes を JSON にできる形にする (call_function.py の冒頭の objects)。
+	Objects bool `json:"objects,omitempty"`
 }
 
 // TemporaryName は本家の一時ファイルの名前 (_mkstemp の .tmp-<16 桁の 16 進>)。call_function.py の TEMPORARY と同じ。
