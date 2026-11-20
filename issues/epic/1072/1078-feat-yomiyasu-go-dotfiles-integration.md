@@ -120,6 +120,21 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
     `bin/lib/ja_textlint_targets.cjs` が textlint の CLI と同じ関数 (引数の読み・設定の読み込み・`searchFiles`・`separateByAvailability`) で対象を決め、そのファイルだけに掛ける。
     ignore の書式は gitignore でなく glob の ignore (`sub/` は sub/ の下に当たらない。textlint 15.8 で実測) なので写さなかった。textlint を 2 回走らせる形は所要が倍なので採らない。
     所要は 1 ファイルで 0.62 秒 → 0.85 秒 (変更前と交互に 5 回)。textlint の依存が無い (rc 3) ときだけ ignore を見ずに拡張子で選ぶ。変異 4 本は red (ログは本体 checkout の `tmp/1078-ignore-1120/mv/`)
+  - 2 周目の敵対的レビューの指摘 (2026-11-20、証拠は本体 checkout の `tmp/1078-rv2-1120/`)。根は bash が textlint の引数を読み直していたことなので、
+    引数の読みを `bin/lib/ja_textlint_targets.cjs` (textlint の `options.parse` と `cli.js` の分岐に合わせる) に寄せ、bash の引数のループを消した。
+    補助は「どう終えるか (lint / only / quiet)・only の理由・標準入力を読むか・標準入力に掛ける名前・ファイルごとの掛ける / 掛けない」を NUL 区切りで返す
+    - P2 `-f=json`・`-o=FILE` で標準出力に ja-writing lint が混ざる: 対応済み。optionator の解釈 (`o.format`・`o.outputFile`) で決める。textlint が引数を読めないときも textlint だけ
+    - P3 `--stdin` とファイルを一緒に渡すとファイルにも掛かる: 対応済み。標準入力が空でなければファイルに掛けない (textlint の `cli.js` の execute と同じ。空なら textlint と同じくファイルを読む)
+    - P3 `--stdin-filename x.go` でも掛かる: 対応済み。名前の拡張子を `separateByAvailability` で見る (textlint は「Not found available plugin」で rc 1)
+    - P3 glob の文字を含む名前 (`[x].md`): 対応済み。`found.items` に `path.resolve(name)` があるときだけ掛ける
+    - P3 `--` の後ろの `-x.md`: 対応済み。`options.parse` の `_` をそのまま使う
+    - 変異で緑のまま通った 3 つの分岐 (補助の失敗の rc 3・依存が無いときの拡張子の絞り込み・`-o`) にテストを足した
+  - textlint の依存が無いとき (補助を起こせない) の扱い: 引数を textlint と同じには読めないので、オプションの無い形 (ファイルだけ) のときだけ既定の plugin の拡張子で選んで掛け、
+    `-` で始まる引数が 1 つでもあれば掛けない。どちらも rc は 3 で、表の「3 (依存が無い) | 走らせる | 3」の行はファイルだけの形で保つ。
+    補助が失敗したとき (rc 2・出力の欄が足りない) は textlint だけを掛けて rc 3 以上 (対象を決めずに掛けると、textlint が読まないものに掛けて rc を変える)
+  - ja-writing lint のビルドの確かめは、掛ける対象があるときだけ行う (対象が 0 件ならビルドの失敗で rc 3 にしない)
+  - 変異 (mutate-verify-list、ログは本体 checkout の `tmp/1078-fix2-1120/mv/`): -o の分岐・標準入力の拡張子・glob の名前・`--` の後ろの名前・補助の失敗の rc 3・依存が無いときの拡張子の絞り込みとオプションの扱い・標準入力とファイルの組 (2 本) の 9 本は名指しのテストが red。
+    format の判定を外す変異は、先にある `-f json` の JSON を読むテストが `set -e` で全体を止める (rc 7。既存の検査が同じ退行を拾う)
   - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
