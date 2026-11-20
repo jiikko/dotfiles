@@ -94,7 +94,14 @@ async function main() {
 
   const cwd = process.cwd();
   for (const name of o._) {
-    const st = fs.statSync(name, { throwIfNoEntry: false });
+    // throwIfNoEntry が黙らせるのは ENOENT だけで、ENOTDIR (`x.md/`)・EACCES は投げる。1 つの名前で残りのファイルまで判定を落とさない
+    let st;
+    try {
+      st = fs.statSync(name, { throwIfNoEntry: false, bigint: true });
+    } catch (e) {
+      emit("S", `${name} を読めない (${e && e.code ? e.code : e})`);
+      continue;
+    }
     if (!st || !st.isFile()) {
       // ディレクトリと glob は textlint が展開する。ja-writing lint はファイルを 1 つずつしか受けないので掛けない
       emit("S", `${name} はファイルでない`);
@@ -103,8 +110,17 @@ async function main() {
     const patterns = pathsToGlobPatterns([name], { extensions, cwd });
     const found = await searchFiles(patterns, { cwd, ignoreFilePath: o.ignorePath });
     // 名前に glob の文字があると、パターンが別のファイルに当たる。textlint が読むのはその別のファイルなので、この名前そのものが見つかったかで決める
-    const self = path.resolve(cwd, name);
-    const hit = found.ok && separateByAvailability(found.items, { extensions }).availableFiles.includes(self);
+    // 比べるのは実体 (dev, ino) で、パスの字面ではない。darwin の glob は大小を区別せず、絶対パスや `..` を含む形ではディスク上の綴りを返すので、
+    // 利用者が打った綴り (`../SUB2/a.md`) と字面で比べると外れ、textlint が読んだファイルに ja-writing lint を掛けないまま rc が下がる
+    const same = (p) => {
+      try {
+        const t = fs.statSync(p, { bigint: true });
+        return t.dev === st.dev && t.ino === st.ino;
+      } catch {
+        return false;
+      }
+    };
+    const hit = found.ok && separateByAvailability(found.items, { extensions }).availableFiles.some(same);
     emit(hit ? "T" : "S", hit ? name : `${name} は textlint の対象でない (ignore に載っているか拡張子が違う)`);
   }
   flush();

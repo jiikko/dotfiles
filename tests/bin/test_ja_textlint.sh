@@ -434,6 +434,27 @@ else
   fail "-- -d.md: rc=$rc (期待 1): $(cat "$work/jdd.out" "$work/jdd.err")"
 fi
 
+# ディスク上と大小の違う綴り (`../GL/...`) でも、textlint が読むファイルには掛ける (字面でなく実体で比べる)
+cs="$work/csdir"
+mkdir -p "$cs/sub"
+cp "$work/jb.md" "$cs/sub/jb.md"
+rc=0
+(cd "$cs/sub" && "$BIN" ../SUB/jb.md) >"$work/jcs.out" 2>"$work/jcs.err" || rc=$?
+if [ "$rc" -eq 1 ] && jw_ran "$work/jcs.out" ../SUB/jb.md; then
+  ok "大小の違う綴り (../SUB/jb.md) でも掛ける (rc 1)"
+else
+  fail "../SUB/jb.md: rc=$rc (期待 1): $(cat "$work/jcs.out" "$work/jcs.err")"
+fi
+
+# stat が ENOTDIR で落ちる名前 (x.md/) があっても、ほかのファイルには掛ける
+rc=0
+(cd "$gl" && "$BIN" -- x.md/ -d.md) >"$work/jnd.out" 2>"$work/jnd.err" || rc=$?
+if [ "$rc" -eq 1 ] && jw_ran "$work/jnd.out" -d.md && grep -qF 'x.md/ を読めない' "$work/jnd.err"; then
+  ok "読めない名前 (x.md/) があってもほかのファイル (-d.md) には掛ける (rc 1)"
+else
+  fail "x.md/ と -d.md: rc=$rc (期待 1): $(cat "$work/jnd.out" "$work/jnd.err")"
+fi
+
 # 対象を判定する補助が失敗したら、textlint の指摘は出し、ja-writing lint は掛けずに rc 3 (偽の緑にしない)
 bad="$work/badhelper"
 mkdir -p "$bad/bin/lib" "$bad/_claude/skills/ja-writing"
