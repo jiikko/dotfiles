@@ -127,16 +127,26 @@ func (c *children) set(name string, r childResult) {
 // cannotRun は「子プロセスを動かせません（型: 文）」。起動の失敗 (fork/exec の errno) は、本家の Popen が出す OSError と同じ型の名前と
 // 「[Errno 番号] 理由: 'パス'」の文にする。ほかの誤り (本家では起きない) は Go の誤りの型と文。
 func cannotRun(err error) string {
-	var pathErr *fs.PathError
-	var errno syscall.Errno
-	if errors.As(err, &pathErr) && errors.As(err, &errno) {
-		kind := map[syscall.Errno]string{syscall.ENOENT: "FileNotFoundError", syscall.EACCES: "PermissionError", syscall.EPERM: "PermissionError"}[errno]
-		if kind == "" {
-			kind = "OSError"
-		}
-		return fmt.Sprintf("子プロセスを動かせません（%s: [Errno %d] %s: %s）", kind, int(errno), visibility.OSErrorReason("", errno), pystr.Repr(pathErr.Path))
+	if e, ok := osException(err); ok {
+		return "子プロセスを動かせません（" + e.Error() + "）"
 	}
 	return fmt.Sprintf("子プロセスを動かせません（%T: %v）", err, err)
+}
+
+// osException はパスつきの errno の誤りを、本家の OSError (errno で決まる型の名前と「[Errno 番号] 理由: 'パス'」の文) にする。
+// パスつきの errno でなければ (nil, false)。
+func osException(err error) (*pyops.Exception, bool) {
+	var pathErr *fs.PathError
+	var errno syscall.Errno
+	if !errors.As(err, &pathErr) || !errors.As(err, &errno) {
+		return nil, false
+	}
+	kind := map[syscall.Errno]string{syscall.ENOENT: "FileNotFoundError", syscall.EACCES: "PermissionError", syscall.EPERM: "PermissionError",
+		syscall.EISDIR: "IsADirectoryError", syscall.ENOTDIR: "NotADirectoryError", syscall.EEXIST: "FileExistsError"}[errno]
+	if kind == "" {
+		kind = "OSError"
+	}
+	return &pyops.Exception{Type: kind, Msg: fmt.Sprintf("[Errno %d] %s: %s", int(errno), visibility.OSErrorReason("", errno), pystr.Repr(pathErr.Path))}, true
 }
 
 // runOne は _run_one。子を 1 つ動かし、どの道でも結果を残す。
@@ -263,6 +273,13 @@ func (c *children) finished() <-chan struct{} {
 		close(done)
 	}()
 	return done
+}
+
+// markStopped は、これから起動する子を起動させない (動いている子はそのまま)。
+func (c *children) markStopped() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stopped = true
 }
 
 // stop は動いている子を止める (これから起動する子も起動しない)。

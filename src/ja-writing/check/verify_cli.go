@@ -138,9 +138,10 @@ func dispatch(ctx context.Context, env cmdenv.Env, rt Runtime) (int, error) {
 		}
 		return code, nil
 	case args[0] == "verify":
-		code, err := runVerify(ctx, env, args[1:])
+		code, err := runVerify(ctx, env, rt, args[1:])
 		var noCwd *NoWorkingDirectoryError
 		var stop errStopped
+		var replayErr replayError
 		if errors.As(err, &stop) {
 			return 0, stop
 		}
@@ -148,8 +149,9 @@ func dispatch(ctx context.Context, env cmdenv.Env, rt Runtime) (int, error) {
 			pycli.Eprintln(env, noCwd.Message)
 			return cmdenv.ExitUsage, nil
 		}
-		if errors.Is(err, errReplay) {
-			pycli.Eprintln(env, replayNotImplemented)
+		if errors.As(err, &replayErr) {
+			// 子を動かせなかったのは記録の食い違いではない。状態を決めず、内部の誤りとして 3 で終える
+			pycli.Eprintln(env, fmt.Sprintf(replayCannotRun, replayErr.detail))
 			return pycli.ExitInternal, nil
 		}
 		if err != nil {
@@ -165,7 +167,7 @@ func dispatch(ctx context.Context, env cmdenv.Env, rt Runtime) (int, error) {
 }
 
 // runVerify は _verify。(終了コード, 誤り)。
-func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, err error) {
+func runVerify(ctx context.Context, env cmdenv.Env, rt Runtime, argv []string) (code int, err error) {
 	defer pyops.Catch(&err)
 	defer catchFailure(&err)
 	a, help, perr := parseVerify(argv)
@@ -190,7 +192,8 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	if problem != "" {
 		return pycli.Fail(env, problem)
 	}
-	if _, problem := Timeout(a.timeout); problem != "" {
+	timeout, problem := Timeout(a.timeout)
+	if problem != "" {
 		return pycli.Fail(env, problem)
 	}
 	if err := sameWorkingDirectory(env); err != nil {
@@ -207,7 +210,14 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 	var final *Target
 	var readProblem string
 	var readErr error
-	if stop := untilStopped(ctx, func() { out, final, readProblem, readErr = readVerify(env, a, since) }); stop != nil {
+	var replay *replayer
+	if a.replay {
+		replay = &replayer{ctx: ctx, rt: rt, env: env, timeout: numberOf(timeout)}
+	}
+	if stop := untilStopped(ctx, func() { out, final, readProblem, readErr = readVerify(env, a, since, replay) }); stop != nil {
+		if replay != nil {
+			replay.stop()
+		}
 		return 0, stop
 	}
 	if readErr != nil {
@@ -224,7 +234,7 @@ func runVerify(ctx context.Context, env cmdenv.Env, argv []string) (code int, er
 
 // readVerify は _verify の、入力 (標準入力・--final・--source) と状態フォルダを読んで結果を組む所。出力は書かない。
 // (結果, 最終稿, "", nil) か、誤りの文か誤り。
-func readVerify(env cmdenv.Env, a verifyArgs, since *time.Time) (*verifyResult, *Target, string, error) {
+func readVerify(env cmdenv.Env, a verifyArgs, since *time.Time, replay *replayer) (*verifyResult, *Target, string, error) {
 	var stdin []byte
 	if *a.final == "-" || (a.source != nil && *a.source == "-") {
 		var problem string
@@ -252,7 +262,7 @@ func readVerify(env cmdenv.Env, a verifyArgs, since *time.Time) (*verifyResult, 
 			return nil, nil, problem, nil
 		}
 	}
-	return verifyOutcome(state, final, source, a, since), final, "", nil
+	return verifyOutcome(state, final, source, a, since, replay), final, "", nil
 }
 
 // verifyResult は _verify の、出力を組む前までの結果。
@@ -282,7 +292,7 @@ func (o *verifyResult) code() int {
 }
 
 // verifyOutcome は _verify の 2 (状態フォルダ)・3 (記録を探して確かめる)・4 (出力の値) まで。
-func verifyOutcome(state string, final *Target, source *Target, a verifyArgs, since *time.Time) *verifyResult {
+func verifyOutcome(state string, final *Target, source *Target, a verifyArgs, since *time.Time, replay *replayer) *verifyResult {
 	o := &verifyResult{replayed: "skipped"}
 	var runIDs []string
 	var reason string
@@ -333,7 +343,7 @@ func verifyOutcome(state string, final *Target, source *Target, a verifyArgs, si
 		default:
 			o.found = r.item
 			var found []problem
-			st, found, o.replayed, trusted = verifyRecord(state, o.found, final, source, since, a.replay, Released{})
+			st, found, o.replayed, trusted = verifyRecord(state, o.found, final, source, since, replay, Released{})
 			o.problems = append(o.problems, found...)
 			if trusted && final.Via == "file" {
 				recorded := pyops.Get(pyops.Index(pyops.Index(o.found.record, "inputs"), "final"), "path")
@@ -381,12 +391,16 @@ func verifyOutcome(state string, final *Target, source *Target, a verifyArgs, si
 			parts = append(parts, strings.Join(groups[why], "、")+" は"+why)
 		}
 		o.status, o.line = "incomplete", fmt.Sprintf(verifyPartialLine, strings.Join(parts, "、"), strings.Join(named, "、"))
-	case st.name == "incomplete":
+	case st.name == "incomplete" || st.name == "replay_timeout":
 		labels := make([]string, len(st.names))
 		for i, name := range st.names {
 			labels[i] = label(name)
 		}
-		o.status, o.line = "incomplete", fmt.Sprintf(verifyLines["incomplete"], strings.Join(labels, "、"))
+		format := verifyLines["incomplete"]
+		if st.name == "replay_timeout" {
+			format = replayTimeoutLine
+		}
+		o.status, o.line = "incomplete", fmt.Sprintf(format, strings.Join(labels, "、"))
 	case st.name == "executed":
 		o.status = "executed"
 		labels := []string{}
@@ -423,7 +437,7 @@ func verifyOutcome(state string, final *Target, source *Target, a verifyArgs, si
 		o.docType, o.reader = recordContext(o.record)
 	}
 	var replayField *string
-	if o.status == "executed" || o.status == "not_reproducible" {
+	if o.status == "executed" || o.status == "not_reproducible" || o.replayed == "timeout" {
 		replayField = &o.replayed
 	}
 	status := Status{State: o.status, Via: "verify", Final: final.Token(), Expected: expected, Replay: replayField}

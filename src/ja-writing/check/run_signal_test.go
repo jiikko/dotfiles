@@ -77,10 +77,15 @@ type runOutcome struct {
 }
 
 func (h *hangFixture) start(ctx context.Context, args ...string) chan runOutcome {
+	return h.startCommand(ctx, append([]string{"run"}, args...)...)
+}
+
+// startCommand は check を subcommand から書いた argv で動かす。
+func (h *hangFixture) startCommand(ctx context.Context, argv ...string) chan runOutcome {
 	done := make(chan runOutcome, 1)
 	go func() {
 		var stdout, stderr bytes.Buffer
-		env := cmdenv.Env{Args: append([]string{"run"}, args...), Stdout: &stdout, Stderr: &stderr, Cwd: h.dir, Environ: h.environ}
+		env := cmdenv.Env{Args: argv, Stdout: &stdout, Stderr: &stderr, Cwd: h.dir, Environ: h.environ}
 		rc := MainWith(ctx, env, h.rt)
 		done <- runOutcome{rc, stdout.String(), stderr.String()}
 	}()

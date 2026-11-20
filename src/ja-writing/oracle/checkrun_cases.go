@@ -124,6 +124,9 @@ func runBasicCase() VisCase {
 	verifyBoth(f, "--final", "final.md")
 	verify(f, "--final", "same.md", "--run-id", "b2")
 	verify(f, "--final", "crlf.md")
+	verifyBoth(f, "--final", "final.md", "--run-id", "b1", "--replay")
+	verify(f, "--final", "same.md", "--run-id", "b2", "--replay")
+	verify(f, "--final", "crlf.md", "--replay")
 	return f.done()
 }
 
@@ -174,6 +177,9 @@ func runComposeCase() VisCase {
 		".yomiyasu/runs/c2/attempt-1.json", ".yomiyasu/runs/c3/attempt-1.json")
 	verifyBoth(f, "--final", "comp.md")
 	verify(f, "--final", "gaps.md", "--run-id", "c3")
+	verifyBoth(f, "--final", "comp.md", "--replay")
+	verifyBoth(f, "--final", "gaps.md", "--run-id", "c3", "--replay")
+	verify(f, "--final", "far.md", "--run-id", "c2", "--replay")
 	return f.done()
 }
 
@@ -193,6 +199,8 @@ func runMaterialsCase() VisCase {
 	goize(f, ".yomiyasu/runs/m1/attempt-1.json", ".yomiyasu/runs/m1/attempt-2.json", ".yomiyasu/runs/m3/attempt-1.json")
 	verifyBoth(f, "--final", "final.md", "--run-id", "m1")
 	verify(f, "--final", "final.md", "--run-id", "m3")
+	verifyBoth(f, "--final", "final.md", "--run-id", "m1", "--replay")
+	verify(f, "--final", "final.md", "--run-id", "m3", "--replay")
 	return f.done()
 }
 
@@ -215,6 +223,8 @@ func runStdinCase() VisCase {
 	goize(f, ".yomiyasu/runs/s1/attempt-1.json", ".yomiyasu/runs/s2/attempt-1.json")
 	verifyStdin(f, vFinal, "--final", "-", "--run-id", "s1")
 	verifyStdin(f, vFinal, "--final", "-", "--run-id", "s2", "--json")
+	verifyStdin(f, vFinal, "--final", "-", "--run-id", "s1", "--replay")
+	verifyStdin(f, vFinal, "--final", "-", "--run-id", "s2", "--replay", "--json")
 	return f.done()
 }
 
@@ -365,6 +375,8 @@ func runChildrenCase() VisCase {
 	goize(f, ".yomiyasu/runs/kb/attempt-1.json", ".yomiyasu/runs/kr/attempt-1.json", ".yomiyasu/runs/kr/attempt-2.json")
 	verifyBoth(f, "--final", "final.md", "--run-id", "kb")
 	verifyBoth(f, "--final", "final.md", "--run-id", "kr")
+	verify(f, "--final", "final.md", "--run-id", "kb", "--replay")
+	verifyBoth(f, "--final", "final.md", "--run-id", "kr", "--replay")
 	return f.done()
 }
 
@@ -410,6 +422,8 @@ func runWordsCase() VisCase {
 	goize(f, ".yomiyasu/runs/w1/attempt-1.json")
 	verifyBoth(f, "--final", "final.md", "--run-id", "w1")
 	verify(f, "--final", "final.md", "--run-id", "w2")
+	verifyBoth(f, "--final", "final.md", "--run-id", "w1", "--replay")
+	verify(f, "--final", "final.md", "--run-id", "w2", "--replay")
 	return f.done()
 }
 

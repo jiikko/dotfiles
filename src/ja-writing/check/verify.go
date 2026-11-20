@@ -2,7 +2,6 @@ package check
 
 import (
 	"cmp"
-	"errors"
 	"math/big"
 	"os"
 	"slices"
@@ -923,17 +922,15 @@ func expectedTarget(record *pyjson.Object, name string) *pyjson.Object {
 // verifyState は _verify_record の状態 (状態の名前と、incomplete・stopped・replay_timeout の中身)。
 type verifyState struct {
 	name    string
-	names   []string    // incomplete の検査の名前
+	names   []string    // incomplete と replay_timeout の検査の名前
 	stopped [][2]string // stopped の (検査の名前, 状態)
 }
 
 type problem struct{ code, detail string }
 
-// errReplay は --replay を受けたが、作り直しをまだ写していないこと。
-var errReplay = errors.New("--replay")
-
 // verifyRecord は _verify_record (見つけた記録を確かめる。最初に当てはまった状態と、見つかった食い違いのすべて)。
-func verifyRecord(state string, f *found, final *Target, source *Target, since *time.Time, replay bool, files ToolFiles) (verifyState, []problem, string, bool) {
+// replay は --replay の作り直し (付けないときは nil)。ここまでで食い違いが無いときだけ動かす。
+func verifyRecord(state string, f *found, final *Target, source *Target, since *time.Time, replay *replayer, files ToolFiles) (verifyState, []problem, string, bool) {
 	var problems []problem
 	var states []verifyState
 	fail := func(stateName, code, detail string) {
@@ -1110,13 +1107,29 @@ func verifyRecord(state string, f *found, final *Target, source *Target, since *
 			fail("", "newer_attempt_differs", newer.String()+"回目で別の本文を検査しています")
 		}
 	}
-	if replay && len(states) == 0 {
-		panic(failure{errReplay})
+	// 作り直し (ここまでで食い違いがないときだけ)
+	replayed := "skipped"
+	if replay != nil && len(states) == 0 {
+		var found []problem
+		found, replayed = replay.run(state, record, files)
+		problems = append(problems, found...)
+		switch replayed {
+		case "mismatch":
+			states = append(states, verifyState{name: "not_reproducible"})
+		case "timeout":
+			var names []string
+			for _, p := range found {
+				if p.code == "replay_timeout" {
+					names = append(names, p.detail)
+				}
+			}
+			states = append(states, verifyState{name: "replay_timeout", names: names})
+		}
 	}
 	if len(states) == 0 {
-		return verifyState{name: "executed"}, problems, "skipped", trusted
+		return verifyState{name: "executed"}, problems, replayed, trusted
 	}
-	return states[0], problems, "skipped", trusted
+	return states[0], problems, replayed, trusted
 }
 
 // asObject は v が dict ならそれ、でなければ nil。

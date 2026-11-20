@@ -382,6 +382,23 @@ func keptMarkReplacements(findings pyjson.Value, replacements map[string]string)
 	return kept
 }
 
+// lintCommand は lint の子 (exe lint --json 種類と読者と語の一覧 対象)。run と verify --replay が同じ形で起こす。
+func lintCommand(name, exe string, args []string, target string) childCommand {
+	return childCommand{name, slices.Concat([]string{exe, "lint", "--json"}, args, []string{target})}
+}
+
+// diffCommand は diff の子 (exe diff --json [--stance 立場] [--material 資料]… 種類と読者と語の一覧 原文 最終稿)。run と verify --replay が同じ形で起こす。
+func diffCommand(exe string, stance *string, materials, args []string, source, final string) childCommand {
+	argv := []string{exe, "diff", "--json"}
+	if stance != nil {
+		argv = append(argv, "--stance", *stance)
+	}
+	for _, name := range materials {
+		argv = append(argv, "--material", name)
+	}
+	return childCommand{"diff", slices.Concat(argv, args, []string{source, final})}
+}
+
 // runChecks は _run_checks。lint と diff を子プロセスで (並べて) 動かし、資料があればプロセスの中で照らす。
 // snapshots は入力から写しの絶対パス。ctx が取り消されたら、子を止めてから cause を返す。
 func runChecks(ctx context.Context, rt Runtime, env cmdenv.Env, c *runContext, snapshots map[*Input]string, stance *string, timeout float64) error {
@@ -396,20 +413,16 @@ func runChecks(ctx context.Context, rt Runtime, env cmdenv.Env, c *runContext, s
 	}
 	finalName := names[c.final]
 	args := append(contextArguments(c.docType, c.reader), wordsArguments(c.words)...)
-	commands := []childCommand{{"lint", append(append([]string{exe, "lint", "--json"}, args...), finalName)}}
+	commands := []childCommand{lintCommand("lint", exe, args, finalName)}
 	if slices.Contains(c.required, "diff") {
-		argv := []string{exe, "diff", "--json"}
-		if stance != nil {
-			argv = append(argv, "--stance", *stance)
+		materials := make([]string, len(c.materials))
+		for i, item := range c.materials {
+			materials[i] = names[item]
 		}
-		for _, item := range c.materials {
-			argv = append(argv, "--material", names[item])
-		}
-		argv = append(append(argv, args...), names[c.diffSource()], finalName)
-		commands = append(commands, childCommand{"diff", argv})
+		commands = append(commands, diffCommand(exe, stance, materials, args, names[c.diffSource()], finalName))
 	}
 	if c.diffSource() != nil {
-		commands = append(commands, childCommand{"source_lint", append(append([]string{exe, "lint", "--json"}, args...), names[c.diffSource()])})
+		commands = append(commands, lintCommand("source_lint", exe, args, names[c.diffSource()]))
 	}
 	targets := map[string]*pyjson.Object{}
 	t := pyjson.NewObject()
@@ -588,20 +601,13 @@ func clipTail(text string) string {
 // renderChild は子の JSON から人が読む形を作る (本家の _run_checks の try の中)。本家が例外になる JSON は error。
 func renderChild(name string, parsed, materialsResult *pyjson.Object, text, findings *string, parts **pyjson.Object, risks *[]pyjson.Value) (err error) {
 	defer pyops.Catch(&err)
+	if *text, err = reportText(name, parsed); err != nil {
+		return err
+	}
 	if name == "lint" {
-		report, err := lint.RenderReport(parsed)
-		if err != nil {
-			return err
-		}
-		*text = report + "\n"
 		*findings, err = lint.RenderFindings(parsed)
 		return err
 	}
-	report, err := diff.Report(parsed)
-	if err != nil {
-		return err
-	}
-	*text = report + "\n"
 	if *parts, err = diff.ReportParts(parsed); err != nil {
 		return err
 	}

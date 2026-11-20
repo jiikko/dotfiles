@@ -551,7 +551,7 @@ func runCaseWith(t *testing.T, c oracle.VisCase, rec oracle.VisCaseRecord, stats
 			canon, digest, _ = e.digest(call, outcome{})
 		case call.Op != nil && sim != nil && sim.handles(e, *call.Op):
 			canon, digest = "(run の op)", rec.Digests[i*oracle.DigestWidth:(i+1)*oracle.DigestWidth]
-		case call.Op != nil && call.Op.Kind == "snapshot" && sim != nil:
+		case call.Op != nil && call.Op.Kind == "snapshot" && sim != nil && !sim.restore:
 			mismatches = append(mismatches, e.compareSnapshot(c.Name, i, *call.Op, kept[i])...)
 			canon, digest = "(snapshot)", rec.Digests[i*oracle.DigestWidth:(i+1)*oracle.DigestWidth]
 		case call.Op != nil && call.Op.Kind == "snapshot":

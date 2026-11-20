@@ -27,6 +27,8 @@ type runSim struct {
 	clock   string
 	counter int
 	shim    string
+	// restore は op snapshot を比べずに作業フォルダへ戻す (verify --replay の記録。本家の run が書いた木に Go の verify を当てる)。
+	restore bool
 }
 
 func newRunSim(t *testing.T) *runSim {
