@@ -446,10 +446,11 @@ else
   fail "../SUB/jb.md: rc=$rc (期待 1): $(cat "$work/jcs.out" "$work/jcs.err")"
 fi
 
-# stat が ENOTDIR で落ちる名前 (x.md/) があっても、ほかのファイルには掛ける
+# stat が ENOTDIR になる名前 (x.md/) があっても、ほかのファイルには掛ける。
+# x.md/ を外すときの文は Node のバージョンで分かれる (throwIfNoEntry: false で ENOTDIR を投げるバージョンは「読めない」、黙って返すバージョンは「ファイルでない」)
 rc=0
 (cd "$gl" && "$BIN" -- x.md/ -d.md) >"$work/jnd.out" 2>"$work/jnd.err" || rc=$?
-if [ "$rc" -eq 1 ] && jw_ran "$work/jnd.out" -d.md && grep -qF 'x.md/ を読めない' "$work/jnd.err"; then
+if [ "$rc" -eq 1 ] && jw_ran "$work/jnd.out" -d.md && grep -qE 'x\.md/ (を読めない|はファイルでない)' "$work/jnd.err"; then
   ok "読めない名前 (x.md/) があってもほかのファイル (-d.md) には掛ける (rc 1)"
 else
   fail "x.md/ と -d.md: rc=$rc (期待 1): $(cat "$work/jnd.out" "$work/jnd.err")"
