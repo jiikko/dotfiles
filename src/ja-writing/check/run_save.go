@@ -156,36 +156,64 @@ func removeTemporary(path string, warn func(string)) {
 // 1 度だけやり直す。最初の失敗で止まる (本家は again の中の誤りが rmtree の外へ出る)。
 // 本家の again は、読めない入れ子のフォルダを開き直す所で os.open の引数が足りず TypeError で落ちる (Python 3.15 で実測)。Go は開き直して続ける
 // (check の一時フォルダは check が作った写しだけを持ち、読めないフォルダを作らないので、本番では分かれない)。
-func removeTree(path string) error {
-	info, err := os.Lstat(path)
-	if err != nil {
+// パスで消すので、本家 (fd を使う _rmtree_safe_fd) と違い、歩く途中でフォルダを symlink に差し替えられると先を辿る (README の「揃わない範囲」)。
+func removeTree(path string) error { return osTree.remove(path, true) }
+
+// treeOps は removeTree が使うファイルの操作 (テストは、歩く途中で中のものが消える形を作るために包む)。
+type treeOps struct {
+	lstat   func(string) (fs.FileInfo, error)
+	readDir func(string) ([]fs.DirEntry, error)
+	delete  func(string) error
+}
+
+var osTree = treeOps{lstat: os.Lstat, readDir: os.ReadDir, delete: os.Remove}
+
+// remove は path を中身ごと消す。top は rmtree に渡した根 (本家の orig_entry が None のもの)。
+// 本家の _rmtree_safe_fd_step は、根でないものが歩く途中で消えていれば (FileNotFoundError) onexc を呼ばずに次へ進み、根の失敗は
+// 消えていても onexc (again) に回す。
+func (o treeOps) remove(path string, top bool) error {
+	var info fs.FileInfo
+	if gone, err := o.step(func(p string) error {
+		var err error
+		info, err = o.lstat(p)
+		return err
+	}, path, top); gone || err != nil {
 		return err
 	}
 	if info.IsDir() {
 		var entries []fs.DirEntry
-		read := func(p string) error {
+		if gone, err := o.step(func(p string) error {
 			var err error
-			entries, err = os.ReadDir(p)
+			entries, err = o.readDir(p)
 			return err
-		}
-		if err := again(read, path); err != nil {
+		}, path, top); gone || err != nil {
 			return err
 		}
 		for _, entry := range entries {
-			if err := removeTree(visibility.PathJoin(path, entry.Name())); err != nil {
+			if err := o.remove(visibility.PathJoin(path, entry.Name()), false); err != nil {
 				return err
 			}
 		}
 	}
-	return again(os.Remove, path)
+	_, err := o.step(o.delete, path, top)
+	return err
 }
 
-// again は op(target) を試し、失敗したら _remove_temporary の again と同じく、target の親と target の BSD のフラグを外して権限を 0o700 に
+// step は op(target) を試す。根でない target が既に無ければ (true, nil) で飛ばし、ほかの失敗は again で手当てしてやり直す。
+func (o treeOps) step(op func(string) error, target string, top bool) (gone bool, err error) {
+	err = op(target)
+	if err == nil {
+		return false, nil
+	}
+	if !top && errors.Is(err, fs.ErrNotExist) {
+		return true, nil
+	}
+	return false, again(op, target)
+}
+
+// again は失敗した op(target) を、_remove_temporary の again と同じく、target の親と target の BSD のフラグを外して権限を 0o700 に
 // してからやり直す (親を戻すのは、書けない・uchg の親の中のものは、それ自身を戻しても消せないため)。戻せないものはやり直しの誤りで分かる。
 func again(op func(string) error, target string) error {
-	if err := op(target); err == nil {
-		return nil
-	}
 	for _, item := range []string{filepath.Dir(target), target} {
 		clearFlags(item)
 		_ = os.Chmod(item, 0o700)
