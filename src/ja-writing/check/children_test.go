@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pyfs"
 	"ja-writing/internal/pyunicode"
 )
 
@@ -203,10 +204,18 @@ func TestChildrenPassEscapedSurrogatesInEnvironmentAsBytes(t *testing.T) {
 	}
 }
 
-// 子に渡すバイト列: 作り直した値 (記録の JSON の "\udcff" など) は os.fsencode と同じバイトにし、OS から受けた値 (os.Environ・os.Getwd。
-// UTF-8 として読めるバイトと、読めないバイト) はそのまま渡す。nil の環境変数は nil のまま (exec で今の環境を引き継ぐ形。本家の env=None)。
+// 子に渡すバイト列: 作り直した値 (記録の JSON の "\udcff" など) は os.fsencode と同じバイトにし、OS から受けた環境変数 (cmdenv.FromProcess が
+// os.fsdecode と同じ規則で読んだ字) は受けたバイトに戻す。作業フォルダは OS のバイトのまま来る (UTF-8 として読めないバイトはそのまま)。
+// nil の環境変数は nil のまま (exec で今の環境を引き継ぐ形。本家の env=None)。
 func TestPopenEncodeKeepsOSValues(t *testing.T) {
 	dcff := pyunicode.FromRunes([]rune{0xDCFF})
+	fromOS := func(environ ...string) []string {
+		out := make([]string, len(environ))
+		for i, entry := range environ {
+			out[i] = pyfs.Decode(entry)
+		}
+		return out
+	}
 	for _, c := range []struct {
 		name    string
 		env     []string
@@ -214,8 +223,9 @@ func TestPopenEncodeKeepsOSValues(t *testing.T) {
 		wantEnv []string
 		wantCwd string
 	}{
-		{"UTF-8 の値", []string{"LANG=ja_JP.UTF-8", "JA=日本語", "EMPTY="}, "/tmp/日本語", []string{"LANG=ja_JP.UTF-8", "JA=日本語", "EMPTY="}, "/tmp/日本語"},
-		{"UTF-8 として読めない生のバイト", []string{"JA=a\xff\x80b", "J\xfe=1", "CUT=\xe6\x97"}, "/tmp/\xffx", []string{"JA=a\xff\x80b", "J\xfe=1", "CUT=\xe6\x97"}, "/tmp/\xffx"},
+		{"UTF-8 の値", fromOS("LANG=ja_JP.UTF-8", "JA=日本語", "EMPTY="), "/tmp/日本語", []string{"LANG=ja_JP.UTF-8", "JA=日本語", "EMPTY="}, "/tmp/日本語"},
+		{"UTF-8 として読めない生のバイト", fromOS("JA=a\xff\x80b", "J\xfe=1", "CUT=\xe6\x97"), "/tmp/\xffx", []string{"JA=a\xff\x80b", "J\xfe=1", "CUT=\xe6\x97"}, "/tmp/\xffx"},
+		{"WTF-8 のサロゲートの形の生のバイト", fromOS("D800=\xed\xa0\x80", "DCFF=\xed\xb3\xbf", "J\xed\xbf\xbf=1"), "/", []string{"D800=\xed\xa0\x80", "DCFF=\xed\xb3\xbf", "J\xed\xbf\xbf=1"}, "/"},
 		{"= の無い並び", []string{"NOVALUE"}, "/", []string{"NOVALUE"}, "/"},
 		{"値の中の =", []string{"A=b=c"}, "/", []string{"A=b=c"}, "/"},
 		{"作り直したサロゲート", []string{"JA=a" + dcff + "b"}, "/tmp/" + dcff, []string{"JA=a\xffb"}, "/tmp/\xff"},
@@ -229,6 +239,50 @@ func TestPopenEncodeKeepsOSValues(t *testing.T) {
 		if !slices.Equal(got.env, c.wantEnv) || (got.env == nil) != (c.wantEnv == nil) || got.cwd != c.wantCwd {
 			t.Errorf("%s: env %q cwd %q、期待は env %q cwd %q", c.name, got.env, got.cwd, c.wantEnv, c.wantCwd)
 		}
+	}
+}
+
+// OS から受けた環境変数は、本番の経路 (cmdenv.FromProcess と DefaultRuntime の ChildEnv) を通して、受けたバイトのまま子に渡る。
+// python3.15 (3.15.0) の Popen(env=dict(os.environ)) で、親が受けた b"\xed\xa0\x80"・b"\xed\xb3\xbf"・b"\xff" は、子の os.environb でも同じバイト。
+func TestChildrenPassOSEnvironmentBytesUnchanged(t *testing.T) {
+	h := newHangFixture(t)
+	values := []string{"\xed\xa0\x80", "\xed\xb3\xbf", "a\xffb", "\xed\xbf\xbfx\xed\xb2\x80"}
+	script := ""
+	for i, v := range values {
+		name := fmt.Sprintf("JA_WRITING_OS_%d", i)
+		t.Setenv(name, v)
+		script += `printf '%s\n' "$` + name + `"; `
+	}
+	t.Setenv("JA_WRITING_OS_\xed\xa0\x80", "1") // 名前も同じ (本家の子の os.environb に b"JA_WRITING_OS_\xed\xa0\x80": b"1")
+	script += "/usr/bin/env; "
+	out := h.dir + "/env.bin"
+	t.Setenv("JA_WRITING_OS_OUT", out)
+	env, err := cmdenv.FromProcess(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kids := newChildren(h.rt, 60, h.dir, DefaultRuntime().ChildEnv(env))
+	kids.start("lint", []string{"/bin/sh", "-c", "{ " + script + `} > "$JA_WRITING_OS_OUT"`})
+	results, err := kids.wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := results["lint"]; r.status != "ran" {
+		t.Fatalf("結果 %+v", r)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(got), "\n")
+	if len(lines) <= len(values) {
+		t.Fatalf("子の出力 %q", got)
+	}
+	if want := values; !slices.Equal(lines[:len(want)], want) {
+		t.Errorf("子が受けた値 %q、親が受けた値 %q", lines[:len(want)], want)
+	}
+	if !slices.Contains(lines[len(values):], "JA_WRITING_OS_\xed\xa0\x80=1") {
+		t.Errorf("子の環境に JA_WRITING_OS_\\xed\\xa0\\x80=1 が無い: %q", lines[len(values):])
 	}
 }
 

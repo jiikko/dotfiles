@@ -3,8 +3,11 @@ package cmdenv
 import (
 	"bytes"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
+
+	"ja-writing/internal/pyunicode"
 )
 
 func TestUnimplementedNamesTheSubcommandAndReturnsUsageCode(t *testing.T) {
@@ -61,5 +64,52 @@ func TestChildSeesSameValueAsLookup(t *testing.T) {
 	}
 	if got := env.Environment(); strings.Join(got, "\n") != "TWICE=first\nPATH=/usr/bin:/bin\nEMPTY=" {
 		t.Fatalf("Environment() = %q", got)
+	}
+}
+
+// FromProcess は環境変数を本家の os.environ と同じ字 (os.fsdecode) で持ち、Getenv は受けたバイトを返す。python3.15 (3.15.0) の os.environ で
+// b"\xed\xa0\x80" は '\udced\udca0\udc80'、b"\xff" は '\udcff' (WTF-8 のサロゲートの形も、3 バイトとも surrogateescape で読む)。
+func TestFromProcessReadsEnvironmentLikeFsdecode(t *testing.T) {
+	for name, c := range map[string]struct {
+		raw  string
+		want []rune
+	}{
+		"JA_WRITING_RAW_D800": {"\xed\xa0\x80", []rune{0xDCED, 0xDCA0, 0xDC80}},
+		"JA_WRITING_RAW_DCFF": {"\xed\xb3\xbf", []rune{0xDCED, 0xDCB3, 0xDCBF}},
+		"JA_WRITING_RAW_FF":   {"a\xffb", []rune{'a', 0xDCFF, 'b'}},
+		"JA_WRITING_RAW_UTF8": {"日本", []rune{'日', '本'}},
+	} {
+		t.Setenv(name, c.raw)
+		env, err := FromProcess(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := env.Getenv(name); got != c.raw {
+			t.Errorf("%s: Getenv は % x、受けたバイトは % x", name, got, c.raw)
+		}
+		found := false
+		for _, entry := range env.Environment() {
+			if key, value, _ := strings.Cut(entry, "="); key == name {
+				found = true
+				if got := pyunicode.Runes(value); !slices.Equal(got, c.want) {
+					t.Errorf("%s: Environment の字は %U、本家の os.environ は %U", name, got, c.want)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: Environment に無い", name)
+		}
+	}
+}
+
+// 手で組んだ Env の値は、Lookup で os.fsencode のバイトになる ("\udcff" は 0xff)。戻せないサロゲートは字のまま返す。
+func TestLookupEncodesLikeFsencode(t *testing.T) {
+	dcff := pyunicode.FromRunes([]rune{0xDCFF})
+	d800 := pyunicode.FromRunes([]rune{0xD800})
+	env := Env{Environ: []string{"A=x" + dcff, "B=" + d800, "C=\xff"}}
+	for name, want := range map[string]string{"A": "x\xff", "B": d800, "C": "\xff"} {
+		if got := env.Getenv(name); got != want {
+			t.Errorf("%s: % x、期待は % x", name, got, want)
+		}
 	}
 }

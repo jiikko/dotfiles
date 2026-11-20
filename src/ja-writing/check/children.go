@@ -18,10 +18,10 @@ import (
 	"subproc"
 
 	"ja-writing/cmdenv"
+	"ja-writing/internal/pyfs"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyops"
 	"ja-writing/internal/pystr"
-	"ja-writing/internal/pyunicode"
 	"ja-writing/visibility"
 )
 
@@ -157,15 +157,15 @@ type popenArgs struct {
 // 3 バイトで渡り、NUL は EINVAL の PathError (実行ファイルのパスつき) になる。
 // 断りの順は本家と同じ: 環境変数を前から (名前、値の順に bytes にする)、argv を前から 1 つずつ (字を bytes にしてから NUL を見る)、
 // 環境変数の NUL、作業フォルダ (bytes にしてから NUL を見る)。
-// OS から受けた値 (os.Environ・os.Getwd) は、UTF-8 として読めるバイトと読めないバイトはそのまま戻る (本家の str は os.fsdecode で
-// 読んだ値なので、os.fsencode で同じバイト列に戻る)。WTF-8 のサロゲートの形 (ED A0..BF xx) の生のバイトだけは字として読むので、
-// 本家と答えが違う (EncodeSurrogateEscape の doc comment)。
+// 環境変数は本家の str と同じ形で受ける (cmdenv.Env.Environment。OS から受けた値は cmdenv.FromProcess が os.fsdecode と同じ規則で読むので、
+// ここで受けたバイトに戻る)。実行ファイルと作業フォルダ (一時フォルダ) のパスは OS のバイトのまま来るので、WTF-8 のサロゲートの形
+// (ED A0..BF xx) だけは字として読み、本家と答えが違う。macOS のパスはこの形を持てない (mkdir が EILSEQ)。
 // 本家の「illegal environment variable name」(名前に = のある環境変数) は写さない: Go の環境変数は「名前=値」の 1 つの文字列で、
 // 最初の = で切った名前は = を持てない。
 func popenEncode(argv, env []string, cwd string) (popenArgs, *pyops.Exception) {
 	nullByte := &pyops.Exception{Type: "ValueError", Msg: "embedded null byte"}
 	encode := func(s string) (string, *pyops.Exception) {
-		encoded, err := pyunicode.EncodeSurrogateEscape(s)
+		encoded, err := pyfs.Encode(s)
 		if err != nil {
 			return "", &pyops.Exception{Type: "UnicodeEncodeError", Msg: err.Error()}
 		}

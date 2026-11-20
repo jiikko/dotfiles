@@ -75,6 +75,7 @@
 - `src/ja-writing/internal/bold` (`ja-writing/internal/bold`) — Package bold は yomiyasu v3.1.0 の yomiyasu_lint.py の「太字が表示されるか」(2076-2836 行) を Go で作り直したもの。 (internal)
 - `src/ja-writing/internal/difflib` (`ja-writing/internal/difflib`) — Package difflib は Python 3.15.0 の difflib.SequenceMatcher と、本家 yomiyasu の速い照合 (yomiyasu_diff.py の _ExactSequenceMatcher) を Go で再現する。 (internal)
 - `src/ja-writing/internal/pycli` (`ja-writing/internal/pycli`) — Package pycli は lint と diff の CLI が共有する部品: Python の argparse の写し・使い方の誤りの文・出力先が閉じたときの扱い・入力を読む処理。 (internal)
+- `src/ja-writing/internal/pyfs` (`ja-writing/internal/pyfs`) — Package pyfs は Python の os.fsencode と os.fsdecode (macOS では utf-8 と surrogateescape) を写す。 (internal)
 - `src/ja-writing/internal/pyjson` (`ja-writing/internal/pyjson`) — Package pyjson は Python 3.15.0 の json.dumps / json.loads と round() の振る舞いを Go で再現する。 (internal)
 - `src/ja-writing/internal/pyops` (`ja-writing/internal/pyops`) — Package pyops は、json.loads で読んだ値に Python の演算 (d[key]・d.get・for・len・+・join・format) を当てた結果と、例外になるかを写す。 (internal)
 - `src/ja-writing/internal/pyre` (`ja-writing/internal/pyre`) — Package pyre は Python 3.15.0 の re (str のパターン) を regexp2 の上に写す。 (internal)
