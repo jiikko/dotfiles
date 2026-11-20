@@ -33,6 +33,23 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
   テキストの入力 (buffer を持つ) にする。name が "none" なら sys.stdin を None にする。
 - "objects": true の呼び出しは、結果の中の本家の _Input を {"record": record(), "label", "text"}、_Target を as_json()、bytes を {"bytes_b64": ...} にする
   (入力の読みの関数の戻り値を記録する用)。どれも、使わなければ前と一字も同じ出力。
+- check の verify の記録用 (使わなければ前と一字も同じ出力):
+  - "capture": true の呼び出しは、標準出力と標準エラーを取り込み、結果を {"rc", "stdout", "stderr"} にする (CLI の main を呼ぶ用)。
+    標準エラーの「yomiyasu_check.py: 内部エラー: 」で始まる行から後ろ (例外の型と文とトレースバック。トレースバックは置き場のパスを含む) は
+    「yomiyasu_check.py: 内部エラー」の 1 行にする。
+  - op clock は本家の check の時刻 (_utc_now) を value の ISO 8601 に固定する。初めての op clock か op pycli で、check の
+    time.monotonic を定数にし (記録の duration_ms を 0 にする)、新しい実行 ID を「時刻-<8 桁の連番>」にする (乱数を使わない)。
+  - op pycli は本家の check の main(args) を出力を捨てて呼ぶ。終了コードが value (「,」区切り) に無ければ止める。呼んだ後、
+    作業フォルダの下の記録の最終稿のパスと標準入力の鍵から、by-path の鍵と _place の文字列の対応を覚える (op snapshot が使う)。
+  - op pyedit は path の JSON のファイルを value の指示 (JSON) で書き換える: set ([鍵の道, 値] の並び)・delete (鍵の道の並び)・
+    rehash (記録の checks のレポートと本文の SHA-256 をファイルから求め直す)・redigest (record_digest を求め直す)・raw ([元, 後] の
+    字の置き換え。JSON として読まずに書き換える)。
+  - op snapshot は path から下の木を返す: {"entries": [[相対パス, 種類, mode, mtime_ns, 中身の鍵か先, 付け足し]...], "blobs": {鍵: zlib で縮めた中身の base64}}。
+    by-path の鍵のうち作業フォルダのパスから作ったものは、印にした _place の文字列の SHA-256 を名前にする。返す前に、通常のファイルの mtime を、元の順を保った決まった値 (2026-01-01 から 1 ミリ秒ずつ) にそろえる。中身の作業フォルダは
+    <<ROOT>> にし、記録の中の、作業フォルダのパスを中身に持つファイル (語の一覧のパスを書いたレポート) の SHA-256 は
+    <<SHA:そのファイルの相対パス>> にし、記録の record_digest は、中身と合っていたものを "sha256:<<DIGEST>>"、合っていなかったものを "sha256:" と 0 の 64 字にする。
+    並びは相対パスの順。付け足しは、記録のファイルでは record_digest が中身と合っていたか、index/by-path/ の下のフォルダでは鍵の元の
+    _place の文字列 (作業フォルダを NFC にして casefold したものを <<ROOT>> にしたもの)。blobs は同じ path の前の snapshot で返した鍵を省く。
 """
 import argparse
 import base64
@@ -46,6 +63,7 @@ import stat
 import subprocess
 import sys
 import unicodedata
+import zlib
 
 plan = json.loads(sys.stdin.read())
 sys.path.insert(0, plan["scripts_dir"])
@@ -178,6 +196,236 @@ def plain_objects(value):
     return value
 
 
+INTERNAL_ERROR = "yomiyasu_check.py: 内部エラー"
+check_patched = []
+check_clock = ["2026-01-01T00:00:00Z"]
+check_places = {}
+snapshot_blobs = {}
+SNAPSHOT_BASE_NS = 1767225600 * 1000000000
+DIGEST_TOKEN = "sha256:<<DIGEST>>"
+DIGEST_WRONG = "sha256:" + "0" * 64
+
+
+def check_module():
+    """本家の check を import し、初めてのときだけ時刻・monotonic・実行 ID を決まった値にする (op clock と pycli の説明)。"""
+    module = __import__("yomiyasu_check")
+    if not check_patched:
+        import datetime
+
+        class FixedTime(object):
+            def __getattr__(self, name):
+                import time as real
+                return getattr(real, name)
+
+            @staticmethod
+            def monotonic():
+                return 1000.0
+
+        counter = [0]
+
+        def new_run_id(state, moment):
+            counter[0] += 1
+            return module._stamp(moment) + "-%08x" % counter[0]
+
+        module._utc_now = lambda: datetime.datetime.strptime(check_clock[0], "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=datetime.timezone.utc)
+        module.time = FixedTime()
+        module._new_run_id = new_run_id
+        check_patched.append(True)
+    return module
+
+
+def capture_main(function, args):
+    """CLI の main を、標準出力と標準エラーを取り込んで呼ぶ。{"rc", "stdout", "stderr"}。"""
+    saved = sys.stdout, sys.stderr
+    out, err = io.BytesIO(), io.BytesIO()
+    # 包みを変数に持つ: 参照が切れた TextIOWrapper は下の BytesIO を閉じ、getvalue が読めなくなる
+    wrapped = io.TextIOWrapper(out, encoding="utf-8", newline="\n"), io.TextIOWrapper(err, encoding="utf-8", newline="\n")
+    sys.stdout, sys.stderr = wrapped
+    try:
+        try:
+            rc = function(*args)
+        except SystemExit as exc:
+            # argparse の誤りと -h は main を通らずに SystemExit で終わる (python3 の終了コードはその code)
+            rc = 0 if exc.code is None else exc.code
+    finally:
+        for stream in wrapped:
+            try:
+                stream.flush()
+            except (OSError, ValueError):
+                pass
+        sys.stdout, sys.stderr = saved
+    stdout, stderr = out.getvalue().decode("utf-8"), err.getvalue().decode("utf-8")
+    del wrapped
+    at = stderr.find(INTERNAL_ERROR + ": ")
+    if at >= 0 and (at == 0 or stderr[at - 1] == "\n"):
+        stderr = stderr[:at] + INTERNAL_ERROR + "\n"
+    return {"rc": rc, "stdout": stdout, "stderr": stderr}
+
+
+def remember_places(module):
+    """作業フォルダの下の記録から、by-path の鍵とその元の文字列を覚える (op pycli の説明)。"""
+    for top, _, names in os.walk(os.getcwd()):
+        if os.path.basename(os.path.dirname(top)) != "runs":
+            continue
+        for name in names:
+            if not re.match(r"^attempt-[0-9]+\.json$", name):
+                continue
+            record = module._read_record(os.path.join(top, name))
+            inputs = record.get("inputs") if isinstance(record, dict) else None
+            if not isinstance(inputs, dict):
+                continue
+            bases = []
+            final = inputs.get("final")
+            if isinstance(final, dict) and isinstance(final.get("path"), str):
+                bases.append(module._place(final["path"]))
+            source = inputs.get("source")
+            if isinstance(source, dict) and isinstance(source.get("text_sha256"), str):
+                bases.append("stdin:" + source["text_sha256"])
+            materials = inputs.get("materials")
+            if isinstance(materials, list) and all(isinstance(m, dict) and isinstance(m.get("text_sha256"), str) for m in materials):
+                bases.append("stdin:" + "".join(sorted(m["text_sha256"] for m in materials)))
+            for base in bases:
+                check_places[module._sha256(base.encode("utf-8", "surrogateescape"))] = base.replace(ROOT_FOLDED, ROOT_TOKEN)
+
+
+def edit_json(path, spec):
+    """op pyedit (driver の冒頭)。"""
+    module = check_module()
+    if "raw" in spec:
+        with open(path, "rb") as handle:
+            data = handle.read().decode("utf-8")
+        for old, new in spec["raw"]:
+            if old not in data:
+                raise ValueError("pyedit raw: %r が %s にありません" % (old, path))
+            data = data.replace(old, new)
+        with open(path, "wb") as handle:
+            handle.write(data.encode("utf-8"))
+        return
+    with open(path, "rb") as handle:
+        value = json.loads(handle.read().decode("utf-8"))
+
+    def walk(steps):
+        node = value
+        for step in steps[:-1]:
+            node = node[step]
+        return node, steps[-1]
+
+    for steps, new in spec.get("set", []):
+        node, last = walk(steps)
+        if isinstance(node, list) and last == len(node):
+            node.append(new)
+        else:
+            node[last] = new
+    for steps in spec.get("delete", []):
+        node, last = walk(steps)
+        del node[last]
+    if spec.get("rehash"):
+        state = os.path.dirname(os.path.dirname(os.path.dirname(path)))
+        for entry in value["checks"]:
+            for key, digest in (("report", "report_sha256"), ("text", "text_sha256")):
+                if isinstance(entry.get(key), str):
+                    with open(os.path.join(state, *entry[key].split("/")), "rb") as handle:
+                        entry[digest] = module._sha256(handle.read())
+    if spec.get("redigest"):
+        value["record_digest"] = module._record_digest(value)
+    with open(path, "wb") as handle:
+        handle.write((json.dumps(value, ensure_ascii=True, indent=1) + "\n").encode("ascii"))
+
+
+def snapshot(top):
+    """op snapshot (driver の冒頭)。"""
+    module = check_module()
+    files = []
+    for folder, dirs, names in os.walk(top):
+        dirs.sort()
+        for name in sorted(names):
+            path = os.path.join(folder, name)
+            info = os.lstat(path)
+            if stat.S_ISREG(info.st_mode):
+                files.append((info.st_mtime_ns, path))
+    for rank, (_, path) in enumerate(sorted(files)):
+        stamp = SNAPSHOT_BASE_NS + rank * 1000000
+        os.utime(path, ns=(stamp, stamp), follow_symlinks=False)
+    seen = snapshot_blobs.setdefault(top, set())
+    entries, blobs, pending = [], {}, []
+
+    def visit(path, rel):
+        info = os.lstat(path)
+        mode = stat.S_IMODE(info.st_mode)
+        if stat.S_ISLNK(info.st_mode):
+            entries.append([rel, "link", mode, 0, os.readlink(path).replace(ROOT, ROOT_TOKEN), None])
+        elif stat.S_ISDIR(info.st_mode):
+            extra = None
+            if os.path.basename(os.path.dirname(path)) == "by-path" and os.path.basename(os.path.dirname(os.path.dirname(path))) == "index":
+                if os.path.basename(path) not in check_places:
+                    raise ValueError("by-path の鍵 %s の元が分かりません" % os.path.basename(path))
+                extra = check_places[os.path.basename(path)]
+            if extra is not None and ROOT_TOKEN in extra:
+                # 鍵は作業フォルダのパスで変わるので、印にした文字列の SHA-256 を名前にする (Go のテストが自分のパスで鍵を作り直す)
+                rel = rel[:-len(os.path.basename(path))] + hashlib.sha256(extra.encode("utf-8", "surrogateescape")).hexdigest()
+            if rel != ".":
+                entries.append([rel, "dir", mode, 0, None, extra])
+            restore = None
+            if not mode & stat.S_IRUSR or not mode & stat.S_IXUSR:
+                restore = mode
+                os.chmod(path, mode | stat.S_IRUSR | stat.S_IXUSR)
+            try:
+                for name in sorted(os.listdir(path)):
+                    visit(os.path.join(path, name), name if rel == "." else rel + "/" + name)
+            finally:
+                if restore is not None:
+                    os.chmod(path, restore)
+        elif stat.S_ISREG(info.st_mode):
+            restore = None
+            if not mode & stat.S_IRUSR:
+                restore = mode
+                os.chmod(path, mode | stat.S_IRUSR)
+            try:
+                with open(path, "rb") as handle:
+                    data = handle.read()
+            finally:
+                if restore is not None:
+                    os.chmod(path, restore)
+            pending.append((rel, path, mode, info.st_mtime_ns, data))
+        else:
+            raise ValueError("snapshot は通常のファイル・フォルダ・リンクだけを写せます: " + path)
+
+    visit(top, ".")
+    # 作業フォルダのパスを中身に持つファイル (語の一覧のパスを書いたレポートなど) の SHA-256 は、記録の中で <<SHA:相対パス>> にする
+    hashes = dict((hashlib.sha256(data).hexdigest(), "<<SHA:%s>>" % rel) for rel, _, _, _, data in pending
+                  if os.fsencode(ROOT) in data and not is_record(rel))
+    for rel, path, mode, mtime, data in pending:
+        extra = None
+        if is_record(rel):
+            record = module._read_record(path)
+            digest = record.get("record_digest") if isinstance(record, dict) else None
+            extra = isinstance(digest, str) and digest == module._record_digest(record)
+            if isinstance(digest, str) and re.match(r"^sha256:[0-9a-f]{64}$", digest):
+                # digest は作業フォルダのパスを含む中身から作るので、合っていたものは印に (Go のテストが求め直す)、
+                # 合っていなかったものは決まった合わない値にする
+                data = data.replace(digest.encode("ascii"), (DIGEST_TOKEN if extra else DIGEST_WRONG).encode("ascii"))
+            elif not isinstance(record, dict):
+                # JSON として読めない記録も、digest の字だけは作業フォルダのパスで変わる
+                data = re.sub(rb'("record_digest"[^"]*)"sha256:[0-9a-f]{64}"', rb'\1"' + DIGEST_WRONG.encode("ascii") + rb'"', data)
+            for real, token in hashes.items():
+                data = data.replace(real.encode("ascii"), token.encode("utf-8"))
+        data = data.replace(os.fsencode(ROOT), ROOT_TOKEN.encode("ascii"))
+        key = hashlib.sha256(data).hexdigest()[:16]
+        if key not in seen:
+            seen.add(key)
+            blobs[key] = base64.b64encode(zlib.compress(data, 9)).decode("ascii")
+        entries.append([rel, "file", mode, mtime, key, extra])
+    entries.sort(key=lambda entry: entry[0])
+    return {"entries": entries, "blobs": blobs}
+
+
+def is_record(rel):
+    """snapshot の相対パスが記録 (runs/<実行 ID>/attempt-<n>.json) か。"""
+    parts = rel.split("/")
+    return len(parts) >= 3 and parts[-3] == "runs" and re.match(r"^attempt-[0-9]+\.json$", parts[-1]) is not None
+
+
 def remember_env(name):
     if name not in saved_env:
         saved_env[name] = os.environ.get(name)
@@ -241,6 +489,19 @@ def run_op(op):
         else:
             data = base64.b64decode(op["bytes_b64"]) if "bytes_b64" in op else op.get("content", "").encode("utf-8", "surrogatepass")
             sys.stdin = io.TextIOWrapper(io.BytesIO(data), encoding="utf-8")
+    elif kind == "clock":
+        check_module()
+        check_clock[0] = op["value"]
+    elif kind == "pycli":
+        module = check_module()
+        result = capture_main(module.main, [[resolve(a) for a in op["args"]]])
+        if str(result["rc"]) not in op["value"].split(","):
+            raise RuntimeError("pycli %s が rc=%s: %s%s" % (" ".join(op["args"]), result["rc"], result["stderr"], result["stdout"][:400]))
+        remember_places(module)
+    elif kind == "pyedit":
+        edit_json(path, json.loads(op["value"]))
+    elif kind == "snapshot":
+        return snapshot(path)
     else:
         raise ValueError("未知の op: " + kind)
     return None
@@ -257,7 +518,10 @@ for call in plan["calls"]:
                 value = getattr(module, call["function"])
             else:
                 args = resolve(call.get("args", []))
-                value = getattr(module, call["function"])(*args, **resolve(call.get("kwargs", {})))
+                if call.get("capture"):
+                    value = capture_main(getattr(check_module() if call["module"] == "yomiyasu_check" else module, call["function"]), args)
+                else:
+                    value = getattr(module, call["function"])(*args, **resolve(call.get("kwargs", {})))
                 if call.get("method"):
                     value = getattr(value, call["method"])()
                 if call.get("objects"):
