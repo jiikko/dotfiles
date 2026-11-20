@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # comment-provenance: Swift のコメントに、変更の経緯やレビュー指摘の出所を書いていないか検査する。
 # obaket (macOS/libexec/check/check-comment-provenance) と ThumbnailThumb (bin/tt-check-comment-provenance) が呼び口から起こす
-# (vlc-multi-video-player issue 588 の A。前は ThumbnailThumb に写して「直すなら両方を直す」で揃えていた)。
 #
 # なぜ (各 repo の CLAUDE.md「何をどこに書くか」):
 #   コメントに書くのは Why not (なぜ素直な別の書き方をしないか) だけで、経緯 (「以前は X だった」) と

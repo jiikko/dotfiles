@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # devtool/bin/comment-provenance の self-test: 語彙ごとの検出、コメント外の語を見ないこと、版の比較の除外、
 # 判定不能 (対象 0 件・読めない file・無いパス・--root が無い) を fixture で pin する。
-# obaket の macOS/libexec/check/check-comment-provenance-test から移した (vlc-multi-video-player issue 588 の A)。
 # 各 repo の呼び口の配線 (--root・--label) は各 repo の gate が本物の repo を走査して見る。
 
 set -euo pipefail

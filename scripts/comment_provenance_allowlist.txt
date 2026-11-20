@@ -1,4 +1,5 @@
 # check_comment_provenance.sh の既存の違反。<件数><TAB><数えた行の本文の指紋><TAB><path>。減らしたら --update で作り直す。増やさない
+5	329f580e02fb19a9	devtool/bin/comment-provenance
 1	56810ec6143b2f6c	src/glogx/internal/issuesview/issues_number_filter.go
 1	233f8893723a0730	src/mac-lan-manager/lanmgr/style.go
 1	58feb1cb2517a868	src/mac-lan-manager/main.go
