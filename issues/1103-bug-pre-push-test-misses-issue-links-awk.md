@@ -32,3 +32,8 @@ root の `make test` が赤いままだと、新しい赤が出ても見分け�
 - `githooks/pre-push` (CHECKS・EXCLUDED)
 - `tests/githooks/test_pre_push.sh`
 - `tests/issues/test_issue_links_awk.sh`
+
+## 進捗
+
+- 2026-11-21 commit「pre-push の EXCLUDED に test_issue_links_awk を足し、tests/githooks/test_pre_push.sh を緑に戻す」で直した。直す前は `bash tests/githooks/test_pre_push.sh` が rc 1、直した後は rc 0 (「hook の一覧が tests/issues/ の実在と一致する (12 本)」)
+- 敵対的レビュー (opus) で壊せなかった。`test_issue_links_awk.sh` は前から pre-push では走っておらず、CI では tests.yml の rest (`test-runtime-rest` → `test-discovered-rest-parallel`) で走ることを確かめた

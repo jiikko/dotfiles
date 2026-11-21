@@ -40,4 +40,19 @@ issue 1077 の作業 (2026-11-20〜21) で、本体の `~/dotfiles/.yomiyasu/` �
 
 - issue 1077 (本文の「事故」の行)
 - 状態フォルダの選び方の正本: `src/ja-writing/check/paths.go` の `StateDirFor` と、本家の `state_dir_for`
-- issue 1077 の本文と `oracle/runner.go` の `upstreamMarkers` のコメントは「git の最上位」と書いているが、実際はいちばん近い `.git` で止まる。この issue に着手するときに直す
+- 「git の最上位」と「いちばん近い `.git`」は、普通の repo と worktree では同じ場所を指す (worktree の根の `.git` ファイルは、その worktree の最上位にある)。違うのは repo でない場所の `.git` などの端の形だけで、本家の文書も「git の最上位」と書く。`oracle/runner.go` の `upstreamMarkers` のコメントは、正確な方の言い方に直した。issue 1077 の本文は本家の言い方のまま残す
+
+## 進捗
+
+- 2026-11-21 方針 2 を入れた。commit「本家を動かす driver を Runner を通さずに repo の中で起こしたら、指示を読む前に止まる」と「driver の止める処理が作業根そのものの印も見て、repo の根で直接起こしても止まる」
+  - 原因を確かめた: 網羅の計測の台本 (`tmp/1077-cont-1120/p5/cov/cover.py`) は `call_function.py` を Runner を通さずに起こしていた。Runner (`newSandbox`) は使い捨ての dir の上に印があると前から止まるので、Runner を通らない経路が穴だった
+  - `call_function.py` は、指示 (stdin) を読む前に、作業根とその上に `.git`・`.yomiyasu-words`・`.yomiyasu` があれば止まる (`refuse_under_upstream_markers`)。Runner は driver を起こす前に作業根へ何も書かないので、作業根そのものも見る (fixture の `.git` は確かめの後に op が作る)
+  - テスト `oracle/sandbox_test.go` の `TestCallFunctionRefusesUnderUpstreamMarker`: 3 つの名前 × 印の場所 (作業根・2 段上・4 段上) と、対照 (作業根の中のサブフォルダの `.git` では止まらない)
+  - わざと壊した形 4 本が red: 呼び出しを消す・作業根の 1 つ上から見る・上へ辿るのを 2 段で止める・`.yomiyasu` を外す
+  - 本番の経路で止まらないこと: 記録 `check-verify.json` と `check-manage.json` を作り直して差分 0
+  - 敵対的レビュー (opus) 1 周。指摘のうち P1 の 2 件 (repo の根で直接起こすと止まらない・2 段で止める退行をテストが通す) を 2 本目の commit で直した
+- 採らなかった方針
+  - 方針 1 (`.gitignore` に `.yomiyasu/` を足す): 中の `.gitignore` (`*`) が既に git に入るのを防いでいるので、効き目がほぼ無い
+  - 方針 3 (wrapper の警告): issue 1078 で文章の検査を dotfiles に組み込むと、check が dotfiles や worktree の根に `.yomiyasu` を作るのは正しい使い方になる。警告は誤報になる
+- 残るもの (受け入れる): `bin/ja-writing check` や本家の `yomiyasu_check.py` を状態フォルダの指定なしで repo の中で直接動かすと、今も `.yomiyasu` ができる (1 件目の事故の形)。これは本家どおりの仕様の動きで、止めると 1078 の使い方を壊す。試すときは `--state-dir` を渡すか、cwd を repo の外にする
+- レビューの再現で OS の一時フォルダに残った dir (`$TMPDIR/tmp.EpG1Lb7GJ3`) は、issue 1104 と一緒に片付ける
