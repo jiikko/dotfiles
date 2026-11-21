@@ -254,6 +254,10 @@ setopt prompt_subst
 source $HOME/dotfiles/zshlib/_git_prompt.zsh
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _dotfiles_git_prompt
+# ~/src の下で .src-env の KEY=パス を export する (allow の要らない direnv。書式と受け付けない名前は zshlib/_src_env.zsh 冒頭)
+source $HOME/dotfiles/zshlib/_src_env.zsh
+add-zsh-hook chpwd _src_env_apply
+_src_env_apply
 PROMPT='%B%50<..<%~ %b${_DOTFILES_GIT_PROMPT}'
 PROMPT+='%(?.%(!.%F{white}❯%F{yellow}❯%F{red}.%F{blue}❯%F{cyan}❯%F{green})❯.%F{red}❯❯❯)%f '
 ##========================================================##
