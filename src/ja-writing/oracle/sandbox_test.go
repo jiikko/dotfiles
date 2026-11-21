@@ -172,7 +172,7 @@ func TestPythonFlagsKeepSiteAndCwdOut(t *testing.T) {
 }
 
 // driver を Runner を通さずに repo の中で起こすと、本家の check が状態フォルダを上の .git の所に作る。
-// call_function.py は作業根の上に印があれば、指示を読む前に止まる。作業根そのものの印 (fixture の .git) では止まらない。
+// call_function.py は作業根かその上に印があれば、指示を読む前に止まる。作業根の中のサブフォルダの印 (fixture の .git) では止まらない。
 func TestCallFunctionRefusesUnderUpstreamMarker(t *testing.T) {
 	r, err := NewRunner(Tree{})
 	if err != nil {
@@ -182,9 +182,10 @@ func TestCallFunctionRefusesUnderUpstreamMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := func(t *testing.T, top string) RawResult {
+	// run は top/<cwd> を作業根にして driver を起こす。driver は top の外の drivers に置く
+	run := func(t *testing.T, top, cwd string) RawResult {
 		t.Helper()
-		sb := sandbox{root: top, cwd: filepath.Join(top, "a", "cwd"), home: filepath.Join(top, "a", "home"), drivers: filepath.Join(top, "a", "drivers")}
+		sb := sandbox{root: top, cwd: filepath.Join(top, cwd), home: filepath.Join(top, "home"), drivers: filepath.Join(top, "drivers")}
 		for _, d := range []string{sb.cwd, sb.home, sb.drivers} {
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				t.Fatal(err)
@@ -200,30 +201,39 @@ func TestCallFunctionRefusesUnderUpstreamMarker(t *testing.T) {
 		}
 		return res
 	}
-	const refusal = "作業根の上に"
+	const refusal = "作業根かその上に"
+	// 印の場所: 作業根そのもの (repo の根で起こす)・2 段上・4 段上 (tmp/<作業>/<run>/cwd の形)
+	places := map[string]string{"作業根": "w", "2 段上": "a/w", "4 段上": "a/b/c/w"}
 	for _, marker := range []string{".git", ".yomiyasu-words", ".yomiyasu"} {
-		t.Run(marker, func(t *testing.T) {
-			top := t.TempDir()
-			if err := os.Mkdir(filepath.Join(top, marker), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			res := run(t, top)
-			if res.RC == 0 || !strings.Contains(res.Stderr, refusal) || !strings.Contains(res.Stderr, marker) {
-				t.Fatalf("%s の下で driver が止まらない: rc=%d stderr=%q", marker, res.RC, res.Stderr)
-			}
-		})
+		for where, cwd := range places {
+			t.Run(marker+"/"+where, func(t *testing.T) {
+				top := t.TempDir()
+				// 作業根のほかは印を top の直下に置き、作業根との間を空ける (段数を確かめる)
+				markerDir := top
+				if where == "作業根" {
+					markerDir = filepath.Join(top, cwd)
+				}
+				if err := os.MkdirAll(filepath.Join(markerDir, marker), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				res := run(t, top, cwd)
+				if res.RC == 0 || !strings.Contains(res.Stderr, refusal) || !strings.Contains(res.Stderr, marker) {
+					t.Fatalf("%s が%sにあるのに driver が止まらない: rc=%d stderr=%q", marker, where, res.RC, res.Stderr)
+				}
+			})
+		}
 	}
-	t.Run("作業根の印では止まらない", func(t *testing.T) {
+	t.Run("作業根の中のサブフォルダの印では止まらない", func(t *testing.T) {
 		top := t.TempDir()
 		if above, err := markerAbove(top); err != nil || above != "" {
 			t.Skipf("t.TempDir の上に %s があり、対照にならない", above)
 		}
-		if err := os.MkdirAll(filepath.Join(top, "a", "cwd", ".git"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(top, "w", "repo", ".git"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		res := run(t, top)
+		res := run(t, top, "w")
 		if strings.Contains(res.Stderr, refusal) {
-			t.Fatalf("作業根の .git で止まった: %q", res.Stderr)
+			t.Fatalf("作業根の中の .git で止まった: %q", res.Stderr)
 		}
 		// 指示 {} には scripts_dir が無いので、止める処理を通り過ぎた先で KeyError になる
 		if !strings.Contains(res.Stderr, "scripts_dir") {
