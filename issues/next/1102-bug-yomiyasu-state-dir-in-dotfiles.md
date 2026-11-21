@@ -1,1 +1,0 @@
-../1102-bug-yomiyasu-state-dir-in-dotfiles.md
