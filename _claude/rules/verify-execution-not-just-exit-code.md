@@ -36,7 +36,7 @@
 
 ## 確認の仕方
 
-🚨 **「走った証拠」の取り方 (lint gate・新規テスト・CI 上の検査・集約 target への配線・CI のジョブに足す依存・既存の物に足す依存) は、検査を通ったと判断する前に `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
+🚨 **「走った証拠」の取り方 (lint gate・新規テスト・CI 上の検査・集約 target への配線・CI のジョブに足す依存・既存の物に足す依存) は、検査を通ったと判断する前と、CI のジョブ・スクリプト・module に依存を足す (依存を要するテストを足す) ときに `~/dotfiles/_claude/rules-checklists/verify-execution-not-just-exit-code.md` の同じ見出しの節を Read する** (起動時には読まれない)。
 
 **収集 0 件 / 対象 0 件は失敗扱いにする**。`検査対象 N 件を確認` のように数を出しておくと空振りが見える。
 入力 (ディレクトリ・ファイル群) が複数あるなら、**入力ごとに**「無い」「列挙に失敗した」「在るが見た対象が 0 件」を失敗にする

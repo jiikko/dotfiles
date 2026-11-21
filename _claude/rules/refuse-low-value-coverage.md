@@ -45,3 +45,7 @@
 
 **テスト名は削除の理由にならない**。名前が実態と合っていないなら**名前を直す**のであって、
 テストを消す理由ではない (実例は rationale)。
+
+## なぜ
+
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/refuse-low-value-coverage.md` (起動時には読まれない。改訂するときに読む)。
