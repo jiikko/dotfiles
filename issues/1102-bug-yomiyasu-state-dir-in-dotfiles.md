@@ -1,5 +1,7 @@
 # 1102 (bug): 状態フォルダを渡さずに check を dotfiles の中で動かすと ~/dotfiles/.yomiyasu ができる
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-21〜）
+
 起票日: 2026-11-21
 
 ## 概要
