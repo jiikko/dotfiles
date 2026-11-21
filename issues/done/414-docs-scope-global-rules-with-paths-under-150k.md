@@ -266,3 +266,17 @@ obaket のセッション (`macOS/` で起動) で `⚠ 42 instruction files add
 - 2026-10-30 追記 (2): `move-report-conclusions-to-issues.md` を `issue-rules.d/` から `_claude/rules/` へ移し、`paths: tmp/** **/tmp/**` を付けた (D 案)。issues/ のある repo では hook が起動時にも注入し続ける。
   user-level の rule の照合を headless で実測 (2.1.314・issues/ の無い使い捨ての repo): 何もしない NONE / `tmp/report.md` の Write で読み込まれた / `notes/` は NONE / `sub/tmp/` は読み込まれた / project の外の `…/tmp/` を絶対パスで Write は NONE。
   よって worktree で作業するセッションが本体 checkout の tmp に書いても読み込まれない (issues/ のある repo は hook で補われる)
+
+### 追補 (2026-11-21): global 層が上限まで残り 1.9k 字だったので、実例の番号と参照表を外へ出す
+
+- **測った値** (`scripts/check_instruction_budget.sh`、`INSTRUCTION_BUDGET_REPOS=off`): global 層 109,119 字 (上限 111,000)、dotfiles のセッション 123,234 字
+- **縮めた** (claude-md-compact): ①8 本の rule の本文に残っていた実例の番号・実測の日付 10 件を rationale の「本文から移した実例 (2026-11-21)」節へ
+  (refuse-low-value の起源の行は rationale に同じ節があるので消し、代わりにほかの rule と同じ形の `## なぜ` を置いた)。
+  ②2026-10-12 の追補が次の候補とした `verify-execution-not-just-exit-code.md` の「確認の仕方」の表 (6 行) を、逐語のまま checklist の同じ見出しの節へ移した。
+  rule には「検査を通ったと判断する前と、依存を足す (依存を要するテストを足す) ときに Read する」の 1 行を残した (依存の 2 行の発動点は issue 784 の決定どおり「依存を足すとき」)
+- 残したもの: `no-ios-simulator-verification.md` の HTML コメント (issue 414 の決定。paths: を付け直されないための注記)、`_claude/CLAUDE.md` のスキル表 (`tests/claude/test_skill_trigger_table.sh` が守る)
+- 結果: global 層 109,119 → **108,408** 字 (上限まで 2,592)、dotfiles のセッション 123,234 → 122,523 字
+- 関門 (`fidelity.py`): ①消えた部品 2 件 (refuse-low-value の起源で rationale に在る)・読む候補 11 件 (番号を移した差か変えていない行) ②消えた部品 0 件・読む候補 1 件
+- 反証レビュー (opus 1 体、読み取りのみ、`e36e97150..HEAD`): 規範の消失 0 件。採用 2 件 = Read の 1 行が依存を足す場面を覆っていなかった / refuse-low-value から rationale を指す行が無くなっていた (どちらも直した)
+- **再開の trigger**: global 層が上限まで 1k 字を切ったとき。次の候補は `_claude/CLAUDE.md` の「一時ファイルの配置」の細目 (hook が検出しない形・`make clean-tmp` の使い方) と、
+  `verify-execution-not-just-exit-code.md` の「非同期・background」節。どちらも発動点が行動なので、`paths:` ではなく checklist への切り出しを検討する
