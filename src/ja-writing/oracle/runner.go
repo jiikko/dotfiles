@@ -63,7 +63,7 @@ type sandbox struct {
 	tree                     Tree
 }
 
-// upstreamMarkers は本家の道具が cwd から上へ辿って拾う名前 (git の最上位の .git・語の一覧・状態の置き場)。
+// upstreamMarkers は本家の道具が cwd から上へ辿って拾う名前 (いちばん近い .git・語の一覧・状態の置き場)。
 // 使い捨ての dir の上にこれがあると、本家の出力が TMPDIR の置き場所で変わり、記録がそれに汚れる。
 var upstreamMarkers = []string{".git", ".yomiyasu-words", ".yomiyasu"}
 

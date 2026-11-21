@@ -170,3 +170,64 @@ func TestPythonFlagsKeepSiteAndCwdOut(t *testing.T) {
 		t.Error("-I は PYTHONHASHSEED を無視するので使わない")
 	}
 }
+
+// driver を Runner を通さずに repo の中で起こすと、本家の check が状態フォルダを上の .git の所に作る。
+// call_function.py は作業根の上に印があれば、指示を読む前に止まる。作業根そのものの印 (fixture の .git) では止まらない。
+func TestCallFunctionRefusesUnderUpstreamMarker(t *testing.T) {
+	r, err := NewRunner(Tree{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := drivers.ReadFile("py/call_function.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(t *testing.T, top string) RawResult {
+		t.Helper()
+		sb := sandbox{root: top, cwd: filepath.Join(top, "a", "cwd"), home: filepath.Join(top, "a", "home"), drivers: filepath.Join(top, "a", "drivers")}
+		for _, d := range []string{sb.cwd, sb.home, sb.drivers} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		path := filepath.Join(sb.drivers, "call_function.py")
+		if err := os.WriteFile(path, src, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		res, err := r.exec(t.Context(), sb, []byte("{}"), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	const refusal = "作業根の上に"
+	for _, marker := range []string{".git", ".yomiyasu-words", ".yomiyasu"} {
+		t.Run(marker, func(t *testing.T) {
+			top := t.TempDir()
+			if err := os.Mkdir(filepath.Join(top, marker), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			res := run(t, top)
+			if res.RC == 0 || !strings.Contains(res.Stderr, refusal) || !strings.Contains(res.Stderr, marker) {
+				t.Fatalf("%s の下で driver が止まらない: rc=%d stderr=%q", marker, res.RC, res.Stderr)
+			}
+		})
+	}
+	t.Run("作業根の印では止まらない", func(t *testing.T) {
+		top := t.TempDir()
+		if above, err := markerAbove(top); err != nil || above != "" {
+			t.Skipf("t.TempDir の上に %s があり、対照にならない", above)
+		}
+		if err := os.MkdirAll(filepath.Join(top, "a", "cwd", ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		res := run(t, top)
+		if strings.Contains(res.Stderr, refusal) {
+			t.Fatalf("作業根の .git で止まった: %q", res.Stderr)
+		}
+		// 指示 {} には scripts_dir が無いので、止める処理を通り過ぎた先で KeyError になる
+		if !strings.Contains(res.Stderr, "scripts_dir") {
+			t.Fatalf("止める処理の先まで進んでいない: rc=%d stderr=%q", res.RC, res.Stderr)
+		}
+	})
+}

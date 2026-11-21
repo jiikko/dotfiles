@@ -90,6 +90,31 @@ import tempfile
 import unicodedata
 import zlib
 
+def refuse_under_upstream_markers():
+    """作業根 (Runner の使い捨ての dir の cwd) の上に .git・.yomiyasu-words・.yomiyasu があれば、何もせずに止まる。
+
+    本家の check は状態フォルダを渡されないと、cwd から上へ辿って最初に .git がある所の .yomiyasu/ に書く。
+    Runner を通さずにこの driver を repo の中で直接起こすと (網羅の計測の使い捨ての台本など)、記録が repo に入る。
+    作業根そのものは見ない: fixture は作業根の中に .git を作る。判定は oracle/runner.go の
+    markerAbove と同じ名前と順。
+    """
+    cur = os.path.dirname(os.getcwd())
+    while True:
+        for name in (".git", ".yomiyasu-words", ".yomiyasu"):
+            path = os.path.join(cur, name)
+            if os.path.lexists(path):
+                sys.exit(
+                    f"call_function.py: 作業根の上に {path} があります。本家の道具は上へ辿ってこれを拾い、"
+                    "状態フォルダや語の一覧をそこに作ります。oracle.Runner から起こすか、上に .git・.yomiyasu-words・"
+                    ".yomiyasu が無い dir で起こしてください"
+                )
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return
+        cur = parent
+
+
+refuse_under_upstream_markers()
 plan = json.loads(sys.stdin.read())
 sys.path.insert(0, plan["scripts_dir"])
 
