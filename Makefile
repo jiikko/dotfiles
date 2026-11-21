@@ -60,6 +60,7 @@ ZSH_SYNTAX_FILES := \
   zshlib/_fs_helpers.zsh \
   zshlib/_reload_then_call.zsh \
   zshlib/_repair.zsh \
+  zshlib/_src_env.zsh \
   zshlib/_tmux_session.zsh \
   zshlib/_tmux_window_name.zsh
 

@@ -1,4 +1,3 @@
-# shellcheck shell=bash
 # ~/src の下で、ディレクトリから上へ `.src-env` を探し、書いてある `KEY=パス` を export する (direnv の allow の要らない版)。
 # 外へ出たら元の値に戻す (元が無ければ unset)。例: my-products の root の `.src-env` に `UMBRELLA_ROOT=$DIR` と書くと、
 # その下 (submodule の中も) で $UMBRELLA_ROOT が umbrella の root になる。
