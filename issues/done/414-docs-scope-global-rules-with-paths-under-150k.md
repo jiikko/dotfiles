@@ -280,3 +280,11 @@ obaket のセッション (`macOS/` で起動) で `⚠ 42 instruction files add
 - 反証レビュー (opus 1 体、読み取りのみ、`e36e97150..HEAD`): 規範の消失 0 件。採用 2 件 = Read の 1 行が依存を足す場面を覆っていなかった / refuse-low-value から rationale を指す行が無くなっていた (どちらも直した)
 - **再開の trigger**: global 層が上限まで 1k 字を切ったとき。次の候補は `_claude/CLAUDE.md` の「一時ファイルの配置」の細目 (hook が検出しない形・`make clean-tmp` の使い方) と、
   `verify-execution-not-just-exit-code.md` の「非同期・background」節。どちらも発動点が行動なので、`paths:` ではなく checklist への切り出しを検討する
+- 2026-11-21 追記 (2): 次の候補の `_claude/CLAUDE.md`「一時ファイルの配置」を縮めた (実作業と反証レビューは fable。ユーザー指示)。
+  checklist へ移したのは「消す前に確かめることと消す道具」の 1 項だけ (新しい `_claude/rules-checklists/global-claude-md.md`。本文には `tmp/`・`/private/tmp`・`$TMPDIR` を消すときに Read する 1 行)。
+  理由と実例 3 件は `rules-rationale/global-claude-md.md` へ。global 層 108,408 → **108,196** 字
+  - 反証レビューで本文へ戻したもの (Read の 1 行の発動点では届かない): `tmp/` の ignore が global の設定に由来し CI・新品チェックアウトには無いこと
+    (前提にしている自覚の無いまま書く場面で要る 🚨 の事実) / hook が止めるのは字面で分かる形だけで素通りの形があること (止められたときは deny 文が直し方を案内するので、発動点として逆向き) /
+    `skill-tmpdir` が worktree からも本体 checkout を返すこと (約 20 字で、checklist に置く意味が薄い)
+  - 記録 (直さない): 「作業ごとに新しい dir」から使い回しの帰結を、「パスで判断しない」から `mktemp -d` の例を rationale へ移した。禁止の対象は本文に残る
+  - この節で縮められるのはここまで。残りはどれも毎回の書き込みで要る規範で、次に縮めるなら別の節 (`verify-execution-not-just-exit-code.md` の「非同期・background」節など) を見る
