@@ -74,6 +74,9 @@ x ** 2 を計算する。
 設定が有効かと無効かを見る。
 既定値は 30 日で、既定ではオフ。
 変異を当てて確かめた。
+削除の印を付ける。
+発電所の表を結合して、掲載情報の表の列を読む。
+表にまとめる。表の見出しと印を付ける。
 EOF
 
 rc=0
@@ -121,7 +124,10 @@ want="3 4 ja-ai-vocabulary 1
 43 16 ja-ai-vocabulary 1
 46 1 ja-ai-vocabulary 1
 46 12 ja-ai-vocabulary 1
-47 1 ja-ai-vocabulary 1"
+47 1 ja-ai-vocabulary 1
+48 1 ja-ai-vocabulary 1
+49 5 ja-ai-vocabulary 1
+49 17 ja-ai-vocabulary 1"
 if [ "$(sort <<<"$got")" = "$(sort <<<"$want")" ]; then
   ok "当たる語・外す語・表示されない太字が、行と桁と重さまで一致する (34 件)"
 else
