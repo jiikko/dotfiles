@@ -22,3 +22,13 @@
 ## 本文から移した実例 (2026-11-20。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
 
 - 道具を commit する変更に入口を含める理由: 起源の実例では翌日まで放置された
+
+## 別の人が今後も使う前提で、help と導線を整える (ユーザー指示 2026-11-21。vlc-multi-video-player issue 551)
+
+- 検査の道具を 4 つ足した (`make smart-test`・`bin/verify-record`・`bin/verify-audit`・`bin/record-app-audio`)。
+  使い方は verify skill と docs/testing-guide.md に書いた。
+  ところが、`bin/verify-record --help` と `bin/verify-audit --help` は引数の名前しか出さなかった。`bin/record-app-audio --help` は使い方の誤りとして rc 2 で落ちた。
+  説明はどれもスクリプトの冒頭にあった
+- 毎回読み込まれる root の CLAUDE.md の推奨ワークフローは「開発中は `make quick-test`」のままだった。verify skill をいつ Read するかも書いていなかった。
+  observe の集計の日 (2026-12-05) は issue の本文にしか無かった。ユーザーに問われるまで、どれにも気づかなかった
+- 直した形: `--help` に冒頭の説明を出す。CLAUDE.md の手順を新しい道具へ書き換え、🚨 の行に発動点を書く。集計の日は issue のメタ行に `期限:` を置き、SessionStart の hook に出させる
