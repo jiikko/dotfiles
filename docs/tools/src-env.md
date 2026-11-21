@@ -8,7 +8,9 @@
 - repo の root や親の repo のパスを、その下のどこにいても変数で使いたいとき (例: my-products の root の `.src-env` に `UMBRELLA_ROOT=$DIR`)
 - 値がパスでない設定 (トークン・フラグ) や、PATH・GIT_*・DYLD_* などコマンドの動きを変える変数には使えない (受け付けない。理由は実体の冒頭)。それが要るなら direnv を使う
 
-`cdu` (同じファイル) は `cd "$UMBRELLA_ROOT"`。my-products の下なら、submodule の worktree の中からでも umbrella の root へ移れる。
+my-products の root の `.src-env` が入れる `UMBRELLA_ROOT` は、変数を直接使わず `umbrella_root` (同じファイル) を通す。umbrella の外では
+変数が空で、`$UMBRELLA_ROOT/apps` が気づかずに `/apps` になるため。`umbrella_root [<root からのパス>]` は空・指す先が無い・パスが無いときに
+理由を出して rc 1 を返す (`p="$(umbrella_root apps/obaket)" && cd "$p"`)。`cdu [<パス>]` はそれで移る (submodule の worktree の中からも届く)。
 
 ## 書式
 

@@ -120,12 +120,33 @@ _src_env_apply() {
   done
 }
 
-# cdu は umbrella (my-products) の root へ移る。root の .src-env が入れる UMBRELLA_ROOT を使う (submodule の worktree の中からも届く。
-# git rev-parse --show-superproject-working-tree は submodule の worktree と root では空を返すので使わない)
-cdu() {
-  if [[ -z "${UMBRELLA_ROOT:-}" ]]; then
-    print -u2 "cdu: UMBRELLA_ROOT が無い (my-products の下で使う。root の .src-env が入れる)"
+# umbrella_root [<root からのパス>] は umbrella (my-products) の root (かその下のパス) を stdout に出す。root の .src-env が入れる
+# UMBRELLA_ROOT を読むが、変数を直接使わずにこれを通す: umbrella の外では変数が空のまま `$UMBRELLA_ROOT/apps` が `/apps` になり、
+# 気づかずに別の場所を指す。ここは空・指す先が無い・足したパスが無い、のどれでも stderr に理由を出して rc 1 を返す
+# (使い方: `p="$(umbrella_root apps/obaket)" && cd "$p"`)。
+# git rev-parse --show-superproject-working-tree を使わないのは、submodule の worktree と root では空を返すから
+umbrella_root() {
+  emulate -L zsh
+  local r="${UMBRELLA_ROOT:-}" p
+  if [[ -z "$r" ]]; then
+    print -u2 "umbrella_root: UMBRELLA_ROOT が無い (my-products の下で使う。root の .src-env が入れる)"
     return 1
   fi
-  cd "$UMBRELLA_ROOT"
+  if [[ ! -d "$r" ]]; then
+    print -u2 "umbrella_root: UMBRELLA_ROOT ($r) のディレクトリが無い"
+    return 1
+  fi
+  p="$r${1:+/$1}"
+  if [[ ! -e "$p" ]]; then
+    print -u2 "umbrella_root: $p が無い"
+    return 1
+  fi
+  print -r -- "$p"
+}
+
+# cdu [<root からのパス>] は umbrella の root (かその下) へ移る。移れないときは移らずに umbrella_root の理由を出す
+cdu() {
+  local p
+  p="$(umbrella_root "$@")" || return 1
+  cd "$p"
 }

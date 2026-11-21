@@ -96,14 +96,29 @@ go "$src/bad"
 n="$(grep -c 'src-env:' "$TMP_ROOT/warn.log" || true)"
 [[ "$n" == 0 ]] && ok "同じ行は 2 回目から知らせない" || ng "2 回目に知らせた行の数: $n"
 
-# cdu
+# umbrella_root と cdu
 go "$umb/apps/app1/deep"
-cdu
-[[ "$PWD" == "$umb" ]] && ok "cdu は UMBRELLA_ROOT へ移る" || ng "cdu の後の PWD: $PWD"
-go "$src/other"
-if cdu 2> "$TMP_ROOT/cdu.err"; then ng "UMBRELLA_ROOT が無いのに cdu が成功した"; else
-  [[ "$PWD" == "$src/other" ]] && grep -q 'cdu: UMBRELLA_ROOT が無い' "$TMP_ROOT/cdu.err" && ok "UMBRELLA_ROOT が無ければ cdu は移らずに知らせる" || ng "cdu の失敗の扱い: PWD=$PWD"
+r="$(umbrella_root)" && [[ "$r" == "$umb" ]] && ok "umbrella_root は root を出す" || ng "umbrella_root: [$r]"
+r="$(umbrella_root apps/app1)" && [[ "$r" == "$umb/apps/app1" ]] && ok "umbrella_root <パス> は root の下を出す" || ng "umbrella_root apps/app1: [$r]"
+if r="$(umbrella_root no/such 2> "$TMP_ROOT/ur.err")"; then ng "無いパスで umbrella_root が成功した: [$r]"; else
+  [[ -z "$r" ]] && grep -q 'が無い' "$TMP_ROOT/ur.err" && ok "無いパスは rc 1 で理由を出す" || ng "無いパスの扱い: [$r]"
 fi
+cdu
+[[ "$PWD" == "$umb" ]] && ok "cdu は root へ移る" || ng "cdu の後の PWD: $PWD"
+cdu apps/app1
+[[ "$PWD" == "$umb/apps/app1" ]] && ok "cdu <パス> は root の下へ移る" || ng "cdu apps/app1 の後の PWD: $PWD"
+go "$src/other"
+if r="$(umbrella_root 2> "$TMP_ROOT/ur.err")"; then ng "umbrella の外で umbrella_root が成功した: [$r]"; else
+  [[ -z "$r" ]] && grep -q 'UMBRELLA_ROOT が無い' "$TMP_ROOT/ur.err" && ok "umbrella の外では rc 1 で理由を出す (空を出さない)" || ng "外での扱い: [$r]"
+fi
+if cdu 2> "$TMP_ROOT/cdu.err"; then ng "UMBRELLA_ROOT が無いのに cdu が成功した"; else
+  [[ "$PWD" == "$src/other" ]] && grep -q 'UMBRELLA_ROOT が無い' "$TMP_ROOT/cdu.err" && ok "UMBRELLA_ROOT が無ければ cdu は移らずに知らせる" || ng "cdu の失敗の扱い: PWD=$PWD"
+fi
+export UMBRELLA_ROOT="$TMP_ROOT/gone"
+if umbrella_root > /dev/null 2> "$TMP_ROOT/ur.err"; then ng "指す先が無いのに umbrella_root が成功した"; else
+  grep -q 'のディレクトリが無い' "$TMP_ROOT/ur.err" && ok "指す先が無ければ rc 1 で理由を出す" || ng "指す先が無いときの理由: $(cat "$TMP_ROOT/ur.err")"
+fi
+unset UMBRELLA_ROOT
 
 if (( fails )); then
   print -u2 "src-env: $fails 件失敗"
