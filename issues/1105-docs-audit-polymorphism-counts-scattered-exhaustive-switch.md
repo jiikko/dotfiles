@@ -78,7 +78,7 @@ obaket で、抽象の層に具体クラスでの分岐が無いかを調べた 
 - [x] polymorphism の forge のプロンプトと直接実行の指針に D1〜D4・数えないもの・寄せ先・各件に必須の項目がある (forge は直接実行の指針を参照)
 - [x] leaky-abstraction の偽陽性の 2 項目と forge のプロンプトが、散らばった分岐を polymorphism へ寄せる書き方になっている
 - [x] `tests/claude/test_audit_skill_type_copies.sh` が通る
-- [ ] skill の改修なので、観点を変えた整合の点検を 3 回回す (`~/.claude/CLAUDE.md`「レビュー方針」) と、`bin/skill-eval audit` (`.claude/rules/skill-eval-after-edit.md`)
+- [x] skill の改修なので、観点を変えた整合の点検を 3 回回す (`~/.claude/CLAUDE.md`「レビュー方針」) と、`bin/skill-eval audit` (`.claude/rules/skill-eval-after-edit.md`)
 
 ## 反証レビュー (codex gpt-6.2-sol high、2026-11-21。対象は issue の最初の書き方と SKILL.md の最初の改修)
 
@@ -99,6 +99,17 @@ P1 2 件・P2 5 件・P3 2 件。引用されたコードと記録を読んで�
 
 反証できなかったもの: 1.6.0 の文言の引用・obaket の 53 か所と 9 本・`ProviderForm.apply` の絞り込み・Dictionary の欠落が 4 に落ちること・
 comment-no-restate-enforced の registry の例との整合・912 (保留) との衝突が無いこと。
+
+## 進捗
+
+- 2026-11-21: SKILL.md 1.7.0 (`feat(audit): polymorphism に P1〜P4 の型を作り…` → 反証の後に `fix(audit): 1105 の反証レビューを反映し、polymorphism の型を D1〜D4 に改め…`)
+  - 整合の点検 3 回: ①skill の中 (leaky-abstraction の「散らばりは D1 で数える」が D1 の条件より広かった → 「D1 の条件で判定する」に直した)
+    ②skill の外 (型の記号を参照するのは `test_audit_skill_type_copies.sh` のコメントだけ。引いた節は実在) ③使う人の目で obaket の provider の監査を頭からたどった
+    (種別の追加が複数の commit に分かれる・D3 のテストの探し方が無い・Step 2 に未実走の注記が無い → 3 つとも直した)
+  - `tests/claude/test_audit_skill_type_copies.sh`: PASS (表の ID 23 件)
+  - `bin/skill-eval audit`: `PASS audit score=1 delta=1 cases=1/1 cost=$0.3209666`。このケースは発火と監査タイプの提示だけを見るので、D1〜D4 の判定の中身は測っていない
+  - 直した差分に 2 周目の codex の反証は回していない (整合の点検 3 回で代えた)
+- 残り: D1〜D4 での実走はまだ (Step 2 の注記に書いた)。初回で D1 の「数えない」が Go・shell の repo の誤検出を抑えるかを見る。obaket の監査で使うのは obaket epic 1569 の後でもよい
 
 ## 関連
 
