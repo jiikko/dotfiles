@@ -70,18 +70,16 @@
   - git repo の外で起動したセッションだけは scratchpad に置く。ハーネス自身が書く background のタスク出力 (scratchpad の `tasks/`) は指定できないので対象外
 - **`./tmp` には上の作業ファイルのほか、人や次のセッションが読むもの (レポート・見本) も置く**。skill が出力先を指定していればそれに従う
   - **skill / agent が自分で書く成果物は `skill-tmpdir <skill名>` (dotfiles の `bin/skill-tmpdir`) が返す `<本体 checkout>/tmp/<skill名>/<session-id>/` に置く**。
-    worktree の中から打っても本体 checkout を返す。skill を新しく書く・直すときもこの形にする
-  - 🚨 **直下に散らさず、作業ごとに新しい `tmp/<issue番号か作業名>-<日付>/` に入れる**。同じ dir を使い回すと、中に新しいファイルがある限り
-    `make clean-tmp` が dir ごと残す。git の root の `tmp/` 直下へのリダイレクト・`tee`・Write は PreToolUse の hook (`_claude/hooks/deny-tmp-root-write.sh`) が止める
-    (字面の判定。変数を含むパス・`curl -o` などは素通りする。検出しない形は hook の冒頭)
-  - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない
+    skill を新しく書く・直すときもこの形にする
+  - 🚨 **直下に散らさず、作業ごとに新しい `tmp/<issue番号か作業名>-<日付>/` に入れる**
   - 🚨 **リダイレクト先を `..` で repo の外へ出さない** (`<worktree>/../push.log` / `../../../../out`)。後で消す worktree の中で
-    走らせる出力も本体 checkout の `tmp/<作業名>-<日付>/` に絶対パスで書く。親ディレクトリは誰の `tmp/` でもなく、
-    消し損ねると残り続ける
-  - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/ _claude/`)。dotfiles では `make clean-tmp` (既定は 30 日より古いもの。`DRY_RUN=1` で一覧のみ、`DAYS=7` で期間を変える)。`/private/tmp`・`$TMPDIR` を片付けるなら `cleanup-tmp-dir` skill (`bin/tmpclean`。直接 rm しない)
+    走らせる出力も本体 checkout の `tmp/<作業名>-<日付>/` に絶対パスで書く
+  - 🚨 **`tmp/`・`/private/tmp`・`$TMPDIR` の中身を消す・片付けるとき、`tmp/` 直下への書き込みを hook に止められたとき、`tmp/` が在る・ignore されることを前提にしたスクリプト・テスト・CI を書くときは、
+    `~/dotfiles/_claude/rules-checklists/global-claude-md.md` の「一時ファイルの配置」を Read する** (起動時には読まれない)。
+    消す前に確かめることと消す道具・hook が止める形と検出しない形・`tmp/` の ignore の出所・`skill-tmpdir` が返す場所がそこにある
 - **スクリプト / テストが実行時に作る隔離ディレクトリは対象外**。既定は OS の一時領域 (`mktemp -d` / `t.TempDir()`)。`./tmp` に置くなら理由をコード直近に残す
 - 線引きは置き場所ではなく **終了時に消す責任が実装されているか**
-  - 🚨 パスで判断しない (`mktemp -d` は macOS では `/var/folders/…`、Linux では `/tmp` 配下になりうる)
+  - 🚨 パスで判断しない
   - 🚨 `trap` は中断では走らず、dir を消してもそこで起こしたプロセスは残る
 
 ## Issue管理
