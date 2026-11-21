@@ -470,3 +470,16 @@ CI で走るかは workflow の記述を読んで確かめたが、run の結果
 - テストが実行環境の資源に依存する項: dropbox-player retro 228
 - 台本の段ごとに状態が変わったことを確かめる項: vlc-multi-video-player retro 555 (E2E の消す段が別の plist を消していて、緑が前の実行の残りの設定に頼っていた)
 - 台本を書く前に要素と値に届くかを確かめる項: vlc-multi-video-player retro 557 (名前で押す前提で E2E を書き、3 回とも別の理由で落ちた)
+
+## 自己テストを人の環境と本物の checkout で確かめる (vlc-multi-video-player retro 596, 2026-11-21)
+
+- 本物の checkout でも回す項: `bin/verify-record` は `bin/lib/verify_records.py` を import する。
+  そのたびに、本物の repo に `bin/lib/__pycache__` (untracked) ができた。
+  それ以後の記録は、全部この dir を「commit の外の変更」として木に含めた。
+  自己テストは一時の repo で道具を呼ぶので、道具の dir (本物の checkout) に増えたファイルを検査しなかった
+- global の設定と環境変数から切り離す項: 人の global の gitignore が `tmp/` を ignore していた。
+  そのため「tmp/verify が ignore されていなければ止める」の確かめが、テストの一時の repo の中でも止まらなかった (`GIT_CONFIG_GLOBAL` で直した)。
+  道具を `__pycache__` を書く形に戻しても、自己テストは緑のまま通った。手元に `PYTHONDONTWRITEBYTECODE=1` があり、もともと書かれないためだった
+- 人の入力が残す状態を数える項: hover で乗った枠は、離れた後も「直近に操作した枠」として音を出す枠に残る。
+  判定の瞬間の `hoveredIndex` では、途中で通ったカーソルを見分けられない。壊した実装を確かめる run は、3 回目まで結果を出せなかった。
+  hover で枠を動かした回数 (`hoverActivations`) をアプリに数えさせ、区間で増えていたら BLOCKED にした
