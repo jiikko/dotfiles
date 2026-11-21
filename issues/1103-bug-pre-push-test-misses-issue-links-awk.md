@@ -1,5 +1,7 @@
 # 1103 (bug): tests/githooks/test_pre_push.sh が赤い (test_issue_links_awk が pre-push の一覧に無い)
 
+> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-21〜）
+
 起票日: 2026-11-21
 
 ## 概要
