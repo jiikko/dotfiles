@@ -82,3 +82,7 @@ tmux -L probe kill-server
 ## 本文から移した実例 (2026-11-20。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
 
 - `tmux kill-server` は socket ファイルを消さない: 実測 2026-09-10
+
+## 本文から移した実例 (2026-11-21。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
+
+- `$TMUX` は `TMUX_TMPDIR` より優先される項: 2026-07-30 実測: `d=$(mktemp -d); TMUX_TMPDIR=$d tmux ls` が本番セッション一覧を返し、`$d` に socket は作られない

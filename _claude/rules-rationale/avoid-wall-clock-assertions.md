@@ -124,3 +124,7 @@ wait_for "builder が終わらない" builder_gone "$pid"
 ## 本文から移した実例 (2026-11-20。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
 
 - `.timeLimit` は取り消しに応じない待ちを戻さない項: obaket retro 1115
+
+## 本文から移した実例 (2026-11-21。claude-md-compact で、常時読み込みの本文の括弧書きから移した)
+
+- 窓を作る sleep の担保を変異で 1 本ずつ確かめる項: 列挙しただけで済ませて 2 回素通りした実例: issue 617
