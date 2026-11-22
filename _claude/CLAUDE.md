@@ -194,7 +194,6 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | claude-assets-review, Claude の資産を評価, hooks / skills / agents を公式ドキュメントと照らす, claude 系の設定の改善点 | `claude-assets-review` (提案だけ。直すのは選んだ提案の issue) |
 | refresh-on-session, 差分全体の見直し, 用語の揺れ, コメントの更新漏れ, 呼び出し元の追従漏れ | `refresh-on-session` (差分だけを見る。バグ探しは `/code-review`) |
 | rule-harvest, 決めたことを rule に, デグレしないための rule | `rule-harvest` (振り返りは retro) |
-| events.yml, 審査が通った, バージョン公開を記録, product-analytics, my-products-update-apps-event | `my-products-update-apps-event` |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `crash-log-analyzer` |
 | dupscan-dogfood, dupscan を使って開発, dupscan のフィードバック, dupscan を使い込む | `dupscan-dogfood` |
 | codex-review, Codexレビュー, コードレビュー依頼 | `codex-review` |
