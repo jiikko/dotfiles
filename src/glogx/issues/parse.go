@@ -953,10 +953,8 @@ func (f StatusFilter) Next() StatusFilter {
 // 外さないと、終わった epic が既定の一覧に残り続け、しかも親行の位置は子の最大番号で決まるので
 // **番号の大きい epic ほど先頭に居座る**。done な global issue と同じく `a` を進めたときだけ出す。
 //
-// 🚨 さらに **親 issue を done へ送った終わった epic は、どの段階でも出さない** (2026-10-02 ユーザー要望)。
-// 親を done へ送るのは「この epic は閉じた」という明示の宣言で、`a` で全部を見せる段階でも、閉じた器の
-// 親行と子が並び続けると一覧が閉じた epic で埋まる。番号フィルタ (`/`) は Filter を通らないので、
-// 番号を知っていれば引き続き開ける。判定は retiredGroupKeys。
+// 🚨 **親 issue を done へ送った終わった epic も、上の規則どおり `a` の全開でだけ出す** (2026-11-22 ユーザー要望)。
+// 全開の段階でも伏せる別の判定を足さない。足すと、番号を知らない閉じた epic に一覧から辿り着けない。
 //
 // 🚨 終わった epic の親 issue は、自分の位置 (open) ではなく子の見え方に従う (2026-10-29 ユーザー要望)。
 // 親は子を全部 done / pending へ送った後も group 直下 (open) に残るのが普通で、自分の Status で決めると
@@ -965,11 +963,8 @@ func (f StatusFilter) Next() StatusFilter {
 // 親を自分で done / pending / waiting / next へ置いたときは、その位置が宣言なので従来どおり Status で決める。
 // openParents は groupOpenParents、closedParentShown は「終わった group のうち、親以外で今の段階に
 // 見える子が居る」GroupKey の集合。
-func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups, closedParentShown map[string]bool, openParents map[string]*Issue) bool {
+func (f StatusFilter) showsIssue(iss *Issue, closedGroups, closedParentShown map[string]bool, openParents map[string]*Issue) bool {
 	if key, ok := iss.EpicGroupKey(); ok {
-		if retiredGroups[key] {
-			return false
-		}
 		if !closedGroups[key] {
 			return true
 		}
@@ -1021,8 +1016,8 @@ func PreferGroupParent(a, cur *Issue) bool {
 // vlc-multi-video-player の `epic/smart-playback/440-feat-smart-playback-subscription.md`)。
 // 見出しは走査の直後に全件読む (issuesview の loadAllMeta) ので、viewer の判定では揃っている。
 //
-// 🚨 親の判定はここだけで行う。viewer の親行 (rebuildDisplayRows) と「閉じた epic」の判定
-// (retiredGroupKeys) が別々に書くと、片方だけが親を見つけて「親行は出るのに閉じても消えない」になる。
+// 🚨 親の判定はここだけで行う。viewer の親行 (rebuildDisplayRows) と「終わった epic」の判定
+// (groupOpenParents) が別々に書くと、片方だけが親を見つけて「親行は出るのに閉じても消えない」になる。
 func IsGroupParent(iss *Issue) bool {
 	if iss.GroupKind != GroupEpic || iss.Group == "" || iss.Number == "" {
 		return false
@@ -1037,37 +1032,6 @@ var epicTitleRe = regexp.MustCompile(`^([0-9]+)\s*\(epic\)\s*[:：]`)
 func isEpicTitle(iss *Issue) bool {
 	m := epicTitleRe.FindStringSubmatch(iss.Title)
 	return m != nil && m[1] == iss.Number
-}
-
-// retiredGroupKeys は「親 issue が done で、group の全員 (親と子) が done」の group の GroupKey 集合。
-//
-// 🚨 closedGroupKeys (既定の一覧に出る子が無い) を流用しない。あちらは pending / waiting の子を
-// 「終わった」側に数えるので、親だけ done で子が pending の group を全段階で隠し、保留中の仕事が
-// 番号フィルタでしか辿れなくなる。どの段階でも隠す以上、隠してよいのは
-// 残りの仕事が 1 件も無い (全員 done) group だけ。親の無い group は閉じたと宣言する手段が無いので
-// 入れない (従来どおり `a` で全部を見せる段階で出る)。迷子 (GroupUnknown) は数えない
-// (closedGroupKeys と同じ理由。迷子は単独の行として見え続ける)。
-func retiredGroupKeys(list []*Issue) map[string]bool {
-	parentDone := make(map[string]bool, 4)
-	notDone := make(map[string]bool, 4)
-	for _, iss := range list {
-		key, ok := iss.EpicGroupKey()
-		if !ok {
-			continue
-		}
-		if iss.Status != StatusDone {
-			notDone[key] = true
-		} else if IsGroupParent(iss) {
-			parentDone[iss.GroupKey] = true
-		}
-	}
-	out := make(map[string]bool, len(parentDone))
-	for key := range parentDone {
-		if !notDone[key] {
-			out[key] = true
-		}
-	}
-	return out
 }
 
 // groupOpenParents は group ごとの親 issue (1 件) のうち、位置が group 直下 (open) のもの。
@@ -1218,7 +1182,7 @@ func (f StatusFilter) AddedBadges() string {
 // Filter はタブと状態フィルタで絞り込む。tab が "" なら全カテゴリ。
 //
 // 🚨 issues は**絞り込む前の全件**を渡すこと。other タブの所属 (Tabs) と、閉じた epic の判定
-// (closedGroupKeys / retiredGroupKeys) をこの集合から作るので、絞った集合を渡すと別カテゴリの
+// (closedGroupKeys) をこの集合から作るので、絞った集合を渡すと別カテゴリの
 // open な子が見えず、進行中の epic を終わったものと黙って誤判定する。
 func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	// OtherTab は「自前のタブを持たないカテゴリ」の寄せ先。タブ集合を 1 回だけ作って
@@ -1236,7 +1200,6 @@ func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	// 別カテゴリの open な子が見えなくなり、進行中の epic を終わったものと誤判定する)
 	openParents := groupOpenParents(issues)
 	closed := closedGroupKeys(issues, openParents)
-	retired := retiredGroupKeys(issues)
 	closedParentShown := make(map[string]bool, len(closed))
 	for _, iss := range issues {
 		if key, ok := iss.EpicGroupKey(); ok && closed[key] && openParents[key] != iss && filter.shows(iss.Status) {
@@ -1245,7 +1208,7 @@ func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	}
 	out := make([]*Issue, 0, len(issues))
 	for _, iss := range issues {
-		if !filter.showsIssue(iss, closed, retired, closedParentShown, openParents) {
+		if !filter.showsIssue(iss, closed, closedParentShown, openParents) {
 			continue
 		}
 		switch {

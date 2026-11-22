@@ -800,10 +800,10 @@ func TestFilterHidesClosedEpicUntilDoneIsShown(t *testing.T) {
 	}
 }
 
-// TestFilterHidesRetiredEpicAtEveryStage は「親 issue を done へ送った終わった epic は、`a` で全部を
-// 見せる段階でも出ない」ことを固定する (2026-10-02 ユーザー要望)。親の形のうち、番号と名前の 2 つを見る (見出しの形は TestIsGroupParentForms と viewer のテスト)。
+// TestFilterShowsRetiredEpicOnlyWhenDoneIsShown は「親 issue を done へ送った終わった epic は、`a` で全部を
+// 見せる段階でだけ出る」ことを固定する (2026-11-22 ユーザー要望)。親の形のうち、番号と名前の 2 つを見る (見出しの形は TestIsGroupParentForms と viewer のテスト)。
 // 親の無い epic・親だけ先に閉じて open な子が残る epic は従来どおり出る。
-func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
+func TestFilterShowsRetiredEpicOnlyWhenDoneIsShown(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")
 	// 名前付きの group の親 (obaket の形) を done へ送った epic
 	mkFiles(t, filepath.Join(dir, "epic", "pane-perf", "done"), "956-epic-pane-perf.md", "962-perf-relayout.md")
@@ -825,6 +825,8 @@ func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 	// 無いので終わった epic として扱われ、通常の状態フィルタどおり
 	mkFiles(t, filepath.Join(dir, "epic", "held", "done"), "900-epic-held.md")
 	mkFiles(t, filepath.Join(dir, "epic", "held", "pending"), "901-feat-held.md")
+	// 子の居ない親だけを done へ送った epic: done の親は子と同じく数えられ、終わった epic として全開でだけ出る
+	mkFiles(t, filepath.Join(dir, "epic", "lonely", "done"), "1000-epic-lonely.md")
 	all, _ := Scan([]string{dir})
 
 	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
@@ -832,9 +834,9 @@ func TestFilterHidesRetiredEpicAtEveryStage(t *testing.T) {
 		for _, iss := range Filter(all, "", f) {
 			got[iss.Number] = true
 		}
-		for _, n := range []string{"956", "962", "467", "460"} {
-			if got[n] {
-				t.Errorf("%s: 親を done へ送った epic の %s が見えている: %v", f, n, got)
+		for _, n := range []string{"956", "962", "467", "460", "1000"} {
+			if got[n] != (f == FilterAll) {
+				t.Errorf("%s: 親を done へ送った epic の %s の表示 got %v want %v", f, n, got[n], f == FilterAll)
 			}
 		}
 		for _, n := range []string{"600", "601"} {

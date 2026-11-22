@@ -673,10 +673,10 @@ func TestIssuesViewTitleDeclaredEpicParentOpensBodyWithO(t *testing.T) {
 	}
 }
 
-// TestIssuesViewNamedGroupParentMergesAndHidesWhenDone は名前付きの group の親 (`NNN-epic-<group 名>.md`。
-// obaket の形) が親行へ統合されることと、親と子を全部 done へ送ると `a` で全開にしても一覧から
-// 消えることを固定する (2026-10-02 ユーザー要望)。親の判定は issues.IsGroupParent の 1 箇所。
-func TestIssuesViewNamedGroupParentMergesAndHidesWhenDone(t *testing.T) {
+// TestIssuesViewNamedGroupParentMergesAndShowsOnlyAllWhenDone は名前付きの group の親 (`NNN-epic-<group 名>.md`。
+// obaket の形) が親行へ統合されることと、親と子を全部 done へ送ると既定の一覧から消え、`a` で全開にしたときだけ
+// 親行と子ごと出ることを固定する (2026-11-22 ユーザー要望)。親の判定は issues.IsGroupParent の 1 箇所。
+func TestIssuesViewNamedGroupParentMergesAndShowsOnlyAllWhenDone(t *testing.T) {
 	dir := "/repo/issues"
 	named := func(status issues.Status) *issues.Issue {
 		iss := fakeEpicIssue(dir, "pane-perf", "956", "pane-perf", status)
@@ -697,10 +697,13 @@ func TestIssuesViewNamedGroupParentMergesAndHidesWhenDone(t *testing.T) {
 
 	done := named(issues.StatusDone)
 	v = loadedView(done, child)
+	if len(v.displayRows) != 0 {
+		t.Fatalf("親を done へ送った epic が既定の一覧に残っている: %+v", v.displayRows)
+	}
 	v.filter = issues.FilterAll
 	v.refresh()
-	if len(v.displayRows) != 0 {
-		t.Fatalf("親を done へ送った epic が a の全開で残っている: %+v", v.displayRows)
+	if len(v.displayRows) != 1 || !v.displayRows[0].groupHead || v.displayRows[0].issue != done || v.displayRows[0].childCount != 1 {
+		t.Fatalf("親を done へ送った epic が a の全開で親行と子ごと出ない: %+v", v.displayRows)
 	}
 }
 

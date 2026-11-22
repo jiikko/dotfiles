@@ -171,14 +171,12 @@ pending の子を group 直下 (open) へ戻せば、その epic はまた既定
 (`issues.groupOpenParents`。選び方は親行と同じ `issues.PreferGroupParent`)。親の形が複数並ぶ group で全部を外すと、
 親行の下に子として描かれる open な issue ごと epic が消える。
 
-🚨 **親 issue を done へ送った終わった epic は、`a` のどの段階でも出さない** (2026-10-02 ユーザー要望)。
-親を done へ送るのは「この epic は閉じた」という明示の宣言で、全部を見せる段階でも閉じた器の親行と子が
-並び続けると一覧が閉じた epic で埋まる。判定は `issues.retiredGroupKeys` — 親 (`IsGroupParent`) が
-done **かつ** group の全員 (親と子) が done の group だけ。上の「終わった epic」(既定の一覧に出る子が無い) は
-流用しない — あちらは pending / waiting の子を終わった側に数えるので、親だけ done で子が保留の group を
-全段階で隠し、保留中の仕事が番号フィルタでしか辿れなくなる (2026-10-02 の敵対レビュー)。親の無い group・
-親を pending にした group は閉じたと宣言していないので従来どおり (全部を見せる段階で出る)。番号フィルタ (`/`) は
-状態フィルタを通らないので、番号を知っていれば閉じた epic の issue も引き続き開ける。
+🚨 **親 issue を done へ送った終わった epic も、上の規則どおり done を見せる段階 (`○⏸◌✓`) でだけ出す** (2026-11-22 ユーザー要望)。
+`a` の全開でも伏せる別の判定は置かない。置くと、番号を知らない閉じた epic に一覧から辿り着けない
+(2026-10-02 の要望でどの段階でも伏せていた間、obaket の `provider-dispatch` が全開でも見えなかった)。
+done の親は open の親 (`groupOpenParents`) に入らないので、子と同じく「既定の一覧に出ない子」に数えられ、
+子の居ない親だけの group を done へ送ったときも終わった epic になる。番号フィルタ (`/`) は状態フィルタを通らないので、
+どの段階でも番号で閉じた epic の issue を開ける。
 
 🚨 **この段階は epic group の子には適用されない。`epic/<name>/done/` `epic/<name>/pending/` の
 子は既定 (`○` のみ) でも group を展開すれば見える** (issue 291)。epic は「まとまった仕事の器」
