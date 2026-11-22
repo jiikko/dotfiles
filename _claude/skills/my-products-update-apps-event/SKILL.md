@@ -47,8 +47,9 @@ description: my-products の product-analytics (web/product-analytics) の apps/
      `TZ=Asia/Tokyo date -r "$(date -j -u -f %Y-%m-%dT%H:%M:%SZ <currentVersionReleaseDate> +%s)" '+%F %R'`
      (`TZ=Asia/Tokyo date -j -u -f ...` を 1 本で打つと UTC のまま出る)
    - note の変更点は jp の `releaseNotes` を 1〜3 文に詰める (無ければ us のものを訳す)。リリースノートに無いことを書かない
-   - 書いたら YAML として読めることを確かめる。python に yaml が無いことがあるので ruby で読む:
-     `ruby -ryaml -e 'p YAML.load_file(ARGV[0]).last' "$PA/apps/<app>/events.yml"`
+   - 書いたら YAML として読めることを確かめる。python に yaml が無いことがあるので ruby で読む。
+     `date:` は Date として読まれるので `Date` を許可する (許可しないと `Psych::DisallowedClass` で落ちる):
+     `ruby -ryaml -rdate -e 'p YAML.safe_load_file(ARGV[0], permitted_classes: [Date]).last' "$PA/apps/<app>/events.yml"`
 5. **commit する** (app ごとに 1 commit。push はしない):
 
    ```sh
