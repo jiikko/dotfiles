@@ -97,7 +97,7 @@ Phase 4.2 の「矛盾の解決」ルールに従う。
 
 > **詳細**: `~/.claude/skills/forge/_common/skill-triggers.md` の「Phase 4.5+」セクションを参照
 
-Phase 4 の統合結果に `performance` カテゴリの High 指摘が含まれる場合、`perf-analysis` の自動実行を提案:
+Phase 4 の統合結果に `performance` カテゴリの High 指摘が含まれる場合、`perf-analysis` の自動実行を提案 (ThumbnailThumb の repo-local skill。その repo の外では提案しない):
 
 ```
 質問: 「パフォーマンス問題が検出されました。perf-analysis を実行しますか？」

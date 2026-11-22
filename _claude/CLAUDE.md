@@ -175,7 +175,6 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | forge, 専門家実装, 専門家エージェントで実装/修正（修正・実装まで任せる） | `forge` |
 | CSS, Node.js, Electron, フロントエンド, デスクトップアプリ | agent: `css-expert` / `nodejs-expert` / `electron-expert` |
 | iOS, iPhone, XcodeGen, SPM, code signing, AVFoundation, @rpath | `ios-app-developer` |
-| perf.log 分析, ボトルネック（ThumbnailThumb 専用 / bin/tt-client 前提） | `perf-analysis` |
 | WCAG, アクセシビリティ, ダークモード, スタイルレビュー | `style-review` |
 | AVFoundation, AVPlayer, 動画再生, seek, scrub, frame stepping | `avfoundation-reference` |
 | watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `watchos-expert` |

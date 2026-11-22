@@ -19,7 +19,7 @@
 | スキル名 | カテゴリ | 検出パターン | モード制約 | 実行方式 |
 |---------|---------|-------------|----------|---------|
 | style-review | VALIDATION | `.css`, `.scss`, `.module.css`, `styled-components`, CSS-in-JS | Minimum+ 以上（CSS変更検出時） | 自動 |
-| perf-analysis | DIAGNOSTIC | Phase 4 で `performance` カテゴリの High 指摘あり | Standard 以上 | 確認付き |
+| perf-analysis | DIAGNOSTIC | Phase 4 で `performance` カテゴリの High 指摘あり (ThumbnailThumb の repo-local skill。その repo の外では対象外) | Standard 以上 | 確認付き |
 
 > **注**: TESTING カテゴリのスキルは現在未登録（smoke-test / ios-simulator-skill は 2026-06 に削除済み）。
 > 該当スキルが無い間、Phase 5.5 は自動スキップされる。再追加する場合は「レジストリの拡張」を参照。
