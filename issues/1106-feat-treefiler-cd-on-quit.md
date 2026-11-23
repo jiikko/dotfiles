@@ -60,6 +60,15 @@
 - `tmux show -pv` がフォルダ名の制御文字 (改行・タブ) を書き換えるか (推測。未実測)。書き換えると popup の経路だけ「cd 先がありません」になる
 - 反映の直後: bin/treefiler は新しいバイナリを裏でビルドし、その回は古いバイナリを起動する (go_autobuild の --async)。古いバイナリは `--cwd-file` を知らず rc=2 で終わるので、pull の後に一度ビルドを済ませる
 
+## rule-harvest (2026-11-23)
+
+候補「ペインのシェルへキーを送って状態を変えるときは、widget のキー列だけを、受け口の zsh が前面に 1 人でいるときだけ送る」(`.claude/rules/` に paths 付き) は却下。
+観点 1〜4 の反証レビュー (事実・重複衝突・機械化・恒久性と置き場所) で、次の理由が残った:
+- 再発の母集合が 1 件: 今ペインのシェルの状態を send-keys で変えるのは scripts/tmux_treefiler_popup.sh だけ。ほかの send-keys は利用者の文字を送るもの (予約入力・extract・C-v) か隔離した session への E2E・計測
+- 「自動で送る send-keys 全般」へ広げると予約入力の設計 (Claude のプロンプトなど zsh 以外が前面のペインへ送る) と食い違う
+- 規範の中身は scripts/tmux_treefiler_popup.sh の冒頭のコメントとこの issue にあり、そこを触る人には届く。機械の検査も、対象外の逃がしが既存の該当の大半を占めて見合わない
+同じ判定の弱い既存の規範 (docs/tmux-window-fade.md の「一括移行は pane_current_command == zsh に限って send-keys」) は直した。
+
 ## 残り
 
 - [ ] 実機の popup の確認 (上の受け入れ条件)。prefix f → 別のフォルダへ移って q → ペインのプロンプトがそのフォルダになる / 打ちかけの行が残る / esc では変わらない

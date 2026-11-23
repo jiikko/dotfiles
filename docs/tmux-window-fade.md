@@ -116,8 +116,10 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
 - **`#{session_id}` を run-shell の引数に使ってはいけない**（過去の select 契機実装で
   発覚）。session_id は `$0` 形式で、run-shell が展開後の文字列を `sh -c` に渡す際に
   シェルの positional parameter として食われて消える
-- 一括移行時（既存 shell への注入）は `pane_current_command == "zsh"` の pane に限定して
-  send-keys すること。claude / nvim / ssh 等が前面の pane に文字列を流すと事故る
+- 一括移行 (既存 shell への注入) で `source` を send-keys しない。`pane_current_command == "zsh"` で絞っても、入力を待つ
+  zsh のスクリプトや widget の中のコマンド置換 (`^R` の fzf) も「zsh」と出るので、その入力として流れ込む (issue 1106 で実測)。
+  既存の shell には `exec zsh` か新しいペインを利用者に頼む (上の表の「その zsh が古い」と同じ)。shell へ自動で送る必要があるなら、
+  受け口の widget と前面の判定を持つ scripts/tmux_treefiler_popup.sh の形にする
 
 ## 関連
 
