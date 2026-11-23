@@ -1,7 +1,5 @@
 # 1106 (feat): treefiler を q で閉じたら、呼び出したシェルがそのフォルダへ cd する
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-23〜）
-
 起票日: 2026-11-23
 
 ## 概要
@@ -35,7 +33,7 @@
 - [x] `C-t f` で q → 開いたペインの zsh が cd し、打ちかけの行と `%?` が残る (tests/tmux/test_treefiler_popup_cd.sh。隔離サーバ・本物の zsh)
 - [x] 前面が zsh でない・zsh のスクリプトが入力を待つ・widget のコマンド置換が端末を読む・コピーモード・同期中・受け口の無い zsh・pid の再利用・@treefiler_pane が空 には送らない (同上)
 - [x] glogx の F と、フラグ無しの treefiler の挙動は変わらない (`CdOnQuit` は glogx から渡さない。既存の treefiler / glogx のテストが緑)
-- [ ] 実機の popup で 1 回通す (send-keys は key table を通らず、display-popup は attach したクライアントが要るので、自動テストは bind の登録とスクリプトに分けている)
+- [x] 実機の popup で 1 回通す (send-keys は key table を通らず、display-popup は attach したクライアントが要るので、自動テストは bind の登録とスクリプトに分けている)
 
 ## 進捗
 
@@ -71,4 +69,9 @@
 
 ## 残り
 
-- [ ] 実機の popup の確認 (上の受け入れ条件)。prefix f → 別のフォルダへ移って q → ペインのプロンプトがそのフォルダになる / 打ちかけの行が残る / esc では変わらない
+- [x] 実機の popup の確認 (上の受け入れ条件)。prefix f → 別のフォルダへ移って q → ペインのプロンプトがそのフォルダになる / 打ちかけの行が残る / esc では変わらない
+
+## 完了 (2026-11-24)
+
+- ユーザーが実機で tf と prefix f を試し、q で cd されることを確認した (2026-11-24)
+- CI: 87527f420 の Tests の rest と b3e035c3b の src/pro-con の test が赤だったのは、GitHub が runner を割り当てられず job が取り消されたもの (`The job was not acquired by Runner of type hosted`)。回し直した Tests は緑で、tests/tmux/test_treefiler_popup_cd.sh の全項目が CI で ✓ になった
