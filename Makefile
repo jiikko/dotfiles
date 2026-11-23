@@ -207,6 +207,13 @@ endef
 # run_tests / run_tests_parallel が出した失敗・skip の一覧を、腕をまたいで合算するための受け口。
 # TEST_FAILS_SUMMARY / TEST_SKIPS_SUMMARY (追記先のファイルパス) が環境に在るときだけ追記する。
 # 単体で `make test-tmux` 等を叩いたときは未設定なので何もしない。
+# runner が控えたテストごとの所要 $(1) (1 行「秒 名前」) から、長い順に 10 件を出す。CI の job が上限
+# (tests.yml の timeout-minutes) に近づいたとき、どのテストが時間を食っているかをログだけで読むため。
+# 並列腕の所要は同時に走る他のテストの負荷を含むので、単独で走らせたときより長く出る。
+define print_slowest_tests
+if [ -s "$(1)" ]; then echo ""; echo "[時間] 長いテスト上位 10 件 (秒。並列腕は同時に走る他のテストの負荷を含む):"; sort -rn "$(1)" | head -10 | sed 's/^/  /'; fi
+endef
+
 define append_test_summary
 if [ -n "$${TEST_FAILS_SUMMARY:-}" ]; then cat "$(1)" >> "$$TEST_FAILS_SUMMARY"; fi; \
 if [ -n "$${TEST_SKIPS_SUMMARY:-}" ]; then cat "$(2)" >> "$$TEST_SKIPS_SUMMARY"; fi
@@ -269,11 +276,12 @@ fails=$$(mktemp); skips=$$(mktemp); \
 suite_td=$$(mktemp -d) && [ -n "$$suite_td" ] || { echo "✗ 使い捨て TMPDIR を作れない (mktemp -d 失敗)。隔離なしで走らせない" >&2; exit 1; }; \
 trap 'rm -rf "$$suite_td"' EXIT; $(call record_interrupt_trap,rm -rf "$$suite_td"); \
 $(call bare_bin_guard,$$suite_td/bare-bin-stubs); \
-i=0; \
+durs="$$suite_td/durations"; i=0; \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; \
-	i=$$((i+1)); td="$$suite_td/$$i"; mkdir -p "$$td"; \
+	i=$$((i+1)); td="$$suite_td/$$i"; mkdir -p "$$td"; st=$$(date +%s); \
 	if $(TEST_CHILD_ENV) TMPDIR="$$td" "$$t" </dev/null; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; \
-	rm -rf "$$td"; done; \
+	echo "$$(( $$(date +%s) - st )) $$t" >> "$$durs"; rm -rf "$$td"; done; \
+$(call print_slowest_tests,$$durs); \
 $(call record_failed_tests,sh,$$fails); $(call append_test_summary,$$fails,$$skips); \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails" "$$skips"; exit 1; fi; \
@@ -309,15 +317,17 @@ fails=$$(mktemp); skips=$$(mktemp); ran=$$(mktemp); exp=$$(mktemp); miss=$$(mkte
 suite_td=$$(mktemp -d) && [ -n "$$suite_td" ] || { echo "✗ 使い捨て TMPDIR を作れない (mktemp -d 失敗)。隔離なしで走らせない" >&2; exit 1; }; \
 trap 'rm -rf "$$suite_td"' EXIT; $(call record_interrupt_trap,rm -rf "$$suite_td"); \
 $(call bare_bin_guard,$$suite_td/bare-bin-stubs); \
-printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" RAN="$$ran" SUITE_TD="$$suite_td" xargs -P $(NPROC) -n 1 sh -c \
-	'out=$$(mktemp); td=$$(mktemp -d "$$SUITE_TD/XXXXXX") || exit 1; $(TEST_CHILD_ENV) TMPDIR="$$td" "$$0" >"$$out" 2>&1; rc=$$?; \
-	rm -rf "$$td"; echo "$$0" >> "$$RAN"; \
-	if [ "$$rc" -eq 0 ]; then echo "[ok] $$0"; \
-	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; echo "$$0" >> "$$SKIPS"; \
-	else echo "[FAIL] $$0"; cat "$$out"; echo "$$0" >> "$$FAILS"; rm -f "$$out"; exit 1; fi; rm -f "$$out"' || xrc=$$?; \
+durs="$$suite_td/durations"; \
+printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" RAN="$$ran" DURS="$$durs" SUITE_TD="$$suite_td" xargs -P $(NPROC) -n 1 sh -c \
+	'out=$$(mktemp); td=$$(mktemp -d "$$SUITE_TD/XXXXXX") || exit 1; st=$$(date +%s); $(TEST_CHILD_ENV) TMPDIR="$$td" "$$0" >"$$out" 2>&1; rc=$$?; \
+	d=$$(( $$(date +%s) - st )); rm -rf "$$td"; echo "$$0" >> "$$RAN"; echo "$$d $$0" >> "$$DURS"; \
+	if [ "$$rc" -eq 0 ]; then echo "[ok] $$0 ($${d}s)"; \
+	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0 ($${d}s)"; cat "$$out"; echo "$$0" >> "$$SKIPS"; \
+	else echo "[FAIL] $$0 ($${d}s)"; cat "$$out"; echo "$$0" >> "$$FAILS"; rm -f "$$out"; exit 1; fi; rm -f "$$out"' || xrc=$$?; \
 printf '%s\n' "$$tests" | LC_ALL=C sort > "$$exp"; LC_ALL=C sort "$$ran" > "$$ran.s"; \
 LC_ALL=C comm -23 "$$exp" "$$ran.s" > "$$miss"; \
-echo ""; echo "[並列] 対象 $$(wc -l < "$$exp" | tr -d ' ') 件 / 結果を報告 $$(wc -l < "$$ran.s" | tr -d ' ') 件"; \
+echo ""; echo "[並列] 対象 $$(wc -l < "$$exp" | tr -d ' ') 件 / 結果を報告 $$(wc -l < "$$ran.s" | tr -d ' ') 件 (並列度 $(NPROC))"; \
+$(call print_slowest_tests,$$durs); \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$miss" ]; then { echo ""; echo "✗ 結果を報告しなかったテスト $$(wc -l < "$$miss" | tr -d ' ') 件 (走ったかどうか自体が不明。xargs は utility がシグナルで死ぬか exit 255 だと残りの入力を捨てる):"; sed 's/^/  /' "$$miss"; } >&2; rc=1; fi; \
 if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rc=1; fi; \
