@@ -130,7 +130,7 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 	m := newTest(t)
 	var r ExecRequest
 	if c.argv != nil {
-		r = ExecRequest{Dir: m.workDir(), Argv: c.argv, Env: m.execEnv()}
+		r = ExecRequest{Dir: m.WorkDir(), Argv: c.argv, Env: m.execEnv()}
 	} else {
 		m.HandleKey("!")
 		typeText(m, c.cmd)

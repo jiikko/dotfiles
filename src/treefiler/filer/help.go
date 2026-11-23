@@ -14,6 +14,9 @@ type helpSection struct {
 	keys  [][2]string
 }
 
+// helpQuit は終了の行 (cd して終える起動では helpSections() が差し替える)。
+var helpQuit = [2]string{"q esc", "終了 (タイルの上では 1 枚閉じる)"}
+
 // helpSections はキー一覧 (treebeard の KEYS から、写さないもの (マウス・音声・画像) を除いて日本語にした)。
 // 2 段に組むときは節の並びのまま前後に割るので、読む順に並べる。
 var helpSections = []helpSection{
@@ -70,9 +73,30 @@ var helpSections = []helpSection{
 		{"s", "シェルを開く (抜けると戻る)"},
 	}},
 	{"その他", [][2]string{
-		{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
+		helpQuit,
 		{"?", "このキー一覧"},
 	}},
+}
+
+// helpSections は ? の一覧。cd して終える起動 (Options.CdOnQuit) では、終了の行を q (cd する) と esc (しない) の 2 行に分ける。
+func (m *Model) helpSections() []helpSection {
+	if !m.cdOnQuit {
+		return helpSections
+	}
+	secs := make([]helpSection, 0, len(helpSections))
+	for _, s := range helpSections {
+		keys := make([][2]string, 0, len(s.keys)+1)
+		for _, k := range s.keys {
+			if k == helpQuit {
+				// タイルの上の q esc (1 枚閉じる) は「タイルの中」の節が書く。ここに足すと 100 桁の端末で説明が切れる
+				keys = append(keys, [2]string{"q", "そのフォルダへ cd して終了"}, [2]string{"esc", "cd せずに終了"})
+				continue
+			}
+			keys = append(keys, k)
+		}
+		secs = append(secs, helpSection{title: s.title, keys: keys})
+	}
+	return secs
 }
 
 const (
@@ -120,7 +144,7 @@ func (m *Model) drawHelp(c *canvas) {
 	if cw := min(helpColMax, (inner-helpColGap)/2); cw >= helpColMin {
 		ncol, colW = 2, cw
 	}
-	cols := helpColumns(helpSections, ncol)
+	cols := helpColumns(m.helpSections(), ncol)
 	need := 0
 	for _, col := range cols {
 		need = max(need, len(col))

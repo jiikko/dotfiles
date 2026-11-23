@@ -258,6 +258,9 @@ add-zsh-hook precmd _dotfiles_git_prompt
 source $HOME/dotfiles/zshlib/_src_env.zsh
 add-zsh-hook chpwd _src_env_apply
 _src_env_apply
+
+# tf (treefiler) を q で閉じたら、そのフォルダへ cd する。仕組みは zshlib/_treefiler_cd.zsh 冒頭
+source $HOME/dotfiles/zshlib/_treefiler_cd.zsh
 PROMPT='%B%50<..<%~ %b${_DOTFILES_GIT_PROMPT}'
 PROMPT+='%(?.%(!.%F{white}❯%F{yellow}❯%F{red}.%F{blue}❯%F{cyan}❯%F{green})❯.%F{red}❯❯❯)%f '
 ##========================================================##

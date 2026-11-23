@@ -309,7 +309,7 @@ assert_guard_branch "repo 内" "popup:$repo_dir" "$REPLY"
 
 # treefiler の popup は prefix f だけ。prefix なしの C-f はペインの C-f (zsh の 1 文字右・nvim のページ送り) を奪うので bind しない。
 print "[test-tmux:zsh] checking the treefiler popup is bound to prefix f only (not root C-f)"
-tf_bindings=$("${TMUX_CMD[@]}" list-keys | grep -F 'bin/treefiler' || true)
+tf_bindings=$("${TMUX_CMD[@]}" list-keys | grep -F 'scripts/tmux_treefiler_popup.sh' || true)
 if ! grep -qE -- '-T prefix +f ' <<< "$tf_bindings"; then
   print -u2 "[test-tmux:zsh] prefix f の treefiler の popup の bind が見つかりません:\n$tf_bindings"
   exit 1

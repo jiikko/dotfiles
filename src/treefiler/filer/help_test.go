@@ -10,7 +10,11 @@ import (
 
 func helpScreen(t *testing.T, w, h int) []string {
 	t.Helper()
-	m := newTest(t)
+	return helpScreenOf(t, newTest(t), w, h)
+}
+
+func helpScreenOf(t *testing.T, m *Model, w, h int) []string {
+	t.Helper()
 	m.Resize(w, h)
 	settle(m)
 	m.HandleKey("?")
@@ -21,8 +25,18 @@ func helpScreen(t *testing.T, w, h int) []string {
 	return v
 }
 
-// 広い端末では、節ごとに見出しを付けて 2 段に組み、どの説明も切らずに出す。
+// 広い端末では、節ごとに見出しを付けて 2 段に組み、どの説明も切らずに出す (cd して終える起動の一覧も)。
 func TestHelpGroupsKeysIntoSectionsInTwoColumns(t *testing.T) {
+	cd := newTest(t)
+	cd.cdOnQuit = true
+	cdAll := strings.Join(helpScreenOf(t, cd, 160, 50), "\n")
+	for _, s := range cd.helpSections() {
+		for _, kv := range s.keys {
+			if !strings.Contains(cdAll, kv[1]) {
+				t.Errorf("cd して終える起動: %s の %q の説明が切れずに出ていない: %q", s.title, kv[0], kv[1])
+			}
+		}
+	}
 	v := helpScreen(t, 160, 50)
 	all := strings.Join(v, "\n")
 	for _, s := range helpSections {

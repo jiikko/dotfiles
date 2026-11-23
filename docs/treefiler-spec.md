@@ -19,7 +19,7 @@
 | プレビュー | 中央 90% のポップアップ 1 枚 (§4.6) | **ドラクエの対戦画面のように重なるタイル** (§0.2)。枠の中の飾り (§8.3) は写す |
 | `q` `Esc` | 終了 (`q` は cd 連携) | glogx 流・issues viewer に揃える: タイルの上は 1 枚閉じる / 木の上は **glogx ごと終了** / `F` か `H` (横断キー。どの全画面からも同じ) で閉じて **git log 一覧へ戻る**。`Ctrl-C` は glogx の即終了。F を出したまま終えたら (`q` `Esc` `Ctrl-G` `Ctrl-C`)、30 分以内に同じ dir で開いた glogx は同じ場所の F から始まる (issue 710) |
 | tmux の prefix `f` | 無い | **`bin/treefiler` を tmux の bind (`prefix f`) で開いた popup では、prefix → `f` でも閉じる** (2026-10-29 ユーザー依頼「prefix+f で起動したので prefix+f で閉じて欲しい」)。popup の中のキーは tmux の bind を通らず届くので treefiler が受ける。閉じるキーは bind が `-e TREEFILER_TOGGLE_KEY=f` で渡し、渡されないとき (ペインで直接起動・glogx の `F`) は使えない。prefix は起動時に tmux へ聞いた今の値 (`tuikit/termcaps.TmuxPrefix`)。prefix は飲み、その後の `f` 以外のキーは普通に動作する (glogx の prefix の扱いに揃える) |
-| `q` の cd 連携 (`--cwd-file`) | あり | **写さない** |
+| `q` の cd 連携 (`--cwd-file`) | あり | **単体の treefiler (`tf` と tmux の prefix f) では写す。glogx の `F` には写さない** (2026-11-23 ユーザー依頼「filetree を呼び出した shell で cd したい。q で閉じたら cd している感じ」「C-t f も同じで」。issue 1106。2026-10-07 の「写さない」は glogx の F を前提に決めたもの)。木の上の `q` で、カーソルのフォルダ (ファイルの上ならその親。`s` と同じ) へ cd する。`Esc`・`Ctrl-C`・popup の prefix f は cd しない (cd せずに抜ける道)。フラグのあるときはキー案内の q を `cd`、`?` の一覧の終了の行を q と esc の 2 行にする。仕組みは `zshlib/_treefiler_cd.zsh` と `scripts/tmux_treefiler_popup.sh` の冒頭 |
 | `o` `O` / ソート | 巡回・逆順 | **ソートは `S` (Sort by の巡回: name → modified → size) と設定の板 (Sort by / Reverse)** (issue 720。フォルダは自身の値で比べ、裏の走査の結果は使わない)。`o` は glogx の「外のアプリで開く」のまま (`open <path>`)。`O` は「Finder で表示」(`open -R <path>`。issue 719) |
 | dotfile の切り替え | `.` (§6.1) | **`.` と `I` の両方** (2026-10-24 ユーザー依頼「I を押したら隠しファイル・フォルダを表示トグルにして欲しい」)。どちらも設定の Dotfiles を反転して保存する |
 | `y` `Y` | なし | **パスをコピー** (`y` = 絶対パス・`Y` = root からの相対パス。glogx の `y` と同じ「素の値をコピー」。クリップボードは `subproc/clipboard`。issue 718) |
@@ -400,7 +400,7 @@ ground 切替で使える heat palette が変わる (settings.rs: `Ground::palet
 5. `● ` (heat 色) + `{ago}` + 未完なら ` (partial)` (text)。`ago`: `{s}s ago` / `{m}m ago` / `{h}h ago` / `{d}d ago` (<365d) / `{y:.1}y ago`。
 6. 空白 3 個 (muted)。
 7. 凡例 (legend 設定 on かつ幅に余裕): `now ` (muted) + 停止点 7 個の `▮` (各 heat 色) + ` old   ` (muted)。
-8. キー案内 (キーは太字 `route`、説明は muted): `!` ` cmd  `、`s` ` shell  `、`q` ` quit  ` (cd 連携なしなら `quit`)、`?` ` keys `。
+8. キー案内 (キーは太字 `route`、説明は muted): `!` ` cmd  `、`s` ` shell  `、`q` ` quit  ` (cd 連携のある起動では ` cd `。§0.1)、`?` ` keys `。
 
 幅の落とし方: `base = 右の既存幅合計 + 24`、`hw` = 案内 4 つの幅合計、`legend_w = 4 + 7 + 7`。`w >= base+legend_w+hw` なら凡例+4 案内、`w >= base+hw` なら凡例なし+4 案内、それ以外は `?` 案内のみ (凡例は `w >= base+legend_w+? 案内幅` のときだけ)。
 
@@ -553,7 +553,7 @@ POPUP_T のばね `open` (0=カーソル行の 1 行 pill、1=全開)。矩形 =
 | `?` | help をトグル |
 | `!` | コマンド行を開く |
 | `s` | シェル |
-| `q` | 終了 (cd 連携は写さないので単に終了) |
+| `q` | 終了 (cd 連携は単体の起動でだけ写す。§0.1) |
 | `Esc` / `Ctrl-C` | 終了 (explode 中の Esc は explode 中断のみ) |
 | `o` `O` | ソート切替 — **写さない** (treefiler では `o` = 外のアプリで開く・`O` = Finder で表示、ソートの巡回は `S`。§0.1) |
 | `y` `Y` | (treebeard に無い) treefiler ではパスをコピー (絶対 / root からの相対。§0.1) |
@@ -687,7 +687,7 @@ Remember place (places.rs): `$XDG_STATE_HOME`(絶対) か `~/.local/state` の `
 - **`C`**: README「collapse everything off the cursor path」。実装は祖先以外すべてを畳むので、カーソル自身が展開中のフォルダも畳まれる (`collapse_others`: `path[..len-1]` の祖先だけ展開を残す)。
 - **`g` `G` / `Home` `End`**: README 表は「first / last」。実装は**兄弟 (そのフォルダ内) の先頭/末尾**で、Step through 設定に依らない (Step through の項は README にも書いてある)。
 - **`J` `K` と `PgUp` `PgDn`**: README 表は同列に「jump 10」。実装では J/K は Step through に従い、PgUp/PgDn は常に列内。
-- **help の `q / esc`**: help は「quit (q + tb.bash: cd there)」。cd 連携を写さないなら文言を変える。
+- **help の `q / esc`**: help は「quit (q + tb.bash: cd there)」。treefiler では cd 連携のある起動でだけ q と esc を分けて書く (§0.1)。
 - **README のキー表に無い入力**: 検索中の `Ctrl-N` / `Ctrl-P`、`BackTab`、プロンプトの履歴、`i` (画像プレビューで picker があるとき)。
 - **Linux/macOS 前提・ビルド**: Cargo の bin は `src/main.rs`、このディレクトリはフラット (`audio.rs` / `alsa.rs` は無い。`mod audio` は main.rs が宣言)。
 - **`reload` (`r`)**: README「reload, re-walking heat deep inside closed folders」。実装は children を捨てて再読するので、配下の展開状態も失う (記述なし)。

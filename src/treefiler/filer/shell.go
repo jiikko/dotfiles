@@ -82,7 +82,8 @@ func userShell() string {
 }
 
 // workDir はシェルを起こすフォルダ (カーソルがフォルダならそれ、ファイルなら親)。
-func (m *Model) workDir() string {
+// WorkDir は `!` と `s` の作業フォルダで、cd して終える (--cwd-file) ときの行き先でもある。
+func (m *Model) WorkDir() string {
 	if m.cur.dir {
 		return m.cur.path()
 	}
@@ -113,7 +114,7 @@ func (m *Model) requestEdit(path string) {
 
 // requestShell は `s` (そのフォルダで対話のシェル)。
 func (m *Model) requestShell() {
-	m.exec = &ExecRequest{Dir: m.workDir(), Argv: []string{userShell(), "-i"}, Env: m.execEnv()}
+	m.exec = &ExecRequest{Dir: m.WorkDir(), Argv: []string{userShell(), "-i"}, Env: m.execEnv()}
 }
 
 // promptKey は `!` の入力中のキー。lineedit の編集キーを先に渡し、Enter / Esc / 履歴だけを自分で捌く。
@@ -144,7 +145,7 @@ func (m *Model) promptKey(key, text string) {
 			p.history = p.history[:historyKeep]
 		}
 		appendHistory(historyPath(), cmd) // 続けて同じでも足す (読むときに畳む。history.go)
-		m.exec = &ExecRequest{Dir: m.workDir(), Argv: []string{"/bin/sh", "-c", waitIfQuick, "treefiler", userShell(), cmd}, Env: m.execEnv()}
+		m.exec = &ExecRequest{Dir: m.WorkDir(), Argv: []string{"/bin/sh", "-c", waitIfQuick, "treefiler", userShell(), cmd}, Env: m.execEnv()}
 	case "esc", "ctrl+c":
 		p.active = false
 	case "up":

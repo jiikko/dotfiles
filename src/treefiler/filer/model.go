@@ -24,6 +24,9 @@ type Options struct {
 	// Unsynced は、外側の端末が同期出力を反映しない (書きかけのフレームを描く。tuikit/termcaps.SyncedOutput)。
 	// true なら、縦に 2 行以上動く配置の変わり目で、ノードを流さずに寄せ切る (bigShift)
 	Unsynced bool
+	// CdOnQuit は、q で終えると呼び出し側が WorkDir へ cd する (bin/treefiler の --cwd-file)。キー案内と ? の一覧の q の説明だけを変える。
+	// glogx の F は渡さない (q は glogx ごと終えるだけ)
+	CdOnQuit bool
 }
 
 // Result はキーを処理した結果、呼び出し側にしてほしいこと。
@@ -64,6 +67,7 @@ type Model struct {
 	shut       shutTiles // q で閉じたばかりのタイル (Place が q q で抜けたときにも記憶へ載せる。places.go)
 	moving     bool
 	unsynced   bool // Options.Unsynced
+	cdOnQuit   bool // Options.CdOnQuit
 	lastAdv    time.Time
 	notices    []Notice
 	nameW      []int  // 列ごとの最長の名前の幅 (layout が数える。詳細の右揃えに使う)
@@ -155,7 +159,7 @@ func New(dir string, opts Options) (*Model, error) {
 	// moving は最初から true: 起動時のフェードインがある。false で始めると、呼び出し側が「動いていないので tick を回さない」と
 	// 判断し、透明のまま次のキーまで何も見えない (glogx の TestFilerAnimationAdvancesOnTickAndStops が捕まえた)
 	m := &Model{root: root, cur: root, startDir: root.abs, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true,
-		walker: newWalker(), recs: map[string]walkResult{}, watch: newWatcher(), ripples: map[*node]ripple{}, unsynced: opts.Unsynced}
+		walker: newWalker(), recs: map[string]walkResult{}, watch: newWatcher(), ripples: map[*node]ripple{}, unsynced: opts.Unsynced, cdOnQuit: opts.CdOnQuit}
 	if m.now == nil {
 		m.now = time.Now //nolint:forbidigo // 注入の既定値
 	}
@@ -223,6 +227,14 @@ func (m *Model) inTree(n *node) bool {
 // 呼び出し側は合図を受けたら Advance を呼んで取り込み、また Changed を待つ。Close で閉じられる (待っている側が終わる)。
 func (m *Model) Changed() <-chan struct{} {
 	return m.watch.start() // Live が off でもチャネルは返す (止めると、on に戻したときに待つ者がいない。watcher が読み比べを休むだけ)
+}
+
+// quitWord はキー案内の q の語 (cd して終える起動では cd)。
+func (m *Model) quitWord() string {
+	if m.cdOnQuit {
+		return "cd"
+	}
+	return "quit"
 }
 
 // Close はライブ更新のポーリングと取得中の diff を止める (glogx でファイラーを閉じたとき)。
@@ -360,7 +372,7 @@ func (m *Model) promptPrefix() string {
 		return " 移動 : "
 	case promptShell:
 	}
-	return " " + termwidth.Truncate(baseName(m.workDir()), 24, "…") + " $ "
+	return " " + termwidth.Truncate(baseName(m.WorkDir()), 24, "…") + " $ "
 }
 
 const searchPrefix = " / "
@@ -1570,7 +1582,7 @@ func (m *Model) statusBar(c *canvas) {
 	}
 	legend = append(legend, seg{" old   ", cMuted, false})
 	hints := []seg{{"!", cAccRoute, true}, {" cmd  ", cMuted, false}, {"s", cAccRoute, true}, {" shell  ", cMuted, false},
-		{"/", cAccRoute, true}, {" find  ", cMuted, false}, {"?", cAccRoute, true}, {" keys  ", cMuted, false}, {"q", cAccRoute, true}, {" quit ", cMuted, false}}
+		{"/", cAccRoute, true}, {" find  ", cMuted, false}, {"?", cAccRoute, true}, {" keys  ", cMuted, false}, {"q", cAccRoute, true}, {" " + m.quitWord() + " ", cMuted, false}}
 	if m.frontTile() != nil {
 		hints = []seg{{"tab", cAccRoute, true}, {" link  ", cMuted, false}, {"e", cAccRoute, true}, {" edit  ", cMuted, false}, {"q", cAccRoute, true}, {" close ", cMuted, false}}
 	}

@@ -62,6 +62,7 @@ ZSH_SYNTAX_FILES := \
   zshlib/_repair.zsh \
   zshlib/_src_env.zsh \
   zshlib/_tmux_session.zsh \
+  zshlib/_treefiler_cd.zsh \
   zshlib/_tmux_window_name.zsh
 
 # shellcheck で静的解析する shell スクリプト (sh/bash 互換) = 発見された全 shell script から

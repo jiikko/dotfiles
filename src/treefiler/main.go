@@ -1,6 +1,6 @@
 // treefiler は横に育つ木のファイラー (bin/treefiler)。glogx の F と同じ画面を単体で開く。
 //
-//	treefiler [DIR]   DIR (既定はカレントディレクトリ) を root にして開く
+//	treefiler [--cwd-file PATH] [DIR]   DIR (指定しなければカレントディレクトリ) を root にして開く
 //
 // 画面の部品は filer パッケージ (glogx からも使う)。ここは端末と toast の面倒だけを見る。
 // 仕様は docs/treefiler-spec.md。
@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
+	"atomicfile"
 	"subproc"
 	"treefiler/filer"
 	"treefiler/perflog"
@@ -74,6 +76,10 @@ type app struct {
 	perf              *perflog.Log     // nil = 測らない
 	debug             *debugLog        // nil = 状態を書かない (TREEFILER_DEBUG)
 	clock             func() time.Time // nil = time.Now (テストが tick の張り方を実時間に依らず見るために差し替える)
+	// cwdFile は q で終えたときに行き先 (filer.WorkDir) を書くファイル ("" = 書かない)。読んで cd するのは呼び出したシェル
+	// (_zshrc の tf)。esc・Ctrl-C・prefix の閉じるキーでは書かない (cd せずに抜ける道)
+	cwdFile string
+	cdTo    string // q で終えたときの行き先 (main が Run の後に cwdFile へ書く)
 }
 
 func (a *app) Init() tea.Cmd {
@@ -160,6 +166,9 @@ func (a *app) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch a.f.HandleInput(msg.String(), msg.Text) {
 		case filer.Quit:
+			if a.cwdFile != "" && msg.String() == "q" {
+				a.cdTo = a.f.WorkDir()
+			}
 			return a.quit()
 		case filer.Exec:
 			if r, ok := a.f.TakeExec(); ok && len(r.Argv) > 0 {
@@ -238,63 +247,103 @@ func (a *app) view() tea.View {
 	return v
 }
 
-const usage = `usage: treefiler [DIR]
+const usage = `usage: treefiler [--cwd-file PATH] [DIR]
 
-DIR (既定はカレントディレクトリ) を root にして、横に育つ木のファイラーを開く。
+DIR (指定しなければカレントディレクトリ) を root にして、横に育つ木のファイラーを開く。
 キーの一覧は中で ? を押す。設定は , (~/.config/treefiler/treefiler.toml)。
+
+  --cwd-file PATH  q で閉じたとき、カーソルのフォルダ (ファイルの上ならその親) の絶対パスを PATH に書く
+                   (改行を付けない)。esc・Ctrl-C で閉じたときは書かない (PATH は触らない)。
+                   zsh の tf (_zshrc) がこれを読んで cd する。rc は 0 = 正常に終えた・1 = 起動か書き込みの失敗・2 = 引数の誤り
 `
 
-func main() {
-	dir := "."
-	switch len(os.Args) {
-	case 1:
-	case 2:
-		if os.Args[1] == "-h" || os.Args[1] == "--help" {
-			fmt.Print(usage)
-			return
+// parseArgs は引数から root と --cwd-file を取り出す。help は -h / --help のとき。
+func parseArgs(args []string) (dir, cwdFile string, help bool, err error) {
+	dir = "."
+	var dirSet bool
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-h" || a == "--help":
+			return "", "", true, nil
+		case a == "--cwd-file":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", false, errors.New("--cwd-file にパスがありません")
+			}
+			i++
+			cwdFile = args[i]
+		case strings.HasPrefix(a, "--cwd-file="):
+			if cwdFile = strings.TrimPrefix(a, "--cwd-file="); cwdFile == "" {
+				return "", "", false, errors.New("--cwd-file にパスがありません")
+			}
+		case strings.HasPrefix(a, "-") && a != "-":
+			return "", "", false, fmt.Errorf("知らないオプション: %s", a)
+		case dirSet:
+			return "", "", false, errors.New("DIR は 1 つだけ")
+		default:
+			dir, dirSet = a, true
 		}
-		dir = os.Args[1]
-	default:
+	}
+	return dir, cwdFile, false, nil
+}
+
+func main() { os.Exit(run(os.Args[1:], nil)) }
+
+// run は main の本体で、終了コードを返す (usage の rc)。extra はテストが入力と出力を差し替える tea の Option (nil なら端末)。
+func run(args []string, extra []tea.ProgramOption) int {
+	dir, cwdFile, help, err := parseArgs(args)
+	switch {
+	case help:
+		fmt.Print(usage)
+		return 0
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "treefiler:", err)
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		return 2
 	}
 	perfPath := os.Getenv(perfLogEnv)
 	os.Unsetenv(perfLogEnv) //nolint:errcheck // `!` / `s` で起こす子 (その中の treefiler) に同じログへ追記させない
 	debugPath := os.Getenv(debugEnv)
 	os.Unsetenv(debugEnv) //nolint:errcheck // 同じ理由
 	unsynced := !termcaps.SyncedOutput(os.Getenv, subproc.Output)
-	f, err := filer.New(dir, filer.Options{Unsynced: unsynced})
+	f, err := filer.New(dir, filer.Options{Unsynced: unsynced, CdOnQuit: cwdFile != ""})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "treefiler:", err)
-		os.Exit(1)
+		return 1
 	}
 	if widthenv.EastAsianAmbiguous() { // 支持しない幅の env は黙って枠を崩さず一度知らせる (glogx の main と同じ。alt screen の後に見える)
 		fmt.Fprintln(os.Stderr, "🚨 "+widthenv.Message)
 	}
-	a := &app{f: f, toggleKey: os.Getenv(toggleKeyEnv)}
+	a := &app{f: f, toggleKey: os.Getenv(toggleKeyEnv), cwdFile: cwdFile}
 	opts := termsync.ProgramOptions(unsynced)
 	if perfPath != "" {
 		if a.perf, err = perflog.Open(perfPath, time.Now); err != nil {
 			fmt.Fprintln(os.Stderr, "treefiler:", err)
-			os.Exit(1)
+			return 1
 		}
 		opts = append(opts, tea.WithOutput(perflog.Output{File: os.Stdout, Log: a.perf}))
 	}
 	if debugPath != "" {
 		if a.debug, err = openDebugLog(debugPath, time.Now); err != nil {
 			fmt.Fprintln(os.Stderr, "treefiler:", err)
-			os.Exit(1)
+			return 1
 		}
 	}
-	_, err = tea.NewProgram(a, opts...).Run()
+	_, err = tea.NewProgram(a, append(opts, extra...)...).Run()
 	if cerr := a.perf.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
 	if cerr := a.debug.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
+	if err == nil && a.cdTo != "" {
+		// 呼び出したシェルが読み終える前に途中までのパスを見ないよう、atomicfile で置き換える
+		if werr := atomicfile.Write(cwdFile, []byte(a.cdTo), 0o600); werr != nil {
+			err = fmt.Errorf("cd 先を書けません: %w", werr)
+		}
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "treefiler:", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

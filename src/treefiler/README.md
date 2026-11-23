@@ -6,11 +6,13 @@
 (MIT OR Apache-2.0) を写している。
 
 ```sh
-bin/treefiler [DIR]   # DIR (既定はカレントディレクトリ) を root にして開く
-tf [DIR]              # bin/tf は bin/treefiler の短い名前
+bin/treefiler [--cwd-file PATH] [DIR]   # DIR (指定しなければカレントディレクトリ) を root にして開く
+tf [DIR]                                # zsh の関数 (zshlib/_treefiler_cd.zsh)。q で閉じるとそのフォルダへ cd する
 ```
 
 tmux では `prefix + f` (`C-t f`) で、いま見ているペインの cwd を root にした popup が開く (`_tmux.conf`)。
+`tf` と `C-t f` では、`q` で閉じると呼び出したシェル (popup なら開いたペインの zsh) がカーソルのフォルダ (ファイルの上ならその親) へ cd する。
+`esc`・`Ctrl-C` は cd せずに閉じる。`command tf`・`bin/treefiler`・glogx の `F` は cd しない (issue 1106)。
 glogx からは `F` で同じ画面が開く。仕様とキーの一覧は [`docs/treefiler-spec.md`](../../docs/treefiler-spec.md)。
 
 ## キー (木)
@@ -49,7 +51,7 @@ glogx からは `F` で同じ画面が開く。仕様とキーの一覧は [`doc
 | `r` | 読み直す (開いていたフォルダは開いたまま) |
 | `!` | 選んだフォルダで 1 行のコマンドを実行 (`$f` が選んだパス。`↑` `↓` で履歴 (閉じても `~/.config/treefiler/treefiler-history` に残る。先頭を空白にしたコマンドは残さない)。3 秒未満で終わったら出力を読めるようキーを待つ) |
 | `s` | 選んだフォルダでシェルを開く (抜けると戻って読み直す) |
-| `q` `Esc` `Ctrl-C` | 終了 |
+| `q` `Esc` `Ctrl-C` | 終了 (`tf` と `C-t f` では `q` だけ cd する) |
 
 ## キー (タイル)
 
