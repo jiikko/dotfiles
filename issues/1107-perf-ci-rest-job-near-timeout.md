@@ -47,4 +47,21 @@
     `tests/issues/test_issue_done.sh` 44、`tests/claude/test_ja_textlint_on_edit.sh` 44
   - 直列腕の上位は `tests/tmux/test_server_watchdog.sh` 41、`tests/tmux/test_schedule_keys.sh` 31、`tests/tmux/test_socket_cleanup.sh` 25
   - job の所要はテストの中身がほぼ同じ commit の間でも 11〜17 分を揺れる。1 本の run の値で効果を言わない
-- [ ] 6. 5 を見て、CPU を食う上位のテストを軽くするか、rest を 2 つの job に分けるか (runner を 1 台増やす。repo は public なので分単位の課金は無い) を決める
+- [x] 6. 5 を見て決めた: ユーザーの判断 (2026-11-24) で rest を 2 つの job に分ける (commit「perf(ci): rest の並列腕を TEST_SHARD で 2 job に分ける」)
+  - Makefile の `TEST_SHARD=k/n`: 並列の runner が、発見したテストを `LC_ALL=C` の名前の順で交互に n 組へ振り、k 組目だけを走らせる。何も渡さなければ全部 (手元の `make test` は変わらない)
+  - tests.yml: rest = `test-runtime-rest TEST_SHARD=1/2` (構文・並列腕の半分・直列腕・bats)、rest2 = `test-discovered-rest-parallel TEST_SHARD=2/2`。依存は新しい `deps-group` で選ぶ (rest2 も rest と同じ)
+  - `scripts/check_ci_group_deps.sh` の 4: 組が rest の並列腕の make-target に字で書かれ、1/n〜n/n を 1 回ずつ持ち、test-runtime-rest がちょうど 1 つであること
+  - runner がテストへ `MAKEFLAGS`・`MFLAGS`・`MAKELEVEL`・`TEST_SHARD` を空で渡す (コマンド行の値が `MAKEFLAGS` に乗ってテストの中の make に届き、`tests/scripts/test_no_failfast_entrypoints.sh` の偽の suite まで組で割っていた。`MAKEFLAGS=' -- TEST_SHARD=1/2'` で再現し、直した後は緑)
+  - 実装をわざと壊してテストが落ちることを 12 か所で確かめた (組の振り分けのずれ・振り分けを呼ばない・組が空の断り・コメント行の除外・番号の照合・掛けた target・字以外の書き方・重複を消す・行末のコメント・子への MAKEFLAGS の漏れ・test-runtime-rest の数・行頭の固定)
+  - `make test`: 赤は `tests/claude/test_dangling_symlinks.sh` だけ (`~/.claude/skills` に残った古い link。この変更と無関係)
+- [ ] 7. CI で rest と rest2 の所要を確かめる (目安: どちらも 10 分を切る)
+
+## 反証レビュー (opus 3 周) の採否
+
+- 採った: 組を数えるだけで掛かる target を見ない / matrix の変数・env: の書き方を読まない / 重なりと理由の文言をテストが見ない / 組の中身を照合しない / `MAKEFLAGS` 経由でテストへ漏れる (P1。実行で再現) / 両方を並列腕だけにすると直列腕が消える / `make-target:` の行頭が固定されていない / workflow のパスにディレクトリ / `MFLAGS`・環境変数の `TEST_SHARD` の漏れ
+- 記録のみ:
+  - `TEST_SHARD` の値をシェルへ素の字で埋め込む (渡すのは開発者と workflow だけ)
+  - `TEST_SHARD` が下位の make へ届くことを本番の入口 (`test-runtime-rest`) で通すテストが無い (CI のログの `[並列]` の行の「組 1/2」で毎回読める)
+  - 組の無い rest の entry を組と並べても通す (2 回走るだけで、走らないテストは出ない)
+  - 検査 4 が見ない形: matrix の `exclude:`・job の `if:`・組の entry の依存の宣言 (`deps-group` など) の食い違い。引用符や flow 形式の make-target は落ちる側 (うるさい赤)
+- 確かめて影響なし: job 名の変更 (`dotfiles-tests (rest2)` が増える) は、master に branch protection も ruleset も無いので必須チェックに響かない (`gh api .../branches/master/protection` が 404、rulesets が空)

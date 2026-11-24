@@ -72,7 +72,7 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | `check_test_sleeps.sh` | テストに、理由の印の無い `sleep` / `time.Sleep` を足す (issue 615。待つなら shell は `tests/lib/wait_until.sh`、Go は `src/testwait`) | `sleep-ok: <分類>: <理由>` |
 | `check_pipefail_grep_q.sh` | pipefail 下の `… \| grep -q` (一致しても非 0 になる。issue 096) | `pipefail-grep-q: allow` |
 | `check_trigger_log_writers.sh` | 共有観測ログの書き手が `tt_trigger_log` 以外に増える (issue 079) | `trigger-log-writer: allow` |
-| `check_ci_group_deps.sh` | CI の heavy/rest 分割と Makefile の値の食い違い (issue 073 §3) | — |
+| `check_ci_group_deps.sh` | CI の heavy/rest 分割と Makefile の値の食い違い (issue 073 §3)・`tests.yml` の `TEST_SHARD` の組の欠けと重なり (issue 1107) | — |
 | `check_skip_exit_code.sh` | 丸ごと skip なのに `exit 0` (runner が `[ok]` と数える。issue 139) | `partial-skip: allow` |
 | `check_workflow_action_pins.sh` | 同じ Action が workflow 間で違うバージョン (issue 073 §1) | `action-pin: allow` |
 | `check_go_project_lanes.sh` | 新しい Go プロジェクトが CI レーン無しで入る (`src/*/go.mod` があるのに lint/test target・`src_<name>.yml`・paths filter (replace で取り込む共有 module の `src/<dir>/` も含めて)・`go.sum` (依存が無ければ空。無いと CI のキャッシュが毎回使われない) が欠ける / lint が `go_module_graph.sh` (replace の抜け。issue 787) を呼ばない / caller が `_go-project.yml` に渡す `dir` が `src/<name>` でない / paths が make lint の呼ぶ共有の script と設定 (`scripts/golangci_lint.sh`・`scripts/golangci_config.rb`・`scripts/golangci_ruleguard_key.rb`・`src/.golangci.yml`・`scripts/go_module_graph.sh`) を含まない。issue 203 / 出典 080・087) | — |

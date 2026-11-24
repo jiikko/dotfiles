@@ -180,7 +180,10 @@ endef
 
 # runner が起動する各テストへ空で渡す、runner 自身の集計先。テストの中で runner をわざと落とす make
 # (tests/scripts/test_test_fail_ledger.sh) が受け継ぐと、偽の失敗が外側の全腕合計と本物の記録に混ざる。
-TEST_CHILD_ENV := TEST_FAIL_LEDGER= TEST_FAILS_SUMMARY= TEST_SKIPS_SUMMARY= PATH="$$TEST_PATH"
+# MAKEFLAGS なども空にする: 外側の make がコマンド行で受けた値 (CI の TEST_SHARD=1/2 など) は MAKEFLAGS に乗り、
+# テストの中の make に届いて、偽の suite を組で割る (tests/scripts/test_no_failfast_entrypoints.sh が落ちた)。
+# コマンド行の値は環境変数としても子へ渡るので TEST_SHARD も空にする (本物の Makefile を読まない make や make -e が拾う)。
+TEST_CHILD_ENV := TEST_FAIL_LEDGER= TEST_FAILS_SUMMARY= TEST_SKIPS_SUMMARY= MAKEFLAGS= MFLAGS= MAKELEVEL= TEST_SHARD= PATH="$$TEST_PATH"
 
 # TEST_CHILD_ENV の PATH を用意する。bin にしか無い道具を素の名前で呼ぶと、手元でも CI と同じく rc=127 で落ちる
 # (CI の PATH には dotfiles の bin/ が無い。仕組みと検出しない形は scripts/test_bare_bin_guard.sh の冒頭)。
@@ -310,9 +313,24 @@ endef
 # (parallel-each 自体は 2026-09-08 にこの repo から出て good-chrome-extensions へ移った。
 # 不採用の理由は道具の所在に依らないので、判断はそのまま残す。)
 NPROC := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+# TEST_SHARD=k/n を渡すと、並列の runner は発見したテストを n 組に振り、k 組目だけを走らせる (CI で 1 つの腕を
+# 複数の job に分けるため。組は .github/workflows/tests.yml の matrix が 1/n〜n/n を全部持つことを
+# scripts/check_ci_group_deps.sh が検査する)。振り分けは名前の順 (LC_ALL=C) で交互にする: どの job も同じ
+# 一覧から同じ組を引き、足したテストはどれかの組に必ず入る。何も渡さなければ全部を走らせる。
+TEST_SHARD :=
+define test_shard_filter
+case "$(TEST_SHARD)" in \
+	'') ;; \
+	[123456789]/[123456789]) sk=$$(printf '%s' "$(TEST_SHARD)" | cut -d/ -f1); sn=$$(printf '%s' "$(TEST_SHARD)" | cut -d/ -f2); \
+		tests=$$(printf '%s\n' "$$tests" | LC_ALL=C sort | awk -v k="$$sk" -v n="$$sn" '(NR - 1) % n == k - 1'); \
+		[ -n "$$tests" ] || { echo "✗ TEST_SHARD=$(TEST_SHARD) の組が 0 件 (組の番号が組の数を超えているか、テストが組の数より少ない)" >&2; exit 1; } ;; \
+	*) echo "✗ TEST_SHARD は k/n (1 桁の数) で渡す: '$(TEST_SHARD)'" >&2; exit 1 ;; \
+esac
+endef
 define run_tests_parallel
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
+$(call test_shard_filter); \
 fails=$$(mktemp); skips=$$(mktemp); ran=$$(mktemp); exp=$$(mktemp); miss=$$(mktemp); xrc=0; rc=0; \
 suite_td=$$(mktemp -d) && [ -n "$$suite_td" ] || { echo "✗ 使い捨て TMPDIR を作れない (mktemp -d 失敗)。隔離なしで走らせない" >&2; exit 1; }; \
 trap 'rm -rf "$$suite_td"' EXIT; $(call record_interrupt_trap,rm -rf "$$suite_td"); \
@@ -326,7 +344,7 @@ printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" RAN="$$ran" DURS="$$du
 	else echo "[FAIL] $$0 ($${d}s)"; cat "$$out"; echo "$$0" >> "$$FAILS"; rm -f "$$out"; exit 1; fi; rm -f "$$out"' || xrc=$$?; \
 printf '%s\n' "$$tests" | LC_ALL=C sort > "$$exp"; LC_ALL=C sort "$$ran" > "$$ran.s"; \
 LC_ALL=C comm -23 "$$exp" "$$ran.s" > "$$miss"; \
-echo ""; echo "[並列] 対象 $$(wc -l < "$$exp" | tr -d ' ') 件 / 結果を報告 $$(wc -l < "$$ran.s" | tr -d ' ') 件 (並列度 $(NPROC))"; \
+echo ""; echo "[並列] 対象 $$(wc -l < "$$exp" | tr -d ' ') 件 / 結果を報告 $$(wc -l < "$$ran.s" | tr -d ' ') 件 (並列度 $(NPROC)$(if $(TEST_SHARD),、組 $(TEST_SHARD)))"; \
 $(call print_slowest_tests,$$durs); \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$miss" ]; then { echo ""; echo "✗ 結果を報告しなかったテスト $$(wc -l < "$$miss" | tr -d ' ') 件 (走ったかどうか自体が不明。xargs は utility がシグナルで死ぬか exit 255 だと残りの入力を捨てる):"; sed 's/^/  /' "$$miss"; } >&2; rc=1; fi; \
