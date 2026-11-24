@@ -53,14 +53,10 @@ jobs:
             make-target: test-discovered-heavy
             needs-nvim: false
             needs-go: true   # concat の診断のテストが bin/mp4-effective-size (Go) をビルドする (issue 670)
-            jobs-per-cpu: 1  # av1ify / concat は fork で CPU を使い切るので、コア数より増やしても速くならない
           - group: rest
             make-target: test-runtime-rest
             needs-nvim: true
             needs-go: true
-            # rest のテストは大半が待ち (プロセスの起動・tmux・ポーリング) で CPU を使い切らない。コア数のままだと
-            # runner の少ないコアでは待ちの間に CPU が遊ぶ
-            jobs-per-cpu: 2
     name: dotfiles-tests (${{ matrix.group }})
     # 対象は macOS のみ。Linux はサポート対象外なので CI もそちらへ揃える。
     # 🚨 `macos-latest` にしない。同じ commit の setup-nvim が「stable にせず明示 pin する
@@ -115,4 +111,6 @@ jobs:
       - name: Run dotfiles test suite (${{ matrix.group }})
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
-        run: make ${{ matrix.make-target }} NPROC="$(( $(getconf _NPROCESSORS_ONLN) * ${{ matrix.jobs-per-cpu }} ))"
+        # 並列度 (NPROC) をコア数より上げない。runner は 3 コアで rest も CPU を使い切っており、6 にしても並列腕は
+        # 縮まず (10.5 分 → 11 分)、時間の上限を持つテスト 3 本が負荷で落ちた (run 45291097303)
+        run: make ${{ matrix.make-target }}
