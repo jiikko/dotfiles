@@ -30,7 +30,7 @@
 ## 進捗
 
 - [x] 1. runner の所要の出力 (commit「perf(ci): rest の並列度をコア数の 2 倍にし、テストごとの所要を出す」)
-- [x] 2. rest の並列度を 2 倍 (同じ commit) → **効かなかったので戻した** (commit「perf(ci): rest の並列度を戻す」)
+- [x] 2. rest の並列度を 2 倍 (同じ commit) → 並列腕が縮まなかったので戻した (commit「perf(ci): rest の並列度を戻す」)
 - [x] 3. CI の rest の所要を比べた (run 45291097303、54599e579)
   - runner のコア数は 3 (ログの `並列度 6` = 3 × 2)
   - 並列腕は 23:44 台〜23:55:17 の約 11 分で、並列度 3 のとき (約 10.5 分) から縮まなかった。job 全体は 15.9 分
@@ -38,5 +38,13 @@
     `tests/claude/test_deny_piped_push_then_destroy.sh` (`runtimeout` の rc=124)、`tests/claude/test_ja_textlint_on_edit.sh` (知らせが出る前に打ち切り)
   - 結論: CI の rest は待ちではなく CPU で縛られている。tests/CLAUDE.md の「大半が待ち」は 14 コア機の実測で、CI には当てはまらない (tests/CLAUDE.md に追記した)
 - [x] 4. 不安定になった (上の 3 本) ので、並列度を上げる方向は採らない
-- [ ] 5. 並列度 3 に戻した run で、CI のテストごとの所要 (`[時間]`) を読む
+- [x] 5. 並列度 3 に戻した run (45293693619、273179deb) の CI のテストごとの所要を読んだ
+  - job 全体 13.1 分。suite の中は並列腕 8.5 分 (00:02:55〜00:11:27)、直列腕 3.2 分
+  - 並列腕の 143 件の所要の合計は 1459 秒。3 で割ると 8.1 分で wall と合う (3 本の枠が埋まり続けている)。手元の同じ並列度の合計 790 秒の 1.85 倍
+  - 上位 10 件で 696 秒 (合計の 48%): `tests/devtool/test_mutate_verify.sh` 106、`tests/githooks/test_pre_push.sh` 98、
+    `tests/scripts/test_no_failfast_entrypoints.sh` 95、`tests/scripts/test_test_fail_ledger.sh` 72、`tests/bin/test_ja_textlint.sh` 66、
+    `tests/bin/test_go_autobuild_warmup.sh` 66、`tests/claude/test_suggest_dupscan_for_symbol_grep.sh` 57、`tests/bin/test_dupscan_no_build.sh` 48、
+    `tests/issues/test_issue_done.sh` 44、`tests/claude/test_ja_textlint_on_edit.sh` 44
+  - 直列腕の上位は `tests/tmux/test_server_watchdog.sh` 41、`tests/tmux/test_schedule_keys.sh` 31、`tests/tmux/test_socket_cleanup.sh` 25
+  - job の所要はテストの中身がほぼ同じ commit の間でも 11〜17 分を揺れる。1 本の run の値で効果を言わない
 - [ ] 6. 5 を見て、CPU を食う上位のテストを軽くするか、rest を 2 つの job に分けるか (runner を 1 台増やす。repo は public なので分単位の課金は無い) を決める
