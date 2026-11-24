@@ -1,7 +1,5 @@
 # 1107 (perf): CI の Tests の rest の job が上限 20 分に近い
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-24〜）
-
 起票日: 2026-11-24
 
 ## 概要
@@ -54,7 +52,7 @@
   - runner がテストへ `MAKEFLAGS`・`MFLAGS`・`MAKELEVEL`・`TEST_SHARD` を空で渡す (コマンド行の値が `MAKEFLAGS` に乗ってテストの中の make に届き、`tests/scripts/test_no_failfast_entrypoints.sh` の偽の suite まで組で割っていた。`MAKEFLAGS=' -- TEST_SHARD=1/2'` で再現し、直した後は緑)
   - 実装をわざと壊してテストが落ちることを 12 か所で確かめた (組の振り分けのずれ・振り分けを呼ばない・組が空の断り・コメント行の除外・番号の照合・掛けた target・字以外の書き方・重複を消す・行末のコメント・子への MAKEFLAGS の漏れ・test-runtime-rest の数・行頭の固定)
   - `make test`: 赤は `tests/claude/test_dangling_symlinks.sh` だけ (`~/.claude/skills` に残った古い link。この変更と無関係)
-- [ ] 7. CI で rest と rest2 の所要を確かめる (目安: どちらも 10 分を切る)
+- [x] 7. CI で rest と rest2 の所要を確かめた (目安: どちらも 10 分を切る)
   - 1 回目 (run 45327292749、5eb31f5ef): rest 11.4 分・rest2 5.0 分・heavy 5.3 分。組は 72 件ずつ (計 144 件で全件)。
     rest が縮みきらなかった一因は、足したテスト `tests/scripts/test_test_shard.sh` 自身が CI で 149 秒かかったこと
     (workflow の例ごとに `make test-ci-group-deps` を起こし、毎回 heavy の 37 ファイルの走査まで回っていた)
@@ -70,3 +68,9 @@
   - 組の無い rest の entry を組と並べても通す (2 回走るだけで、走らないテストは出ない)
   - 検査 4 が見ない形: matrix の `exclude:`・job の `if:`・組の entry の依存の宣言 (`deps-group` など) の食い違い。引用符や flow 形式の make-target は落ちる側 (うるさい赤)
 - 確かめて影響なし: job 名の変更 (`dotfiles-tests (rest2)` が増える) は、master に branch protection も ruleset も無いので必須チェックに響かない (`gh api .../branches/master/protection` が 404、rulesets が空)
+  - 2 回目 (run 45330152633、14e06b599): rest 9.2 分・rest2 5.7 分・heavy 6.3 分。`tests/scripts/test_test_shard.sh` は 46 秒。同じ commit の他の workflow 6 本も緑
+
+## 結果 (2026-11-24)
+
+- rest の job は 11〜17 分 → 9.2 分 (1 run の値。job の所要は run ごとに数分揺れる)。上限 20 分に対して 10 分ほどの余裕
+- rest は直列腕 (約 3 分) を持つぶん rest2 より長い。片寄りを均すなら、直列腕を rest2 へ移すか組を 3 にする。次に rest が 15 分を超えたら検討する (`[時間]` の行で伸びたテストを先に見る)
