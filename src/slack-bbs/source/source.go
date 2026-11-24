@@ -84,12 +84,15 @@ func Quiet(r Runner) Runner {
 
 // Message は slack-cli の history / thread の -json の 1 件 (使う欄だけ)。
 type Message struct {
-	Ts          string `json:"ts"`
-	ThreadTs    string `json:"thread_ts"`
-	User        string `json:"user"`
-	Username    string `json:"username"`
-	BotID       string `json:"bot_id"`
-	Text        string `json:"text"`
+	Ts       string `json:"ts"`
+	ThreadTs string `json:"thread_ts"`
+	User     string `json:"user"`
+	Username string `json:"username"`
+	BotID    string `json:"bot_id"`
+	Text     string `json:"text"`
+	// BlocksText は bot の発言の blocks を slack-cli が平文に組み立てたもの (slack-cli 0.4.0 から。人の発言には無い)。
+	// bot は text に通知用の要約しか入れないことがあり、本文は blocks にある。
+	BlocksText  string `json:"blocks_text"`
 	ReplyCount  int    `json:"reply_count"`
 	LatestReply string `json:"latest_reply"`
 }

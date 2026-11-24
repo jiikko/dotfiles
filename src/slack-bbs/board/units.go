@@ -229,6 +229,9 @@ func (in Input) msg(m source.Message) Msg {
 		name = "(不明)"
 	}
 	text := Plain(m.Text, in.Names)
+	if m.BlocksText != "" {
+		text = PlainBlocks(m.BlocksText, in.Names)
+	}
 	if strings.TrimSpace(text) == "" {
 		text = "(添付のみ)"
 	}
@@ -236,7 +239,7 @@ func (in Input) msg(m source.Message) Msg {
 		Ts: m.Ts, User: id, Name: name, Text: text,
 		New:  !TsBefore(m.Ts, in.Since),
 		Mine: in.Me != "" && m.User == in.Me,
-		ToMe: Mentions(m.Text, in.Me),
+		ToMe: Mentions(m.Text, in.Me) || Mentions(m.BlocksText, in.Me),
 	}
 }
 
