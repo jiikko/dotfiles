@@ -56,7 +56,7 @@ jobs:
             needs-nvim: false
             needs-go: true   # concat の診断のテストが bin/mp4-effective-size (Go) をビルドする (issue 670)
           # rest の並列腕は 3 コアの runner の CPU を使い切るので、TEST_SHARD で 2 台に分ける。直列腕・構文・bats は rest に残す。
-          # 🚨 組 (k/n) を足し引きするときは 1/n〜n/n を揃える (欠けた組のテストはどこでも走らない。make test-ci-group-deps が落とす)
+          # 🚨 組 (k/n) を足し引きするときは 1/n〜n/n を揃える (欠けた組のテストはどこでも走らない。make test-ci-test-shards が落とす)
           - group: rest
             deps-group: rest
             make-target: test-runtime-rest TEST_SHARD=1/2

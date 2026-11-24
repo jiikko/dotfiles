@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 並列の runner の TEST_SHARD=k/n が、発見したテストを n 組に欠けなく重ならずに振り、k 組目だけを走らせることを固定する。
 # CI は 1 つの腕をこの組で複数の job に分けるので、組が欠ける・重なると、どの job でも走らないテストや 2 度走るテストができる。
-# workflow の組が 1/n〜n/n を揃えていることの検査 (scripts/check_ci_group_deps.sh の 4) も、欠けた workflow を読ませて見る。
+# workflow の組が 1/n〜n/n を揃えていることの検査 (scripts/check_ci_test_shards.sh) も、欠けた workflow を読ませて見る。
 set -uo pipefail
 unset CDPATH
 
@@ -71,10 +71,10 @@ for case in '3/2|組が 0 件' '0/2|k/n (1 桁の数) で渡す' 'x|k/n (1 桁�
   fi
 done
 
-# --- workflow の組の検査 (scripts/check_ci_group_deps.sh の 4) ---
+# --- workflow の組の検査 (scripts/check_ci_test_shards.sh) ---
 check_wf() {  # $1=workflow の本文。rc は検査の rc
   printf '%s\n' "$1" > "$work/wf.yml"
-  CI_GROUP_WORKFLOW="$work/wf.yml" run_make test-ci-group-deps > "$work/wf.out" 2>&1
+  "$ROOT_DIR/scripts/check_ci_test_shards.sh" "$work/wf.yml" > "$work/wf.out" 2>&1
 }
 r='  make-target: test-runtime-rest'
 p='  make-target: test-discovered-rest-parallel'
@@ -107,7 +107,7 @@ env: で渡す|make-target の TEST_SHARD=k/n 以外の書き方|  env:\n    TES
 run が読まない key に書いた|rest の並列腕以外|$r TEST_SHARD=1/2\n  old-make-target: test-discovered-rest-parallel TEST_SHARD=2/2
 EOF
 mkdir -p "$work/wf-dir"
-if CI_GROUP_WORKFLOW="$work/wf-dir" run_make test-ci-group-deps > "$work/wf.out" 2>&1; then
+if "$ROOT_DIR/scripts/check_ci_test_shards.sh" "$work/wf-dir" > "$work/wf.out" 2>&1; then
   bad "組の検査: workflow のパスがディレクトリでも通した"
 else
   grep -qF '読めない' "$work/wf.out" && ok "組の検査: workflow のパスがディレクトリなら「読めない」で落とす" \

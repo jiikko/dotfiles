@@ -62,7 +62,7 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 `test-runtime-rest` (heavy を除いた残り。並列腕 + 直列腕) の 2 つ。`make test` は
 この 2 つを合わせた集合で、差分の正本は Makefile の `CI_HEAVY_TEST_DIRS` / `CI_HEAVY_PRUNE`。
 rest の並列腕は `TEST_SHARD=k/n` で 2 job (rest・rest2) に分けている (3 コアの runner では CPU で縛られ、1 job では上限 20 分に近かった。issue 1107)。
-組は発見したテストを名前の順に交互に振るので、テストを足しても振り分けを直す必要は無い。組を足し引きするときは `tests.yml` の matrix に 1/n〜n/n を揃える (`make test-ci-group-deps` が欠けと重なりを落とす)
+組は発見したテストを名前の順に交互に振るので、テストを足しても振り分けを直す必要は無い。組を足し引きするときは `tests.yml` の matrix に 1/n〜n/n を揃える (`make test-ci-test-shards` が欠けと重なりを落とす)
 
 `tests.yml` と `lint.yml` は **issues/ だけの push では起動しない** (`paths-ignore`)。その push では
 `issues.yml` が `githooks/pre-push --list-checks` の検査 (tests/issues/ の repo の状態を見るもの) だけを回す。
@@ -187,7 +187,7 @@ platform の差が消えた今も残るのが **「手元には在るが git に
 ## 並列実行と CI の分割
 
 - `run_tests_parallel` に入れられるのは tempdir 独立で共有資源に触らないテストだけ。`test-discovered` は tests/ 全体をこれで回し、共有資源 (tmux サーバ / nvim) に触る `SERIAL_TEST_DIRS` (tests/tmux / tests/nvim / tests/zshrc/tmux-session) だけを直列の `run_tests` に回す。新ディレクトリは並列側に入るので、共有資源に触るテストを書いたら `SERIAL_TEST_DIRS` へ足す
-- CI は heavy / rest / rest2 の 3 job (rest と rest2 は並列腕を `TEST_SHARD` で半分ずつ持つ)。分割の整合 (パッケージ依存・prune・組の欠け) は `make test-ci-group-deps` が検査する
+- CI は heavy / rest / rest2 の 3 job (rest と rest2 は並列腕を `TEST_SHARD` で半分ずつ持つ)。分割の整合はパッケージ依存・prune を `make test-ci-group-deps`、組の欠けを `make test-ci-test-shards` が検査する
 - **並列度は Makefile の `NPROC`** (既定 = `getconf _NPROCESSORS_ONLN`)。`run_tests_parallel` の `xargs -P` に渡る。**コマンドラインでのみ上書きできる**: `make test NPROC=4` は反映されるが `NPROC=4 make test` は反映されない (makefile の `:=` は環境変数より強い、という make の変数優先順位そのもの)
   - 🚨 **`make -j` はテストの並列度に影響しない**。あれは make の target 並列で、テストの並列度は `xargs -P` 側が持つ。2 つは独立
   - 🚨 **性能 knob としては期待外れ**。テストの大半は CPU ではなく待ち (プロセス spawn / tmux サーバ起動 / 条件ポーリング) で、`real` に対する `user+sys` は 9〜43% (実測 2026-09-05。ffmpeg を回す av1ify だけが 82〜86%)。下げても大して遅くならず、上げても速くならない。速くなるのは直列腕を減らしたとき (issue 262)

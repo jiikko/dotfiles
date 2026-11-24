@@ -50,11 +50,16 @@
 - [x] 6. 5 を見て決めた: ユーザーの判断 (2026-11-24) で rest を 2 つの job に分ける (commit「perf(ci): rest の並列腕を TEST_SHARD で 2 job に分ける」)
   - Makefile の `TEST_SHARD=k/n`: 並列の runner が、発見したテストを `LC_ALL=C` の名前の順で交互に n 組へ振り、k 組目だけを走らせる。何も渡さなければ全部 (手元の `make test` は変わらない)
   - tests.yml: rest = `test-runtime-rest TEST_SHARD=1/2` (構文・並列腕の半分・直列腕・bats)、rest2 = `test-discovered-rest-parallel TEST_SHARD=2/2`。依存は新しい `deps-group` で選ぶ (rest2 も rest と同じ)
-  - `scripts/check_ci_group_deps.sh` の 4: 組が rest の並列腕の make-target に字で書かれ、1/n〜n/n を 1 回ずつ持ち、test-runtime-rest がちょうど 1 つであること
+  - `scripts/check_ci_test_shards.sh` (`make test-ci-test-shards`、test-lint に入る): 組が rest の並列腕の make-target に字で書かれ、1/n〜n/n を 1 回ずつ持ち、test-runtime-rest がちょうど 1 つであること
   - runner がテストへ `MAKEFLAGS`・`MFLAGS`・`MAKELEVEL`・`TEST_SHARD` を空で渡す (コマンド行の値が `MAKEFLAGS` に乗ってテストの中の make に届き、`tests/scripts/test_no_failfast_entrypoints.sh` の偽の suite まで組で割っていた。`MAKEFLAGS=' -- TEST_SHARD=1/2'` で再現し、直した後は緑)
   - 実装をわざと壊してテストが落ちることを 12 か所で確かめた (組の振り分けのずれ・振り分けを呼ばない・組が空の断り・コメント行の除外・番号の照合・掛けた target・字以外の書き方・重複を消す・行末のコメント・子への MAKEFLAGS の漏れ・test-runtime-rest の数・行頭の固定)
   - `make test`: 赤は `tests/claude/test_dangling_symlinks.sh` だけ (`~/.claude/skills` に残った古い link。この変更と無関係)
 - [ ] 7. CI で rest と rest2 の所要を確かめる (目安: どちらも 10 分を切る)
+  - 1 回目 (run 45327292749、5eb31f5ef): rest 11.4 分・rest2 5.0 分・heavy 5.3 分。組は 72 件ずつ (計 144 件で全件)。
+    rest が縮みきらなかった一因は、足したテスト `tests/scripts/test_test_shard.sh` 自身が CI で 149 秒かかったこと
+    (workflow の例ごとに `make test-ci-group-deps` を起こし、毎回 heavy の 37 ファイルの走査まで回っていた)
+  - 組の検査を `scripts/check_ci_test_shards.sh` に切り出し、テストはスクリプトを直接呼ぶようにした (手元で 1 本 21 秒。
+    commit「perf(ci): 組の検査を check_ci_test_shards.sh に切り出す」)。移した検査には同じ壊し方を 7 か所当て直し、全部落ちることを確かめた
 
 ## 反証レビュー (opus 3 周) の採否
 

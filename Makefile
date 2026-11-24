@@ -79,7 +79,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-guarded test-all test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-instruction-budget test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-devtool-boundary test-unused-excluding-tests test-dupscan-gate test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-guarded test-all test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-ci-test-shards test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-instruction-budget test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-devtool-boundary test-unused-excluding-tests test-dupscan-gate test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ。中に新しい更新があるフォルダは残す。
 # skill の dir (bin/skill-tmpdir の印 .skill-tmpdir がある tmp/<skill名>/) は中の session ごとの dir を単位にする)。
@@ -315,7 +315,7 @@ endef
 NPROC := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 # TEST_SHARD=k/n を渡すと、並列の runner は発見したテストを n 組に振り、k 組目だけを走らせる (CI で 1 つの腕を
 # 複数の job に分けるため。組は .github/workflows/tests.yml の matrix が 1/n〜n/n を全部持つことを
-# scripts/check_ci_group_deps.sh が検査する)。振り分けは名前の順 (LC_ALL=C) で交互にする: どの job も同じ
+# scripts/check_ci_test_shards.sh が検査する)。振り分けは名前の順 (LC_ALL=C) で交互にする: どの job も同じ
 # 一覧から同じ組を引き、足したテストはどれかの組に必ず入る。何も渡さなければ全部を走らせる。
 TEST_SHARD :=
 define test_shard_filter
@@ -425,6 +425,10 @@ test-ci-group-deps:
 	@CI_HEAVY_TEST_DIRS='$(CI_HEAVY_TEST_DIRS)' CI_COMMANDS_ONLY_REST='$(CI_COMMANDS_ONLY_REST)' \
 		CI_COMMANDS_HEAVY='$(CI_COMMANDS_HEAVY)' CI_COMMANDS_REST='$(CI_COMMANDS_REST)' \
 		scripts/check_ci_group_deps.sh
+
+# CI の TEST_SHARD の組 (rest の並列腕を複数の job に分ける) が tests.yml で欠けずに揃っているか検査する。
+test-ci-test-shards:
+	@scripts/check_ci_test_shards.sh
 
 # `… | grep -q` が pipefail 下で判定を反転させる形を落とす。
 # 正本は scripts/check_pipefail_grep_q.sh (なぜ危険か・直し方・例外マーカーはそこに書いてある)。
@@ -649,7 +653,7 @@ test-lint-tests:
 #   「並列腕 + 直列腕」を束ねており、直列腕は tmux サーバに触るので同時実行の安全性が未検証
 #   (59f9e48c の分割の前提)。ここが並列でよいのは、互いに独立した静的検査だけだから。
 test-lint:
-	@+scripts/run_make_targets_parallel.sh test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-instruction-budget test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-packages-index test-devtool-boundary
+	@+scripts/run_make_targets_parallel.sh test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-ci-test-shards test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-comment-provenance test-instruction-budget test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-packages-index test-devtool-boundary
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
