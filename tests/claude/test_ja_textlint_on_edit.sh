@@ -136,11 +136,12 @@ biged="$TMP_ROOT/biged.md"
 { for n in $(seq 1000); do printf '行 %s で潰す。\n' "$n"; done; } > "$biged"
 expect_contains "1000 行の new_string でも上限の内に終わり、知らせる" "$(run "$(edit_input "$biged" "$(cat "$biged")")")" "ほか 980 件"
 
-# 同じ行の多い new_string で範囲が大きくなっても、知らせが消えない (範囲を引数で渡すと argument list too long で jq が起動できない)
+# 同じ行の多い new_string で範囲が大きくなっても、知らせが消えない (範囲を引数で渡すと argument list too long で jq が起動できない)。
+# 「黙って捨てる。」には textlint と ja-writing lint (metaphor_verb) の両方が当たるので、知らせは 1000 + 1000 件
 same="$TMP_ROOT/same.md"
 { for _ in $(seq 1000); do printf '黙って捨てる。\n'; done; } > "$same"
 block=$(for _ in $(seq 500); do printf '黙って捨てる。\n'; done)
-expect_contains "同じ行の多い new_string でも知らせる" "$(run "$(edit_input "$same" "$block")")" "ほか 980 件"
+expect_contains "同じ行の多い new_string でも知らせる" "$(run "$(edit_input "$same" "$block")")" "ほか 1980 件"
 
 # 行の区切りを textlint に揃える: 行の中の U+2028 (LS) で textlint は行を分ける。hook が分けないと行の番号が食い違って知らせが消える
 ls_f="$TMP_ROOT/ls.md"
@@ -217,6 +218,59 @@ if [ -z "$(ls -A "$empty_cache")" ]; then
 else
   echo "✗ 依存が未導入のとき、hook が入れ始めた: $(ls -A "$empty_cache")"; fail=$((fail+1))
 fi
+
+# --- ja-writing lint の知らせ ---
+# 知らせの ja-writing の行を「行 規則」の並びで返す ("3 slop_vocabulary 5 metaphor_verb" のように)
+jw_of() { # $1=stdout
+  printf '%s' "$1" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null |
+    sed -n 's/^\([0-9][0-9]*\) ja-writing \([a-z_]*\): .*/\1 \2/p' | tr '\n' ' ' | sed 's/ $//'
+}
+expect_jw() { # $1=説明 $2=stdout $3=期待する「行 規則」の並び (空なら ja-writing の知らせが無いこと)
+  case "$2" in HOOK-FAILED*) echo "✗ hook が rc≠0 か stderr を出した: $1: $2"; fail=$((fail+1)); return ;; esac
+  local got; got=$(jw_of "$2")
+  if [ "$got" = "$3" ]; then echo "✓ ${1}"; ok=$((ok+1)); else echo "✗ ${1}: 「${got}」(期待「${3}」)"; fail=$((fail+1)); fi
+}
+# 3 行目: 定義していない組み込みの語 (土台)。5 行目: dotfiles で定義した用語 (一覧で外れる)。7 行目: 🚨 (外した規則)。9 行目: 表示されない太字 (error)
+jwf="$TMP_ROOT/jw.md"
+printf '# 試験\n\n土台を作る。\n\n正本とゲートを読む。\n\n🚨 止めない。\n\nただし**「拡張しやすい」は買わない**と書く。\n' > "$jwf"
+expect_jw "Write は ja-writing lint の残す規則の指摘を知らせ、定義した用語と外した規則は出さない" "$(run "$(write_input "$jwf")")" \
+  "3 slop_vocabulary 9 bold_not_rendered"
+expect_jw "Edit は書いた行の ja-writing lint の指摘だけを知らせる" "$(run "$(edit_input "$jwf" "🚨 止めない。")")" ""
+expect_jw "Edit で書いた行に当たれば知らせる" "$(run "$(edit_input "$jwf" "土台を作る。")")" "3 slop_vocabulary"
+
+# ビルドが無い・時間切れのときは ja-writing の知らせを出さず、textlint の知らせは出す。hook を写した偽の repo で起こす
+# (hook は自分の置き場の ../.. を repo とみなす。src/ja-writing は go.mod の無い空のフォルダにして、ビルドの無い状態を作る)
+fake="$TMP_ROOT/fake"
+mkdir -p "$fake/_claude/hooks" "$fake/bin/lib" "$fake/src/ja-writing"
+cp "$HOOK" "$fake/_claude/hooks/"
+ln -s "$ROOT_DIR/bin/ja-textlint" "$fake/bin/ja-textlint"
+ln -s "$ROOT_DIR/bin/runtimeout" "$fake/bin/runtimeout"
+ln -s "$ROOT_DIR/bin/lib/go_autobuild.zsh" "$fake/bin/lib/go_autobuild.zsh"
+both="$TMP_ROOT/both.md"
+printf '# 試験\n\n新しい版では直っている。\n\n土台を作る。\n' > "$both"
+fake_run() { # $1=偽の repo $2=hook への入力の JSON → stdout (偽の repo の hook)
+  local rc
+  printf '%s' "$2" | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$1/_claude/hooks/ja-textlint-on-edit.sh" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err"
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ -s "$TMP_ROOT/err" ]; then printf 'HOOK-FAILED rc=%s stderr=%s\n' "$rc" "$(head -c 200 "$TMP_ROOT/err")"; return 0; fi
+  cat "$TMP_ROOT/out"
+}
+out=$(run "$(write_input "$both")")
+expect_jw "(対照) 本物の repo では ja-writing の知らせが出る" "$out" "3 translated_term 5 slop_vocabulary"
+out=$(fake_run "$fake" "$(write_input "$both")")
+expect_lines "ja-writing lint のビルドが無いときも textlint の知らせは出す" "$out" "3"
+expect_jw "ja-writing lint のビルドが無いときは ja-writing の知らせを出さない" "$out" ""
+# 時間切れ: 偽の repo の go_autobuild.zsh を、終わらない go_autobuild_exec にする (hook は 5 秒で止めて黙る)。
+# PATH の zsh を偽物にしない: bin/runtimeout 自身が zsh で動くので、hook の全体が止まる
+slow="$TMP_ROOT/slow"
+mkdir -p "$slow/_claude/hooks" "$slow/bin/lib" "$slow/src/ja-writing"
+cp "$HOOK" "$slow/_claude/hooks/"
+ln -s "$ROOT_DIR/bin/ja-textlint" "$slow/bin/ja-textlint"
+ln -s "$ROOT_DIR/bin/runtimeout" "$slow/bin/runtimeout"
+printf 'go_autobuild_exec() { sleep 60; } # sleep-ok: 入力: hook の 5 秒の上限に止めさせる、終わらない ja-writing の代わり\n' > "$slow/bin/lib/go_autobuild.zsh"
+out=$(fake_run "$slow" "$(write_input "$both")")
+expect_lines "ja-writing lint が時間切れでも textlint の知らせは出す" "$out" "3"
+expect_jw "ja-writing lint が時間切れなら ja-writing の知らせを出さない" "$out" ""
 
 echo "ja-textlint-on-edit: ok=$ok fail=$fail"
 [ "$fail" -eq 0 ] || exit 1
