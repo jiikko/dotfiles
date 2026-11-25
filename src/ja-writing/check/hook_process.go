@@ -3,6 +3,7 @@ package check
 // 本家 yomiyasu_hook.py の _process・_stop・_pretool・_related と、案内の文 (_notice・_reason・語の一覧の引数)。
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -19,10 +20,22 @@ import (
 
 // remaining は _process の remaining (締め切りを過ぎたら TimeoutError('hook_budget'))。
 func (h *hookRun) remaining() {
+	h.cancelled()
 	if h.rt.Monotonic() >= h.budget {
 		panic(failure{&hookFault{err: timeoutException("hook_budget"), loc: hookLocBudget}})
 	}
 }
+
+// cancelled は締め切りで処理が取り消されていれば TimeoutError('hook_budget') を投げる (本家の SIGALRM がどこでも投げるのを、
+// ロックを持つ間の繰り返しで写す。経過の時計は読まない: 記録の比べは時計を読む回数に頼る)。
+func (h *hookRun) cancelled() {
+	if h.ctx != nil && h.ctx.Err() != nil {
+		panic(failure{&hookFault{err: timeoutException("hook_budget"), loc: hookLocDeadline}})
+	}
+}
+
+// hookInLock はロックを持った処理の繰り返しの頭で呼ぶ差し込み口 (テストが、ロックを持ったまま締め切りを迎える場面を作る)。
+var hookInLock = func(context.Context) {}
 
 // words は _process の words (案内する run のコマンドに付ける語の一覧の引数。初めて要るときに 1 回だけ決める)。
 func (h *hookRun) words() string {
@@ -506,6 +519,8 @@ func (h *hookRun) pretool(state string, entry *pyjson.Object, bodies []hookBody,
 		runID := pyops.Str(pyops.Index(current, "run_id"))
 		since := strPtr(pyops.Str(pyops.Index(current, "created_at")))
 		for _, b := range bodies {
+			hookInLock(h.ctx)
+			h.cancelled()
 			if !h.related(state, current, b) {
 				continue
 			}

@@ -39,6 +39,9 @@ var hookEvents = []string{"UserPromptExpansion", "UserPromptSubmit", "PreToolUse
 // hookBudgets は _BUDGETS (イベントごとの秒数の上限)。
 var hookBudgets = map[string]float64{"UserPromptExpansion": 4, "UserPromptSubmit": 4, "PreToolUse": 7, "PostToolUse": 7, "Stop": 20, "SessionEnd": 0.8}
 
+// hookUnwindWait は締め切りで取り消した処理がロックを放すのを待つ上限。
+const hookUnwindWait = 2 * time.Second
+
 const (
 	hookMaxInput = 4 * 1024 * 1024
 	hookMaxText  = 2 * 1024 * 1024
@@ -290,8 +293,16 @@ func (h *hookRun) withDeadline(invocation *string) (string, int, error) {
 	case r := <-done:
 		return r.output, 0, r.err
 	case <-timer.C:
-		return "", 0, &hookFault{err: timeoutException("hook_budget"), loc: hookLocDeadline}
 	}
+	// 本家は SIGALRM の例外で with _ArmedLock を抜けてロックを消してから except に入る。Go も処理を取り消し、ロックを持つ間の
+	// 繰り返しが ctx を見て抜けるのを待つ (待たずに返すと、プロセスの終わりでロックが残り、10 秒の間ほかの hook と check を止める)。
+	// 待つ上限を過ぎたら待たずに返す (ロックの外の CPU だけの処理は ctx を見ない。ロックを持っていなければ残るものは無い)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(hookUnwindWait):
+	}
+	return "", 0, &hookFault{err: timeoutException("hook_budget"), loc: hookLocDeadline}
 }
 
 // stateCandidates は _states。

@@ -429,8 +429,13 @@ driver は本家の hook が呼ぶたびに読み直す check (`spec_from_file_l
 - `--print-config` の JSON の `command` (と codex の `command` の文) は、本家の `sys.executable -B <スクリプトの絶対パス> --host …` の代わりに、この実行ファイルの実パスと `hook --host …` を書く。
 - `hook-errors.log` の 4 つ目の欄 (本家のトレースバックの最後の枠の「ファイル名:行」) は、語の一覧の誤り (`markdown_visibility.py` の行)・締め切り (`yomiyasu_hook.py:760` と `:897`)・
   投げずに渡す例外 (`:0`) だけを本家と揃える。check の口が投げる例外 (ロックの時間切れなど) と hook の中の型の誤りは、本家はその例外を投げた行を書くが、Go は `yomiyasu_hook.py:0` を書く。
-- 締め切りで見切ったとき、処理中の goroutine がロックを持っていれば、本家と違い `timeout` の log はロックを取れずに書かれない (本家は SIGALRM の例外でロックを放してから書く)。
-  見切った後も goroutine は止まらない (ctx を取り消すのでロックの待ちは抜け、プロセスの終わりで止まる)。
+- 締め切り: 本家の SIGALRM は処理のどこでも例外を投げる。Go は ctx を取り消し、取り消しを見るのはロックの待ち・`remaining`・ロックを持った投稿の照合の
+  繰り返しの頭だけ。取り消した処理がロックを放すのを 2 秒 (`hookUnwindWait`) まで待ってから `timeout` の log と hook-errors.log を書く
+  (本家と同じく、ロックを残さない。`TestHookDeadlineInsideLockReleasesLockAndLogsTimeout`)。ロックの外の CPU だけの処理 (投稿の本文の取り出し) は
+  取り消しを見ないので、締め切りの後も走り、プロセスの終わりで止まる。
+- 標準出力の fd 1 を閉じたまま起こしたとき: 本家は書く所で AttributeError (`yomiyasu_hook.py:923`)、読む側を閉じたパイプでは BrokenPipeError (`:924`) を
+  hook-errors.log に書く。Go は、読む側を閉じたパイプでは `BrokenPipeError yomiyasu_hook.py:0` を書き、fd 1 を閉じたときは何も書かない
+  (2026-11-25 に実測。書かない理由は確かめていない)。ホストがこう起こすことは無い。
 
 ## 標準ライブラリを写す package (`internal/`)
 

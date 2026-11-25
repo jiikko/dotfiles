@@ -11,7 +11,8 @@ lint:
 	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
 
 # 記録との突き合わせの重い検査 (internal/pyre の全パターン・lint の CLI と検出の記録・diff の関数の記録と資料との照合の記録) は -race を付けると時間の上限を超えるので
-# build tag で race から外し、race なしで別に回す。どれも 1 つの goroutine で順に呼ぶだけで、race で見つけられるものが無い。
+# build tag で race から外し、race なしで別に回す。どれも 1 つの goroutine で順に呼ぶだけで、race で見つけられるものが無い
+# (hook の締め切りの goroutine とタイマーは、記録でなく check/hook_test.go が race つきで見る)。
 # 走った証拠として、それぞれの成功の行が出たことも見る (テストの名前を変えて 0 件実行になっても rc=0 になるため)。
 NORACE_CHECKS := ./internal/pyre/:TestPatternsMatchPythonRecording ./lint/:TestCLIMatchesPythonRecording ./lint/:TestRawFindingsMatchPythonRecording ./diff/:TestBaseMatchesPythonRecording ./diff/:TestCLIMatchesPythonRecording ./diff/:TestReportShapeMatchesPythonRecording ./diff/:TestGroundMatchesPythonRecording ./check/:TestRunMatchesPythonRecording ./check/:TestReplayMatchesPythonRecording ./check/:TestManageMatchesPythonRecording ./check/:TestHookMatchesPythonRecording ./check/:TestConcurrentStartLeavesOneActiveRegistration ./check/:TestConcurrentManagedRunsRunOnce
 
