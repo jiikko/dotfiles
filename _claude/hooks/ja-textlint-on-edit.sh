@@ -105,6 +105,7 @@ ranges=$(printf '%s' "$input" | "$runtimeout" 3 jq -c --rawfile c "$file" '
 
 # textlint と ja-writing lint は別々に黙る (片方が失敗しても、もう片方の知らせは出す)
 notices=()
+tl=""
 out=$(JA_TEXTLINT_NO_INSTALL=1 "$runtimeout" 10 "$lint" --ignore-path /dev/null -f json "$file" 2>/dev/null)
 rc=$?
 if [ "$rc" -le 1 ]; then
@@ -134,10 +135,13 @@ if [ -n "$jw_tmp" ]; then
     jw "$jw_tmp/a.json" --words "$hook_repo/_claude/skills/ja-writing/words" || jrc=$?
   fi
   if [ "$jrc" -eq 0 ]; then
-    jwn=$(jq -r --slurpfile rs <(printf '%s' "$ranges") --argjson keep "$jw_rules" '
+    # textlint が知らせた行には ja-writing の知らせを重ねない (版・比喩・太字は両方が拾い、同じ行に 2 度知らせる)
+    tl_lines=$(printf '%s\n' "$tl" | sed -n 's/^\([0-9][0-9]*\):.*/\1/p' | jq -Rsc 'split("\n") | map(select(. != "") | tonumber)' 2>/dev/null) || tl_lines='[]'
+    jwn=$(jq -r --slurpfile rs <(printf '%s' "$ranges") --argjson keep "$jw_rules" --argjson tll "${tl_lines:-[]}" '
       $rs[0] as $r
       | [.findings[] | select(.rule as $x | $keep | index($x))] | sort_by(.line) | .[]
       | select($r.all or ($r.lines[.line | tostring] // false))
+      | select(.line as $l | $tll | index($l) | not)
       | "\(.line) ja-writing \(.rule): \(.message | split("。")[0])。"' "$jw_tmp/a.json" 2>/dev/null) && [ -n "$jwn" ] && notices+=("$jwn")
   fi
 fi

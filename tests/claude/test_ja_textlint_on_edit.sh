@@ -137,11 +137,11 @@ biged="$TMP_ROOT/biged.md"
 expect_contains "1000 行の new_string でも上限の内に終わり、知らせる" "$(run "$(edit_input "$biged" "$(cat "$biged")")")" "ほか 980 件"
 
 # 同じ行の多い new_string で範囲が大きくなっても、知らせが消えない (範囲を引数で渡すと argument list too long で jq が起動できない)。
-# 「黙って捨てる。」には textlint と ja-writing lint (metaphor_verb) の両方が当たるので、知らせは 1000 + 1000 件
+# 「黙って捨てる。」には ja-writing lint (metaphor_verb) も当たるが、textlint と同じ行には重ねないので知らせは 1000 件
 same="$TMP_ROOT/same.md"
 { for _ in $(seq 1000); do printf '黙って捨てる。\n'; done; } > "$same"
 block=$(for _ in $(seq 500); do printf '黙って捨てる。\n'; done)
-expect_contains "同じ行の多い new_string でも知らせる" "$(run "$(edit_input "$same" "$block")")" "ほか 1980 件"
+expect_contains "同じ行の多い new_string でも知らせる" "$(run "$(edit_input "$same" "$block")")" "ほか 980 件"
 
 # 行の区切りを textlint に揃える: 行の中の U+2028 (LS) で textlint は行を分ける。hook が分けないと行の番号が食い違って知らせが消える
 ls_f="$TMP_ROOT/ls.md"
@@ -233,8 +233,9 @@ expect_jw() { # $1=説明 $2=stdout $3=期待する「行 規則」の並び (�
 # 3 行目: 定義していない組み込みの語 (土台)。5 行目: dotfiles で定義した用語 (一覧で外れる)。7 行目: 🚨 (外した規則)。9 行目: 表示されない太字 (error)
 jwf="$TMP_ROOT/jw.md"
 printf '# 試験\n\n土台を作る。\n\n正本とゲートを読む。\n\n🚨 止めない。\n\nただし**「拡張しやすい」は買わない**と書く。\n' > "$jwf"
-expect_jw "Write は ja-writing lint の残す規則の指摘を知らせ、定義した用語と外した規則は出さない" "$(run "$(write_input "$jwf")")" \
-  "3 slop_vocabulary 9 bold_not_rendered"
+# 9 行目の太字は textlint も知らせるので、ja-writing の知らせは重ねない
+expect_jw "Write は ja-writing lint の残す規則の指摘を知らせ、定義した用語・外した規則・textlint と同じ行は出さない" "$(run "$(write_input "$jwf")")" \
+  "3 slop_vocabulary"
 expect_jw "Edit は書いた行の ja-writing lint の指摘だけを知らせる" "$(run "$(edit_input "$jwf" "🚨 止めない。")")" ""
 expect_jw "Edit で書いた行に当たれば知らせる" "$(run "$(edit_input "$jwf" "土台を作る。")")" "3 slop_vocabulary"
 
@@ -256,7 +257,8 @@ fake_run() { # $1=偽の repo $2=hook への入力の JSON → stdout (偽の re
   cat "$TMP_ROOT/out"
 }
 out=$(run "$(write_input "$both")")
-expect_jw "(対照) 本物の repo では ja-writing の知らせが出る" "$out" "3 translated_term 5 slop_vocabulary"
+expect_jw "(対照) 本物の repo では ja-writing の知らせが出る (3 行目の版は textlint と同じ行なので重ねない)" "$out" "5 slop_vocabulary"
+expect_lines "(対照) 3 行目の版は textlint が知らせる" "$out" "3"
 out=$(fake_run "$fake" "$(write_input "$both")")
 expect_lines "ja-writing lint のビルドが無いときも textlint の知らせは出す" "$out" "3"
 expect_jw "ja-writing lint のビルドが無いときは ja-writing の知らせを出さない" "$out" ""
