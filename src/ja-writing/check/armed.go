@@ -328,11 +328,21 @@ func trimLog(entry *pyjson.Object) {
 
 // armedLog は _armed_log (log に 1 件足し、最後の 50 件にする)。
 func armedLog(rt Runtime, entry *pyjson.Object, event, result string, ms int) {
+	appendArmedLog(entry, armedLogItem(rt, event, result, ms))
+}
+
+// armedLogItem は log の 1 件 ({"at", "event", "result", "ms"})。hook の _log も同じ形に stop_hook_active を足す。
+func armedLogItem(rt Runtime, event, result string, ms int) *pyjson.Object {
 	item := pyjson.NewObject()
 	item.Set("at", ISO(rt.Now()))
 	item.Set("event", event)
 	item.Set("result", result)
 	item.Set("ms", int64(ms))
+	return item
+}
+
+// appendArmedLog は entry["log"].append(item) の後に最後の 50 件にする (log が list でなければ本家と同じ AttributeError)。
+func appendArmedLog(entry *pyjson.Object, item *pyjson.Object) {
 	log, ok := pyops.Index(entry, "log").([]pyjson.Value)
 	if !ok {
 		pyops.Raise("AttributeError", "'%s' object has no attribute 'append'", pyops.TypeName(pyops.Index(entry, "log")))

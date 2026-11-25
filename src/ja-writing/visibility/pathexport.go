@@ -18,6 +18,9 @@ func PathString(s string) string { return parsePure(s).String() }
 // PathJoin は str(Path(a) / b)。b が絶対なら b だけ。
 func PathJoin(a, b string) string { return pureJoin(a, b) }
 
+// PathName は Path(s).name。
+func PathName(s string) string { return pureName(s) }
+
 // PathParent は str(Path(s).parent)。
 func PathParent(s string) string { return pureParent(s) }
 

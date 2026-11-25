@@ -119,6 +119,9 @@ func (e *interp) call(c oracle.Call) outcome {
 	if out, ok := e.manageCall(c); ok {
 		return out
 	}
+	if out, ok := e.hookCall(c); ok {
+		return out
+	}
 	if out, ok := e.writeCall(c); ok {
 		return out
 	}

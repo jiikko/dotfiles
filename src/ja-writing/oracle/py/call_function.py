@@ -72,6 +72,11 @@ JSON に直せない戻り値 (set・bytes など) は exception の type を "U
     標準エラーに書く誤りと parser.error の使い方の文を記録する用。prog は argv0 の名前)。
   - op snapshot は runs/<実行 ID>/start.json も記録として扱い (record_digest の印)、index/starts/ の下の鍵も by-path と同じく
     元の _place の文字列で名前を付け直す。鍵の元は、start.json の原文のパスからも覚える。
+- hook の記録用 (使わなければ前と一字も同じ出力):
+  - op stdin の value が "root" なら、中身の <<ROOT>> を作業フォルダにする。
+  - capture で本家の yomiyasu_hook の main を呼ぶときは、hook の _iso を op clock の時刻に、hook の time.monotonic を check と同じ
+    決まった時計にし、hook が呼ぶたびに読み直す check (spec_from_file_location の _yomiyasu_hook_check) にも check と同じ固定を当てる
+    (実行 ID の連番は check と共有する)。呼んだ後は check の main と同じく by-path の鍵の元を覚える。
 """
 import argparse
 import base64
@@ -275,36 +280,78 @@ DIGEST_TOKEN = "sha256:<<DIGEST>>"
 DIGEST_WRONG = "sha256:" + "0" * 64
 
 
+REAL_TIME = __import__("time")
+run_id_counter = [0]
+
+
+class FixedTime(object):
+    """check と hook の time の代わり (monotonic だけを決まった時計にし、ほかは本物の time)。"""
+
+    def __getattr__(self, name):
+        return getattr(REAL_TIME, name)
+
+    # monotonic は hook の呼び出しの間、本物の time に差し込む (capture_hook)。そのときも決まった時計を返す
+
+    @staticmethod
+    def monotonic():
+        if check_step[0] is None:
+            return 1000.0
+        check_step[0] += 1.0
+        return check_step[0]
+
+
+def patch_check(module):
+    """check の module の時刻・monotonic・実行 ID を決まった値にする (実行 ID の連番はどの module でも共有する)。"""
+    import datetime
+
+    def new_run_id(state, moment):
+        run_id_counter[0] += 1
+        return module._stamp(moment) + "-%08x" % run_id_counter[0]
+
+    module._utc_now = lambda: datetime.datetime.strptime(check_clock[0], "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=datetime.timezone.utc)
+    module.time = FixedTime()
+    module._new_run_id = new_run_id
+
+
 def check_module():
     """本家の check を import し、初めてのときだけ時刻・monotonic・実行 ID を決まった値にする (op clock と pycli の説明)。"""
     module = __import__("yomiyasu_check")
     if not check_patched:
-        import datetime
-
-        class FixedTime(object):
-            def __getattr__(self, name):
-                import time as real
-                return getattr(real, name)
-
-            @staticmethod
-            def monotonic():
-                if check_step[0] is None:
-                    return 1000.0
-                check_step[0] += 1.0
-                return check_step[0]
-
-        counter = [0]
-
-        def new_run_id(state, moment):
-            counter[0] += 1
-            return module._stamp(moment) + "-%08x" % counter[0]
-
-        module._utc_now = lambda: datetime.datetime.strptime(check_clock[0], "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=datetime.timezone.utc)
-        module.time = FixedTime()
-        module._new_run_id = new_run_id
+        patch_check(module)
         check_patched.append(True)
     return module
+
+
+def capture_hook(function, args):
+    """本家の hook の main を capture で呼ぶ。hook の時刻と monotonic、hook が読み直す check を固定する (driver の冒頭の hook の記録用)。"""
+    import importlib.util
+    check_module()
+    hook = __import__("yomiyasu_hook")
+    real_spec = importlib.util.spec_from_file_location
+
+    def spec_from_file_location(name, *args, **kwargs):
+        spec = real_spec(name, *args, **kwargs)
+        if name == "_yomiyasu_hook_check" and spec is not None and spec.loader is not None:
+            real_exec = spec.loader.exec_module
+
+            def exec_module(module):
+                real_exec(module)
+                patch_check(module)
+
+            spec.loader.exec_module = exec_module
+        return spec
+
+    # hook は関数の中で import time するので、呼んでいる間だけ本物の time.monotonic を決まった時計にする
+    # (sys.modules の time を差し替えると、_strptime の time.tzset が module でない値を受けて TypeError になる)
+    saved = importlib.util.spec_from_file_location, REAL_TIME.monotonic, hook._iso
+    importlib.util.spec_from_file_location = spec_from_file_location
+    REAL_TIME.monotonic = FixedTime.monotonic
+    hook._iso = lambda: check_clock[0]
+    try:
+        return capture_main(function, args)
+    finally:
+        importlib.util.spec_from_file_location, REAL_TIME.monotonic, hook._iso = saved
 
 
 def capture_main(function, args):
@@ -612,6 +659,9 @@ def run_op(op):
             sys.stdin = None
         else:
             data = base64.b64decode(op["bytes_b64"]) if "bytes_b64" in op else op.get("content", "").encode("utf-8", "surrogatepass")
+            if op.get("value") == "root":
+                # 中身の <<ROOT>> を作業フォルダにする (hook の入力の JSON の cwd。Go の op stdin は常に置き換える)
+                data = data.replace(ROOT_TOKEN.encode("ascii"), os.fsencode(ROOT))
             sys.stdin = io.TextIOWrapper(io.BytesIO(data), encoding="utf-8")
     elif kind == "clock":
         check_module()
@@ -672,6 +722,9 @@ for call in plan["calls"]:
                 if call.get("stderr"):
                     value = capture_stderr(getattr(check_module() if call["module"] == "yomiyasu_check" else module, call["function"]), args,
                                            resolve(call.get("kwargs", {})), call["argv0"])
+                elif call.get("capture") and call["module"] == "yomiyasu_hook":
+                    value = capture_hook(getattr(module, call["function"]), args)
+                    remember_places(check_module(), ROOT)
                 elif call.get("capture"):
                     value = capture_main(getattr(check_module() if call["module"] == "yomiyasu_check" else module, call["function"]), args)
                     if call["module"] == "yomiyasu_check":

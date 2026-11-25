@@ -35,10 +35,10 @@ func TestMainUnknownSubcommandIsUsageError(t *testing.T) {
 	}
 }
 
-// 各 subcommand は、未実装の間は rc=2 を返し、どの subcommand が未実装かを標準エラーに出す (別の subcommand の入口へ迷い込まない)。lint は実装済みで、入力のファイルを開けない誤りを返す。
+// 各 subcommand は自分の入口の答えを返す (別の subcommand の入口へ迷い込まない)。
 func TestMainRoutesEachSubcommandToItsOwnEntry(t *testing.T) {
-	rc, stdout, stderr := run(t, "hook", "--json", "x.md")
-	if rc != cmdenv.ExitUsage || stdout != "" || !strings.Contains(stderr, "ja-writing hook:") {
+	rc, stdout, stderr := run(t, "hook", "--version")
+	if rc != 0 || stdout != "yomiyasu_hook.py 3.1.0\n" || stderr != "" {
 		t.Errorf("hook: rc=%d stdout=%q stderr=%q", rc, stdout, stderr)
 	}
 	rc, stdout, stderr = run(t, "check", "verify", "--json")

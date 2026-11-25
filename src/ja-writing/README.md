@@ -5,7 +5,7 @@
 
 いまあるのは、土台 (issue 1073: 骨組み・oracle・Python の標準ライブラリを写す `internal/` の 4 package) と、lint・diff・check が共有する `markdown_visibility.py` の Go 実装 (issue 1074: `visibility/`) で、
 lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り・文字の下ごしらえ・後処理と出力と CLI・群の呼び出し口。`lint/`) も入っている。
-`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,084 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,170 件を出力の全体と rc まで全件比べて通る)。`check` は部品 (issue 1077 の 1〜3 本目: 小道具・パスと状態フォルダの場所・似かた・記録の `tools` の欄・書き込み・入力の読み・記録の形の検査) と `run`・`verify` (`--replay`・`--since`・`--timeout` を含む)・`start`・`export`・`end` と登録 (issue 1077 の 5 本目) と `--version` が入っている。hook は stub (`まだ実装していません` と標準エラーに出して rc 2 を返す)で、1078 で実装する。
+`lint` は動く (引数・終了コード・text と `--json` の出力・文書の指標・40 規則の検出は本家と同じ。40 規則は群 G1〜G20 が全部入っていて、CLI の記録 8,084 件を出力の全体と rc まで全件比べて通る)。`diff` は text と `--json` の出力・引数・終了コード・`--endings` が本家と同じ (issue 1076 の群 A〜AD の全部。CLI の記録 8,170 件を出力の全体と rc まで全件比べて通る)。`check` は部品 (issue 1077 の 1〜3 本目: 小道具・パスと状態フォルダの場所・似かた・記録の `tools` の欄・書き込み・入力の読み・記録の形の検査) と `run`・`verify` (`--replay`・`--since`・`--timeout` を含む)・`start`・`export`・`end` と登録 (issue 1077 の 5 本目) と `--version` が入っている。`hook` は本家の `yomiyasu_hook.py` と同じ入出力 (下の「hook」。記録 10 case・呼び出し 367 件を出力の全体と状態フォルダの木まで比べて通る)。
 
 ## 構成
 
@@ -13,7 +13,7 @@ lint の土台と骨組み (issue 1075 の T1〜T4: 絵文字・文末の飾り�
 |---|---|
 | `main.go` `entry/` | プロセスの入口。`entry.Main` が subcommand を振り分け、`entry.Run` が subcommand ごとのシグナルの受け方と `Env` を整える (check のテストの子も同じ `entry.Run` を通る) |
 | `cmdenv/` | 各 subcommand が受け取る実行環境 `Env` (引数・標準入出力・cwd・環境変数 (全部を `Environ` の 1 つの並びで持ち、`Lookup`・`Getenv`・`Environment` はそこだけから読む。`Lookup` は本家の `os.environ` と同じく空の値と無いを分け、同じ名前が 2 つあれば先のもの。`Environ` が nil の `Env` は環境変数を 1 つも持たない。`Lookup` は本家の `os.environ` と同じ字を返す)。引数・cwd・環境変数の字は本家の `sys.argv`・`os.getcwd()`・`os.environ` と同じで、`FromProcess` が `os.fsdecode` の規則で読む。OS に渡すときは `internal/pyos` が `os.fsencode` のバイトに戻す)。check が lint と diff を子プロセスで動かすか関数で呼ぶかを後で選んでも `Main` の形は変わらない |
-| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (hook の `Main` はいまは未実装の stub。check の `Main` は `verify` と `--version` だけ。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
+| `lint/` `diff/` `check/` `hook/` | 各 subcommand の `Main(ctx, env cmdenv.Env) int` (hook の `Main` は `check.HookMain` を呼ぶだけ。下の「hook」。check の `Main` は `verify` と `--version` だけ。下の「check」)。`lint/` は本家の `yomiyasu_lint.py` の土台 (T1〜T3) と骨組み (T4)。下の「lint の土台」「lint の骨組みと群の足し方」。`diff/` は本家の `yomiyasu_diff.py` の Go 実装 (群 A〜AD の全部。下の「diff」) |
 | `internal/pycli/` | lint と diff が共有する CLI の部品: argparse の写し (`Spec.Parse`。位置引数とオプションを混ぜてよい形も同じ答え。choices の値の確かめは `CheckChoice` で、近い候補があれば Python 3.14 からの「maybe you meant」を添える。近い候補は `difflib.get_close_matches(値, choices, 1)` と同じもの)・使い方の誤りの文・`--fail-on` の値の正規化・出力先が閉じたときの終了コード・入力 (ファイルか標準入力) の読み。標準出力と標準エラーに書く口 (`PrintTo`・`Eprintln`・`UsageTo`。check も使う) は、本家の errors の規則で書く: 標準エラーは backslashreplace (単独のサロゲートを `\udcff` の 6 字にする)、標準出力は strict (サロゲートを含む print 1 回分を書かず、`UnicodeEncodeError` の内部エラーで rc 3。本家の main の `reconfigure(encoding="utf-8")` が errors を strict に戻すことを Python 3.15.0 で実測)。本家の lint・diff・check は同じ `_ArgumentParser` と `_read_input` を写しで持つ (ast が同じ) |
 | `internal/pyos/` | パスを受ける・返す os と syscall の関数の口 (`Stat`・`Open`・`ReadFile`・`ReadDir`・`Mkdir`・`Rename`・`Readlink`・`Getwd` など。消す口は本家の `os.unlink` と `os.rmdir` に合わせて `Unlink` と `Rmdir` に分ける: `os.Remove` は unlink に失敗すると rmdir に落ち、本家が PermissionError で止まる所で空のフォルダを消す)。渡されたパスを `pyfs.Encode` (`os.fsencode`) してから呼び、受けた名前・リンク先・cwd を `pyfs.Decode` (`os.fsdecode`) し、誤りの `Path` は渡された字に戻す。lint・diff・check・visibility はここだけを通す (`.golangci.local.yml` の forbidigo が os・syscall のパスの関数を直に呼ぶ形を止める。oracle とテストは除く) |
 | `internal/pyfs/` | `os.fsencode` と `os.fsdecode` (utf-8 と surrogateescape) の写し (`Encode`・`Decode`) と、WTF-8 の 1 字の読み書き。標準ライブラリだけに依存する: `cmdenv` が環境変数をこの規則で読み、`internal/pyunicode` の試験は oracle (→ `cmdenv`) を import するので、`pyunicode` に置くと循環する |
@@ -400,6 +400,37 @@ check は子の `diff --json` を読んだ dict をこれらの口に渡し、�
 - `verify --replay` の内部エラー (rc 3) の文は本家と同じだが、記録の突き合わせは内部エラーの行の後ろを伏せる。文は `TestReplayCannotRunChildren` が本家 (Python 3.15.0 で実測) の 5 通り (シグナル・起動できない・記録の立場に NUL がある・U+D800 がある・NUL の後に U+D800 がある) と比べる。起動できないときの OSError の型の名前は上の `visibility.OSErrorType` で決める。
 - 本家が例外で止まる記録 (レポートの `findings` が数・`message` が数・`rule` が list など) は、本家が `yomiyasu_check.py: 内部エラー: <型>: <文>` とトレースバックを出して rc 3、Go は `yomiyasu_check.py: 内部エラー: <Go の誤り>` で rc 3。記録の比べは標準エラーを「内部エラー」の行までにそろえてから比べる (例外の型と文は比べない)。
 - 本家の `_getcwd` が `os.getcwd` の失敗の理由 (`strerror`) を文に入れる所は、`ENOENT` の文 (`No such file or directory`) だけを出す (`EACCES` で読めない作業フォルダは試していない)。
+
+## hook (`check/hook*.go`。issue 1078)
+
+本家の `yomiyasu_hook.py` (v3.1.0) を写した。実装は `check` の中にあり、`hook.Main` は `check.HookMain` を呼ぶだけ。
+`hook` パッケージに置かない理由: 本家と比べる記録の突き合わせは check のテストの道具 (op の解釈・状態フォルダの木の比べ・時刻と実行 ID を固定した Runtime) を使う。
+hook から check の内部のテストは使えず、check のテストから hook を import すると import が輪になる。
+
+| 本家 | Go |
+|---|---|
+| `main`・`_options`・`_states`・`_project_state`・`_invocation`・`_config`・`_error_log`・`_log` | `hook.go` |
+| `_process`・`_stop`・`_pretool`・`_related`・`_notice`・`_reason`・`_words_arguments` | `hook_process.go` |
+| `_read_text`・`_paths`・`_bash_command`・`_shell_segments`・`_bodies` | `hook_bodies.go` |
+| `shlex.split`・`shlex.quote`・`shlex.join`・`shlex.shlex(punctuation_chars=True)` | `internal/pyshlex` |
+
+締め切り (`_BUDGETS`): 本家は SIGALRM で処理のどこでも `TimeoutError('hook_budget')` を投げる。Go は処理を goroutine で動かし、締め切りで見切る
+(`withDeadline`)。タイマーの秒数は本家と同じく処理の前に経過の時計で決め、その時点で残りが 0.001 秒以下なら処理に入らない (本家はそのタイマーが check の読み込みの間に必ず鳴る)。
+
+記録 (`testdata/golden/check-hook.json`。`check/hook_recording_norace_test.go` の `TestHookMatchesPythonRecording`): 本家の main を、引数と標準入力のイベントの JSON・環境変数・状態フォルダを
+揃えて動かした stdout・stderr・終了コードと状態フォルダの木。引数と入力の誤り・登録 (`/yomiyasu`・`/yomiyasu:yomiyasu`・UserPromptExpansion・codex の `$yomiyasu`)・Stop で続けさせる・
+上限と期限で未確認にする・検査済み・投稿の照合 (gh の `--body`・`--body-file`・api の `-f`/`-F`・release・置換やヒアドキュメントで取り出せない本文・mcp)・紐付け (同じプロジェクトの中だけ)・
+SessionEnd・語の一覧の引数 (`--words`・`--no-words`・両方・無い一覧・読めない一覧)・壊れた登録・状態フォルダの候補 (`YOMIYASU_STATE_DIR`・`CLAUDE_PROJECT_DIR`・`.git` のある上のフォルダ)・
+締め切り (経過の時計を読むたびに 1 秒進める)。hook の中の関数 (`_shell_segments`・`_bodies`・`_paths`・`_invocation`・`_bash_command`) と shlex も直接呼んで比べる。
+driver は本家の hook が呼ぶたびに読み直す check (`spec_from_file_location`) にも、check と同じ時刻・実行 ID・経過の時計の固定を当てる (`call_function.py` の `capture_hook`)。
+
+### hook の揃わない範囲
+
+- `--print-config` の JSON の `command` (と codex の `command` の文) は、本家の `sys.executable -B <スクリプトの絶対パス> --host …` の代わりに、この実行ファイルの実パスと `hook --host …` を書く。
+- `hook-errors.log` の 4 つ目の欄 (本家のトレースバックの最後の枠の「ファイル名:行」) は、語の一覧の誤り (`markdown_visibility.py` の行)・締め切り (`yomiyasu_hook.py:760` と `:897`)・
+  投げずに渡す例外 (`:0`) だけを本家と揃える。check の口が投げる例外 (ロックの時間切れなど) と hook の中の型の誤りは、本家はその例外を投げた行を書くが、Go は `yomiyasu_hook.py:0` を書く。
+- 締め切りで見切ったとき、処理中の goroutine がロックを持っていれば、本家と違い `timeout` の log はロックを取れずに書かれない (本家は SIGALRM の例外でロックを放してから書く)。
+  見切った後も goroutine は止まらない (ctx を取り消すのでロックの待ちは抜け、プロセスの終わりで止まる)。
 
 ## 標準ライブラリを写す package (`internal/`)
 
