@@ -27,7 +27,7 @@ bench/pybench.sh [-n <周の数>] <入力の dir> <結果の dir>   # 周の数�
 
 - 本家の動かし方は `oracle` の Runner と同じ (環境変数を空から作る・`python3 -P -s -S -B -X utf8`・SHA-256 が合う本家のファイルだけを写した木)。
   本家のファイルは `make golden` が取る置き場 (`~/.cache/yomiyasu-oracle/<commit>/`) から読む
-- 各周で全ケースを 1 回ずつ流し、周ごとにケースの順を周の番号を種にしてかき混ぜる。
+- 各周で全ケースを 1 回ずつ流し、周ごとにケースの順を、run ごとの種 (`env.tsv` の `seed`) と周の番号でかき混ぜる。
   `runs.tsv` には run ごとの rc・秒数・1 分のロードアベレージを書く。`summary.tsv` には、ケースごとの中央値・最小・最大と、同じ道具の `--version` の中央値を引いた処理の時間が出る。`env.tsv` に Python のバージョン・本家の commit・CPU・OS・開始と終了の時刻が出る
 - 測るのは `env -i` の起動から python3 の終わりまでの壁時計の時間。使い捨ての cwd の用意と入力の写しは区間の外。`startup-python` (`python3 -c pass`) がこの測り方の下限になる
 - rc が 0 でない run と、周によって出力の大きさが変わるケースのどちらかがあれば、`summarize.py` が rc 1 で落ち、`summary.tsv` を出さない
@@ -42,8 +42,14 @@ bench/pybench.sh -n 5 -g before=<dir>/jw-before -g after=<dir>/jw-after <入力�
 
 - `-g [<名前>=]<バイナリ>` を渡すと、同じケースを Go の `ja-writing lint|diff|check` でも流す。Go のケースは `<ケース>@<名前>` (名前を省くと `@go`)。
   本家と全部の Go を同じ周の中で、同じかき混ぜの順に混ぜて流す。`-g` は何度でも渡せるので、直す前と後を同じ run で比べられる
-- `summary.tsv` の `stdout_bytes` が本家と違う Go のケースは、答えが違う (出力の大きさだけを見る粗い確かめ。答えの一致の正本は `make test` の記録の比べ)
-- 同じバイナリを 2 つの名前で渡すと、同じコードでの揺れが分かる (2026-11-25 に lint-len-1024k の 1 周で 2%)
+- `runs.tsv` には stdout と stderr の SHA-256 も残す。Go のケースの stdout・stderr が本家の同名のケースと 1 周でも違うと、`summarize.py` が rc 1 で落ちる。
+  答えの一致の正本は `make test` の記録の比べで、これは計測の入力で答えがずれていないことの確かめ
+- 同じバイナリを 2 つの名前で渡すと、同じコードでの揺れが分かる。揺れはケースごとに違う (1 周で 2〜13%) ので、比べる run に毎回入れる
+- 比べるのは `python3 -I bench/compare.py <runs.tsv> <after> <before> [<揺れ a> <揺れ b>]`。ケースごとに中央値の比・after が速かった周の数・揺れの比を出し、
+  比が揺れの帯の外で過半数の周で同じ向きなら「速い」「遅い」と出す。起動を引いた値は使わない (準備を起動の側へ移すと、全体は変わらないのに速く見える)
+- pprof で lint の内訳を見るときは `lint/lint_bench_test.go` の `BenchmarkLintFile` (`JA_WRITING_BENCH_FILE` に入力を渡す)。
+  繰り返す in-process の計測では、プロセスごとに 1 回だけ払う準備 (正規表現の compile) が償却されて見えない。
+  そこで 1 回目だけのプロファイルを、プロセスを分けて集める (`-test.benchtime 1x` を何回も打ち、`go tool pprof` に全部を渡す)
 
 ## 実際の文書で答えの一致と所要を比べる (`docbench.py`)
 

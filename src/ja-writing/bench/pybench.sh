@@ -7,7 +7,7 @@
 # 本家のケースと同じ周の中で、同じかき混ぜの順に混ぜて流す (別の時間帯の run どうしは 1〜2 割ずれるため。issue 1082)。
 # -g を複数渡すと、直す前と後の Go のバイナリを同じ run で比べられる (issue 1079)。
 # Go は環境変数を空から作るところまで本家と同じにし、python の起動の引数は付けない。
-# 周の数を指定しないときは 5 周。各周で全ケースを 1 回ずつ流し、周ごとにケースの順を (周の番号を種に) かき混ぜる。
+# 周の数を指定しないときは 5 周。各周で全ケースを 1 回ずつ流し、周ごとにケースの順を (run ごとの種と周の番号で) かき混ぜる。
 # 結果は runs.tsv (1 run 1 行) と summary.tsv (ケースごとの中央値・最小・最大と、起動を引いた処理の時間)。
 #
 # 本家の動かし方は oracle の Runner (oracle/runner.go の env・pythonFlags・newSandbox) に合わせる:
@@ -129,12 +129,15 @@ done < manifest.tsv)
 python3 -I "$here/gen.py" "$work/expect" >/dev/null
 cmp -s "$work/expect/manifest.tsv" "$inputs/manifest.tsv" || { echo "pybench: $inputs は今の gen.py の出力と違う (作り直す)" >&2; exit 2; }
 
+# かき混ぜの種は run ごとに変える (同じ種だと、どの run も「X の直前は Y」が同じになり、順の偏りが run をまたいで残る)。env.tsv に残す
+seed="$(python3 -I -c 'import secrets; print(secrets.randbelow(2**31))')"
 pyver="$(env -i "$py" -P -s -S -B -X utf8 -c 'import sys; print(sys.version.split()[0])')"
 {
   printf 'python\t%s\t%s\n' "$py" "$pyver"
   printf 'upstream\t%s\n' "$commit"
   printf 'host\t%s\t%s\n' "$(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m)" "$(sw_vers -productVersion 2>/dev/null || uname -r)"
   printf 'rounds\t%s\n' "$rounds"
+  printf 'seed\t%s\n' "$seed"
   for g in ${golabels[@]+"${!golabels[@]}"}; do
     printf 'go\t%s\t%s\t%s\n' "${golabels[$g]}" "${gobins[$g]}" "$(shasum -a 256 "${gobins[$g]}" | cut -d' ' -f1)"
   done
@@ -142,12 +145,12 @@ pyver="$(env -i "$py" -P -s -S -B -X utf8 -c 'import sys; print(sys.version.spli
 } > "$results/env.tsv"
 
 runs="$results/runs.tsv"
-printf 'round\tcase\trc\tseconds\tstdout_bytes\tstderr_bytes\tloadavg_1m\n' > "$runs"
+printf 'round\tcase\trc\tseconds\tstdout_bytes\tstderr_bytes\tloadavg_1m\tstdout_sha256\tstderr_sha256\n' > "$runs"
 total=${#cases[@]}
 pypath="$(dirname "$py"):/usr/bin:/bin"
 for ((r = 1; r <= rounds; r++)); do
-  # 周ごとに、周の番号を種にしてケースの順をかき混ぜる (直前に走るケースを周ごとに変える。種が決まっているので run どうしで同じ順になる)
-  read -ra order <<< "$(python3 -I -c 'import random, sys; o = list(range(int(sys.argv[1]))); random.Random(int(sys.argv[2])).shuffle(o); print(*o)' "$total" "$r")"
+  # 周ごとに、run の種と周の番号からケースの順をかき混ぜる (直前に走るケースを周ごとにも run ごとにも変える)
+  read -ra order <<< "$(python3 -I -c 'import random, sys; o = list(range(int(sys.argv[1]))); random.Random(int(sys.argv[2]) * 1000003 + int(sys.argv[3])).shuffle(o); print(*o)' "$total" "$seed" "$r")"
   for k in "${order[@]}"; do
     IFS=$'\t' read -r name tool args <<< "${cases[$k]}"
     run="$work/run.$r.$k"
@@ -171,7 +174,8 @@ for ((r = 1; r <= rounds; r++)); do
     end=$EPOCHREALTIME
     cd "$work"
     secs="$(awk -v a="$start" -v b="$end" 'BEGIN { printf "%.4f", b - a }')"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$r" "$name" "$rc" "$secs" "$(wc -c < "$run/out" | tr -d ' ')" "$(wc -c < "$run/err" | tr -d ' ')" "$load" >> "$runs"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$r" "$name" "$rc" "$secs" "$(wc -c < "$run/out" | tr -d ' ')" "$(wc -c < "$run/err" | tr -d ' ')" "$load" \
+      "$(shasum -a 256 "$run/out" | cut -d' ' -f1)" "$(shasum -a 256 "$run/err" | cut -d' ' -f1)" >> "$runs"
     printf 'pybench: 周 %s/%s %-22s rc=%s %ss\n' "$r" "$rounds" "$name" "$rc" "$secs" >&2
     rm -rf "$run"
   done

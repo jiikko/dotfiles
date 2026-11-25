@@ -11,7 +11,8 @@ Go の実装のケース (pybench.sh -g) は名前の後ろに @<名前> (省く
 同じ実装の起動のケース (startup-lint@go など) から取る。
 
 rc が 0 でない run があるか、同じケースの出力のバイト数が周によって違えば、何も出さずに rc 1 で終わる
-(失敗した run や、別の答えを出した run の混ざった中央値を出さない)。
+(失敗した run や、別の答えを出した run の混ざった中央値を出さない)。runs.tsv に stdout と stderr の SHA-256 の列があれば、
+Go のケース (@<名前>) の stdout・stderr が本家の同名のケースと 1 周でも違うときも rc 1 で終わる (本家と違う答えの所要を比べない)。
 """
 
 import statistics
@@ -26,16 +27,19 @@ def main() -> None:
         for line in f:
             name, size, _ = line.rstrip("\n").split("\t")
             sizes[name.removesuffix(".md")] = int(size)
-    times, outs, order, bad = {}, {}, [], []
+    times, outs, digests, order, bad = {}, {}, {}, [], []
     with open(sys.argv[1], encoding="utf-8") as f:
         next(f)
         for line in f:
-            rnd, case, rc, secs, out_bytes = line.rstrip("\n").split("\t")[:5]
+            cols = line.rstrip("\n").split("\t")
+            rnd, case, rc, secs, out_bytes = cols[:5]
             if case not in times:
                 order.append(case)
-                times[case], outs[case] = [], set()
+                times[case], outs[case], digests[case] = [], set(), set()
             times[case].append(float(secs))
             outs[case].add(out_bytes)
+            if len(cols) >= 9:
+                digests[case].add((cols[7], cols[8]))
             if rc != "0":
                 bad.append(f"周 {rnd} の {case} が rc {rc}")
     if not order:
@@ -43,6 +47,10 @@ def main() -> None:
     # 周ごとに順をかき混ぜるので、出てきた順ではなく、起動だけのケースを先にして名前の順に並べる
     order.sort(key=lambda c: (not c.startswith("startup-"), c))
     bad += [f"{c} の出力のバイト数が周によって違う ({', '.join(sorted(outs[c]))})" for c in order if len(outs[c]) > 1]
+    for c in order:
+        base = c.partition("@")[0]
+        if "@" in c and base in digests and digests[c] | digests[base] and digests[c] != digests[base]:
+            bad.append(f"{c} の stdout か stderr が本家 ({base}) と違う")
     if bad:
         print("summarize: " + " / ".join(bad), file=sys.stderr)
         raise SystemExit(1)
