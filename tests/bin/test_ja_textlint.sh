@@ -494,5 +494,29 @@ else
   fail "依存なしのオプション: rc=$rc (期待 3): $(cat "$work/jnf.out" "$work/jnf.err")"
 fi
 
+# 語の一覧: どの repo から呼んでも、dotfiles で定義した用語 (_claude/skills/ja-writing/words/allow.txt) を ja-writing lint が指摘しない。
+# 定義していない組み込みの語 (土台) は指摘する (一覧が外すのは書いた語だけ)。
+# その repo が自分の .yomiyasu-words/ を持つときは、dotfiles の一覧でなくそちらを使う
+mkdir -p "$work/out" "$work/own/.git" "$work/own/.yomiyasu-words"
+printf '# 用語\n\n正本はゲートの台帳と入口の印に書く。土台を作る。\n' >"$work/out/t.md"
+cp "$work/out/t.md" "$work/own/t.md"
+printf '土台\n' >"$work/own/.yomiyasu-words/allow.txt"
+: >"$work/own/.yomiyasu-words/flag.txt"
+rc=0
+(cd "$work/out" && "$BIN" t.md) >"$work/wo.out" 2>"$work/wo.err" || rc=$?
+if [ "$rc" -eq 0 ] && jw_ran "$work/wo.out" t.md && grep -qF '「土台」' "$work/wo.out" \
+  && ! grep -qE '「(正本|ゲート|台帳|入口|印)」' "$work/wo.out"; then
+  ok "repo の外から呼んでも dotfiles で定義した用語は指摘しない (土台は指摘する)"
+else
+  fail "dotfiles の語の一覧: rc=$rc: $(cat "$work/wo.out" "$work/wo.err")"
+fi
+rc=0
+(cd "$work/own" && "$BIN" t.md) >"$work/wn.out" 2>"$work/wn.err" || rc=$?
+if [ "$rc" -eq 0 ] && jw_ran "$work/wn.out" t.md && grep -qF '「正本」' "$work/wn.out" && ! grep -qF '「土台」' "$work/wn.out"; then
+  ok "repo が自分の .yomiyasu-words/ を持つときはそちらを使う"
+else
+  fail "repo の語の一覧: rc=$rc: $(cat "$work/wn.out" "$work/wn.err")"
+fi
+
 [ "$fails" -eq 0 ] || { printf '✗ %d 件失敗\n' "$fails" >&2; exit 1; }
 echo "OK: ja-textlint"

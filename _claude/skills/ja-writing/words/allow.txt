@@ -1,0 +1,7 @@
+# dotfiles で定義した用語 (ユーザー決定 2026-11-11。SKILL.md の規範 3 の「残す」の行)。ja-writing lint の組み込みの一覧 (AI がよく使う語など) から外す。
+# bin/ja-textlint が、その repo に自分の .yomiyasu-words/ が無いときに --words でこのフォルダを渡す。
+正本
+ゲート
+台帳
+入口
+印

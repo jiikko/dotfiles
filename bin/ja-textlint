@@ -23,6 +23,8 @@
 #     (_claude/hooks/ja-textlint-on-edit.sh は -f json を jq で読む)。
 #   -h・-v・--init・--print-config・--mcp は textlint だけで、何も足さない。
 #   JA_TEXTLINT_NO_INSTALL を付けると、ビルド済みで入力と合うバイナリだけを使い (go_autobuild_exec --no-build)、無ければ掛けずに rc 3。
+#   語の一覧: その repo が自分の .yomiyasu-words/ を持つ (ja-writing lint が git の最上位か cwd で見つける) ならそれを使い、
+#   無ければ dotfiles で定義した用語の一覧 (_claude/skills/ja-writing/words/) を --words で渡す (どの repo から呼んでも、定義した用語を指摘しない)。
 #
 # 見ないもの: 主語・目的語の抜け、語が機能を言い表しているか、直訳の硬さ (構文として整った文は素通りする)。
 # そこは skill ja-writing の手順 (人と Claude が読んで直す) が受け持つ。
@@ -173,7 +175,7 @@ jw() {
 lint_one() { # <表示の名前> <中身のファイル>
   local r=0
   printf '\nja-writing lint: %s\n' "$1"
-  jw lint --fail-on error - <"$2" >"$work/jw.out" || r=$?
+  jw lint --fail-on error ${words[@]+"${words[@]}"} - <"$2" >"$work/jw.out" || r=$?
   cat "$work/jw.out"
   # rc 1 で見出しが無いのはビルドの失敗 (go_autobuild_exec)。rc 2 は入力の誤り (UTF-8 で読めない等) のまま 2 にする
   if [ "$r" -eq 1 ] && ! grep -qF '表現・書式の検査を実行しました' "$work/jw.out"; then
@@ -204,6 +206,12 @@ if [ "$lint" -gt 0 ]; then
     [ "$wrc" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けられない (bin/ja-writing のビルドに失敗した。理由は上の行)" >&2
   fi
   if [ "$wrc" -eq 0 ]; then
+    # 一覧の探し方を写さない: 見つけたかは ja-writing lint の --json の context.words で見る (一覧を使ったときだけ出る)
+    words=()
+    printf '' | jw lint --json - >"$work/words.json" 2>/dev/null || true
+    if ! grep -qF '"words": {' "$work/words.json"; then
+      words=(--words "$root/_claude/skills/ja-writing/words")
+    fi
     for k in "${!kinds[@]}"; do
       case "${kinds[$k]}" in
         T) lint_one "${vals[$k]}" "${vals[$k]}" ;;
