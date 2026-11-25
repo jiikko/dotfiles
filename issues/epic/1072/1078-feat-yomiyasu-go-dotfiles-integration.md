@@ -75,6 +75,12 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 - 装飾の記号の規則 (`dash_decoration` などの 3 本。warn なので `--strict` の判定にも入る): dotfiles の issues と `_claude` の Markdown 606 本が「—」を使っている
   (2026-11-12 に `git grep -l` で数えた)。書いた行だけを知らせる hook でも、Claude が規範の文書に「—」を書くたびに知らせが出る。知らせるか、外すか
 
+### ユーザーの答え (2026-11-25)
+
+- `ja-writing hook` を dotfiles の `_claude/settings.json` に登録する (所要の数字を添えて聞いた: 原稿を登録していないときの 1 回が、bin/ja-writing の包みを通して約 40 ms。
+  包みの自動ビルドの確かめが約 33 ms、Go の本体は 6〜7 ms、本家の Python は 31 ms。make test が背景で走る負荷の下で 30 回ずつ測った中央値)
+- 装飾のダッシュの規則 (`dash_decoration` など) は on-edit の hook で知らせない (jq の絞り込みで外す)
+
 ## 受け入れ条件
 
 - [ ] `ja-writing hook` が入力の集まりで本家と同じ出力と rc を返す
