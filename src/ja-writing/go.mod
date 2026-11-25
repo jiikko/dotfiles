@@ -17,3 +17,5 @@ replace atomicfile => ../atomicfile
 replace subproc => ../subproc
 
 replace github.com/jiikko/dotfiles/src/testwait => ../testwait
+
+replace github.com/dlclark/regexp2/v2 => ./third_party/regexp2

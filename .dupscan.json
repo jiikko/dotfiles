@@ -1,0 +1,3 @@
+{"version": 1, "exclude": [
+  {"paths": ["src/ja-writing/third_party/regexp2/**"], "kind": "intentional", "reason": "上流の regexp2 を写したもの (src/ja-writing/third_party/regexp2/README.md)。上流と同じ形を保つので寄せない"}
+]}
