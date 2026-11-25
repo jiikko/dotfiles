@@ -18,7 +18,10 @@
 #   全部を見たいときは ja-textlint を手で打つ (skill ja-writing)。
 # 🚨 **依存が入っていなければ入れない** (JA_TEXTLINT_NO_INSTALL)。編集のたびに npm を走らせない。一度手で ja-textlint を打てば入る。
 # 🚨 **ja-writing lint もビルドしない** (go_autobuild_exec --no-build)。ビルドが無いか古ければ黙る。一度 bin/ja-writing を打てば入る。
-#   --async にしない: 古いバイナリの結果を今の結果と取り違える。時間は 5 秒で止める。
+#   --async にしない: 古いバイナリの結果を今の結果と取り違える。時間は 1 回 1 秒で止める (3000 行で 0.4 秒。一覧の無い repo では 2 回起こす。
+#   jq 3 + textlint 10 + 1 + 1 で hook の上限 15 秒に収める)。
+#   行の番号は ja-writing lint の数え方で、U+2028・U+2029 を改行に数えない。それを含む行より後ろの ja-writing の知らせは、範囲 (textlint に合わせて数える) と
+#   食い違って出ないことがある (分かっていて受ける。textlint の知らせを優先する)。
 #   ja-textlint は -f json のとき ja-writing lint を掛けない (機械が読む出力に別の形を混ぜない) ので、ここで直接起こす。
 # 🚨 **ja-writing lint で知らせる規則は jw_rules だけ** (2026-11-25 に dotfiles の文書 80 本の当たりを読んで決めた)。
 #   外したもの: emoji_prohibited (🚨 は dotfiles の書き方)・trailing_colon (行末の「:」も同じ)・dash_decoration など装飾のダッシュ (ユーザー決定)・
@@ -121,7 +124,8 @@ if [ -n "$jw_tmp" ]; then
   jw() { # <出力のファイル> <ja-writing lint の引数>... (書いたファイルのフォルダで、ビルドせずに起こす)
     local o=$1
     shift
-    (cd "$(dirname "$file")" && "$runtimeout" 5 zsh -c 'source "$1"; shift; go_autobuild_exec --no-build "$1" ja-writing -- "${@:2}"' \
+    # shellcheck disable=SC2016  # 単一引用符の中は zsh -c のプログラム ($1 は zsh の引数)
+    (cd "$(dirname "$file")" && "$runtimeout" 1 zsh -c 'source "$1"; shift; go_autobuild_exec --no-build "$1" ja-writing -- "${@:2}"' \
       _ "$hook_repo/bin/lib/go_autobuild.zsh" "$hook_repo/src/ja-writing" lint --json "$@" - <"$file" >"$o" 2>/dev/null)
   }
   jrc=0
@@ -139,9 +143,10 @@ if [ -n "$jw_tmp" ]; then
 fi
 
 [ "${#notices[@]}" -gt 0 ] || exit 0
-notice=$(printf '%s\n' "${notices[@]}" | awk 'NR <= 20 { print } END { if (NR > 20) printf "… ほか %d 件\n", NR - 20 }')
+# 行の順に混ぜてから 20 件で切る (textlint の指摘が多くても ja-writing の指摘が後ろに隠れない)
+notice=$(printf '%s\n' "${notices[@]}" | LC_ALL=C sort -s -n | awk 'NR <= 20 { print } END { if (NR > 20) printf "… ほか %d 件\n", NR - 20 }')
 
-msg="ja-textlint: ${file} の書いた行に、AI が書きがちな語・表示されない太字がある
+msg="ja-textlint: ${file} の書いた行に、AI が書きがちな語・直訳・比喩・表示されない太字がある
 $notice
 起きていることの言葉に直す (skill ja-writing の規範 7)。言い換えると意味が変わる所 (定義した用語・引用・画面の文言) は元の語を残す"
 jq -n --arg c "$msg" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $c}}'

@@ -14,6 +14,17 @@ import (
 	"ja-writing/internal/pyjson"
 )
 
+// 締め切りの後に処理がロックを放すのを待っても、ホストの上限 (--print-config が書く値) の内に終わる。
+func TestHookUnwindStaysWithinHostTimeout(t *testing.T) {
+	for _, host := range []string{"claude-code", "codex"} {
+		for _, event := range hookEvents {
+			if total := hookBudgets[event] + hookUnwindLimit(host, event); total >= hookHostTimeout(host, event) {
+				t.Errorf("%s %s: 締め切り %.2f + 待ち %.2f = %.2f 秒がホストの上限 %.0f 秒を超える", host, event, hookBudgets[event], hookUnwindLimit(host, event), total, hookHostTimeout(host, event))
+			}
+		}
+	}
+}
+
 // 締め切りがロックを持った処理の途中に来ても、ロックを残さずに終わり (本家は SIGALRM の例外で with _ArmedLock を抜けて消す)、
 // 処理していた登録の log に timeout を、hook-errors.log に締め切りの行を残す。出力は無く rc 0。
 // 締め切りは実時間のタイマーで、race つきで回す (記録の突き合わせは race なしでしか回らず、goroutine とタイマーの枝を通らない)。
@@ -42,7 +53,7 @@ func TestHookDeadlineInsideLockReleasesLockAndLogsTimeout(t *testing.T) {
 	hookInLock = func(ctx context.Context) {
 		entered <- struct{}{}
 		<-ctx.Done()
-		time.Sleep(500 * time.Millisecond) // sleep-ok: 入力: 取り消しを受けてからロックを放すまでの遅さ (待ちではない)
+		time.Sleep(500 * time.Millisecond) // sleep-ok: other: 取り消しを受けてからロックを放すまでの遅さ (待ちではない)
 	}
 	saved := hookBudgets["PreToolUse"]
 	hookBudgets["PreToolUse"] = 0.2

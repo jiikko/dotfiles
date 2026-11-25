@@ -518,5 +518,17 @@ else
   fail "repo の語の一覧: rc=$rc: $(cat "$work/wn.out" "$work/wn.err")"
 fi
 
+# repo の一覧が壊れている (UTF-8 で読めない) ときは、dotfiles の一覧に差し替えて通さず、誤りを出して rc 2
+mkdir -p "$work/brk/.yomiyasu-words"
+cp "$work/out/t.md" "$work/brk/t.md"
+printf '\xff\xfe\n' >"$work/brk/.yomiyasu-words/allow.txt"
+rc=0
+(cd "$work/brk" && "$BIN" t.md) >"$work/wb.out" 2>"$work/wb.err" || rc=$?
+if [ "$rc" -eq 2 ] && ! grep -qF 'ja-writing/words' "$work/wb.out" "$work/wb.err"; then
+  ok "repo の一覧が読めないときは dotfiles の一覧に差し替えず rc 2"
+else
+  fail "壊れた repo の一覧: rc=$rc (期待 2): $(cat "$work/wb.out" "$work/wb.err")"
+fi
+
 [ "$fails" -eq 0 ] || { printf '✗ %d 件失敗\n' "$fails" >&2; exit 1; }
 echo "OK: ja-textlint"

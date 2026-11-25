@@ -260,14 +260,14 @@ expect_jw "(対照) 本物の repo では ja-writing の知らせが出る" "$ou
 out=$(fake_run "$fake" "$(write_input "$both")")
 expect_lines "ja-writing lint のビルドが無いときも textlint の知らせは出す" "$out" "3"
 expect_jw "ja-writing lint のビルドが無いときは ja-writing の知らせを出さない" "$out" ""
-# 時間切れ: 偽の repo の go_autobuild.zsh を、終わらない go_autobuild_exec にする (hook は 5 秒で止めて黙る)。
+# 時間切れ: 偽の repo の go_autobuild.zsh を、終わらない go_autobuild_exec にする (hook は 1 秒で止めて黙る)。
 # PATH の zsh を偽物にしない: bin/runtimeout 自身が zsh で動くので、hook の全体が止まる
 slow="$TMP_ROOT/slow"
 mkdir -p "$slow/_claude/hooks" "$slow/bin/lib" "$slow/src/ja-writing"
 cp "$HOOK" "$slow/_claude/hooks/"
 ln -s "$ROOT_DIR/bin/ja-textlint" "$slow/bin/ja-textlint"
 ln -s "$ROOT_DIR/bin/runtimeout" "$slow/bin/runtimeout"
-printf 'go_autobuild_exec() { sleep 60; } # sleep-ok: 入力: hook の 5 秒の上限に止めさせる、終わらない ja-writing の代わり\n' > "$slow/bin/lib/go_autobuild.zsh"
+printf 'go_autobuild_exec() { sleep 60; } # sleep-ok: stub: hook の時間の上限に止めさせる、終わらない ja-writing の代わり\n' > "$slow/bin/lib/go_autobuild.zsh"
 out=$(fake_run "$slow" "$(write_input "$both")")
 expect_lines "ja-writing lint が時間切れでも textlint の知らせは出す" "$out" "3"
 expect_jw "ja-writing lint が時間切れなら ja-writing の知らせを出さない" "$out" ""

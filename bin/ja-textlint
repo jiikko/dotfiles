@@ -207,9 +207,12 @@ if [ "$lint" -gt 0 ]; then
   fi
   if [ "$wrc" -eq 0 ]; then
     # 一覧の探し方を写さない: 見つけたかは ja-writing lint の --json の context.words で見る (一覧を使ったときだけ出る)
+    # 確かめが失敗したら (repo の一覧が読めない等) 差し替えない。差し替えると壊れた一覧が気づかれないまま別の一覧で通る。
+    # そのまま lint に進み、ja-writing lint 自身が誤り (rc 2) を出す
     words=()
-    printf '' | jw lint --json - >"$work/words.json" 2>/dev/null || true
-    if ! grep -qF '"words": {' "$work/words.json"; then
+    probe=0
+    printf '' | jw lint --json - >"$work/words.json" 2>/dev/null || probe=$?
+    if [ "$probe" -eq 0 ] && ! grep -qF '"words": {' "$work/words.json"; then
       words=(--words "$root/_claude/skills/ja-writing/words")
     fi
     for k in "${!kinds[@]}"; do

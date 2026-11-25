@@ -39,8 +39,29 @@ var hookEvents = []string{"UserPromptExpansion", "UserPromptSubmit", "PreToolUse
 // hookBudgets は _BUDGETS (イベントごとの秒数の上限)。
 var hookBudgets = map[string]float64{"UserPromptExpansion": 4, "UserPromptSubmit": 4, "PreToolUse": 7, "PostToolUse": 7, "Stop": 20, "SessionEnd": 0.8}
 
-// hookUnwindWait は締め切りで取り消した処理がロックを放すのを待つ上限。
-const hookUnwindWait = 2 * time.Second
+// hookUnwindWait は締め切りで取り消した処理がロックを放すのを待つ上限 (秒)。
+const hookUnwindWait = 2.0
+
+// hookHostTimeout は --print-config が設定に書くホストの上限 (秒)。超えるとホストが hook を止め、hook-errors.log の行も残らない。
+func hookHostTimeout(host, event string) float64 {
+	switch event {
+	case "UserPromptExpansion", "UserPromptSubmit":
+		return 5
+	case "PreToolUse", "PostToolUse":
+		return 10
+	case "Stop":
+		return 30
+	}
+	if host == "claude-code" {
+		return 1
+	}
+	return 2
+}
+
+// hookUnwindLimit は締め切りの後に待つ秒数 (hookUnwindWait か、ホストの上限から締め切りと書き終える分を引いた残りの短い方)。
+func hookUnwindLimit(host, event string) float64 {
+	return max(0, min(hookUnwindWait, hookHostTimeout(host, event)-hookBudgets[event]-0.15))
+}
 
 const (
 	hookMaxInput = 4 * 1024 * 1024
@@ -260,9 +281,8 @@ func (h *hookRun) main(argv []string) (output string, rc int, err error) {
 	return h.withDeadline(invocation)
 }
 
-// withDeadline は本家の SIGALRM (締め切りで TimeoutError('hook_budget')) を、処理を別の goroutine で動かして締め切りで見切ることで写す。
-// 見切った後も goroutine は止まらない (ctx を取り消すのでロックの待ちは抜ける)。本家と違い、見切った時点でロックを持っていれば、
-// fail の timeout の log はロックを取れずに書かれない。
+// withDeadline は本家の SIGALRM (締め切りで TimeoutError('hook_budget')) を、処理を別の goroutine で動かし、締め切りで ctx を取り消して写す。
+// 取り消した処理がロックを放すのを、ホストの上限を超えない長さまで待つ (hookUnwindLimit)。
 func (h *hookRun) withDeadline(invocation *string) (string, int, error) {
 	ctx, cancel := context.WithCancel(h.ctx)
 	defer cancel()
@@ -300,7 +320,7 @@ func (h *hookRun) withDeadline(invocation *string) (string, int, error) {
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(hookUnwindWait):
+	case <-time.After(time.Duration(hookUnwindLimit(h.host, h.event) * float64(time.Second))):
 	}
 	return "", 0, &hookFault{err: timeoutException("hook_budget"), loc: hookLocDeadline}
 }
@@ -510,15 +530,11 @@ func hookConfig(host string) (string, error) {
 	if host != "claude-code" {
 		events = []string{"UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"}
 	}
-	timeouts := map[string]int64{"UserPromptExpansion": 5, "UserPromptSubmit": 5, "PreToolUse": 10, "PostToolUse": 10, "Stop": 30, "SessionEnd": 2}
-	if host == "claude-code" {
-		timeouts["SessionEnd"] = 1
-	}
 	hooks := pyjson.NewObject()
 	for _, event := range events {
 		handler := pyjson.NewObject()
 		handler.Set("type", "command")
-		handler.Set("timeout", timeouts[event])
+		handler.Set("timeout", int64(hookHostTimeout(host, event)))
 		if host == "claude-code" {
 			handler.Set("command", exe)
 			handler.Set("args", pyjson.Strings([]string{"hook", "--host", host}))

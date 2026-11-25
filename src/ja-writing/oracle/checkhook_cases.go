@@ -45,6 +45,11 @@ func hookEvent(f *fixtureCase, event, session, rel string, extra map[string]any)
 	return data
 }
 
+// hookSubmit は作業フォルダで UserPromptSubmit の prompt を本家の hook の main に渡す。
+func hookSubmit(f *fixtureCase, session, prompt string, args ...string) {
+	hookMain(f, hookEvent(f, "UserPromptSubmit", session, "", map[string]any{"prompt": prompt}), "", args...)
+}
+
 // hookFn は hook の中の関数を直接呼ぶ (bytes と tuple は objects で JSON にする)。
 func hookFn(f *fixtureCase, fn string, args ...any) {
 	f.call(Call{Module: HookModule, Function: fn, Args: args, Digest: true, Keep: true, Objects: true})
@@ -93,13 +98,10 @@ func hookStopCase() VisCase {
 	f.write("src.md", vSource).write("notes.md", vOther)
 	chdir(f)
 	clock(f, "2026-01-01T00:00:00Z")
-	submit := func(prompt string) {
-		hookMain(f, hookEvent(f, "UserPromptSubmit", "s1", "", map[string]any{"prompt": prompt}), "", "--host", "claude-code")
-	}
-	submit("  /yomiyasu  missing.md と notes.md と src.md を直して")
+	hookSubmit(f, "s1", "  /yomiyasu  missing.md と notes.md と src.md を直して", "--host", "claude-code")
 	snapshot(f)
-	submit("/yomiyasu notes.md")
-	submit("/yomiyasu:yomiyasu\tnotes.md")
+	hookSubmit(f, "s1", "/yomiyasu notes.md", "--host", "claude-code")
+	hookSubmit(f, "s1", "/yomiyasu:yomiyasu\tnotes.md", "--host", "claude-code")
 	stop := func(active any) {
 		extra := map[string]any{}
 		if active != nil {
@@ -229,11 +231,8 @@ func hookCodexCase() VisCase {
 	f.write("src.md", vSource)
 	chdir(f)
 	clock(f, "2026-01-01T00:00:00Z")
-	submit := func(prompt string) {
-		hookMain(f, hookEvent(f, "UserPromptSubmit", "c1", "", map[string]any{"prompt": prompt}), "", "--host", "codex")
-	}
-	submit("$yomiyasux src.md")
-	submit("  src.md を $yomiyasu で")
+	hookSubmit(f, "c1", "$yomiyasux src.md", "--host", "codex")
+	hookSubmit(f, "c1", "  src.md を $yomiyasu で", "--host", "codex")
 	hookMain(f, hookEvent(f, "PreToolUse", "c1", "", map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "gh pr create --body \"$(cat src.md)\""}}), "", "--host", "codex")
 	hookMain(f, hookEvent(f, "PostToolUse", "c1", "", map[string]any{"tool_name": "Bash"}), "", "--host", "codex")
 	hookMain(f, hookEvent(f, "Stop", "c1", "", nil), "", "--host", "codex")
