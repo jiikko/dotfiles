@@ -83,10 +83,10 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 
 ## 受け入れ条件
 
-- [ ] `ja-writing hook` が入力の集まりで本家と同じ出力と rc を返す
+- [x] `ja-writing hook` が入力の集まりで本家と同じ出力と rc を返す (記録 10 case・367 呼び出し)
 - [ ] `ja-textlint` が textlint と `ja-writing lint` の両方の指摘を出す。rc の合成の表のとおりに、`tests/bin/test_ja_textlint.sh` が両方を見る
-- [ ] `ja-textlint-on-edit.sh` が書いた行の `ja-writing lint` の指摘を知らせる。ビルドが無いとき・時間切れのときに知らせずに通ることもテストで見る。測った所要の数字を書く
-- [ ] dotfiles で定義した用語 5 つを、`ja-writing lint` の全規則 (組み込みの一覧を含む) に通して当たりが 0 件になる。dotfiles の外の repo から呼んでも 0 件になる
+- [x] `ja-textlint-on-edit.sh` が書いた行の `ja-writing lint` の指摘を知らせる。ビルドが無いとき・時間切れのときに知らせずに通ることもテストで見る。測った所要の数字を書く
+- [x] dotfiles で定義した用語 5 つを、`ja-writing lint` の全規則 (組み込みの一覧を含む) に通して当たりが 0 件になる。dotfiles の外の repo から呼んでも 0 件になる
 - [ ] ja-writing の規範と「ja-textlint の中身」が新しい形に合っている
 - [ ] CI の Tests の各ジョブで、`test_ja_textlint.sh` が `ja-writing lint` を飛ばして緑になっていない (Go の要るジョブで回っていることを、ログの行で確かめる)
 
@@ -148,7 +148,38 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
     - 壊せなかった観点: textlint の引数の読み (`-f=json`・`-o=FILE`・`--format=stylish`・`-- -x.md`・`--no-color`・`--stdin=true`。`-fjson` と `-qf json` は optionator が読めず textlint だけで終える)・補助と bash の受け渡し (改行を含む名前・空の引数・`-`)・依存が無いときの rc 3・hook の契約 (`--ignore-path /dev/null -f json` で標準出力は JSON だけ)・`/bin/bash` 3.2
     - 指摘に数えなかったもの: `--dry-run` を `--fix` 無しで付けると textlint は普通に lint するが ja-writing lint は掛けない (usage に書いた設計どおり)。`ja-textlint '' x.md` で textlint 自体が `/` から glob して止まらない (textlint 本体の挙動。この変更が原因ではない)
   - master に入れた (2026-11-20、3 周目の修正まで)。push の後の CI の Tests で「x.md/ と -d.md」のテストが赤だった。手元の Node 22.14 は `fs.statSync(throwIfNoEntry: false)` が ENOTDIR を投げて補助が「読めない」と出すが、CI の Node は「ファイルでない」と出す。どちらでも -d.md には掛かり rc 1 で、守りたい挙動は成り立っていたので、テストがどちらの文も受けるようにした (commit「fix(ja-textlint): x.md/ を外すときの文を Node のバージョンによらず受けるテストにする」。次の run で `test_ja_textlint.sh` が ok)
-  - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手
+  - 残り: `_claude/skills/ja-writing/SKILL.md` の「ja-textlint の中身」(方針の 6)・hook (方針の 3)・CI のログの行での確かめ (受け入れ条件の最後) は未着手 (方針の 3 は 2026-11-25 に入れた。下)
+- 方針の 1 (`ja-writing hook`) を入れた (2026-11-25、commit「feat(ja-writing): hook を本家 yomiyasu_hook.py と同じ入出力で作り直す」と「fix(ja-writing): hook の締め切りでロックを残さない」)。
+  - 実装は `src/ja-writing/check/hook*.go` (hook パッケージは呼ぶだけ。置き場の理由と本家の関数との対応は `src/ja-writing/README.md` の「hook」の節)。shlex の写しは `internal/pyshlex`
+  - 本家と同じ入力で動かした記録 `testdata/golden/check-hook.json` (10 case・367 呼び出し) と、出力・終了コード・状態フォルダの木まで比べて通る (`TestHookMatchesPythonRecording`)。
+    1 回目の記録は case の入力の JSON の `<<ROOT>>` が `json.Marshal` で書き換わり、本家も Go も cwd が無いとして何もせず、比べていないのに緑だった。直した後は本家の出力 (登録・block・未確認の知らせ・deny / ask) が記録に入る
+  - 実装をわざと壊して、テストが落ちることを確かめた: block の回数を数えない・紐付けの log を書かない・gh の `--body-file` を読まない・締め切りで待たずに返す・取り消しを見ずに次の投稿へ進む
+  - 敵対的レビュー (opus、1 周目): 生存 3 件・壊せなかった観点は shell の区切り・shlex・gh の旗・mcp・JSON の境界など約 1,700 回の本家との比べ
+    - P1 締め切りで armed の lock が残る → 直した (ctx を取り消してロックを放すのを待つ)
+    - P2 締め切りの goroutine とタイマーを race つきの検査が通らない → `TestHookDeadlineInsideLockReleasesLockAndLogsTimeout` を足した
+    - P3 fd 1 を閉じて起こすと hook-errors.log が本家と違う → 直さない (ホストがこう起こすことは無い)。README の「hook の揃わない範囲」に実測を書いた
+  - 揃えない範囲 (README): `--print-config` の command はこの実行ファイル・hook-errors.log の場所の欄は語の一覧の誤りと締め切りだけ本家と揃える・締め切りの取り消しを見る所
+  - 所要 (原稿を登録していないとき、Stop と UserPromptSubmit、30 回の中央値、make test が背景で走る負荷の下): Go の本体 6.2〜6.6 ms、本家の Python 31〜32 ms。
+    `bin/ja-writing` の包み (go_autobuild の確かめ) が約 33 ms 足す (`lint --version` で本体 9.4 ms・包み 42.6 ms)
+- 方針の 3 (on-edit の hook) を入れた (commit「feat(ja-textlint-on-edit): 書いた行の ja-writing lint の指摘も知らせる」)。
+  - 知らせる規則は dotfiles の文書 80 本 (issues・_claude・docs から 15 本に 1 本) に掛けた当たりを規則ごとに抜き取って読み、5 つにした:
+    bold_not_rendered (25 件。抜き取った 4 件とも本当に太字にならない)・translated_term と calque (「版」。ユーザー指示)・metaphor_verb・slop_vocabulary (定義した用語を外した後に残る語)
+  - 外したもの: emoji_prohibited 272 件 (🚨 は dotfiles の書き方)・trailing_colon 221 件・装飾のダッシュ 68 件 (ユーザー決定)・metaphor_label 40 件 (「## 進捗」などの見出し)・
+    info の negative_parallelism 60・renyo_noun 9・katakana_term 7・文書全体の比率の excess_list 55・excess_bold 42・bold_label_list 25
+  - ビルドしない (`--no-build`)・5 秒で止める。ビルドが無いとき・時間切れのときに ja-writing の知らせを出さず textlint の知らせは出すことをテストで見る
+- 方針の 4 (語の一覧) を入れた (commit「feat(ja-textlint): dotfiles で定義した用語を ja-writing lint に指摘させない」)。
+  - 一覧は `_claude/skills/ja-writing/words/allow.txt`。その repo が自分の `.yomiyasu-words/` を持つときはそちらを使う (repo の持ち主が決めた語を優先する。見分けは `ja-writing lint --json` の `context.words`)
+  - 抜き取りの slop_vocabulary 91 件のうち 86 件が定義した用語 (ゲート 55・正本 21・台帳 10) だった。一覧を渡すと 0 件 (5 つの用語を全規則に通した。repo の外からも同じ)
+  - 敵対的レビュー (opus、2 周目・3 周目): 2 周目は 8 件・3 周目は 5 件 (P1 なし)。直したもの: 語の一覧の確かめが失敗したら dotfiles の一覧に差し替えない
+    (壊れた repo の一覧を別の一覧で通していた)・締め切りの後の待ちと fail のロックの待ちをホストの上限 (`--print-config` の値) の内に収める・
+    on-edit の hook の ja-writing lint を 1 回 1 秒・知らせを行の順に混ぜてから 20 件で切る・見出し・withDeadline のコメント
+  - 直さないもの (理由): `--words` の一覧が FIFO だとロックを持ったまま止まる (一覧を前に読むと本家と hook-errors.log を書く時点が変わる。10 秒で古いとみなされる)・
+    SessionEnd の短い待ちより長い ctx を見ない処理でロックが残る (同じく 10 秒)・処理の完了と締め切りが同時だと block の出力を捨てる (本家にも同じ窓)・
+    U+2028 より後ろの行で ja-writing の知らせの行番号がずれる (textlint の行に揃える)・一覧の確かめと lint の間でビルドが変わる競合 (src の同時編集が要る)・
+    on-edit の hook の配分が上限 15 秒ちょうど (負荷の値 45〜51 の機械で 2990 行 0.37〜0.66 秒、239KB で 12 回中時間切れ 0。レビューが実測)。
+    fd 1 を閉じて起こしたときの差は README の「hook の揃わない範囲」
+  - 残り (2026-11-25): `ja-writing hook` を `_claude/settings.json` に登録する (ユーザーの答え。上の節)・方針の 5 (textlint の規則の整理)・
+    方針の 6 (SKILL.md)・CI のログの行での確かめ
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
   本家の lint も拾わない語なので、Go の答えは本家と同じ。lint で拾う範囲を本家より広げるかは、組み込みの後に決める (照合の表は done/1075 の「1080 の 40 項目の照合」)。
