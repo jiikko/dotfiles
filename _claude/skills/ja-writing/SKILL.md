@@ -142,6 +142,9 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
   1 つでも変わる案は捨てて元の文を残す。「〜してよい」を「〜する」に、「〜場合がある」を言い切りにしない
 - **情報を足さない**: 元の文・依頼・資料に書いていない動作主・原因・条件・数値を、推測で足さない。補えないなら書き手に聞く
 - **1 か所ずつ直す**: sed・perl などの置換で文書をまとめて書き換えない。同じ語でも、前後の文を読んで直すかを決める
+- **直した前後を比べる**: 人の文を直したら、`ja-writing diff <元の文のファイル> <直した文のファイル>` を打つ (どちらか 1 つは `-` で標準入力から渡せる)。
+  変わった箇所の全部と、意味が変わる恐れ (数値・否定・主語と目的語の入れ替え・確度・許可の言い方など) が出る。
+  `--fail-on meaning-risk` を付けると、恐れが 1 件でもあれば rc 1。候補は確かめる場所で、出ないことは意味が同じ証明にはならない (使い方は `ja-writing diff --help`)
 - **確かめたい点は本文に入れない**: 読み取れない所への注記 (`【要確認】` など) や質問を本文に書かない。原文が読み手に伝えている「未定」「調査中」「未検証」は本文に残す。手直しを返すときは、直した所・直さずに残した所とその理由・書き手に確かめたい点を、本文とは別に分けて書く
 
 ## 書いた後に確かめること
@@ -156,25 +159,37 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
    ```
 
    - `ja-textlint` は dotfiles の `bin/` にあり、PATH から呼べる (どの repo の中からでも同じ)
-   - Claude Code が Markdown を書くと、hook が書いた行の指摘を知らせる。
-     知らせるのは `ja-ai-vocabulary` と `ja-bold-not-rendered` だけ。hook の実体は `_claude/hooks/ja-textlint-on-edit.sh` (PostToolUse の Write / Edit)。
-     preset の指摘 (文の長さなど) と前からある行の指摘は知らせないので、書き上げた後の全体の検査は手で打つ。
-     依存が未導入なら hook は黙る (一度手で打てば入る)
+   - Claude Code が Markdown を書くと、hook が書いた行の指摘を知らせる。知らせるのは textlint の `ja-ai-vocabulary` と `ja-bold-not-rendered`、
+     `ja-writing lint` の 5 規則 (`bold_not_rendered`・`translated_term`・`calque`・`metaphor_verb`・`slop_vocabulary`) だけで、textlint が知らせた行には
+     `ja-writing lint` の知らせを重ねない。hook の実体は `_claude/hooks/ja-textlint-on-edit.sh` (PostToolUse の Write / Edit。外した規則と理由は冒頭)。
+     preset の指摘 (文の長さなど)・ほかの `ja-writing lint` の規則・前からある行の指摘は知らせないので、書き上げた後の全体の検査は手で打つ。
+     依存が未導入か `ja-writing` のビルドが無いと、その分の知らせは黙る (一度手で `ja-textlint` を打てば入る)
    - 指摘は直す。直さないなら、理由を報告に書く (例: 引用した原文・固有名詞)
-   - `ja-ai-vocabulary` の warning は rc 0 のまま出る。rc だけを見ず、出力の warning も読む
+   - `ja-ai-vocabulary` の warning と `ja-writing lint` の warn・info は rc 0 のまま出る。rc だけを見ず、出力の warning と候補も読む
    - rc 0 は「書き癖の指摘が無い」だけで、規範 1〜3・8〜10 を守った証拠にはならない
 4. **文字列カタログ・翻訳がある場合**: 直した日本語に合わせて、英語の元の文と他の言語の訳も同じ意味に揃える
 
 ## ja-textlint の中身
 
 <!-- textlint-disable ja-ai-vocabulary -->
-- 規則は textlint の [preset-ja-technical-writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing) (MIT) と、
+- `ja-textlint` は textlint を掛けた後に、同じファイル (と標準入力) へ `ja-writing lint` を掛けて両方の指摘を出す。rc は両方の大きい方
+  (表と、`ja-writing lint` を掛けない形 (`--fix`・`-f json` など) は `bin/ja-textlint` の冒頭)
+- textlint の規則は [preset-ja-technical-writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing) (MIT) と、
   自作の 2 本 (`textlint/rules/`)。バージョンと設定の正本は `textlint/` (`package.json`・`package-lock.json`・`textlintrc.json`)
   - `ja-ai-vocabulary` (warning。rc は 0 のまま): 規範 7 の語 (版・〜側に倒す・黙って・静かに壊れる・潰す・溶かす・効く・前提が崩れる・既定・変異)。
     語の選び方は [yomiyasu](https://github.com/nanaism/yomiyasu) (MIT。`textlint/LICENSE-yomiyasu`) の語彙の一覧から、dotfiles で当たりの多いものを選んだ。
     書き換えはしない (`--fix` でも変わらない)
   - `ja-bold-not-rendered` (error): 表示されない `**` (規範 6)
   - 自作の規則の重さは規則の中で決めている。`textlintrc.json` に書いても、`--rulesdir` で読ませた規則には届かない
+  - 自作の 2 本は `ja-writing lint` と重なるが外さない。`ja-writing lint` は潰す・効く・既定・変異などを拾わない。
+    太字も、dotfiles の文書で本当の当たりを拾い損ねる場面がある (issue 1078 の方針 5)
+- `ja-writing lint` (`src/ja-writing`。[yomiyasu](https://github.com/nanaism/yomiyasu) の `yomiyasu_lint.py` を Go に写したもの): 表現と書式の 40 規則。
+  `--fail-on error` で起こすので、error の候補 (`bold_not_rendered`) があるときだけ rc 1。規則の名前の一覧は `src/ja-writing/lint/rules_test.go` の `ruleSet`、群の分け方は `src/ja-writing/README.md`
+  - 規範 3・7 の語は `translated_term`・`calque`・`metaphor_verb`・`slop_vocabulary` が拾う。
+    規範 8 の否定対比 (`negative_parallelism`) と、規範 10 の前置きの一部 (`meta_filler`。「結論から言うと」など) も候補として出す。
+    本文を予告する文 (「次の節では〜」) と数の予告 (「理由は 3 つある」) は拾わない。候補は読んで判断する
+  - 語の一覧: その repo が自分の `.yomiyasu-words/` を持てばそれを、無ければ dotfiles で定義した用語の一覧 (`words/allow.txt`) を渡す。
+    定義した用語 (規範 3 の末尾) はこの一覧で外れる
 <!-- textlint-enable ja-ai-vocabulary -->
 - 外している規則: `ja-no-mixed-period` (文末の句点を求める)。箇条書き・コミットの件名・UI のラベルは句点で終わらないのが普通で、
   全部の行に出る指摘は読まれなくなるため
@@ -183,7 +198,8 @@ description: 人が読む日本語の文 (アプリの UI の文言・App Store 
 - 依存は初回の起動で `~/.cache/ja-textlint/<lock の hash>/` に `npm ci` で入れる (node と npm が要る)。バージョンを上げるときは
   `textlint/package.json` を書き換えてから、そのディレクトリで `npm install --package-lock-only --ignore-scripts` を打って lock を作り直す
   (lock が変わると別の hash のディレクトリに入れ直す。古いディレクトリは消さずに残るので、`~/.cache/ja-textlint/` の中の古いものは手で消す)
-- 見ないもの: 主語・目的語の抜け・語の選び方 (`ja-ai-vocabulary` の一覧の外)・直訳の硬さ (「まず避ける 3 つの失敗」の 2 つの文は、どちらも rc 0 で通った)
+- 見ないもの: 主語・目的語の抜け (規範 1)、語が機能を利用者の動作で言い表しているか (規範 2)、一覧の外の語の選び方。
+  道具の擬人化 (規範 9) は決まった言い回しのほかは拾わない。直訳の硬さも見ない (「まず避ける 3 つの失敗」の 2 つの文は、どちらも rc 0 で通った)
 
 ## 参考にした規範
 
