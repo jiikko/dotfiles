@@ -424,6 +424,11 @@ SessionEnd・語の一覧の引数 (`--words`・`--no-words`・両方・無い�
 締め切り (経過の時計を読むたびに 1 秒進める)。hook の中の関数 (`_shell_segments`・`_bodies`・`_paths`・`_invocation`・`_bash_command`) と shlex も直接呼んで比べる。
 driver は本家の hook が呼ぶたびに読み直す check (`spec_from_file_location`) にも、check と同じ時刻・実行 ID・経過の時計の固定を当てる (`call_function.py` の `capture_hook`)。
 
+dotfiles では `_claude/settings.json` の 5 つのイベント (本家の `--print-config claude-code` と同じイベント・matcher・上限) から
+`_claude/hooks/ja-writing-hook.sh` が `ja-writing hook --host claude-code` を起こす (ユーザー決定 2026-11-25。issue 1078)。包みはビルドしない
+(ビルドが無い・古いときは何もせず rc 0。`bin/ja-writing` を一度打つとビルドする)。配線が `--print-config` と同じことは `tests/claude/test_ja_writing_hook.sh` が見る。
+原稿を登録していないときの 1 回の所要は、Go の本体 6〜7 ms に包み (go_autobuild の確かめ) の約 33 ms が足される。
+
 ### hook の揃わない範囲
 
 - `--print-config` の JSON の `command` (と codex の `command` の文) は、本家の `sys.executable -B <スクリプトの絶対パス> --host …` の代わりに、この実行ファイルの実パスと `hook --host …` を書く。

@@ -187,6 +187,16 @@
           }
         ],
         "matcher": "Write|Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/ja-writing-hook.sh",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "^(Bash|mcp__.*)$"
       }
     ],
     "SessionEnd": [
@@ -195,6 +205,15 @@
           {
             "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh clear",
             "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/ja-writing-hook.sh",
+            "timeout": 1,
             "type": "command"
           }
         ]
@@ -280,6 +299,27 @@
             "type": "command"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/ja-writing-hook.sh",
+            "timeout": 30,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/ja-writing-hook.sh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "^(yomiyasu|yomiyasu:yomiyasu)$"
       }
     ],
     "UserPromptSubmit": [
@@ -298,6 +338,15 @@
           {
             "command": "~/dotfiles/_claude/hooks/ratelimit-warn.sh",
             "timeout": 15,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/ja-writing-hook.sh",
+            "timeout": 5,
             "type": "command"
           }
         ]
