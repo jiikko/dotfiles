@@ -84,11 +84,11 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
 ## 受け入れ条件
 
 - [x] `ja-writing hook` が入力の集まりで本家と同じ出力と rc を返す (記録 10 case・367 呼び出し)
-- [ ] `ja-textlint` が textlint と `ja-writing lint` の両方の指摘を出す。rc の合成の表のとおりに、`tests/bin/test_ja_textlint.sh` が両方を見る
+- [x] `ja-textlint` が textlint と `ja-writing lint` の両方の指摘を出す。rc の合成の表のとおりに、`tests/bin/test_ja_textlint.sh` が両方を見る
 - [x] `ja-textlint-on-edit.sh` が書いた行の `ja-writing lint` の指摘を知らせる。ビルドが無いとき・時間切れのときに知らせずに通ることもテストで見る。測った所要の数字を書く
 - [x] dotfiles で定義した用語 5 つを、`ja-writing lint` の全規則 (組み込みの一覧を含む) に通して当たりが 0 件になる。dotfiles の外の repo から呼んでも 0 件になる
-- [ ] ja-writing の規範と「ja-textlint の中身」が新しい形に合っている
-- [ ] CI の Tests の各ジョブで、`test_ja_textlint.sh` が `ja-writing lint` を飛ばして緑になっていない (Go の要るジョブで回っていることを、ログの行で確かめる)
+- [x] ja-writing の規範と「ja-textlint の中身」が新しい形に合っている
+- [x] CI の Tests の各ジョブで、`test_ja_textlint.sh` が `ja-writing lint` を飛ばして緑になっていない (Go の要るジョブで回っていることを、ログの行で確かめる)
 
 ## 関連ファイル
 
@@ -178,8 +178,32 @@ dotfiles の `_claude/hooks/ja-textlint-on-edit.sh` (Markdown を書いた直後
     U+2028 より後ろの行で ja-writing の知らせの行番号がずれる (textlint の行に揃える)・一覧の確かめと lint の間でビルドが変わる競合 (src の同時編集が要る)・
     on-edit の hook の配分が上限 15 秒ちょうど (負荷の値 45〜51 の機械で 2990 行 0.37〜0.66 秒、239KB で 12 回中時間切れ 0。レビューが実測)。
     fd 1 を閉じて起こしたときの差は README の「hook の揃わない範囲」
-  - 残り (2026-11-25): `ja-writing hook` を `_claude/settings.json` に登録する (ユーザーの答え。上の節)・方針の 5 (textlint の規則の整理)・
-    方針の 6 (SKILL.md)・CI のログの行での確かめ
+- `ja-writing hook` を `_claude/settings.json` に登録した (2026-11-25、commit「feat(claude): ja-writing hook を settings の hook に登録する」)。
+  本家の `--print-config claude-code` と同じイベント・matcher・上限で、`_claude/hooks/ja-writing-hook.sh` (ビルドしない包み) から起こす。
+  配線が `--print-config` と同じことと、ビルドが無いときに黙ることは `tests/claude/test_ja_writing_hook.sh` が見る。
+  本体の checkout で、登録の無い場所の Stop に何も出さず rc 0 で返ることを確かめた
+  - 3 周目のレビューの指摘 (締め切りの後の待ちに fail のロックの待ち 0.2 秒が入っていない・待ちの配線を見る検査が無い) は直した
+    (commit「fix(ja-writing): 締め切りの後の待ちに fail のロックの待ちを数える」)
+- 方針の 5 (textlint の規則の整理) は、規則を外さずに閉じる (2026-11-25)。外す条件は「Go の実装が同じ語を同じ箇所で拾うことを入力で確かめた」ことで、どの規則も満たさなかった
+  - `ja-ai-vocabulary.js`: `tests/bin/test_ja_textlint.sh` の入力 (当たる語と外す語の 50 行) に `ja-writing lint` (dotfiles の語の一覧つき) を掛けて行で比べた。
+    Go が同じ行を拾ったのは「新しい版」「Go の版」「版を上げる」「側に倒す」「黙って無視される」「静かに壊れる」「時間を溶かす」「前提が崩れる」「静かに失敗する」だけ。
+    「古い方に倒す」「潰す」「効く」「別版」「全版に当てる」と、dotfiles だけの語 (既定・変異・削除の印・データベースの表) は拾わない。
+    「黙って」「溶か」のように Go が決まった言い回しでしか拾わない語もあり、外すと当たりが減る
+  - dotfiles だけの語を本家の `flag.txt` / `flag-patterns.txt` に移すことも採らない: JS の規則は語ごとに直し方の文を出すが、一覧の語は決まった文しか出せない。
+    「版」の除外は上限の無い `*` の後読みを使い、`flag-patterns.txt` では書けない
+  - `ja-bold-not-rendered.js`: dotfiles の文書 80 本で、textlint 19 件・Go 17 件・両方 17 件。textlint だけの 2 件のうち
+    `issues/done/226-retro-glogx-audit-2026-09-03.md` 38 行目 (`」**を`。CommonMark では閉じない) は本当の当たりで、Go が拾い損ねている。
+    もう 1 件 (`issues/done/333-...` 44 行目 `**唯一の前提**(`) は表示される太字で、textlint の誤検出
+  - 重複の扱い: on-edit の hook は、textlint が知らせた行に重なる ja-writing の知らせを出さない (同じ行に 2 度知らせない)
+  - 再評価の trigger: Go の lint が上の拾わない語を拾うように広がったとき (1075 の申し送りの「lint で拾う範囲を本家より広げるか」を決めたとき)
+- 方針の 6 (SKILL.md) を入れた (commit「docs(ja-writing): ja-textlint の中身を…」)。「ja-textlint の中身」を ja-writing lint・語の一覧・
+  on-edit の hook に合わせて書き直し、直した前後を `ja-writing diff` で比べる手順を「直すときに守ること」に足した。
+  「見ないもの」は規範 1・2・9 と予告の文に合わせた (規範 8・10 は `negative_parallelism`・`meta_filler` が一部を拾うことを例文で測った)。
+  76 項目の行き先は 1080 で決めた。skill-eval は PASS (score=1 cases=2/2)
+- CI の確かめ (受け入れ条件の最後): push した commit「issue 1078: hook・on-edit の hook・…」の Tests の run 45633440973 で、
+  `dotfiles-tests (rest)` のジョブの `[ok] tests/bin/test_ja_textlint.sh (119s)`。このテストは ja-writing lint の見出しの行と規則名が出ることを見て、
+  掛けられないと rc 3 で赤になる (skip しない) ので、緑は ja-writing lint が走った証拠になる。ほかのジョブはこのテストを回さない (組の分け方)
+- 残り: なし (受け入れ条件は全部済み)。この issue は done へ送れる
 - 1075 からの申し送り (2026-11-13): 1080 の表で lint の規則を当てた 16 項目を照合した。
   当て方の誤り 4 項目 (R2-02・R2-13・R2-16・R2-20) と、一部だけ拾う 5 項目 (R1-14・R2-24・R2-14・R2-15・R2-23) があった。
   本家の lint も拾わない語なので、Go の答えは本家と同じ。lint で拾う範囲を本家より広げるかは、組み込みの後に決める (照合の表は done/1075 の「1080 の 40 項目の照合」)。
