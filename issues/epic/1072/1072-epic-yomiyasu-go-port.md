@@ -26,7 +26,7 @@ dotfiles では skill・src の module・bin のコマンドを同じ名前に�
 | [1075](done/1075-feat-yomiyasu-go-lint.md) | lint (40 規則) |
 | [1076](done/1076-feat-yomiyasu-go-diff.md) | diff (推敲の前後を比べて意味のずれを出す。群 A〜AD の全部) |
 | [1077](done/1077-feat-yomiyasu-go-check.md) | check (検査の記録と最終稿の照合。2026-11-21 に done) |
-| [1078](1078-feat-yomiyasu-go-dotfiles-integration.md) | hook と、dotfiles の ja-textlint・ja-textlint-on-edit・ja-writing への組み込み |
+| [1078](done/1078-feat-yomiyasu-go-dotfiles-integration.md) | hook と、dotfiles の ja-textlint・ja-textlint-on-edit・ja-writing への組み込み |
 | [1080](done/1080-docs-ja-writing-yomiyasu-norms.md) | ja-writing の skill に yomiyasu の推敲の規範の文を足す (Go の実装と独立。dotfiles-24 が担当) |
 | [1081](done/1081-feat-yomiyasu-go-difflib.md) | diff の照合 (`difflib.SequenceMatcher` と本家の速い照合) の写し (1076 から切り出した。dotfiles-bb が担当) |
 | [1082](done/1082-perf-ja-writing-bench-corpus-baseline.md) | ベンチマークの文章を集め、本家の Python の所要を測る (1079 の前半を切り出した。dotfiles-24 が担当) |
