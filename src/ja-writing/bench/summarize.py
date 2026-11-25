@@ -7,6 +7,9 @@
 入力に依らない準備 (lint が語の一覧のファイルを読むなど、--version の判定より後にある準備) も入る。逆に、import の中で
 済ませる準備は起動の側に入る。どちらも「入力の処理だけの時間」ではない。
 
+Go の実装のケース (pybench.sh -g) は名前の後ろに @<名前> (省くと @go) が付く。入力の大きさと引く起動の時間は、@ から後ろを外した名前と、
+同じ実装の起動のケース (startup-lint@go など) から取る。
+
 rc が 0 でない run があるか、同じケースの出力のバイト数が周によって違えば、何も出さずに rc 1 で終わる
 (失敗した run や、別の答えを出した run の混ざった中央値を出さない)。
 """
@@ -45,7 +48,7 @@ def main() -> None:
         raise SystemExit(1)
 
     def input_bytes(case: str) -> str:
-        kind, _, rest = case.partition("-")
+        kind, _, rest = case.partition("@")[0].partition("-")
         if kind == "lint":
             return str(sizes[rest])
         if kind in ("diff", "check"):
@@ -56,8 +59,9 @@ def main() -> None:
     for case in order:
         t = times[case]
         med = statistics.median(t)
-        kind = case.partition("-")[0]
-        base = times.get(f"startup-{kind}")
+        name, at, impl = case.partition("@")
+        kind = name.partition("-")[0]
+        base = times.get(f"startup-{kind}{at}{impl}")
         minus = f"{med - statistics.median(base):.4f}" if base and kind != "startup" else "-"
         print(
             f"{case}\t{len(t)}\t{input_bytes(case)}\t{next(iter(outs[case]))}\t"

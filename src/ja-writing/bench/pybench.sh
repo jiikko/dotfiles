@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # 本家 yomiyasu (Python) の lint・diff・check を、gen.py が作った入力に通して所要を測る。
 #
-#   bench/pybench.sh [-n <周の数>] <gen.py の出力の dir> <結果を書く dir>
+#   bench/pybench.sh [-n <周の数>] [-g [<名前>=]<ja-writing のバイナリ>]... <gen.py の出力の dir> <結果を書く dir>
 #
+# -g を付けると、同じケースを Go の実装 (ja-writing lint|diff|check) でも流す。Go のケースは名前の後ろに @<名前> (名前を省くと @go) が付き、
+# 本家のケースと同じ周の中で、同じかき混ぜの順に混ぜて流す (別の時間帯の run どうしは 1〜2 割ずれるため。issue 1082)。
+# -g を複数渡すと、直す前と後の Go のバイナリを同じ run で比べられる (issue 1079)。
+# Go は環境変数を空から作るところまで本家と同じにし、python の起動の引数は付けない。
 # 周の数を指定しないときは 5 周。各周で全ケースを 1 回ずつ流し、周ごとにケースの順を (周の番号を種に) かき混ぜる。
 # 結果は runs.tsv (1 run 1 行) と summary.tsv (ケースごとの中央値・最小・最大と、起動を引いた処理の時間)。
 #
@@ -20,12 +24,28 @@ unset CDPATH
 [ "${BASH_VERSINFO[0]}" -ge 5 ] || { echo "pybench: bash 5 以上が要る (EPOCHREALTIME を使う)" >&2; exit 2; }
 
 rounds=5
-if [ "${1:-}" = "-n" ]; then
-  rounds="${2:?-n には周の数を渡す}"
-  shift 2
-fi
+golabels=()
+gobins=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n) rounds="${2:?-n には周の数を渡す}"; shift 2 ;;
+    -g)
+      spec="${2:?-g には ja-writing のバイナリを渡す}"
+      label=go
+      case "$spec" in *=*) label="${spec%%=*}"; spec="${spec#*=}" ;; esac
+      case "$label" in '' | *[!abcdefghijklmnopqrstuvwxyz0123456789_]*) echo "pybench: -g の名前は英小文字・数字・_ だけ ($label)" >&2; exit 2 ;; esac
+      for l in ${golabels[@]+"${golabels[@]}"}; do [ "$l" != "$label" ] || { echo "pybench: -g の名前 $label が 2 回ある" >&2; exit 2; }; done
+      spec="$(cd "$(dirname "$spec")" && pwd -P)/$(basename "$spec")"
+      [ -x "$spec" ] || { echo "pybench: -g の $spec を実行できない" >&2; exit 2; }
+      golabels+=("$label")
+      gobins+=("$spec")
+      shift 2
+      ;;
+    *) break ;;
+  esac
+done
 case "$rounds" in '' | *[!0-9]* | 0) echo "pybench: 周の数は 1 以上の整数 ($rounds)" >&2; exit 2 ;; esac
-[ $# -eq 2 ] || { echo "使い方: $0 [-n <周の数>] <gen.py の出力の dir> <結果を書く dir>" >&2; exit 2; }
+[ $# -eq 2 ] || { echo "使い方: $0 [-n <周の数>] [-g <ja-writing のバイナリ>] <gen.py の出力の dir> <結果を書く dir>" >&2; exit 2; }
 inputs="$(cd "$1" && pwd -P)"
 results="$2"
 mkdir -p "$results"
@@ -82,6 +102,19 @@ for p in pair-small pair-064k pair-256k; do
   cases+=("check-$p"$'\t'"yomiyasu_check.py"$'\t'"run --source in/$p-before.md --final in/$p-after.md --no-record --state-dir state")
 done
 
+# Go のケース: 本家の道具ごとに ja-writing の subcommand を当てる (python -c の起動だけのケースは Go には無い)
+pycases=("${cases[@]}")
+for g in ${golabels[@]+"${!golabels[@]}"}; do
+  for c in "${pycases[@]}"; do
+    IFS=$'\t' read -r name tool args <<< "$c"
+    case "$tool" in
+      yomiyasu_lint.py) cases+=("$name@${golabels[$g]}"$'\t'"go$g:lint"$'\t'"$args") ;;
+      yomiyasu_diff.py) cases+=("$name@${golabels[$g]}"$'\t'"go$g:diff"$'\t'"$args") ;;
+      yomiyasu_check.py) cases+=("$name@${golabels[$g]}"$'\t'"go$g:check"$'\t'"$args") ;;
+    esac
+  done
+done
+
 # ケースが名指しする入力が manifest に在るかを確かめる (名前がずれた run を測らない)
 for c in "${cases[@]}"; do
   for a in $c; do
@@ -102,6 +135,9 @@ pyver="$(env -i "$py" -P -s -S -B -X utf8 -c 'import sys; print(sys.version.spli
   printf 'upstream\t%s\n' "$commit"
   printf 'host\t%s\t%s\n' "$(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m)" "$(sw_vers -productVersion 2>/dev/null || uname -r)"
   printf 'rounds\t%s\n' "$rounds"
+  for g in ${golabels[@]+"${!golabels[@]}"}; do
+    printf 'go\t%s\t%s\t%s\n' "${golabels[$g]}" "${gobins[$g]}" "$(shasum -a 256 "${gobins[$g]}" | cut -d' ' -f1)"
+  done
   printf 'started\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$results/env.tsv"
 
@@ -118,14 +154,18 @@ for ((r = 1; r <= rounds; r++)); do
     mkdir -p "$run/cwd" "$run/home"
     cp -R "$inputs" "$run/cwd/in"
     # shellcheck disable=SC2086 # args は空白で割る (ケースの表に空白を含む引数は無い)
-    if [ "$tool" = - ]; then set -- $args; else set -- "$scripts/$tool" $args; fi
+    case "$tool" in
+      -) set -- "$py" -P -s -S -B -X utf8 $args ;;
+      go*:*) g="${tool%%:*}"; g="${g#go}"; set -- "${gobins[$g]}" "${tool#*:}" $args ;;
+      *) set -- "$py" -P -s -S -B -X utf8 "$scripts/$tool" $args ;;
+    esac
     load="$(sysctl -n vm.loadavg | awk '{ print $2 }')"
     cd "$run/cwd"
     # 測る区間は env の fork・exec と python3 の起動から終わりまで。サブシェル・コマンド置換は区間の外に置く
     # (env の分は startup-python に入り、どの道具のケースにも同じだけ入る)
     start=$EPOCHREALTIME
     set +e
-    env -i PATH="$pypath" HOME="$run/home" TZ=UTC PYTHONHASHSEED=0 "$py" -P -s -S -B -X utf8 "$@" < /dev/null > "$run/out" 2> "$run/err"
+    env -i PATH="$pypath" HOME="$run/home" TZ=UTC PYTHONHASHSEED=0 "$@" < /dev/null > "$run/out" 2> "$run/err"
     rc=$?
     set -e
     end=$EPOCHREALTIME
