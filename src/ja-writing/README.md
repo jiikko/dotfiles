@@ -431,8 +431,10 @@ driver は本家の hook が呼ぶたびに読み直す check (`spec_from_file_l
   投げずに渡す例外 (`:0`) だけを本家と揃える。check の口が投げる例外 (ロックの時間切れなど) と hook の中の型の誤りは、本家はその例外を投げた行を書くが、Go は `yomiyasu_hook.py:0` を書く。
 - 締め切り: 本家の SIGALRM は処理のどこでも例外を投げる。Go は ctx を取り消し、取り消しを見るのはロックの待ち・`remaining`・ロックを持った投稿の照合の
   繰り返しの頭だけ。取り消した処理がロックを放すのを待ってから `timeout` の log と hook-errors.log を書く (本家と同じく、ロックを残さない。
-  `TestHookDeadlineInsideLockReleasesLockAndLogsTimeout`)。待つのは 2 秒か、ホストの上限 (`--print-config` が書く値) から締め切りを引いた残りの短い方
-  (`hookUnwindLimit`。UserPromptSubmit は 0.85 秒、claude-code の SessionEnd は 0.05 秒)。ロックの外の CPU だけの処理 (投稿の本文の取り出し) は
+  `TestHookDeadlineInsideLockReleasesLockAndLogsTimeout`)。待つのは 2 秒か、ホストの上限 (`--print-config` が書く値) から締め切り・fail がロックを待つ秒数・
+  起動と書き終える分 0.15 秒を引いた残りの短い方 (`hookUnwindLimit`。UserPromptSubmit は 0.65 秒、claude-code の SessionEnd は 0 秒)。
+  fail がロックを待つ秒数も本家の 0.2 秒を上限の内に縮める (`hookFailLockLimit`。claude-code の SessionEnd だけ 0.05 秒。本家は 0.8 + 0.2 で上限 1 秒ちょうど)。
+  待ちが短い場面 (SessionEnd) で、ロックの中の ctx を見ない処理 (遅いディスクへの書き込み) が待ちより長くかかると、ロックを持ったまま終わる (10 秒で古いとみなされる)。ロックの外の CPU だけの処理 (投稿の本文の取り出し) は
   取り消しを見ないので、締め切りの後も走り、プロセスの終わりで止まる。
   ロックを持ったまま取り消しを見ずに止まる処理 (`--words` の一覧のファイルが FIFO で、開くところで止まる) では、待ちの後もロックが残る。
   残ったロックは 10 秒 (`armedStale`) で古いとみなされ、次の hook と check が取り直す。本家は SIGALRM で open が割り込まれて抜ける。

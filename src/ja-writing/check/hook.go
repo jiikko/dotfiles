@@ -58,10 +58,25 @@ func hookHostTimeout(host, event string) float64 {
 	return 2
 }
 
-// hookUnwindLimit は締め切りの後に待つ秒数 (hookUnwindWait か、ホストの上限から締め切りと書き終える分を引いた残りの短い方)。
-func hookUnwindLimit(host, event string) float64 {
-	return max(0, min(hookUnwindWait, hookHostTimeout(host, event)-hookBudgets[event]-0.15))
+// hookFailLockWait は fail が処理中の登録に timeout の log を書くとき、ロックを待つ秒数 (本家の 0.2 秒)。
+const hookFailLockWait = 0.2
+
+// hookSpare は起動と書き終える分としてホストの上限に残す秒数。
+const hookSpare = 0.15
+
+// hookFailLockLimit は fail がロックを待つ秒数 (本家の 0.2 秒か、ホストの上限から締め切りと hookSpare を引いた残りの短い方)。
+// 本家は claude-code の SessionEnd で 0.8 + 0.2 = ホストの上限 1 秒ちょうどまで待つ。Go はその場面だけ短くする。
+func hookFailLockLimit(host, event string) float64 {
+	return max(0, min(hookFailLockWait, hookHostTimeout(host, event)-hookBudgets[event]-hookSpare))
 }
+
+// hookUnwindLimit は締め切りの後に待つ秒数 (hookUnwindWait か、ホストの上限から締め切り・fail のロックの待ち・hookSpare を引いた残りの短い方)。
+func hookUnwindLimit(host, event string) float64 {
+	return max(0, min(hookUnwindWait, hookHostTimeout(host, event)-hookBudgets[event]-hookFailLockLimit(host, event)-hookSpare))
+}
+
+// hookUnwind は withDeadline が待つ秒数を決める差し込み口 (テストが、待ちを短くしたときにロックを放す前に返ることを見る)。
+var hookUnwind = hookUnwindLimit
 
 const (
 	hookMaxInput = 4 * 1024 * 1024
@@ -207,7 +222,7 @@ func (h *hookRun) fail(err error) {
 	processing := h.processing
 	h.mu.Unlock()
 	if isPyError(err, "TimeoutError") && processing != nil && h.rt.Monotonic() >= h.budget {
-		deadline := h.rt.Monotonic() + 0.2
+		deadline := h.rt.Monotonic() + hookFailLockLimit(h.host, h.event)
 		_, _ = ArmedUpdate(context.Background(), h.rt, processing[0], processing[1], func(entry *pyjson.Object) (bool, error) {
 			h.log(entry, "timeout", nil)
 			return true, nil
@@ -320,7 +335,7 @@ func (h *hookRun) withDeadline(invocation *string) (string, int, error) {
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(time.Duration(hookUnwindLimit(h.host, h.event) * float64(time.Second))):
+	case <-time.After(time.Duration(hookUnwind(h.host, h.event) * float64(time.Second))):
 	}
 	return "", 0, &hookFault{err: timeoutException("hook_budget"), loc: hookLocDeadline}
 }
