@@ -68,6 +68,7 @@ expect_green 'YAML の -- の行'                 a.yml     $'k: v\n-- 以前は
 expect_green 'issues/ の下'                    issues/x.sh $'# 以前は'
 expect_green 'vendor/ と testdata/ の下'       vendor/x.go $'// issue 802'
 expect_green 'testdata/ の下'                  src/testdata/x.sh $'# 以前は'
+expect_green 'third_party/ の下 (上流の写し)'   src/m/third_party/x.go $'// See Github issue #63'
 expect_green '1 桁の番号'                      x.go      $'package x\n// issue 2 は番号として数えない'
 expect_green 'issues の複数形 (画面名の計測値)'  t.ci      $'# issues 98 / status 105'
 expect_green '_ で始まる拡張子付きのファイル'     _player.html $'# 以前は'

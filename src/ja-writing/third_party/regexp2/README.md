@@ -6,7 +6,13 @@
 ## 直した所
 
 `syntax/charclass.go` の `mayOverlapByEnumeration` に、1 字ずつ調べる字の数の上限 (`enumerationBudget` = 4096) を足した。
-超えたら「重なりうる」と答える。呼び出し側 (`RegexNode.findAndMakeLoopsAtomic` の、ループを atomic にできるかの判断) は最適化を 1 つ見送るだけで、当たり方は変わらない。
+超えたら調べ切らずに「重なりうる」と答える。呼び出し元は `syntax/tree.go` の `canBeMadeAtomic` の 3 か所 (集合のループ `A*` の後ろが集合か集合のループ `B`):
+
+- 後ろが集合か、1 回以上の集合のループのとき (`!n.Set.MayOverlap(...)` の 2 か所): 「重なりうる」で、A を atomic にしない。最適化を 1 つ見送るだけ
+- 後ろが 0 回からの集合のループのとき (`subsequent.Set.MayOverlap(n.Set)`。否定が無い。.NET の元は `!MayOverlap` で、上流の写し損ないに見える):
+  「重なりうる」で、その次のノードと A の重なりを調べる段へ進み、そこで重ならなければ A を atomic にする。
+  B は空でも当たり、その次は A と重ならないので、A が最長で取った位置からの試しは、A が後戻りした場合と同じ結果になり、当たり方は変わらない
+  (2026-11-26 の敵対的レビューで、当たり方を変える入力は作れなかった。答えの一致は `make test` の本家の re との記録の比べが見る)
 
 なぜ: `internal/pyre` は否定の集合を補集合の範囲で書く (`internal/pyre/emit.go` の `emitSet`。regexp2 の後戻りの誤りを避けるため)。
 上限が無いと compile のたびに 100 万字を超える集合を回し、ja-writing lint の起動込みの所要の約 3 割を占めていた (issue 1079 に計測)。

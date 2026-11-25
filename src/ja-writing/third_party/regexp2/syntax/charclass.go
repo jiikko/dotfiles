@@ -1189,19 +1189,19 @@ func knownDistinctSets(set1, set2 *CharSet) bool {
 }
 
 // enumerationBudget は mayOverlapByEnumeration が 1 字ずつ調べる字の数の上限 (上流に無い。third_party/regexp2/README.md)。
-// 超えたら「重なりうる」と答える: 呼び出し側 (ループを atomic にする最適化) はそれで最適化を 1 つ見送るだけで、当たり方は変わらない。
-// 上限が無いと、補集合の形の大きい集合 (100 万字を超える) を回し、パターン 1 つの compile に 18 ms かかっていた。
+// 超えたら調べ切らずに「重なりうる」と答える。上限が無いと、補集合の形の大きい集合 (100 万字を超える) を回し、パターン 1 つの compile に 18 ms かかっていた。
+// 呼び出し元は tree.go の canBeMadeAtomic の 3 か所で、当たり方は変わらない (README の「直した所」)。
 const enumerationBudget = 4096
 
 func mayOverlapByEnumeration(set1, set2 *CharSet) bool {
 	budget := enumerationBudget
 	for i := 0; i < len(set2.ranges); i++ {
 		for c := set2.ranges[i].First; c <= set2.ranges[i].Last; c++ {
-			if set1.CharIn(c) {
+			if budget == 0 {
 				return true
 			}
 			budget--
-			if budget == 0 {
+			if set1.CharIn(c) {
 				return true
 			}
 		}
