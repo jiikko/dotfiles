@@ -10,7 +10,7 @@ import (
 	"ja-writing/cmdenv"
 )
 
-// BenchmarkLintFile は JA_WRITING_BENCH_FILE のファイルを標準入力で lint に通す (pprof で処理の時間の内訳を見る。issue 1079)。
+// BenchmarkLintFile は JA_WRITING_BENCH_FILE のファイルを標準入力で lint に通す (pprof で処理の時間の内訳を見る)。
 // 入力は bench/gen.py の出力を渡す。環境変数が無ければ飛ばす。
 //
 //	JA_WRITING_BENCH_FILE=<gen.py の出力>/len-1024k.md go test -run '^$' -bench BenchmarkLintFile -cpuprofile cpu.out ./lint/
