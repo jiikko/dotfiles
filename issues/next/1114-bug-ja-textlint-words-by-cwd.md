@@ -1,0 +1,1 @@
+../1114-bug-ja-textlint-words-by-cwd.md
