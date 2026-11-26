@@ -227,9 +227,9 @@ func TestReusedThreadTakesBroadcastReplyFromHistory(t *testing.T) {
 	}
 }
 
-// 読んだスレッドが history の親の値と合わない (history の後に返信が動いた・途中で止まった) か、slack-cli が警告を出したら残さない。
-// 残すと、次の読み直しで欠けた・消えた返信を使い回し続ける。
-func TestInconsistentOrWarnedThreadIsNotKept(t *testing.T) {
+// 読んだスレッドが history の親の値と合わない (history の後に返信が動いた・途中で止まった) なら残さない。残すと、次の読み直しで
+// 欠けた・消えた返信を使い回し続ける。slack-cli の警告の有無では決めない (毎回出る設定の警告で、使い回しが全部止まる)。
+func TestInconsistentThreadIsNotKept(t *testing.T) {
 	sl, d, _, _ := reuseFixture(t)
 	parent := ts(now.Add(-48*time.Hour).Unix() - 3600)
 	good := sl.threads[parent]
@@ -250,12 +250,12 @@ func TestInconsistentOrWarnedThreadIsNotKept(t *testing.T) {
 		t.Errorf("最後の返信が親の値と合わないスレッドを残して使い回した (スレッド %d 回, want 4)", n)
 	}
 
-	sl.thWarn = "警告: 取得が途中で切れた\n  結果は不完全です。\n"
-	readMD(t, d, "-no-cache", "C1") // 警告つきで読み直し、残っていたものを置き換える
-	sl.thWarn = ""
+	// slack-cli の警告 (毎回出る設定の警告など) が付いても、親の値と合うスレッドは残して使い回す
+	sl.thWarn = "警告: ローカル設定 .slack-cli.yml を無視しました\n"
+	readMD(t, d, "-no-cache", "C1")
 	readMD(t, d, "C1")
-	if n := threadCalls(sl); n != 6 {
-		t.Errorf("警告の付いたスレッドを残して使い回した (スレッド %d 回, want 6)", n)
+	if n := threadCalls(sl); n != 5 {
+		t.Errorf("警告の付いた、親の値と合うスレッドを使い回していない (スレッド %d 回, want 5)", n)
 	}
 }
 

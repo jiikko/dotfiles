@@ -1151,9 +1151,10 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 			continue
 		}
 		threads[ts] = th.Msgs
-		// 親が history に無いスレッドは、次の読み直しで比べる値が無いので残さない。警告の付いた (途中で止まった) スレッドと、
-		// history を読んだ後に返信が動いて親の値と合わないスレッドも残さない (残すと、欠けた・消えた返信を使い回し続ける)
-		if known && th.Warning == "" && consistent(th.Msgs, p) {
+		// 親が history に無いスレッドは、次の読み直しで比べる値が無いので残さない。history を読んだ後に返信が動いたか、途中で止まって
+		// 返信が欠けたスレッドも、親の値と合わないので残さない (残すと、欠けた・消えた返信を使い回し続ける)。
+		// slack-cli の警告の有無では決めない: 設定の警告 (ローカル設定を無視した等) は毎回出るので、全部のスレッドを残さなくなる
+		if known && consistent(th.Msgs, p) {
 			read = append(read, cache.Thread{Ch: ch.ID, Ts: ts, ReplyCount: p.ReplyCount, LatestReply: p.LatestReply, Msgs: th.Msgs})
 		}
 		if th.Warning != "" {
