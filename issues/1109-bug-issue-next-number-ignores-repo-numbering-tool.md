@@ -18,10 +18,17 @@ obaket は `issues/` と `macOS/issues/` で番号を共有し、採番は `bin/
 
 ## 対応方針
 
-- `issue_next_number.sh` が repo root に `bin/next-issue-number` (実行可能) を見つけたら、それに委ねて出力をそのまま返す (引数の `<ref>` の扱いが合わないなら、委ねずに断ってそのコマンドを案内する)
-- 委ねる・断るは stderr に 1 行出す (どちらが番号を出したかが分かるように)
-- `issues/` 以外に issue の dir を持つが道具を持たない repo は、この変更の外 (見つけ方が無い)。今そういう repo があるかは未確認
-- テスト: 一時の repo に偽の `bin/next-issue-number` を置いて委ねること、無ければ今までどおり数えること、の 2 本。変異で委ねる分岐を外して red を見る
+- `issue_next_number.sh` が repo root に `bin/next-issue-number` を見つけたら、番号を出さずに断り、そのコマンドを案内して rc≠0 で終わる。委ねて実行はしない。理由は 2 つ:
+  - 約束が違う。共通の道具は位置引数で `<ref>` を取り、省略すると `origin/HEAD` の参照先を使い、ref が読めなければ失敗する (`scripts/issue_next_number.sh`・`scripts/lib/issue_numbers.sh`)。
+    obaket の道具は位置引数で ref を取らず `NEXT_ISSUE_ORIGIN_REF` で受け、何も渡さないと `origin/master` を数え、ref が読めなくても手元だけで採番して成功する
+    (obaket の `bin/next-issue-number` と `bin/next-issue-number-test` が固定している)。素通しで委ねると、呼び出し側の期待が知らせずに変わる
+  - 実行可能なファイルがあるだけで委ねると、採番を頼んだだけで checkout の中のコード (untracked のものも) を実行し、その stdout が番号になる。案内して止めれば、実行は呼び出し側が明示して打つ
+- `bin/next-issue-number` が無くても、root 直下でない issue dir の候補 (`<root>/*/issues`) があれば stderr で警告する。候補の列挙は `_claude/hooks/lib/issue-hooks.sh` が既に持つ
+  (`issues/`・`issue/` と入れ子の 1 段。依存ディレクトリは名前で除く) ので、それを使う。番号を共有しているかまでは分からないので、止めずに知らせるだけにする
+- テスト: 一時の repo に偽の `bin/next-issue-number` を置いて、番号を出さず案内して rc≠0 になること (偽のコマンドが実行されないこと) / 入れ子の `x/issues/` があれば警告が出ること / どちらも無ければ今までどおり数えること、の 3 本。
+  変異で断る分岐を外して red を見る
+- 関連して見つけたもの (この issue の外): obaket の `.claude/rules/issue-placement.md` に、採番の説明として「3 桁ちょうど」「自分の作業ツリーだけ」が残っている。
+  `bin/next-issue-number` は 3 桁以上を数え、origin の ref も数える。obaket 側で直す
 
 ## 進捗
 
