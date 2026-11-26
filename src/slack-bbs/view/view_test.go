@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/jiikko/dotfiles/src/tuikit/tickchain"
 	"slack-bbs/board"
@@ -737,6 +738,15 @@ func TestReloadAllAsksFirst(t *testing.T) {
 	run(m, press(m, "enter"))
 	if l.calls["C1"] != 2 || l.calls["C2"] != 1 {
 		t.Fatalf("Enter で全部を読み直していない: %v", l.calls)
+	}
+
+	// 板を描ける最も狭い端末でも、本文の行は切れない (板の中身の幅は端末の幅で狭くなる)。画面の上では、読み直しの知らせが
+	// 板に重なって行を隠すので、Lines と同じ組み方の板そのものを見る
+	box := strings.Join(confirm.Dialog(" 全部を読み直す ", reloadAllBody(100), confirm.HintYesNo, MinWidth, false), "\n")
+	for _, line := range reloadAllBody(100) {
+		if !strings.Contains(box, line) {
+			t.Errorf("幅 %d の端末で、確認の板の本文の行 %q が切れずに出ていない:\n%s", MinWidth, line, box)
+		}
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: MinHeight - 1})

@@ -55,7 +55,7 @@ type fetchReport struct {
 	boards                     int
 	histMsgs, need             int
 	history, threads, mentions time.Duration
-	same, edited               int // edited は same のうち、両方に在る発言の本文が違うもの (返信の数と最後の返信では気づけない編集)
+	same, edited               int // edited は same のうち、両方に在る返信の本文が違うもの (返信の数と最後の返信では気づけない変化)
 	notCached, noParent        int
 	noPrev, prevErr            int // 前回の板が無い (版が違うものを含む)・読めなかった板の数
 }
@@ -70,8 +70,10 @@ func unitKey(board string, u board.Unit) [2]string {
 }
 
 // compareFetch は f のスレッドのうち、前回の板 (st の板 id の Raw) に返信の数と最後の返信が同じ単位があるものを数える。
-// 同じものは、差分の取得なら読み直さずに前回の返信を使えたスレッド。そのうち、今回の単位 (units) と前回の単位の両方に在る発言の
-// 本文が違うものは edited に数える (使い回すと取り逃がす編集)。
+// 同じものは、差分の取得なら読み直さずに前回の返信を使えたスレッド。そのうち、今回の単位 (units) と前回の単位の両方に在る返信の
+// 本文が違うものは edited に数える (使い回すと取り逃がす変化)。親は history から毎回読み直すので比べない。
+// 比べる本文は board.Msg.Text (名指しを表示名に直した後の値) なので、名指しされた人の改名や bot の blocks_text の組み立ての違いも
+// edited に入る (原文は Raw に残らず分けられない)。出力では「本文が変わった」と書き、編集だけとは言わない。
 //
 // Raw の単位は返信を期間で省いて持つので (board.Unit.Omitted)、返信の数は「出した発言 + 省いた数 - 親」で数える。
 // 読めなかった・上限で切れた単位は返信を全部持たないので、同じとは数えない。
@@ -79,16 +81,17 @@ func compareFetch(f fetchStats, id string, units []board.Unit, st cache.Store) f
 	r := fetchReport{boards: 1, histMsgs: f.histMsgs, need: f.need, history: f.history, threads: f.threads, mentions: f.mentions,
 		noParent: f.need - len(f.marks)}
 	prev := map[[2]string]board.Unit{}
-	raw, ok, err := st.LoadRaw(id)
-	switch {
+	// LoadRaw は版が違う・JSON の型が合わないときも途中まで埋めた Raw を返すので、ok のときだけ単位を使う
+	switch raw, ok, err := st.LoadRaw(id); {
 	case err != nil:
 		r.prevErr = 1
 	case !ok:
 		r.noPrev = 1
-	}
-	for _, u := range raw.Units {
-		if u.Thread {
-			prev[unitKey(id, u)] = u
+	default:
+		for _, u := range raw.Units {
+			if u.Thread {
+				prev[unitKey(id, u)] = u
+			}
 		}
 	}
 	cur := map[[2]string]board.Unit{}
@@ -103,7 +106,7 @@ func compareFetch(f fetchStats, id string, units []board.Unit, st cache.Store) f
 			r.notCached++
 		case !u.Unreadable && !u.Truncated && u.Last() == m.latest && len(u.Msgs)+u.Omitted-1 == m.replies:
 			r.same++
-			if textChanged(u, cur[k]) {
+			if repliesChanged(u, cur[k]) {
 				r.edited++
 			}
 		}
@@ -111,11 +114,13 @@ func compareFetch(f fetchStats, id string, units []board.Unit, st cache.Store) f
 	return r
 }
 
-// textChanged は a と b の両方に在る発言 (同じ ts) のうち、本文が違うものがあるか。
-func textChanged(a, b board.Unit) bool {
+// repliesChanged は a と b の両方に在る返信 (同じ ts。親を除く) のうち、本文が違うものがあるか。
+func repliesChanged(a, b board.Unit) bool {
 	text := map[string]string{}
 	for _, m := range a.Msgs {
-		text[m.Ts] = m.Text
+		if m.Ts != a.ParentTs() {
+			text[m.Ts] = m.Text
+		}
 	}
 	for _, m := range b.Msgs {
 		if t, ok := text[m.Ts]; ok && t != m.Text {
@@ -142,7 +147,7 @@ func (r *fetchReport) add(g fetchReport) {
 
 func (r fetchReport) String() string {
 	s := fmt.Sprintf("取得 %.1f 秒 (内訳の合計) = history %d 件 %.1f 秒 + スレッド %d 本 (読めなかったものを含む) %.1f 秒 + 言及の検索 %.1f 秒。"+
-		"スレッドのうち前回の板と返信の数・最後の返信が同じ %d 本 (うち本文が編集された %d 本) / 前回の板に無い %d 本 / 親が history に無い %d 本",
+		"スレッドのうち前回の板と返信の数・最後の返信が同じ %d 本 (うち返信の本文が変わった %d 本) / 前回の板に無い %d 本 / 親が history に無い %d 本",
 		(r.history + r.threads + r.mentions).Seconds(), r.histMsgs, r.history.Seconds(), r.need, r.threads.Seconds(), r.mentions.Seconds(),
 		r.same, r.edited, r.notCached, r.noParent)
 	if r.noPrev > 0 {

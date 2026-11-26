@@ -4,23 +4,26 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"slack-bbs/cache"
 	"slack-bbs/subs"
 )
 
 // -dry-run は、読み直したスレッドのうち前回の板と返信の数・最後の返信が同じものを数える。返信の数は、前回の板が期間で省いた
 // 返信 (board.OldContext を超えた期間前の返信) も含めて比べる。返信が増えたスレッドは同じと数えない。同じと数えたうち、
-// 両方に在る返信の本文が編集されたものは別に数える。前回の板が無い板は、その数を添える。
+// 両方に在る返信の本文が変わったものは別に数える (親は history から毎回読むので数えない。返信が増えた等で同じと数えない
+// スレッドの本文の変化も数えない)。前回の板が無い板・版が違う板は、前回の単位を使わずにその数を添える。
 func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 	since := now.Add(-48 * time.Hour).Unix()
 	old := since - 3600 // 期間より前に始まり、期間前の返信が OldContext を超えるスレッド
 	fresh := since + 10
-	oldThread := func(lastOld string) string {
-		s := fmt.Sprintf(`{"ts":%q,"thread_ts":%q,"user":"U1","text":"古い親"}`, ts(old), ts(old))
+	oldThread := func(parentText, lastOld string) string {
+		s := fmt.Sprintf(`{"ts":%q,"thread_ts":%q,"user":"U1","text":%q}`, ts(old), ts(old), parentText)
 		for i := int64(1); i <= 7; i++ {
 			text := "前の返信"
 			if i == 7 {
@@ -36,16 +39,20 @@ func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 			{"ts":%q,"thread_ts":%q,"user":"U1","text":"古い親","reply_count":8,"latest_reply":%q}]`,
 			ts(fresh), ts(fresh), freshReplies, ts(freshLatest), ts(old), ts(old), ts(since+50))
 	}
-	freshThread := func(n int) string {
+	freshThread := func(n int, first string) string {
 		s := fmt.Sprintf(`{"ts":%q,"thread_ts":%q,"user":"U1","text":"新しい親"}`, ts(fresh), ts(fresh))
 		for i := 1; i <= n; i++ {
-			s += fmt.Sprintf(`,{"ts":%q,"thread_ts":%q,"user":"U1","text":"返信"}`, ts(fresh+int64(i)), ts(fresh))
+			text := "返信"
+			if i == 1 {
+				text = first
+			}
+			s += fmt.Sprintf(`,{"ts":%q,"thread_ts":%q,"user":"U1","text":%q}`, ts(fresh+int64(i)), ts(fresh), text)
 		}
 		return "[" + s + "]"
 	}
 	sl := &fakeSlack{
 		history: history(1, fresh+1),
-		threads: map[string]string{ts(old): oldThread("前の返信"), ts(fresh): freshThread(1)},
+		threads: map[string]string{ts(old): oldThread("古い親", "前の返信"), ts(fresh): freshThread(1, "返信")},
 	}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[
 		{"title":"話題","state":"info","theme":"other","members":[%q,%q],"background":[],"labels":[]}]}`, ts(old), ts(fresh)))}
@@ -61,23 +68,30 @@ func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 		}
 		return out.String()
 	}
-	if out := dry(); !strings.Contains(out, "スレッド 2 本") || !strings.Contains(out, "同じ 0 本 (うち本文が編集された 0 本) / 前回の板に無い 2 本 / 親が history に無い 0 本 (前回の板が無い板 1)") {
+	if out := dry(); !strings.Contains(out, "スレッド 2 本") || !strings.Contains(out, "同じ 0 本 (うち返信の本文が変わった 0 本) / 前回の板に無い 2 本 / 親が history に無い 0 本 (前回の板が無い板 1)") {
 		t.Errorf("前回の板が無いとき:\n%s", out)
 	}
 
 	readMD(t, d, "C1") // 前回の板 (Raw) を書く
-	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち本文が編集された 0 本) / 前回の板に無い 0 本") || strings.Contains(out, "前回の板が無い板") {
+	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 0 本) / 前回の板に無い 0 本") || strings.Contains(out, "前回の板が無い板") {
 		t.Errorf("何も変わっていないとき:\n%s", out)
 	}
 
+	// 親の本文の編集は数えない (差分の取得でも親は history から読み直す)
+	sl.threads[ts(old)] = oldThread("直した親", "前の返信")
+	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 0 本)") {
+		t.Errorf("親の本文を編集したとき:\n%s", out)
+	}
+
 	// 期間前の返信 (最後の返信ではない) の本文だけを編集した: 返信の数と最後の返信は変わらない
-	sl.threads[ts(old)] = oldThread("直した返信")
-	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち本文が編集された 1 本)") {
+	sl.threads[ts(old)] = oldThread("古い親", "直した返信")
+	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 1 本)") {
 		t.Errorf("返信の本文を編集したとき:\n%s", out)
 	}
 
-	sl.history, sl.threads[ts(fresh)] = history(2, fresh+2), freshThread(2)
-	if out := dry(); !strings.Contains(out, "同じ 1 本 (うち本文が編集された 1 本) / 前回の板に無い 0 本") {
+	// 返信が増えたスレッドは同じと数えないので、その中で本文が変わった返信も数えない
+	sl.history, sl.threads[ts(fresh)] = history(2, fresh+2), freshThread(2, "直した返信")
+	if out := dry(); !strings.Contains(out, "同じ 1 本 (うち返信の本文が変わった 1 本) / 前回の板に無い 0 本") {
 		t.Errorf("片方のスレッドに返信が増えたとき:\n%s", out)
 	}
 
@@ -85,8 +99,25 @@ func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 	sl.history = history(1, fresh+5)
 	sl.threads[ts(fresh)] = fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"新しい親"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"別の返信"}]`,
 		ts(fresh), ts(fresh), ts(fresh+5), ts(fresh))
-	if out := dry(); !strings.Contains(out, "同じ 1 本 (うち本文が編集された 1 本) / 前回の板に無い 0 本") {
+	if out := dry(); !strings.Contains(out, "同じ 1 本 (うち返信の本文が変わった 1 本) / 前回の板に無い 0 本") {
 		t.Errorf("返信の数が同じで最後の返信が違うとき:\n%s", out)
+	}
+
+	// 前回の板の版が違う: 中身が今と同じ形でも前回の単位を使わない
+	rawPath := filepath.Join(dir, "C1.raw.json")
+	b, err := os.ReadFile(rawPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur := fmt.Sprintf(`"version":%d`, cache.Version)
+	if !strings.Contains(string(b), cur) {
+		t.Fatalf("前回の板に版の欄が無い:\n%s", b)
+	}
+	if err := os.WriteFile(rawPath, []byte(strings.Replace(string(b), cur, fmt.Sprintf(`"version":%d`, cache.Version+1), 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := dry(); !strings.Contains(out, "同じ 0 本 (うち返信の本文が変わった 0 本) / 前回の板に無い 2 本") || !strings.Contains(out, "(前回の板が無い板 1)") {
+		t.Errorf("前回の板の版が違うとき:\n%s", out)
 	}
 }
 
@@ -111,11 +142,20 @@ func TestDryRunComparesGroupThreadsByMemberChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	readMD(t, d)
-	var out, errb bytes.Buffer
-	if rc := run(context.Background(), []string{"-dry-run"}, &out, &errb, d); rc != 0 {
-		t.Fatalf("rc=%d %s", rc, errb.String())
+	dry := func() string {
+		t.Helper()
+		var out, errb bytes.Buffer
+		if rc := run(context.Background(), []string{"-dry-run"}, &out, &errb, d); rc != 0 {
+			t.Fatalf("rc=%d %s", rc, errb.String())
+		}
+		return out.String()
 	}
-	if !strings.Contains(out.String(), "スレッド 2 本") || !strings.Contains(out.String(), "同じ 2 本 (うち本文が編集された 0 本) / 前回の板に無い 0 本") {
-		t.Errorf("グループのスレッドを前回の板と突き合わせていない:\n%s", out.String())
+	if out := dry(); !strings.Contains(out, "スレッド 2 本") || !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 0 本) / 前回の板に無い 0 本") {
+		t.Errorf("グループのスレッドを前回の板と突き合わせていない:\n%s", out)
+	}
+	sl.threads[at] = fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"親"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"直した返信"}]`,
+		at, at, ts(since+20), at)
+	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 2 本)") {
+		t.Errorf("グループのスレッドの返信の本文の変化を数えていない:\n%s", out)
 	}
 }
