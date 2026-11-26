@@ -25,7 +25,7 @@ func resp(ids ...string) board.Response {
 	return board.Response{Topics: []board.RespTopic{{Title: "t", State: board.StateInfo, Members: ids}}}
 }
 
-// 書いたものを読み戻せる。版の違うファイルは使わない (誤りではない。中身も返さない)。置き場が空ならキャッシュしない。
+// 書いたものを読み戻せる。バージョンの違うファイルは使わない (誤りではない。中身も返さない)。置き場が空ならキャッシュしない。
 func TestRoundTripAndVersion(t *testing.T) {
 	st := Store{Dir: filepath.Join(t.TempDir(), "c")}
 	us := units(board.Msg{Ts: "1.000000", Text: "a", New: true})
@@ -45,7 +45,7 @@ func TestRoundTripAndVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if sum, ok, err := st.LoadSummary("C1"); ok || err != nil || sum.Model != "" || len(sum.Basis) != 0 {
-		t.Errorf("版の違う分類を使った・中身を返した: ok=%v err=%v %+v", ok, err, sum)
+		t.Errorf("バージョンの違う分類を使った・中身を返した: ok=%v err=%v %+v", ok, err, sum)
 	}
 	rp := filepath.Join(st.Dir, "C1.raw.json")
 	b, _ = os.ReadFile(rp)
@@ -53,14 +53,14 @@ func TestRoundTripAndVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if r, ok, err := st.LoadRaw("C1"); ok || err != nil || len(r.Units) != 0 || !r.SavedAt.IsZero() {
-		t.Errorf("版の違う発言を使った・中身を返した: ok=%v err=%v %+v", ok, err, r)
+		t.Errorf("バージョンの違う発言を使った・中身を返した: ok=%v err=%v %+v", ok, err, r)
 	}
 	if _, ok, err := (Store{}).LoadRaw("C1"); ok || err != nil || (Store{}).SaveRaw("C1", Raw{}) != nil {
 		t.Errorf("置き場が空なのに読み書きした")
 	}
 }
 
-// 前回読んだスレッドを書いて読み戻せる。版の違うファイルは使わない (中身も返さない)。
+// 前回読んだスレッドを書いて読み戻せる。バージョンの違うファイルは使わない (中身も返さない)。
 func TestThreadsRoundTripAndVersion(t *testing.T) {
 	st := Store{Dir: filepath.Join(t.TempDir(), "c")}
 	th := Threads{Items: []Thread{{Ch: "C1", Ts: "1.000000", ReplyCount: 1, LatestReply: "2.000000", Msgs: []source.Message{{Ts: "1.000000"}, {Ts: "2.000000"}}}}}
@@ -77,7 +77,7 @@ func TestThreadsRoundTripAndVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, ok, err := st.LoadThreads("grp0123abcd"); ok || err != nil || len(got.Items) != 0 {
-		t.Errorf("版の違うスレッドを使った・中身を返した: ok=%v err=%v %+v", ok, err, got)
+		t.Errorf("バージョンの違うスレッドを使った・中身を返した: ok=%v err=%v %+v", ok, err, got)
 	}
 }
 

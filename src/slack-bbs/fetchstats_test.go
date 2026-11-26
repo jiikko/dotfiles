@@ -17,7 +17,7 @@ import (
 // -dry-run は、読み直したスレッドのうち前回の板と返信の数・最後の返信が同じものを数える。返信の数は、前回の板が期間で省いた
 // 返信 (board.OldContext を超えた期間前の返信) も含めて比べる。返信が増えたスレッドは同じと数えない。同じと数えたうち、
 // 両方に在る返信の本文が変わったものは別に数える (親は history から毎回読むので数えない。返信が増えた等で同じと数えない
-// スレッドの本文の変化も数えない)。前回の板が無い板・版が違う板は、前回の単位を使わずにその数を添える。
+// スレッドの本文の変化も数えない)。前回の板が無い板・バージョンが違う板は、前回の単位を使わずにその数を添える。
 func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 	since := now.Add(-48 * time.Hour).Unix()
 	old := since - 3600 // 期間より前に始まり、期間前の返信が OldContext を超えるスレッド
@@ -103,7 +103,7 @@ func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 		t.Errorf("返信の数が同じで最後の返信が違うとき:\n%s", out)
 	}
 
-	// 前回の板の版が違う: 中身が今と同じ形でも前回の単位を使わない
+	// 前回の板のバージョンが違う: 中身が今と同じ形でも前回の単位を使わない
 	rawPath := filepath.Join(dir, "C1.raw.json")
 	b, err := os.ReadFile(rawPath)
 	if err != nil {
@@ -111,13 +111,13 @@ func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 	}
 	cur := fmt.Sprintf(`"version":%d`, cache.Version)
 	if !strings.Contains(string(b), cur) {
-		t.Fatalf("前回の板に版の欄が無い:\n%s", b)
+		t.Fatalf("前回の板にバージョンの欄が無い:\n%s", b)
 	}
 	if err := os.WriteFile(rawPath, []byte(strings.Replace(string(b), cur, fmt.Sprintf(`"version":%d`, cache.Version+1), 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if out := dry(); !strings.Contains(out, "同じ 0 本 (うち返信の本文が変わった 0 本) / 前回の板に無い 2 本") || !strings.Contains(out, "(前回の板が無い板 1)") {
-		t.Errorf("前回の板の版が違うとき:\n%s", out)
+		t.Errorf("前回の板のバージョンが違うとき:\n%s", out)
 	}
 }
 

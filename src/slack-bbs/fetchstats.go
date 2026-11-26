@@ -64,7 +64,7 @@ type fetchReport struct {
 	history, threads, mentions time.Duration
 	same, edited               int // edited は same のうち、両方に在る返信の本文が違うもの (返信の数と最後の返信では気づけない変化)
 	notCached, noParent        int
-	noPrev, prevErr            int // 前回の板が無い (版が違うものを含む)・読めなかった板の数
+	noPrev, prevErr            int // 前回の板が無い (バージョンが違うものを含む)・読めなかった板の数
 }
 
 // unitKey は単位を板の中で引く鍵。グループの単位は ID が "<ch>/<ts>" なので、チャンネルと親の ts に分けて持つ。

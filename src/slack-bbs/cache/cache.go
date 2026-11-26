@@ -59,11 +59,11 @@ func (s Store) path(ch, kind string) (string, error) {
 	return filepath.Join(s.Dir, ch+"."+kind+".json"), nil
 }
 
-// LoadRaw は ch の Raw を読む。無い・版が違うときは ok が偽 (誤りではない)。ok が偽なら Raw は空。
+// LoadRaw は ch の Raw を読む。無い・バージョンが違うときは ok が偽 (誤りではない)。ok が偽なら Raw は空。
 func (s Store) LoadRaw(ch string) (r Raw, ok bool, err error) {
 	ok, err = s.load(ch, "raw", &r, func() bool { return r.Version == Version })
 	if !ok {
-		return Raw{}, false, err // 版が違う・JSON の型が合わないときも load は途中まで埋めるので、使える形で返さない
+		return Raw{}, false, err // バージョンが違う・JSON の型が合わないときも load は途中まで埋めるので、使える形で返さない
 	}
 	if verr := board.ValidateUnits(r.Units); verr != nil {
 		return Raw{}, false, fmt.Errorf("キャッシュの発言の形が壊れている: %w", verr)
@@ -72,7 +72,7 @@ func (s Store) LoadRaw(ch string) (r Raw, ok bool, err error) {
 	return r, true, nil
 }
 
-// LoadSummary は ch の Summary を読む。無い・版が違うときは ok が偽 (誤りではない)。ok が偽なら Summary は空。
+// LoadSummary は ch の Summary を読む。無い・バージョンが違うときは ok が偽 (誤りではない)。ok が偽なら Summary は空。
 func (s Store) LoadSummary(ch string) (sum Summary, ok bool, err error) {
 	if ok, err = s.load(ch, "summary", &sum, func() bool { return sum.Version == Version }); !ok {
 		return Summary{}, false, err

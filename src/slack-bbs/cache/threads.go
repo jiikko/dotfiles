@@ -6,7 +6,7 @@ import (
 	"slack-bbs/source"
 )
 
-// ThreadsVersion はスレッドのファイルの形の版。Raw・Summary の Version とは別に数える (Version を上げると全部の板の分類を
+// ThreadsVersion はスレッドのファイルの形のバージョン。Raw・Summary の Version とは別に数える (Version を上げると全部の板の分類を
 // claude でやり直すことになる。スレッドの形だけを変えたときに、分類まで捨てない)。
 const ThreadsVersion = 1
 
@@ -28,7 +28,7 @@ type Thread struct {
 	Msgs        []source.Message `json:"messages"`
 }
 
-// LoadThreads は板 id のスレッドを読む。無い・版が違うときは ok が偽 (誤りではない)。ok が偽なら Threads は空。
+// LoadThreads は板 id のスレッドを読む。無い・バージョンが違うときは ok が偽 (誤りではない)。ok が偽なら Threads は空。
 func (s Store) LoadThreads(id string) (Threads, bool, error) {
 	var t Threads
 	if ok, err := s.load(id, "threads", &t, func() bool { return t.Version == ThreadsVersion }); !ok {
