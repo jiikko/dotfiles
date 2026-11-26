@@ -36,7 +36,8 @@ bench/pybench.sh [-n <周の数>] <入力の dir> <結果の dir>   # 周の数�
 ## Go と比べる (`pybench.sh -g`)
 
 ```sh
-git worktree add --detach <wt> <直す前の commit> && (cd <wt>/src/ja-writing && go build -o <dir>/jw-before .)  # 直した後も commit から同じ形で作る
+git worktree add --detach <wt> <直す前の commit> && (cd <wt>/src/ja-writing && go build -o <dir>/jw-before .)  # <dir> は絶対パス。直した後も commit から同じ形で作る
+git worktree remove <wt>                                                                          # 作り終えたら消す
 bench/pybench.sh -n 5 -g before=<dir>/jw-before -g after=<dir>/jw-after <入力の dir> <結果の dir>
 ```
 
