@@ -3,19 +3,17 @@
 元: [github.com/dlclark/regexp2](https://github.com/dlclark/regexp2) の `v2` の v2.5.2 (MIT。`LICENSE` と `ATTRIB`)。
 `src/ja-writing/go.mod` の `replace` で使う。写したのはビルドに要るパッケージ (`.`・`syntax`・`helpers`) のテストを除いた Go のソースだけ。
 
-## 直した所
+## 直した所 (2 か所)
 
-`syntax/charclass.go` の `mayOverlapByEnumeration` に、1 字ずつ調べる字の数の上限 (`enumerationBudget` = 4096) を足した。
-超えたら調べ切らずに「重なりうる」と答える。呼び出し元は `syntax/tree.go` の `canBeMadeAtomic` の 3 か所 (集合のループ `A*` の後ろが集合か集合のループ `B`):
+1. `syntax/charclass.go` の `mayOverlapByEnumeration` に、1 字ずつ調べる字の数の上限 (`enumerationBudget` = 4096) を足した。
+   超えたら調べ切らずに「重なりうる」と答える。なぜ: `internal/pyre` は否定の集合を補集合の範囲で書く (`internal/pyre/emit.go` の `emitSet`。
+   regexp2 の後戻りの誤りを避けるため)。上限が無いと compile のたびに 100 万字を超える集合を回し、ja-writing lint の起動込みの所要の約 3 割を占めていた (issue 1079 に計測)
+2. `syntax/tree.go` の `canBeMadeAtomic` の、後ろが 0 回からの集合のループのときの条件を `!subsequent.Set.MayOverlap(n.Set)` にした (上流は否定が無い。
+   .NET の元は否定がある)。上流のままだと、後ろのループが前のループと重なるときに次のノードを調べる段へ進み、前のループを atomic にして後方参照の答えを変える
+   (`([ad]*)([ab]*)c\2b` を `aacab` に当てると本家の Python の re は当たり、上流は当たらない)。1 の上限で「重なりうる」と答える組もこの段へ進ませていた
 
-- 後ろが集合か、1 回以上の集合のループのとき (`!n.Set.MayOverlap(...)` の 2 か所): 「重なりうる」で、A を atomic にしない。最適化を 1 つ見送るだけ
-- 後ろが 0 回からの集合のループのとき (`subsequent.Set.MayOverlap(n.Set)`。否定が無い。.NET の元は `!MayOverlap` で、上流の写し損ないに見える):
-  「重なりうる」で、その次のノードと A の重なりを調べる段へ進み、そこで重ならなければ A を atomic にする。
-  B は空でも当たり、その次は A と重ならないので、A が最長で取った位置からの試しは、A が後戻りした場合と同じ結果になり、当たり方は変わらない
-  (2026-11-26 の敵対的レビューで、当たり方を変える入力は作れなかった。答えの一致は `make test` の本家の re との記録の比べが見る)
-
-なぜ: `internal/pyre` は否定の集合を補集合の範囲で書く (`internal/pyre/emit.go` の `emitSet`。regexp2 の後戻りの誤りを避けるため)。
-上限が無いと compile のたびに 100 万字を超える集合を回し、ja-writing lint の起動込みの所要の約 3 割を占めていた (issue 1079 に計測)。
+2 を直したので、`MayOverlap` の呼び出し元 (`canBeMadeAtomic` の 3 か所) はどれも「重なりうる → atomic にしない」の向きになり、1 の上限は最適化を見送るだけになる。
+どちらも `internal/pyre/regexp2_fork_test.go` が見る (2 は本家の re と同じ答えになることで見る)。
 
 ## 新しいバージョンを取り込むとき
 

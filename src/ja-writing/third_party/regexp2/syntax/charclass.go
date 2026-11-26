@@ -1190,7 +1190,7 @@ func knownDistinctSets(set1, set2 *CharSet) bool {
 
 // enumerationBudget は mayOverlapByEnumeration が 1 字ずつ調べる字の数の上限 (上流に無い。third_party/regexp2/README.md)。
 // 超えたら調べ切らずに「重なりうる」と答える。上限が無いと、補集合の形の大きい集合 (100 万字を超える) を回し、パターン 1 つの compile に 18 ms かかっていた。
-// 呼び出し元は tree.go の canBeMadeAtomic の 3 か所で、当たり方は変わらない (README の「直した所」)。
+// 呼び出し元は tree.go の canBeMadeAtomic の 3 か所で、どれも「重なりうる」で atomic にしない (README の「直した所」の 2)。
 const enumerationBudget = 4096
 
 func mayOverlapByEnumeration(set1, set2 *CharSet) bool {

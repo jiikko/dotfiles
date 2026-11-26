@@ -35,7 +35,8 @@
 #   - 件数のラチェットなので、同じファイルで 1 行直して 1 行足す・既存の違反の行に別の語を書き足すのは通る
 #   - 一覧にあるファイルを消して、同じ名前で作り直す形 (作り直したファイルは前の件数まで通る)
 #   - git に add する前のファイル (git ls-files で走査する。CI では拾う)
-#   - Markdown・JSON・issues/・vendor/・third_party/ (上流の写しで、上流と同じ字面を保つ)・testdata/ と、この検査とそのテスト自身 (語彙を字として持つ)
+#   - Markdown・JSON・issues/・vendor/・src/ja-writing/third_party/regexp2/ (上流の写しで、上流と同じ字面を保つ。third_party/ の全部は外さない:
+#     自前の stub も置く)・testdata/ と、この検査とそのテスト自身 (語彙を字として持つ)
 #   - 拡張子で言語を決められず、shebang も拡張子の無い dotfiles の名前 (`_zshrc` など) でもないファイル
 #     (点で始まる名前は `.envrc` などの列挙したものだけ。`.zshrc` の形は `*.*` に当たって見ない。この repo は `_zshrc` の形で置く)
 #   文字列・heredoc の本文がたまたまコメント記号で始まる行は数える (偽の red。一覧で受ける)
@@ -69,7 +70,7 @@ trap 'rm -rf "$tmp"' EXIT
 classify() {
   REPLY=''
   case "$1" in
-    issues/*|*/vendor/*|vendor/*|*/third_party/*|third_party/*|*/testdata/*|testdata/*|*.md|*.json) return 0 ;;
+    issues/*|*/vendor/*|vendor/*|src/ja-writing/third_party/regexp2/*|*/testdata/*|testdata/*|*.md|*.json) return 0 ;;
     scripts/check_comment_provenance.sh|tests/scripts/test_check_comment_provenance.sh|"$ALLOW") return 0 ;;
   esac
   [ -f "$1" ] && [ ! -L "$1" ] || return 0

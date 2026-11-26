@@ -27,3 +27,21 @@ func TestRegexp2IsTheLocalFork(t *testing.T) {
 		t.Fatalf("ループが %v になった。regexp2 が third_party/regexp2 の写し (1 字ずつの走査に上限) でない", loop.T)
 	}
 }
+
+// 後方参照が、前のループの手放した字を後ろの 0 回からのループに取らせて当たる形で、本家の re と同じ答えになる
+// (third_party/regexp2/README.md の「直した所」の 2。上流の regexp2 は前のループを atomic にして当たらない)。
+// 1 つ目は後ろのループが前のループと重なる形 (上流の誤り)、2 つ目は上限を超える大きい集合で「重なりうる」と答える形。
+func TestRegexp2BackreferenceAfterNullableLoopMatchesPython(t *testing.T) {
+	for _, c := range []struct{ pattern, text string }{
+		{`([ad]*)([ab]*)c\2b`, "aacab"},
+		{`([\x00-\u1fff]*)([\U00010000-\U0010ffff]*)([ab]*)\u3000\3b`, "aa\u3000ab"},
+	} {
+		m, err := MustCompile(c.pattern, UNICODE).Search(NewText(c.text), 0, NoEnd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m == nil || m.Start(0) != 0 || m.End(0) != 5 {
+			t.Errorf("%q を %q に当てた答えが本家の re (span (0, 5)) と違う: %v", c.pattern, c.text, m)
+		}
+	}
+}
