@@ -36,6 +36,7 @@ type fakeSlack struct {
 	// threadsByCh はチャンネル ID → 親の ts → thread が返す JSON (無いチャンネルは threads)
 	threadsByCh map[string]map[string]string
 	warn        string         // history の stderr (slack-cli の案内の行と、途中で切れたときの警告の行を模す)
+	thWarn      string         // thread の stderr (途中で止まったときの警告を模す)
 	failTh      bool           // thread を全部失敗させる (消えたスレッド・認証切れを模す)
 	failWho     bool           // whoami を失敗させる (認証切れ・ネットワークが無いを模す)
 	search      map[int]string // search のページ番号 → 返す JSON (無いページは空の結果)
@@ -49,8 +50,11 @@ type fakeSlack struct {
 
 func (f *fakeSlack) Run(_ context.Context, args ...string) ([]byte, []byte, error) {
 	out, err := f.run(args)
-	if args[0] == "history" {
+	switch args[0] {
+	case "history":
 		return out, []byte(f.warn), err
+	case "thread":
+		return out, []byte(f.thWarn), err
 	}
 	return out, nil, err
 }

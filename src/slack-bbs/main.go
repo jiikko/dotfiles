@@ -78,7 +78,7 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
 
 読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。前回の板 (キャッシュ) があればすぐ出して、裏で読み直す。
   r で今のチャンネル、R で全部を読み直す (確認の板で y / Enter。取り直して、新しい発言・編集された発言があれば claude -p で分類し直す)。
-  起動と r は、返信の数も最後の返信も前回と同じスレッドを読み直さない (途中の返信の編集は R で拾う)。
+  起動と r (と -md / -json の実行) は、返信の数も最後の返信も前回と同じスレッドを読み直さない (返信の編集は R で拾う)。
   j/k: 移動  l/Enter: 本文を読む  h/q/Esc/Enter: 本文から一覧へ  J/K: 本文を開いたまま隣の話題へ
   Tab / Shift-Tab: 次・前のタブ (最後のタブ「🆕 新着」は全部のタブの話題を新しい順に並べる)
   o: Slack で開く  u: 既読と未読の切り替え  x: 話題を隠す  z: 隠した話題も出す  s: 購読するチャンネルを選ぶ
@@ -752,40 +752,7 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 	g := newGuard()
 	defer g.closeAndWait(cancel)
 	start := g.start
-	load := func(ctx context.Context, ch subs.Channel, full bool) (render.Page, error) {
-		done, ok := start()
-		if !ok {
-			return render.Page{}, context.Canceled
-		}
-		defer done()
-		o := o
-		if now := d.now(); !o.sinceFixed && o.until.Before(now) {
-			// 読み直しは押した時点までを読む (期間の長さは保つ)。日付で渡した -since はずらさない
-			shift := now.Sub(o.until)
-			o.since, o.lookback, o.until = o.since.Add(shift), o.lookback.Add(shift), now
-		} else {
-			o.until = now
-		}
-		me, us, err := identify(ctx)
-		if err != nil {
-			return render.Page{}, err
-		}
-		c, err := collect(ctx, o, cli, me, us, ch, browseThreads(o, st, full))
-		if err != nil {
-			return render.Page{}, err
-		}
-		if err := checkMax(c, o.max); err != nil {
-			return render.Page{}, err
-		}
-		p, dropped, _, err := classify(ctx, o, d, st, c)
-		if err != nil {
-			return render.Page{}, err
-		}
-		if dropped.Any() {
-			p.Notes = append(p.Notes, "LLM の分類から捨てたもの: "+dropped.String())
-		}
-		return p, nil
-	}
+	load := browseLoader(o, d, st, cli, identify, start)
 	m := view.New(ctx, targets, load, d.openURL, d.now)
 	if f := apiStats(d.slack); f != nil {
 		m.SetAPIStats(f)
@@ -856,6 +823,46 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 		}
 	}
 	return err
+}
+
+// browseLoader は読む画面の読み直し (view.Loader)。start は画面を閉じた後に新しい読み直しを始めないための印 (guard.start)、
+// identify は自分とユーザーの名前を 1 回だけ取る。full は全部を取り直すか (R)。
+func browseLoader(o options, d deps, st cache.Store, cli source.Client, identify func(context.Context) (source.Me, source.Users, error),
+	start func() (func(), bool)) view.Loader {
+	return func(ctx context.Context, ch subs.Channel, full bool) (render.Page, error) {
+		done, ok := start()
+		if !ok {
+			return render.Page{}, context.Canceled
+		}
+		defer done()
+		o := o
+		if now := d.now(); !o.sinceFixed && o.until.Before(now) {
+			// 読み直しは押した時点までを読む (期間の長さは保つ)。日付で渡した -since はずらさない
+			shift := now.Sub(o.until)
+			o.since, o.lookback, o.until = o.since.Add(shift), o.lookback.Add(shift), now
+		} else {
+			o.until = now
+		}
+		me, us, err := identify(ctx)
+		if err != nil {
+			return render.Page{}, err
+		}
+		c, err := collect(ctx, o, cli, me, us, ch, browseThreads(o, st, full))
+		if err != nil {
+			return render.Page{}, err
+		}
+		if err := checkMax(c, o.max); err != nil {
+			return render.Page{}, err
+		}
+		p, dropped, _, err := classify(ctx, o, d, st, c)
+		if err != nil {
+			return render.Page{}, err
+		}
+		if dropped.Any() {
+			p.Notes = append(p.Notes, "LLM の分類から捨てたもの: "+dropped.String())
+		}
+		return p, nil
+	}
 }
 
 func writeMarkdown(w io.Writer, p render.Page) error {
@@ -1117,10 +1124,15 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 	parents := threadParents(hist.Msgs)
 	fs.need, fs.marks = len(need), threadMarks(ch.ID, parents, need)
 	var read []cache.Thread
+	inHistory := map[string]source.Message{}
+	for _, m := range hist.Msgs {
+		inHistory[m.Ts] = m
+	}
 	start = time.Now()
 	for _, ts := range need {
 		p, known := parents[ts]
 		if t, ok := prev.reusable(ch.ID, p); known && ok {
+			t.Msgs = freshen(t.Msgs, inHistory)
 			threads[ts] = t.Msgs
 			read = append(read, t)
 			fs.reused++
@@ -1139,7 +1151,9 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 			continue
 		}
 		threads[ts] = th.Msgs
-		if known { // 親が history に無いスレッドは、次の読み直しで比べる値が無いので残さない
+		// 親が history に無いスレッドは、次の読み直しで比べる値が無いので残さない。警告の付いた (途中で止まった) スレッドと、
+		// history を読んだ後に返信が動いて親の値と合わないスレッドも残さない (残すと、欠けた・消えた返信を使い回し続ける)
+		if known && th.Warning == "" && consistent(th.Msgs, p) {
 			read = append(read, cache.Thread{Ch: ch.ID, Ts: ts, ReplyCount: p.ReplyCount, LatestReply: p.LatestReply, Msgs: th.Msgs})
 		}
 		if th.Warning != "" {

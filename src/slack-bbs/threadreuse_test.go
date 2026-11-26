@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,12 +108,19 @@ func TestReadRereadsThreadsWhenLatestDiffersOrTruncated(t *testing.T) {
 	sl, d, dir, _ := reuseFixture(t)
 	readMD(t, d, "C1")
 	since := now.Add(-48 * time.Hour).Unix()
+	parent := ts(since - 3600)
+	// 返信が 1 つ消えて 1 つ付いた: 数は 1 のまま、最後の返信が since+9 になる (スレッドの中身も同じ形にする)
 	sl.history = strings.Replace(sl.history, fmt.Sprintf(`"latest_reply":%q`, ts(since+1)), fmt.Sprintf(`"latest_reply":%q`, ts(since+9)), 1)
+	sl.threads[parent] = fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"CI が遅い"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"付け直した"}]`,
+		parent, parent, ts(since+9), parent)
 	readMD(t, d, "C1")
 	if n := threadCalls(sl); n != 2 {
 		t.Errorf("最後の返信が変わったスレッドを読み直していない (スレッド %d 回, want 2)", n)
 	}
-	sl.history = strings.Replace(sl.history, `"reply_count":1`, `"reply_count":2`, 1) // 最後の返信は同じまま、数だけ変える
+	// 途中に返信が 1 つ増えた: 最後の返信は同じまま、数だけ 2 になる
+	sl.history = strings.Replace(sl.history, `"reply_count":1`, `"reply_count":2`, 1)
+	sl.threads[parent] = fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"CI が遅い"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"途中"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"付け直した"}]`,
+		parent, parent, ts(since+5), parent, ts(since+9), parent)
 	readMD(t, d, "C1")
 	if n := threadCalls(sl); n != 3 {
 		t.Errorf("返信の数が変わったスレッドを読み直していない (スレッド %d 回, want 3)", n)
@@ -185,5 +193,99 @@ func TestGroupReusesThreadsByMemberChannel(t *testing.T) {
 	sl.histByCh["C2"], sl.threadsByCh["C2"] = hist(since+30), thread(since+30, "ops の新しい返信")
 	if out, _ := readMD(t, d); threadCalls(sl) != 3 || !strings.Contains(out, "dev の返信") || !strings.Contains(out, "ops の新しい返信") {
 		t.Errorf("変わった C2 だけを読み直していない (スレッド %d 回, want 3):\n%s", threadCalls(sl), out)
+	}
+}
+
+// 使い回すスレッドでも、親の編集は今回の history の親で拾う (返信の数と最後の返信は変わらないが、新しい本文は history に届いている)。
+func TestReusedThreadTakesParentFromHistory(t *testing.T) {
+	sl, d, _, _ := reuseFixture(t)
+	readMD(t, d, "C1")
+	sl.history = strings.Replace(sl.history, `"text":"CI が遅い"`, `"text":"CI が直った"`, 1)
+	if out, _ := readMD(t, d, "C1"); threadCalls(sl) != 1 || !strings.Contains(out, "CI が直った") {
+		t.Errorf("使い回したスレッドの親を history の新しい本文にしていない (スレッド %d 回):\n%s", threadCalls(sl), out)
+	}
+}
+
+// 「チャンネルにも投稿」の返信の編集も、history に届いた新しい本文で拾う。
+func TestReusedThreadTakesBroadcastReplyFromHistory(t *testing.T) {
+	since := now.Add(-48 * time.Hour).Unix()
+	parent, reply := ts(since-3600), ts(since+5)
+	hist := func(text string) string {
+		return fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":%q},{"ts":%q,"thread_ts":%q,"user":"U1","text":"親","reply_count":1,"latest_reply":%q}]`,
+			reply, parent, text, parent, parent, reply)
+	}
+	sl := &fakeSlack{history: hist("投稿 v1"), threads: map[string]string{parent: fmt.Sprintf(
+		`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"親"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"投稿 v1"}]`, parent, parent, reply, parent)}}
+	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"話題","state":"info","theme":"other","members":[%q],"background":[],"labels":[]}]}`, parent))}
+	d := newDeps(t, sl, cl)
+	dir := filepath.Join(t.TempDir(), "cache")
+	d.cacheDir = func() (string, error) { return dir, nil }
+	readMD(t, d, "C1")
+	sl.history = hist("投稿 v2")
+	if out, _ := readMD(t, d, "C1"); threadCalls(sl) != 1 || !strings.Contains(out, "投稿 v2") || strings.Contains(out, "投稿 v1") {
+		t.Errorf("使い回したスレッドの「チャンネルにも投稿」の返信を history の新しい本文にしていない (スレッド %d 回):\n%s", threadCalls(sl), out)
+	}
+}
+
+// 読んだスレッドが history の親の値と合わない (history の後に返信が動いた・途中で止まった) か、slack-cli が警告を出したら残さない。
+// 残すと、次の読み直しで欠けた・消えた返信を使い回し続ける。
+func TestInconsistentOrWarnedThreadIsNotKept(t *testing.T) {
+	sl, d, _, _ := reuseFixture(t)
+	parent := ts(now.Add(-48*time.Hour).Unix() - 3600)
+	good := sl.threads[parent]
+	sl.threads[parent] = fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"CI が遅い"}]`, parent, parent) // 返信が欠けた
+	readMD(t, d, "C1")
+	sl.threads[parent] = good
+	readMD(t, d, "C1")
+	if n := threadCalls(sl); n != 2 {
+		t.Errorf("親の値と合わないスレッドを残して使い回した (スレッド %d 回, want 2)", n)
+	}
+	// 件数は合うが最後の返信が違う (history を読んだ後に返信が 1 つ消えて 1 つ付いた)
+	sl.threads[parent] = fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"CI が遅い"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"別の返信"}]`,
+		parent, parent, ts(now.Add(-48*time.Hour).Unix()+7), parent)
+	readMD(t, d, "-no-cache", "C1")
+	sl.threads[parent] = good
+	readMD(t, d, "C1")
+	if n := threadCalls(sl); n != 4 {
+		t.Errorf("最後の返信が親の値と合わないスレッドを残して使い回した (スレッド %d 回, want 4)", n)
+	}
+
+	sl.thWarn = "警告: 取得が途中で切れた\n  結果は不完全です。\n"
+	readMD(t, d, "-no-cache", "C1") // 警告つきで読み直し、残っていたものを置き換える
+	sl.thWarn = ""
+	readMD(t, d, "C1")
+	if n := threadCalls(sl); n != 6 {
+		t.Errorf("警告の付いたスレッドを残して使い回した (スレッド %d 回, want 6)", n)
+	}
+}
+
+// 読む画面の読み直しは、full (R) のときだけ前回のスレッドを使わない。
+func TestBrowseLoaderRereadsAllOnlyWhenFull(t *testing.T) {
+	sl, d, dir, _ := reuseFixture(t)
+	cli := source.Client{R: sl}
+	identify := func(ctx context.Context) (source.Me, source.Users, error) {
+		me, err := cli.Whoami(ctx)
+		if err != nil {
+			return source.Me{}, source.Users{}, err
+		}
+		us, err := cli.Users(ctx)
+		return me, us, err
+	}
+	o, err := parseFlags(nil, now, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	load := browseLoader(o, d, cache.Store{Dir: dir}, cli, identify, func() (func(), bool) { return func() {}, true })
+	ch := subs.Channel{ID: "C1", Name: "dev"}
+	for i, c := range []struct {
+		full bool
+		want int
+	}{{false, 1}, {false, 1}, {true, 2}, {false, 2}} {
+		if _, err := load(context.Background(), ch, c.full); err != nil {
+			t.Fatal(err)
+		}
+		if n := threadCalls(sl); n != c.want {
+			t.Errorf("%d 回目 (full=%v): スレッド %d 回, want %d", i+1, c.full, n, c.want)
+		}
 	}
 }

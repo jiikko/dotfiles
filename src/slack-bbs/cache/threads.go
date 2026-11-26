@@ -19,7 +19,7 @@ type Threads struct {
 }
 
 // Thread はスレッド 1 本。ReplyCount と LatestReply は、読んだときに history の親が持っていた値。
-// 次の読み直しで親の値がどちらも同じなら、読み直さずに Msgs を使う (途中の返信の編集は取り逃がす。全部を取り直す R で拾う)。
+// 次の読み直しで親の値がどちらも同じなら、読み直さずに Msgs を使う (返信の編集は取り逃がす。全部を取り直す R で拾う)。
 type Thread struct {
 	Ch          string           `json:"ch"` // スレッドのチャンネル (グループの板ではメンバーのチャンネル)
 	Ts          string           `json:"ts"` // 親の ts
