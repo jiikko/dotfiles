@@ -149,3 +149,17 @@ diff と check は 0.15〜0.84 で Go が速い。絶対の時間が長いのは
     本家との比 (起動を含む中央値): lint-len-1024k 0.70 倍 (0.420 秒 / 0.602 秒)・256k 0.52 倍
   - 敵対的レビュー (opus): 答えが変わる経路は見つからなかった (`s.an.Text` を書き換える所は無く、metaphorLabel の呼び出し元は 1 か所、数える時点は前と同じ早い return の後、lint に goroutine は無い)。
     P3 が 2 件: コメントの名前の言い直し → 削った。`metaphorLabel` の `strings.Count(text, …)` も候補の行と piece ごとに文書全体を走る (byte の走査で確保は無く、効果は未実測) → 次の周の候補
+- 8 周目 (候補なし。2026-11-26): 7 周目の Go で lint-len-1024k のプロファイルを取り直した (10 プロセス)。1 割を超えるのは、多くの検出をまとめて呼ぶ `g14WordFindings` (累積 27%)・
+  照合の `pyre.(*Pattern).run` (26%)・`eachRow` (21%)・`pyunicode.Runes` (19%) で、どれも中が 10 か所以上に散り、1 か所で全体の 5% を超えるものは無い
+  - `candidateLines` (12%) は前段の絞り込みとして文書全体に正規表現を当てる処理で、時間は照合そのもの。`g14WordFindings` の `tables.trigger` の複数のパターンを 1 つの選択 (`|`) にまとめると、
+    重なった当たりを取りこぼして答えが変わりうるので採らない
+  - 7 周目のレビューが挙げた `metaphorLabel` の `strings.Count` は全体の 2% で、直しても所要はほとんど縮まない。`visibility.AnalyzeMarkdown` (9.7%) も中が 2〜17% ずつ散る
+- 9 周目 (採った。2026-11-26): 5 周目に外した diff の直し (`diff/numbers.go` の `kanjiBeforeOK`・`kanjiExcludedRepl`・`kanaNumberOK` が候補ごとに文書全体を `runesText` で作り直していたのを、
+  並びと Text の組 `numText` で渡す形) を 7 周目の上に当て直し、周の数を 9 に増やして測り直した。5 周目と 6 周目の 2 回目の run で、diff-pair-256k が 0.997 倍と 0.944 倍に割れていたため
+  - 計測 (9 周。`tmp/1079-bench-1125/it9`): 7 周目と比べて diff-pair-256k 0.945 倍 (9 周中 7 周で速い)・check-pair-256k 0.982 倍。この直しが触らない lint のケースにも 0.964〜1.006 倍の
+    「速い」「遅い」が付き、バイナリの差による揺れは 4% ほど。diff-pair-256k の 5.5% はそれより大きく、3 回の run のうち 2 回で 5〜6% 速い。in-process では割り当て 1.09 GB → 1.00 GB (9% 減) → 採った
+  - 答え: module の make test が緑。組の Text を別の並び (masked) のものにすると `TestBaseMatchesPythonRecording` が落ちることを確かめた
+  - 敵対的レビュー (opus): 答えが変わる経路は見つからなかった (組を作った後に並びを書き換える所は無い。kanjiExcludedRepl の closure が走査の途中で使う Text も、前と同じ並びから作る)。P3 が 3 件:
+    `numText` が既にある `contrast_words.go` の `ctext` (文字列・並び・Text の組) と同じ考えの型 → `numText` を消し、並びから作る `ctextOfRunes` を `newCtext` の隣に足して寄せた。
+    コメントの言い直しと、`kanjiBeforeOK` のコメントが無い名前 `kanjiText` を指していた → 直した。寄せた形でも、組の Text を別の並びのものにすると `TestBaseMatchesPythonRecording` が落ちる
+  - 次の候補 (未実測): `diff/hedge.go` の `hedgeClauseChars` は呼ぶたびに text 全体を `pyunicode.Runes` にし、`hedgePolarity` は語ごとに `pyre.NewText(text)` を呼ぶ。text が文書全体なら同じ形
