@@ -503,15 +503,6 @@ func (s *sides) qualifierRisks(groups []*sentenceGroup) []pyjson.Value {
 	return out
 }
 
-// QualifierRisks は元の文と書き直した文の、概数と範囲を表す語の変化の恐れ (risk の並び。JSON の値の形)。
-func QualifierRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return s.qualifierRisks(s.sentencePairs(full.hunks)), nil
-}
-
 // sortedWordKeys は集合の語を昇順に並べたもの (本家は frozenset を sorted で JSON にする)。空でも nil にしない。
 func sortedWordKeys(m map[string]bool) []string {
 	return append([]string{}, slices.Sorted(maps.Keys(m))...)

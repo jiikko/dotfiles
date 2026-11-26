@@ -282,11 +282,6 @@ type EndingChange struct {
 	RewriteKind string
 }
 
-// EndingChanges は本家の ending_changes: 書き直しで文末の種類が変わった文。似ている元の文と組にして比べる。
-func EndingChanges(o, r string) []EndingChange {
-	return endingChangesFromUnits(EndingUnits(o, false), EndingUnits(r, false))
-}
-
 // endingExactArea は、文末の種類を比べるとき、元の文と書き直した文の字数の積がこれを超える組の ratio を NewExact で求める境 (答えは difflib と同じ)。
 // difflib の ratio は長い文の組で長さの 2 乗の時間がかかる (「。」のない 2 万字の 1 文で 20 秒あまり)。短い文の組では difflib のほうが速い。
 const endingExactArea = 160000

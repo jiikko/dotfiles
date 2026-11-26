@@ -62,17 +62,6 @@ func newSource(r []rune) *source { return &source{r: r, t: pyre.NewText(str(r))}
 
 func isAnyOf(c rune, set string) bool { return strings.ContainsRune(set, c) }
 
-// UnicodeWhitespace は unicode_whitespace。空文字列は真、2 字以上は全部の字が空白のとき真。空白は \t \n \r \f と一般カテゴリ Zs。
-func UnicodeWhitespace(ch string) bool {
-	rs := runesOf(ch)
-	for _, c := range rs {
-		if !unicodeWhitespaceRune(c) {
-			return false
-		}
-	}
-	return true
-}
-
 func unicodeWhitespaceRune(c rune) bool {
 	return c == '\t' || c == '\n' || c == '\r' || c == '\f' || pyunicode.Category(c) == "Zs"
 }

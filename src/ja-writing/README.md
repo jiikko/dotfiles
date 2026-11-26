@@ -286,7 +286,7 @@ lint (1075) が `check_pattern` の `Required` (必ず当たる字の並び) で
 本家の `yomiyasu_diff.py` (11,577 行) の Go 実装 (issue 1076)。群の一覧と順は issue 1076 の「群と順」。いま入っているのは群 A (CLI の骨組み・引数と終了コード・`-h`・`--version`)・B (9 キーの下ごしらえ)・C (文末の種類と立場)・E (太字。lint と共有する `internal/bold`)・J (全文差分 `FullDiff`: 行の対応・hunk・文の断片と文字の対応・動かした行)・K (見出しの構造 `HeadingStructure`)・L (文の組と本文 `SentencePairs` `AllBodies`)・F (文の種類の印 `TypeMarks` `TypeChanges`)・G (9 キーの組み立て `RuleCandidatesOf`)・H (許可・能力 `ModalityChanges`)・I (選ぶ範囲・因果 `LogicChanges`)・R (語の一覧の読み `ParsePatternList` `LoadList` `ListSource`)・Z (文体の硬化 `Stiffness` `StiffnessMetrics`)・AA (勢い `Tone`)・M (数値 `ExtractNumbers` `NumberRisks`)・N (否定 `NegationRisks`)・O (主語と目的語の入れ替え `SwapRisks`)・Q (概数と範囲の語 `QualifierRisks`)・P (問い `QuestionRisks`・変えない箇所 `ProtectedRisks`・文の種類の印と許可・能力と選ぶ範囲・因果を意味が変わる恐れの形にする `ChangeRisksOf`)・T (気持ちの語 `FeelingRisks`) で、
 `--endings` と、検査の本体 (本家の `diff()`。`document.go`) の `--json` の出力と、人が読む出力 (本家の `report`。`report*.go`。群 AD) が本家と同じ。`report` は `diffDocument` の値 (本家の `--json` を `pyjson.Loads` で読んだ値と同じ型) だけを読む。本家の `detector_summary` と `report_parts` (check が使う。diff の CLI からは届かない) は `public.go` の `DetectorSummary`・`ReportParts` で、check が diff から使うほかの名前 (`report`・`fail_on_count`・`_shows_rewritten_only`・`_hunk_heading`・`STANCES`・`_LIST_PROBLEMS`・2 つの形式のバージョン) も同じファイルで公開する。check がプロセスの中で呼ぶ本家の `ground` (資料との照合。`ground.go`)・`fact_gaps` (事実の穴の候補。`factgaps.go`)・引数を渡さない `diff()` (check は `diff("", "")` を節の土台にする)・`extract_numbers` の dict の並びは、`Ground`・`FactGaps`・`Diff`・`ExtractNumberDicts` で公開する。`Ground` の labels は nil が本家の `None` (全部 null) で、nil でない並びの数が資料の数と違えば本家と同じ文の ValueError を返す。
 check は子の `diff --json` を読んだ dict をこれらの口に渡し、本家と同じく、口が例外になったら「子の JSON から人が読む形を作れません」にする (本家の check 1906〜1918・4240)。そのため dict を読む所は本家の Python の式 (`d[key]`・`d.get(key) or {}`・`for`・`len`・`+`・`"、".join`・`format`) を `internal/pyops` で写し、本家が例外になる dict では error、ならない dict では本家と同じ文を返す (欠けた欄を 0 や空として読んで文を出さない。panic もしない)。
-公開の関数は本家の公開名に対応する (`Normalize` `HasList` `Sentences` `Paragraphs` `LogicPoints` `BareEnd` `Register` `EndingKind` `EndingUnits` `StanceFlags` `EndingChanges` `FullDiff` `HeadingStructure` `SentencePairs` `AllBodies` `Stiffness` `StiffnessMetrics` `Tone`)。本家の `tone()` は、印が共通の前の部分をまたいで、推敲後の位置が負になり文字列の長さを超えると、`_tone_excerpt` が `IndexError` で失敗する (Python の添字で読む。またいでも長さを超えなければ失敗しない)。`Tone` はこれを `*visibility.Error` で返す。本家の `count` (どこからも呼ばれない) と `_bold_short` (`internal/bold` が持つ) は写さない。
+公開の関数は本家の公開名に対応する (`Normalize` `HasList` `Sentences` `Paragraphs` `LogicPoints` `BareEnd` `Register` `EndingKind` `EndingUnits` `StanceFlags` `EndingChanges` `FullDiff` `HeadingStructure` `SentencePairs` `AllBodies` `Stiffness` `StiffnessMetrics` `Tone`)。このうち製品のコードが呼ばない入口 (`EndingChanges` `FullDiff` `HeadingStructure` `SentencePairs` `AllBodies` `Stiffness` `StiffnessMetrics` `Tone` と、上の群の `NumberRisks`・`ChangeRisksOf`・`TypeMarks` など) は `diff/export_test.go` にある (下の「開発」)。本家の `tone()` は、印が共通の前の部分をまたいで、推敲後の位置が負になり文字列の長さを超えると、`_tone_excerpt` が `IndexError` で失敗する (Python の添字で読む。またいでも長さを超えなければ失敗しない)。`Tone` はこれを `*visibility.Error` で返す。本家の `count` (どこからも呼ばれない) と `_bold_short` (`internal/bold` が持つ) は写さない。
 
 | 記録 | 中身 | 比べるテスト |
 |---|---|---|
@@ -526,6 +526,7 @@ dotfiles では `_claude/settings.json` の 5 つのイベント (本家の `--p
 
 ```sh
 make -C src/ja-writing lint test    # CI と同じ (Python は動かさない)
+./deadcode_check.sh                 # lint の最後だけ: 製品の package に、どの main からも届かない関数が無いことを見る (--help に直し方と rc の意味)
 ./norace_tests.sh                   # test の後半だけ: `//go:build !race` のファイルのテストを集めて race なしで回す (--help に rc の意味)
 make -C src/ja-writing golden       # 記録を作り直す (Python と ネットワークが要る。UPDATE=1 で環境の違いを許す)
                                     #   TMPDIR は、上に .git・.yomiyasu-words・.yomiyasu が無い場所に向ける (repo の中の tmp/ は使えない)
@@ -536,6 +537,10 @@ go run ./oracle/cmd/golden -only lint-base    # lint の土台の関数の記録
 go run ./oracle/cmd/worstcase -rounds 5 -shape single   # 試す数の上限の最悪の組の所要を本家と Go で測る (テストの合否には使わない)
 make -C src/ja-writing pin-upstream # 固定する commit を変えるときだけ
 ```
+
+テストからだけ呼ぶ入口の置き場: 本家の関数と 1 対 1 で並べた入口のうち、製品のコードが呼ばず、記録と突き合わせるテストだけが呼ぶもの (diff の `FullDiff`・`NegationRisks`・`Tone` など) は、
+その package の `export_test.go` に置く (同じフォルダのテストからは、置き場が変わっても同じ名前で呼べる)。製品のファイルに置くと `deadcode_check.sh` (`make lint`) が落とす。
+別の package のテストが呼ぶなどで移せない関数は、`deadcode_check.sh` の `ALLOW` に理由つきで残す。
 
 テストの差し替え: 外部の `python3` を起こす経路は `oracle.Runner` だけで、`subproc.CommandContext` を使う (`exec_boundary_test.go` が見る)。
 

@@ -6,9 +6,12 @@ GOLANGCI_LINT_VERSION := v2.15.0
 
 .PHONY: lint test golden pin-upstream
 
+# deadcode_check.sh は、製品の package にどの main からも届かない関数 (テストからだけ呼ぶ export の入口など) が無いことを見る。
+# golangci-lint の unused も repo の unused の検査も、export した名前を報告しない。
 lint:
 	../../scripts/go_module_graph.sh
 	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
+	./deadcode_check.sh
 
 # 記録との突き合わせの重い検査 (internal/pyre の全パターン・lint の CLI と検出の記録・diff の関数の記録と資料との照合の記録) は -race を付けると時間の上限を超えるので
 # build tag で race から外し、race なしで別に回す。どれも 1 つの goroutine で順に呼ぶだけで、race で見つけられるものが無い

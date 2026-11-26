@@ -501,15 +501,6 @@ func (s *sides) addedActors(groups []*sentenceGroup, materials []string) pyjson.
 	return out
 }
 
-// AddedActors は元の文書と書き直した文書の、原文と資料にない人や担当を足した文 (JSON の added_actors の値)。materials は --material の資料。
-func AddedActors(orig, rw string, materials []string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return s.addedActors(s.sentencePairs(full.hunks), materials), nil
-}
-
 func group0(m *pyre.Match) string {
 	s, _ := m.Group(0)
 	return s

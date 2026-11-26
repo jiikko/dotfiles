@@ -192,13 +192,3 @@ func (s *sides) hedges(groups []*sentenceGroup, risks []*pyjson.Object) *pyjson.
 	section.Set("list_problem", nil)
 	return section
 }
-
-// HedgesSection は元の文と書き直した文の、慎重な言い方の節 (JSON の値の形)。docType は文書の種類 (空なら指定なし。確度の恐れを数える種類が変わる)。
-// 既存の候補は、本家の diff() が渡す形 (意味が変わる恐れの出力と、そこから外した文の種類の印の恐れ) で読む。
-func HedgesSection(orig, rw, docType string) (pyjson.Value, error) {
-	result, s, groups, err := meaningRisksOf(orig, rw, true, docType)
-	if err != nil {
-		return nil, err
-	}
-	return s.hedges(groups, slices.Concat(result.risks, result.quiet)), nil
-}

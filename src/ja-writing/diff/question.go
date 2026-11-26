@@ -3,7 +3,6 @@ package diff
 import (
 	"strings"
 
-	"ja-writing/internal/difflib"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
@@ -53,15 +52,6 @@ func (s *sides) questionRisks(groups []*sentenceGroup) []riskItem {
 		}
 	}
 	return out
-}
-
-// QuestionRisks は元の文と書き直した文の、問いの変化の恐れ (hunk の番号, 塊の中の順, risk の並び。JSON の値の形)。
-func QuestionRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return riskItemsValue(s.questionRisks(s.sentencePairs(full.hunks))), nil
 }
 
 func (s *sides) normalizedLines(side int) []string {
@@ -144,27 +134,6 @@ func (s *sides) logicRisks(changes []LogicChange) []*pyjson.Object {
 		out[i] = newRisk(c.Kind, c.Subkind, s.findLine(0, c.Orig), s.findLine(1, c.Rewrite), c.Orig, c.Rewrite, true, true, d)
 	}
 	return out
-}
-
-// ChangeRisks は文の種類の印・許可・能力・選ぶ範囲と因果の変化 (本家の diff() が _meaning_risks に渡す type_changes と、meaning_risks が作る modality・logic) を
-// 意味が変わる恐れの形にした risk の並び (JSON の値の形)。範囲づくりは 1 回で、3 つが使い回す。
-type ChangeRisks struct{ Marks, Modality, Logic pyjson.Value }
-
-func ChangeRisksOf(orig, rw string) (*ChangeRisks, error) {
-	s, err := newSides(orig, rw)
-	if err != nil {
-		return nil, err
-	}
-	o, r := Normalize(orig), Normalize(rw)
-	var opcodes []difflib.OpCode
-	if o != r {
-		opcodes = difflib.NewExact(pyunicode.Runes(o), pyunicode.Runes(r)).GetOpcodes()
-	}
-	cache := &typeCache{}
-	marks := s.marksRisks(TypeChanges(o, r, opcodes, cache))
-	modality := s.modalityRisks(ModalityChanges(o, r, cache))
-	logic := s.logicRisks(LogicChanges(o, r, cache))
-	return &ChangeRisks{riskObjectsValue(marks), riskObjectsValue(modality), riskObjectsValue(logic)}, nil
 }
 
 func riskObjectsValue(list []*pyjson.Object) pyjson.Value {

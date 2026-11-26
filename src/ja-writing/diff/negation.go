@@ -249,12 +249,3 @@ func (s *sides) negationRisks(groups []*sentenceGroup) []riskItem {
 	}
 	return out
 }
-
-// NegationRisks は元の文と書き直した文の、否定の恐れ (hunk の番号, 塊の中の順, risk の並び。JSON の値の形)。
-func NegationRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return riskItemsValue(s.negationRisks(s.sentencePairs(full.hunks))), nil
-}

@@ -129,12 +129,3 @@ func (s *sides) feelingRisks(groups []*sentenceGroup) []riskItem {
 	}
 	return out
 }
-
-// FeelingRisks は元の文と書き直した文の、気持ちの語を足した恐れ (hunk の番号, 塊の中の順, risk の並び。JSON の値の形)。
-func FeelingRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return riskItemsValue(s.feelingRisks(s.sentencePairs(full.hunks))), nil
-}

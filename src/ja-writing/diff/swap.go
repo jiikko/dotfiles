@@ -117,12 +117,3 @@ func (s *sides) swapRisks(groups []*sentenceGroup) []riskItem {
 	}
 	return out
 }
-
-// SwapRisks は元の文と書き直した文の、主語と目的語の入れ替えの恐れ (hunk の番号, 塊の中の順, risk の並び。JSON の値の形)。
-func SwapRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return riskItemsValue(s.swapRisks(s.sentencePairs(full.hunks))), nil
-}

@@ -294,15 +294,6 @@ func (m *Match) LastGroup() (name string, ok bool) {
 	return m.re.groupNames[index], true
 }
 
-// Expand は Match.expand (置換の書式を一致で埋める)。
-func (m *Match) Expand(template string) (string, error) {
-	t, err := m.re.ParseTemplate(template)
-	if err != nil {
-		return "", err
-	}
-	return t.expand(m), nil
-}
-
 func clamp(v, n int) int { return min(max(v, 0), n) }
 
 // run は rs[:endpos] の中で、pos から探して最初の一致を返す。

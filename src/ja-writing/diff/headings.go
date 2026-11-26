@@ -330,20 +330,6 @@ func (h HeadingShape) Value() pyjson.Value {
 	return o
 }
 
-// HeadingStructure は元の文と書き直した文の、見出しの変化の見直し候補の文の並び (本家の _heading_structure)。withShapes なら、見出しの形の変化 (JSON の heading_shapes) も返す。
-func HeadingStructure(orig, rw string, withShapes bool) ([]string, []HeadingShape, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !withShapes {
-		return headingStructure(s, full.hunks, nil), nil, nil
-	}
-	shapes := []HeadingShape{}
-	out := headingStructure(s, full.hunks, &shapes)
-	return out, shapes, nil
-}
-
 // headingStructure は本家の _heading_structure: 見出しの変化を、「構造」の見直し候補の文の並びにする。
 // shapes に並びの置き場を渡すと、見出しの形の変化 (JSON の heading_shapes) を足す (nil なら足さない)。
 func headingStructure(s *sides, hunks []*hunk, shapes *[]HeadingShape) []string {

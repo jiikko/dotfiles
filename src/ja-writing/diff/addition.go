@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"ja-writing/internal/difflib"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
@@ -1091,35 +1090,4 @@ func (s *sides) additionRisks(groups []*sentenceGroup, risks []*pyjson.Object, m
 		out = append(out, claims...)
 	}
 	return out
-}
-
-// typeChangesOf は正規化した 2 つの文の、文の種類の印の変化 (本家の diff() が _type_changes に渡す opcodes を作ってから比べる)。
-// cache は許可・能力と選ぶ範囲・因果の比べが、作った範囲を使い回すための入れ物。
-func typeChangesOf(o, r string, cache *typeCache) []TypeChange {
-	var opcodes []difflib.OpCode
-	if o != r {
-		opcodes = difflib.NewExact(pyunicode.Runes(o), pyunicode.Runes(r)).GetOpcodes()
-	}
-	return TypeChanges(o, r, opcodes, cache)
-}
-
-// AdditionRisks は元の文と書き直した文の、状態の消え・約束・因果の足しの候補 (risk の並び。JSON の値の形)。docType は文書の種類 (空なら指定なし)。
-// 既存の候補として、本家の _meaning_risks が渡す種類のうちこの検出が読む 3 つ (文の種類の印・確度・否定) を渡す。
-func AdditionRisks(orig, rw, docType string) (pyjson.Value, error) {
-	docType, err := entryDocType(docType)
-	if err != nil {
-		return nil, err
-	}
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	groups := s.sentencePairs(full.hunks)
-	changes := typeChangesOf(Normalize(orig), Normalize(rw), &typeCache{})
-	marks := s.marksReviewsOf(changes)
-	risks := slices.Concat(s.marksRisks(changes), s.certaintyRisks(groups, marks, nil, docType))
-	for _, item := range s.negationRisks(groups) {
-		risks = append(risks, item.risk)
-	}
-	return riskObjectsValue(s.additionRisks(groups, risks, &[2]*masker{s.newMasker(0), s.newMasker(1)})), nil
 }

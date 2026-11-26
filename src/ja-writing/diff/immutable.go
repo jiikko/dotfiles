@@ -613,19 +613,3 @@ func tokenTexts(t *valueToken) []string {
 	}
 	return []string{t.body.text}
 }
-
-// ImmutableValues は元の文と書き直した文の、動かしてはいけない値の節と、意味が変わる恐れに足す引用などの候補 (JSON の値の形。[節, 候補の並び])。
-// 数値の恐れは、既存の数値の候補と重ねないために読む。
-func ImmutableValues(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	groups := s.sentencePairs(full.hunks)
-	var risks []*pyjson.Object
-	for _, item := range s.numberRisks(full, groups) {
-		risks = append(risks, item.risk)
-	}
-	section, citations := s.immutableValues(risks, groups)
-	return []pyjson.Value{section, riskObjectsValue(citations)}, nil
-}

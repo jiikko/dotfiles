@@ -48,13 +48,6 @@ func similarityOfCounts(material map[bigram]int, totalMaterial int, final map[bi
 	return min(float64(common)/float64(totalMaterial), float64(common)/float64(totalFinal))
 }
 
-// Similarity は _similarity。資料と最終稿の似かた (0 から 1)。
-func Similarity(material, final string) float64 {
-	m, tm := bigramCounts(material, false)
-	f, tf := bigramCounts(final, false)
-	return similarityOfCounts(m, tm, f, tf)
-}
-
 // SourceLike は _source_like。資料ごとの似かたの並びと、原文とみなす資料の番号 (1 から。しきい値以上でいちばん似ているもの。同じなら若い番号。なければ 0) を返す。
 // compacted なら、渡す文字列はもう Compact したもの (run が、同じ本文かを比べるときと同じ文字列を使い回す)。
 func SourceLike(materialTexts []string, finalText string, compacted bool) (best int, values []float64) {

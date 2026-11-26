@@ -6,9 +6,6 @@ import (
 	"syscall"
 
 	"ja-writing/internal/pyjson"
-	"ja-writing/internal/pyos"
-	"ja-writing/internal/pyre"
-	"ja-writing/visibility"
 )
 
 // 記録の tools の欄。ja-writing の記録を本家の verify が読め、本家の記録を ja-writing の verify が読めるように、
@@ -52,7 +49,7 @@ var (
 )
 
 // ToolFiles は記録の tools の元になる読み出し。本家は道具の .py と一覧のファイルを開いてバイト列から SHA-256 とバージョンを作る。
-// ja-writing は道具を持たないので、記録を作るときは Released (答えを合わせた本家の値) を使う。DirFiles は本家と同じ置き場の木を読む (突き合わせ用)。
+// ja-writing は道具を持たないので、記録を作るときは Released (答えを合わせた本家の値) を使う。本家と同じ置き場の木を読む DirFiles は、突き合わせるテストの側 (export_test.go) にある。
 type ToolFiles interface {
 	// Tool は道具のファイルの SHA-256 と __version__ の値 (行が無ければ nil)。開けなければ error。
 	Tool(name string) (sha256 string, version *string, err error)
@@ -80,40 +77,6 @@ func (Released) List(name string) (string, error) {
 		return "", fs.ErrNotExist
 	}
 	return sum, nil
-}
-
-// toolVersionPattern は _TOOL_VERSION (道具のファイルの __version__ の行)。
-var toolVersionPattern = pyre.NewLazy(`^__version__\s*=\s*["']([^"']+)["']\s*$`, pyre.MULTILINE)
-
-// DirFiles は scripts フォルダ (と、その隣の references/lists/) を読む ToolFiles。本家の _HERE と同じ置き場の読み方。
-type DirFiles struct{ Scripts string }
-
-// Tool は ToolFiles。
-func (d DirFiles) Tool(name string) (string, *string, error) {
-	data, err := pyos.ReadFile(visibility.PathJoin(d.Scripts, name))
-	if err != nil {
-		return "", nil, err
-	}
-	// 本家は decode("utf-8", "replace") した文字列で探す。バージョンの値に不正なバイトは入らない前提で、バイト列のまま探す
-	match, err := toolVersionPattern.Get().Search(pyre.NewText(string(data)), 0, pyre.NoEnd)
-	if err != nil {
-		return "", nil, err
-	}
-	var version *string
-	if match != nil {
-		v, _ := match.Group(1)
-		version = &v
-	}
-	return SHA256(data), version, nil
-}
-
-// List は ToolFiles。
-func (d DirFiles) List(name string) (string, error) {
-	data, err := pyos.ReadFile(visibility.PathJoin(d.Scripts, "../references/lists/"+name+".txt"))
-	if err != nil {
-		return "", err
-	}
-	return SHA256(data), nil
 }
 
 // ToolVersions は _tool_versions。記録の tools (道具 4 本のバージョンの文字列と SHA-256)。

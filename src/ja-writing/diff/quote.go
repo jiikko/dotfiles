@@ -278,12 +278,3 @@ func (s *sides) quoteRisks(groups []*sentenceGroup, masks *[2]*masker) []*pyjson
 	}
 	return out
 }
-
-// QuoteRisks は元の文と書き直した文の、かぎかっこの中の言葉を書き換えた恐れ (risk の並び。JSON の値の形)。
-func QuoteRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return riskObjectsValue(s.quoteRisks(s.sentencePairs(full.hunks), nil)), nil
-}

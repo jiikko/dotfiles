@@ -472,9 +472,6 @@ func ResolveWords(cwd, option *string, disabled bool, lookup func(string) (strin
 	return LoadWords(folder)
 }
 
-// CurrentDirectory は current_directory。作業ディレクトリか、読めない (消えた) ときは ok が偽。
-func CurrentDirectory() (string, bool) { return getcwd() }
-
 // WordsContext は words_context の戻り値 (JSON の context.words と check の記録の options.words に入れる 5 つのキー。flag-patterns.txt があれば 7 つ)。
 type WordsContext struct {
 	Path        string
@@ -511,9 +508,6 @@ func (c WordsContext) Value() *pyjson.Object {
 	}
 	return o
 }
-
-// WordsLabel は words_label (人が読む出力の「語の一覧: <パス>（allow N語、flag N語）。」。flag-patterns.txt があれば「、flag-patterns N行」を足す)。
-func WordsLabel(c WordsContext) string { return WordsLabelOf(c.Value()) }
 
 // WordsLabelOf は words_label を context.words の dict に当てる (子の --json を読んだ dict も渡る)。本家と同じく、鍵が欠けると KeyError を
 // pyops の例外として投げるので、呼び出し元は pyops.Catch で受ける。

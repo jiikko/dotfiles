@@ -3,7 +3,6 @@ package diff
 import (
 	"sort"
 
-	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
@@ -29,12 +28,6 @@ type sentence struct {
 	text        string
 	line, start int
 }
-
-func (s sentence) value() pyjson.Value {
-	return []pyjson.Value{s.text, int64(s.line), int64(s.start)}
-}
-
-func sentencesValue(list []sentence) pyjson.Value { return pyjson.MapList(list, sentence.value) }
 
 // lineSentences は行 first から last の手前まで (0 から数える) を文に分ける。行頭の箇条書きの記号、見出しの #、引用の > を外す。
 // コード、先頭の設定、HTML の行は分けない。
@@ -78,26 +71,6 @@ type sentenceGroup struct {
 	run      []*hunk
 	old, new []sentence
 	pairs    [][2]int
-}
-
-func (g *sentenceGroup) value() pyjson.Value {
-	pairs := make([]pyjson.Value, len(g.pairs))
-	for i, p := range g.pairs {
-		pairs[i] = []pyjson.Value{int64(p[0]), int64(p[1])}
-	}
-	o := pyjson.NewObject()
-	o.Set("hunk", g.hunk.value())
-	o.Set("old", sentencesValue(g.old))
-	o.Set("new", sentencesValue(g.new))
-	o.Set("pairs", pairs)
-	if g.run != nil {
-		run := make([]pyjson.Value, len(g.run))
-		for i, h := range g.run {
-			run[i] = h.value()
-		}
-		o.Set("hunks", run)
-	}
-	return o
 }
 
 func sentenceTexts(list []sentence) []string {
@@ -203,20 +176,6 @@ func paragraphCount(lines []string) int {
 	return count
 }
 
-// SentencePairs は元の文と書き直した文の、意味が変わる恐れの文の組 (hunk ごと。JSON の値の形)。
-func SentencePairs(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	groups := s.sentencePairs(full.hunks)
-	out := make([]pyjson.Value, len(groups))
-	for i, g := range groups {
-		out[i] = g.value()
-	}
-	return out, nil
-}
-
 // 本文として数えない行の種類 (コード、URL、表、見出しなど)
 var bodySkipKinds = map[string]bool{
 	"code": true, "frontmatter": true, "html_block": true, "table": true, "heading": true, "heading_underline": true,
@@ -230,10 +189,6 @@ var bodyMaskKinds = map[string]bool{"inline_code": true, "autolink": true, "bare
 type body struct {
 	text, raw   string
 	line, start int
-}
-
-func (b body) value() pyjson.Value {
-	return []pyjson.Value{b.text, b.raw, int64(b.line), int64(b.start)}
 }
 
 // masker は 1 つの側の、数えない行と伏せる範囲。
@@ -322,18 +277,4 @@ func (s *sides) allBodiesWith(side int, m *masker) []body {
 		}
 	}
 	return out
-}
-
-// AllBodies は 1 つの側 (0 が元、1 が後) の数える文 (JSON の値の形)。
-func AllBodies(orig, rw string, side int) (pyjson.Value, error) {
-	s, err := newSides(orig, rw)
-	if err != nil {
-		return nil, err
-	}
-	bodies := s.allBodies(side)
-	out := make([]pyjson.Value, len(bodies))
-	for i, b := range bodies {
-		out[i] = b.value()
-	}
-	return out, nil
 }

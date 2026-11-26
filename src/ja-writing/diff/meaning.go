@@ -6,7 +6,6 @@ import (
 
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pystr"
-	"ja-writing/visibility"
 )
 
 // 群 Y: 意味が変わる恐れの組み立て (本家の _meaning_risks・meaning_risks)。群 M〜X の各検出を本家と同じ順で集め、
@@ -184,54 +183,4 @@ func (s *sides) meaningRisks(full *fullDiff, groups []*sentenceGroup, changes []
 	})
 	sortByLines(additions)
 	return meaningResult{risks: slices.Concat(risks, additions), immutable: immutable, quiet: quietMarks, restored: restored, filtered: filtered}
-}
-
-// meaningInputs は meaning_risks と diff() が _meaning_risks に渡す値を、正規化した 2 つの文から作る (許可・能力と選ぶ範囲・因果は、文の種類の印が作った範囲を使い回す)。
-// withChanges が偽なら type_changes は None (文の種類の印も許可・能力も選ぶ範囲・因果も足さない)。
-func meaningInputs(orig, rw string, withChanges bool) (changes []TypeChange, modality []ModalityChange, logic []LogicChange) {
-	if !withChanges {
-		return nil, nil, nil
-	}
-	o, r := Normalize(orig), Normalize(rw)
-	cache := &typeCache{}
-	changes = typeChangesOf(o, r, cache)
-	return changes, ModalityChanges(o, r, cache), LogicChanges(o, r, cache)
-}
-
-// entryDocType は公開の入口に渡された文書の種類を本家の normalize_doc_type に通す (大文字・前後の空白は寄せ、使えない値は ValueError)。
-// 空は指定なし。入口の型が string なので、本家で ValueError になる空文字列は区別できない (diff() の配線は *string の NormalizeDocType を通す)。
-func entryDocType(docType string) (string, error) {
-	if docType == "" {
-		return "", nil
-	}
-	dt, err := visibility.NormalizeDocType(&docType)
-	if err != nil {
-		return "", err
-	}
-	return *dt, nil
-}
-
-// meaningRisksOf は本家の meaning_risks (JSON の meaning_risks)。withChanges が偽なら type_changes は None。
-func meaningRisksOf(orig, rw string, withChanges bool, docType string) (meaningResult, *sides, []*sentenceGroup, error) {
-	docType, err := entryDocType(docType)
-	if err != nil {
-		return meaningResult{}, nil, nil, err
-	}
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return meaningResult{}, nil, nil, err
-	}
-	groups := s.sentencePairs(full.hunks)
-	changes, modality, logic := meaningInputs(orig, rw, withChanges)
-	return s.meaningRisks(full, groups, changes, docType, modality, logic), s, groups, nil
-}
-
-// MeaningRisks は元の文と書き直した文の、意味が変わる恐れ (risk の並び。JSON の値の形。本家の meaning_risks)。
-// withTypeChanges が偽なら文の種類の印と、許可・能力・選ぶ範囲・因果の言い方の候補を含めない。docType は文書の種類 (空なら指定なし)。
-func MeaningRisks(orig, rw string, withTypeChanges bool, docType string) (pyjson.Value, error) {
-	result, _, _, err := meaningRisksOf(orig, rw, withTypeChanges, docType)
-	if err != nil {
-		return nil, err
-	}
-	return riskObjectsValue(result.risks), nil
 }

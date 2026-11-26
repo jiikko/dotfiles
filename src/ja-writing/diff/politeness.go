@@ -143,12 +143,3 @@ func (s *sides) politeness(docType string) *pyjson.Object {
 	section.Set("metrics", metricsObject)
 	return section
 }
-
-// PolitenessSection は元の文と書き直した文の、敬語の度合いの節 (JSON の値の形)。docType は文書の種類 (空なら指定なし。mail だけ比べる)。
-func PolitenessSection(orig, rw, docType string) (pyjson.Value, error) {
-	s, err := newSides(orig, rw)
-	if err != nil {
-		return nil, err
-	}
-	return s.politeness(docType), nil
-}

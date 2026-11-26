@@ -652,17 +652,3 @@ func (s *sides) tone(full *fullDiff, docType *string, groups []*sentenceGroup) (
 	o.Set("list_problem", nil)
 	return o, nil
 }
-
-// Tone は本家の tone (勢いの検査。JSON の tone と同じ形)。docType は文書の種類 (pr・article・incident・manual・formal・paper なら参考。
-// mail と promo は絵文字と見出しも見直し候補、minutes は見出しを見直し候補にする)。
-func Tone(orig, rw string, docType *string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	dt, err := visibility.NormalizeDocType(docType)
-	if err != nil {
-		return nil, err
-	}
-	return s.tone(full, dt, nil)
-}

@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 
-	"ja-writing/internal/difflib"
 	"ja-writing/internal/pyjson"
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
@@ -327,19 +326,4 @@ func (s *sides) certaintyRisks(groups []*sentenceGroup, marks []marksReview, mas
 		}
 	}
 	return out
-}
-
-// CertaintyRisks は元の文と書き直した文の、確度の候補 (risk の並び。JSON の値の形)。docType は文書の種類 (空なら指定なし)。
-func CertaintyRisks(orig, rw, docType string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	o, r := Normalize(orig), Normalize(rw)
-	var opcodes []difflib.OpCode
-	if o != r {
-		opcodes = difflib.NewExact(pyunicode.Runes(o), pyunicode.Runes(r)).GetOpcodes()
-	}
-	marks := s.marksReviewsOf(TypeChanges(o, r, opcodes, &typeCache{}))
-	return riskObjectsValue(s.certaintyRisks(s.sentencePairs(full.hunks), marks, nil, docType)), nil
 }

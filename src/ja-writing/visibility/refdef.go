@@ -153,27 +153,6 @@ func referenceTitleEnd(c *rowCursor) (int, bool) {
 	return 0, false
 }
 
-// ReferenceDefinitionEnd は reference_definition_end。定義の最後の行 (その行を含む) の添字を返し、不透明な境界が無ければ ok が偽。
-// 行は改行を持たず、行ごとの同一性を保つ。呼び出し側がコンテナの所有と通常の段落が開いているかを決めてある前提で、
-// 段落の途中 (paragraphContext) なら定義にならない。次の行のタイトルが失敗しても、宛先だけの行は残る。同じ行の余計な文字は定義全体を無効にする。
-func ReferenceDefinitionEnd(lines []string, start int, paragraphContext bool) (end int, ok bool, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			e, isErr := r.(*Error)
-			if !isErr {
-				panic(r)
-			}
-			end, ok, err = 0, false, e
-		}
-	}()
-	rows := make([][]rune, len(lines))
-	for i, l := range lines {
-		rows[i] = runesOf(l)
-	}
-	end, ok = referenceDefinitionEnd(rows, start, paragraphContext)
-	return end, ok, nil
-}
-
 func referenceDefinitionEnd(lines [][]rune, start int, paragraphContext bool) (int, bool) {
 	if paragraphContext || start < 0 || start >= len(lines) {
 		return 0, false

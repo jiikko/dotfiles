@@ -212,8 +212,3 @@ func marksIn(positions []typeMark, spans [][2]int, kinds []string, keys []int) k
 	}
 	return out
 }
-
-// TypeMarks は本家の type_marks: 文や範囲に含まれる文の種類の印 (同じ印は 1 回だけ)。
-func TypeMarks(sentence string) []KindHits {
-	return marksIn(markPositions(sentence), [][2]int{{0, pystr.Len(sentence)}}, typeKindNames, nil)
-}

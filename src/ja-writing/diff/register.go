@@ -187,12 +187,3 @@ func registerCounts(found map[string]int) pyjson.Value {
 	o.Set("polite", int64(found["敬体"]))
 	return o
 }
-
-// RegisterChanges は元の文と書き直した文の、文体の切り替えの節 (JSON の値の形)。docType は文書の種類 (空なら指定なし。敬体の割合の候補が出ると切り替えは数えない)。
-func RegisterChanges(orig, rw, docType string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return s.registerChanges(s.sentencePairs(full.hunks), s.politeness(docType)), nil
-}

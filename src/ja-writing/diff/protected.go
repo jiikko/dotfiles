@@ -273,12 +273,3 @@ func (s *sides) protectedRisks(full *fullDiff) []riskItem {
 	}
 	return out
 }
-
-// ProtectedRisks は元の文と書き直した文の、変えない箇所の変化の恐れ (hunk の番号, 塊の中の順, risk の並び。JSON の値の形)。
-func ProtectedRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return riskItemsValue(s.protectedRisks(full)), nil
-}

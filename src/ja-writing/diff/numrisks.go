@@ -876,12 +876,6 @@ type riskItem struct {
 	risk         *pyjson.Object
 }
 
-func (r riskItem) value() pyjson.Value {
-	return []pyjson.Value{int64(r.index), int64(r.order), r.risk}
-}
-
-func riskItemsValue(items []riskItem) pyjson.Value { return pyjson.MapList(items, riskItem.value) }
-
 func optionalLine(n int) pyjson.Value {
 	if n == 0 {
 		return nil
@@ -1177,13 +1171,4 @@ func (s *sides) numberSpans(side int, numbers []number) []string {
 		out[i] = runeSlice(s.texts[side], n.start, n.end)
 	}
 	return out
-}
-
-// NumberRisks は元の文と書き直した文の、数値の恐れ (hunk の番号, 塊の中の順, risk の並び。JSON の値の形)。
-func NumberRisks(orig, rw string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	return riskItemsValue(s.numberRisks(full, s.sentencePairs(full.hunks))), nil
 }

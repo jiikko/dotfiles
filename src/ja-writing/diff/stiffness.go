@@ -11,7 +11,6 @@ import (
 	"ja-writing/internal/pyre"
 	"ja-writing/internal/pystr"
 	"ja-writing/internal/pyunicode"
-	"ja-writing/visibility"
 )
 
 // 群 Z: 文体の硬化 (本家の STIFFNESS_THRESHOLDS・_measure・_nominal_hits・_no_chains・_metrics_of・stiffness_metrics・_changed_excerpt・_stiffness・stiffness)。
@@ -256,15 +255,6 @@ func (m stiffMetrics) value() pyjson.Value {
 	return o
 }
 
-// StiffnessMetrics は本家の stiffness_metrics (1 つの文書の値。コード、URL、表、見出しは数えない)。
-func StiffnessMetrics(text string) (pyjson.Value, error) {
-	s, err := newSides(text, text)
-	if err != nil {
-		return nil, err
-	}
-	return metricsOf(s.allBodies(0), map[string]stiffValues{}).value(), nil
-}
-
 // 抜き出しの区切り (本家の _EXCERPT_BREAK)。
 const stiffExcerptBreak = "、。，！？!?"
 
@@ -352,20 +342,6 @@ func countNames(hits []nominalHit) map[string]int {
 		m[h.name]++
 	}
 	return m
-}
-
-// Stiffness は本家の stiffness (文体の硬化の検査。docType は文書の種類。incident・formal・paper なら参考)。
-func Stiffness(orig, rw string, docType *string) (pyjson.Value, error) {
-	full, s, err := buildFullDiff(orig, rw, nil)
-	if err != nil {
-		return nil, err
-	}
-	groups := s.sentencePairs(full.hunks)
-	dt, err := visibility.NormalizeDocType(docType)
-	if err != nil {
-		return nil, err
-	}
-	return s.stiffness(full, groups, dt), nil
 }
 
 func (s *sides) stiffness(full *fullDiff, groups []*sentenceGroup, docType *string) pyjson.Value {

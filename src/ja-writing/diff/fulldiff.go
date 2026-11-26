@@ -667,15 +667,6 @@ func (f *fullDiff) value() pyjson.Value {
 	return o
 }
 
-// FullDiff は元の文と書き直した文の全文差分 (JSON の full_diff)。渡された文字列をそのまま比べる (BOM を外したり、改行をそろえたりしない)。
-func FullDiff(orig, rw string, notes []EncodingNote) (pyjson.Value, error) {
-	full, _, err := buildFullDiff(orig, rw, notes)
-	if err != nil {
-		return nil, err
-	}
-	return full.value(), nil
-}
-
 func buildFullDiff(orig, rw string, notes []EncodingNote) (*fullDiff, *sides, error) {
 	s, err := newSides(orig, rw)
 	if err != nil {
