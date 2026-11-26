@@ -58,6 +58,15 @@ func complement(s rset) rset {
 	return out
 }
 
+// size は s の字の数。
+func (s rset) size() int {
+	n := 0
+	for _, r := range s {
+		n += int(r.hi-r.lo) + 1
+	}
+	return n
+}
+
 func (s rset) contains(r rune) bool {
 	i, ok := slices.BinarySearchFunc(s, r, func(e runeRange, r rune) int {
 		switch {
@@ -149,19 +158,55 @@ func categorySet(cat category, ascii bool) rset {
 
 // foldPreimage は「小文字にした字が s に入る字」の集合を返す (re.I の IN_UNI_IGNORE が、照合する字を小文字にしてから集合に当てる規則)。
 func (c caseRules) foldPreimage(s rset) rset {
-	pairs := c.changed()
-	points := make([]runeRange, 0, len(pairs))
-	for _, p := range pairs {
-		points = append(points, runeRange{p.x, p.x})
-	}
-	out := minus(s, normalize(points))
+	idx := c.foldIndex()
+	out := minus(s, idx.changed)
 	var add []runeRange
-	for _, p := range pairs {
-		if s.contains(p.lower) {
-			add = append(add, runeRange{p.x, p.x})
+	if s.size() <= len(idx.byLower) {
+		// 小さい集合 (re.I の 1 字の literal など) は、集合の字から小文字にすると入る字を引く。下の全部の組を回す形と同じ答え
+		for _, r := range s {
+			for ch := r.lo; ch <= r.hi; ch++ {
+				for _, x := range idx.byLower[ch] {
+					add = append(add, runeRange{x, x})
+				}
+			}
+		}
+	} else {
+		for _, p := range c.changed() {
+			if s.contains(p.lower) {
+				add = append(add, runeRange{p.x, p.x})
+			}
 		}
 	}
 	return union(out, normalize(add))
+}
+
+// foldIndex は foldPreimage が毎回作っていた表 (小文字にすると変わる字の集合と、小文字から元の字への表)。caseRules ごとに 1 回だけ作る。
+type foldIndex struct {
+	changed rset
+	byLower map[rune][]rune
+}
+
+var foldIndexes [2]struct {
+	once sync.Once
+	idx  foldIndex
+}
+
+func (c caseRules) foldIndex() *foldIndex {
+	slot := &foldIndexes[0]
+	if c.ascii {
+		slot = &foldIndexes[1]
+	}
+	slot.once.Do(func() {
+		pairs := c.changed()
+		points := make([]runeRange, 0, len(pairs))
+		byLower := make(map[rune][]rune, len(pairs))
+		for _, p := range pairs {
+			points = append(points, runeRange{p.x, p.x})
+			byLower[p.lower] = append(byLower[p.lower], p.x)
+		}
+		slot.idx = foldIndex{changed: normalize(points), byLower: byLower}
+	})
+	return &slot.idx
 }
 
 // lowerImage は範囲 [lo, hi] の各字を小文字にした字の集合に、同じ大文字を持つ別の小文字を足したもの
