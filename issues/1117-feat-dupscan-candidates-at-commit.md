@@ -19,16 +19,39 @@ vlc-multi-video-player の作業 (2026-11-26) で、打ったパスの読み方 
 
 ## 対応方針
 
-A. **commit の時点でも候補を出す** (止めない。additionalContext だけ)
-   - PreToolUse(Bash) の新しい hook。`lib/git_cmd_detect.sh` の `git_cmd_invokes "$cmd" commit` が真のときだけ走る。見る repo は cwd と、`cd` / `-C` の行き先 (git-state-verify.sh と同じ扱い)
-   - 対象のファイル: commit の行の `--` の後のパスがあればそれ、`-a` / `--all` なら追跡しているファイルの変更すべて、どちらも無ければ stage したもの。`.go` / `.swift` で git が ignore しないもの
-   - HEAD のファイル (無ければ空) と、作業ツリーのファイルを比べ、新しく増えた関数・型を引く
-   - 判定の本体 (新しい関数の見つけ方・名前の照合・予算・1 セッション × 名前で 1 回の印・計測のログ) は、今の hook の python を `_claude/hooks/lib/dupscan_inject.py` に移して共有する。
-     写すと照合が 2 つになり、片方だけ直す形になる。印を共有するので、Edit の時点で出した名前は commit で繰り返さない
-   - 計測のログ (`claude-dupscan-inject.log`) に入口 (edit / commit) の列を足し、`scripts/dupscan_usage_report.py` で commit の時点の注入を数える
-C. **共通の CLAUDE.md の「Bash (python / sed) でファイルを編集するなら」の項に、Write / Edit に掛かる hook も通らないことを足す**。関数・型を足す編集は Edit / Write で行う
+A. **commit の後に、その commit で足した関数の候補を出す** (止めない。PostToolUse の additionalContext だけ。push の前に知らせる)
+   - PostToolUse / PostToolUseFailure (Bash) の新しい hook。`lib/git_cmd_detect.sh` の `git_cmd_invokes "$cmd" commit` が真のときだけ走る。
+     見る repo は cwd と、`cd` / `-C` の行き先 (どれも候補で、下の「今の commit か」で絞る)
+   - **読むのは HEAD の commit の差分** (親が 1 つの commit。親の木と HEAD の木の `.go` / `.swift`)。commit の種類 (stage・pathspec・`-a`・`-i`・`-p`) ごとに
+     対象を決め直さない。heredoc の本文・他人の WIP・`git add … && git commit` の時点のずれは、実際に入った中身だけを読むので関係しない
+   - **今の commit か**: reflog の先頭が commit (`commit` / `commit (amend)` / `commit (initial)`) で、その記録が 2 分以内のときだけ見る。同じ commit は 1 回だけ見る (印 `commit <sha>`)。
+     heredoc の本文の `git -C /other commit` が行き先を足しても、その repo の reflog が新しくなければ何もしない
+   - **足した定義そのものを候補から除く**。commit の後は dupscan index が足した定義を読むので、除かないと自分が最初に当たり、短い既存の名前を引く段に進まない。
+     除くのは打ち切り・上限の判定の前
+   - 判定の本体 (新しい関数の見つけ方・名前の照合・1 セッション × 名前で 1 回の印・計測のログ) は、今の hook の python を `_claude/hooks/lib/dupscan_inject.py` に移して共有する。
+     写すと照合が 2 つになり、片方だけ直す形になる。印 (`name <名前>`) を共有するので、Edit の時点で引いた名前は commit で繰り返さない
+     (Edit で候補が 0 件だった名前も黙る。同じ索引を引くので結果も同じ。別の repo の同じ名前も黙るのは受け入れる)
+   - 移すときに今の hook の挙動を変えない: `python3 -I -B` で起こし、lib の dir を `sys.path` に明示して足す。lib の読み込み・構文の失敗も rc=0 で黙る (shell の側で吸収する)。
+     時間の上限は処理の始まりから数え (今は宣言の抽出・git の後から数えている)、型の `git grep` の時間切れで、それまでに拾った候補を捨てない
+   - 計測のログ (`claude-dupscan-inject.log`) に入口 (edit / commit) の列を足す。`scripts/dupscan_usage_report.py` は 4・5・6 列の行を読み、commit の行を別に数える。
+     数えるのは引いた回数と候補ありの回数までで、その後の探索との結びつきは測らない
+C. **共通の CLAUDE.md の「Bash (python / sed) でファイルを編集するなら」の項に、Write / Edit にだけ掛かる hook (`inject-dupscan-candidates-on-new-func.sh` の候補) も通らないことを足す**。
+   関数・型を足す編集は Edit / Write で行う (A は commit の後でしか知らせないので、書く前に見る経路を優先する)
 
-見送り: B (名前の照合を「後ろに含む」まで広げる)。候補が増えて読み流されるかを測ってから決める。A の計測のログで、commit の時点の候補の数と、その後の探索の有無を見てから再提起する
+見送り: B (名前の照合を「後ろに含む」まで広げる)。候補が増えて読み流されるかを測ってから決める。A の計測のログで、commit の時点の候補の数を見てから再提起する。
+B を入れても、名前の違う同じ役割 (`typedPath` と `TypedPathResolver.resolve`) は拾えない。それは定期の監査 (`/audit` の duplication・entry-parity) の担当
+
+先行の判断との関係: [902](epic/890/pending/902-feat-dupscan-claude-code-hook.md) (書いた直後に本体の形で照合する hook) はユーザーの決定 (2026-10-24) で保留し、
+形の写しを止める網は `make test` と CI の gate に置いた。A は形の照合ではなく、既にある名前の候補 (948 A1) を出す時点を 1 つ増やすもので、902 の保留を解かない
+([1009](epic/932/pending/1009-design-dupscan-post-write-body-similarity-candidates.md) も同じ)
+
+### 反証レビュー (codex, 2026-11-27) で直したこと
+
+- P1: 最初の案は commit の前 (PreToolUse) に対象と中身を決めていた。stage した後に作業ツリーを変えた commit・`git add … && git commit` の前の時点・他人の WIP で
+  違うものを読む → commit の後に HEAD の差分を読む形に変えた
+- P1: 足した関数自身が「既存の定義」として先頭に当たり、短い既存の名前を引く段に進まない → 除いてから打ち切る
+- P2: heredoc の本文の `git -C … commit`・`cd` → reflog の新しさで絞る。時間の上限が hook 全体を数えていない・型の検索の時間切れで候補を捨てる・lib に移すと fail-open が崩れる・
+  report が 6 列の行を落とす → 上の方針に入れた。C は hook を名指しする (Bash にも掛かる Write / Edit の hook があるため)
 
 ## 関連ファイル
 
