@@ -140,3 +140,12 @@ diff と check は 0.15〜0.84 で Go が速い。絶対の時間が長いのは
     コメントの「空白の表は 0x3000 で終わる」は生成物の値の写し → 「空白・改行の表は仮名や漢字より前で終わる」に直した。
     `DecimalValue` が同じ探索を `sort.Search` で持つ → 添字を返す関数に分けて共有すると、`inRanges` が `IsSpace` などの呼び出し元へインライン展開されなくなり、
     lint-len-1024k の in-process で 1 回 473 ms → 490〜515 ms に遅くなったので分けない (理由と測った値は `inRanges` のコメント)。`DecimalValue`・`Category` は lint のプロファイルで上位に出ないので触らない
+- 7 周目 (採った。2026-11-26): 6 周目の Go で lint-len-1024k のプロファイルを取り直すと、`lint.nonSpaceCount` が全体の 12.8% で、その 97% が `metaphorLabel` からだった。
+  候補の行 (見出しと 1 行目) ごとに、文書全体 (`s.an.Text`) を rune の並びに直して空白でない字を数え直していた
+  - 直し (commit「perf(ja-writing): metaphorLabel が候補の行ごとに文書全体の字を数え直さないようにする」): `g14WordFindings` の中で 1 度だけ数える memo を作って渡す (`memo` を型引数つきにした)
+  - 答え: module の make test (本家の記録との比べ) が緑。memo をパッケージの変数にして文書をまたいで値を持ち越す形にすると、`TestCLIMatchesPythonRecording` が落ちることを確かめた
+  - 計測 (5 周。`tmp/1079-bench-1125/it7`): 6 周目と比べて lint-len-1024k 0.846 倍・256k 0.906 倍 (どちらも 5 周とも速い)。「遅い」は lint-ai-064k の 1.015 倍 (5 周中 2 周で速い) だけで、
+    6 周目に見た同じコードのバイナリどうしの揺れ (lint-ai は 1.013 倍) の範囲。in-process では 1 回 473〜481 ms → 400 ms。
+    本家との比 (起動を含む中央値): lint-len-1024k 0.70 倍 (0.420 秒 / 0.602 秒)・256k 0.52 倍
+  - 敵対的レビュー (opus): 答えが変わる経路は見つからなかった (`s.an.Text` を書き換える所は無く、metaphorLabel の呼び出し元は 1 か所、数える時点は前と同じ早い return の後、lint に goroutine は無い)。
+    P3 が 2 件: コメントの名前の言い直し → 削った。`metaphorLabel` の `strings.Count(text, …)` も候補の行と piece ごとに文書全体を走る (byte の走査で確保は無く、効果は未実測) → 次の周の候補
