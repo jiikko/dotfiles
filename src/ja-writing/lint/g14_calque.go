@@ -34,9 +34,12 @@ func calqueMessage(numbers []int, wordTypes []wordType) string {
 }
 
 // memo は初めて呼ばれたときに 1 度だけ求める値 (文ごとに決まる値を、句の一致ごとに求め直さない)。
-func memo(f func() bool) func() bool {
-	known, value := false, false
-	return func() bool {
+func memo[T any](f func() T) func() T {
+	var (
+		known bool
+		value T
+	)
+	return func() T {
 		if !known {
 			known, value = true, f()
 		}
@@ -635,6 +638,7 @@ func (s *lintState) g14WordFindings() {
 	}
 	slices.Sort(lineNumbers)
 	isDocTech := memo(func() bool { return docTech(s.an.Text) })
+	textNonSpace := memo(func() int { return nonSpaceCount(s.an.Text) })
 	for _, lineNo := range lineNumbers {
 		row := rows[lineNo-1]
 		if (row.Kind != "paragraph" && row.Kind != "list" && row.Kind != "heading" && row.Kind != "table") || row.QuoteDepth != 0 {
@@ -647,7 +651,7 @@ func (s *lintState) g14WordFindings() {
 		snippet := pystr.Strip(row.Raw)
 		label := ""
 		if labelLines[lineNo] {
-			label = s.metaphorLabel(row, scan)
+			label = s.metaphorLabel(row, scan, textNonSpace)
 		}
 		if label != "" {
 			f := newFinding("metaphor_label", lineNo, "info", "見出しか1行目の比喩のラベル"+v220MessageTail, snippet)

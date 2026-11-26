@@ -151,7 +151,8 @@ func labelMayFit(row *visibility.Line) bool {
 }
 
 // metaphorLabel は本家の _metaphor_label。metaphor_label のラベルを返す (当たらなければ空)。
-func (s *lintState) metaphorLabel(row *visibility.Line, scan string) string {
+// textNonSpace は文書全体の空白でない字の数。候補の行ごとに文書全体を数え直さないよう、呼び出し元が 1 度だけ数えて渡す。
+func (s *lintState) metaphorLabel(row *visibility.Line, scan string, textNonSpace func() int) string {
 	if row.Kind != "heading" && row.Kind != "paragraph" {
 		return "" // 1 行目が表や箇条書きのときは見ない
 	}
@@ -170,7 +171,7 @@ func (s *lintState) metaphorLabel(row *visibility.Line, scan string) string {
 		return ""
 	}
 	text, raw := s.an.Text, row.Raw
-	if nonSpaceCount(text)-nonSpaceCount(raw) < labelMinBody {
+	if textNonSpace()-nonSpaceCount(raw) < labelMinBody {
 		return ""
 	}
 	label := labelText(row, scan)
