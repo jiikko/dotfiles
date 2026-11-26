@@ -35,3 +35,10 @@ master に入ったのは main agent が直した 2 件 (float の長い仮数�
    鍵を細かくする直しは、まだ鍵に入れていない次の分け方で同じ形に破れる。D の一般形。切り出し先: `_claude/rules-checklists/mutation-verify-new-tests.md` の「差分テストの oracle」の節に追記 (3 と同じ節)
 
 局所的なこと (提案にしない): 変異が構文エラー (第 3 の結果) になった 3 本 (lint 側 2・3 本目 1) は、1077 の残りに当て直しとして書いた。
+
+## 決着 (2026-11-26)
+
+- 1・2: `_claude/rules/subagent-model-tiering.md` の「指示を書くとき」に 1 項として足した。
+  締め切りを直列化の待ちの分だけ前に置くことと、検証が走っている間は同じ木を編集しないと指示に書くこと
+- 3・4: `_claude/rules-checklists/mutation-verify-new-tests.md` の「差分テストの oracle」の項の下に、2 つの小項目として足した
+- 残課題は無い。done へ移す
