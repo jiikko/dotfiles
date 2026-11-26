@@ -239,6 +239,14 @@ expect_jw "Write は ja-writing lint の残す規則の指摘を知らせ、定�
 expect_jw "Edit は書いた行の ja-writing lint の指摘だけを知らせる" "$(run "$(edit_input "$jwf" "🚨 止めない。")")" ""
 expect_jw "Edit で書いた行に当たれば知らせる" "$(run "$(edit_input "$jwf" "土台を作る。")")" "3 slop_vocabulary"
 
+# 書いたファイルの repo の一覧を、symlink のフォルダの中のファイルでも使う (bin/ja-textlint と同じ答え)。repo の allow.txt に「土台」を入れ、
+# 知らせが出ないことを見る。symlink の置き場のパス (論理のパス) から探すと一覧が見つからず、dotfiles の一覧が渡って「土台」を知らせる
+mkdir -p "$TMP_ROOT/syr/repo/.git" "$TMP_ROOT/syr/repo/.yomiyasu-words" "$TMP_ROOT/syr/repo/doc" "$TMP_ROOT/syl"
+printf '土台\n' > "$TMP_ROOT/syr/repo/.yomiyasu-words/allow.txt"
+ln -s "$TMP_ROOT/syr/repo/doc" "$TMP_ROOT/syl/link"
+printf '# 試験\n\n土台を作る。\n' > "$TMP_ROOT/syr/repo/doc/jw.md"
+expect_jw "symlink のフォルダの中のファイルにも、実体の repo の一覧を使う" "$(run "$(write_input "$TMP_ROOT/syl/link/jw.md")")" ""
+
 # ビルドが無い・時間切れのときは ja-writing の知らせを出さず、textlint の知らせは出す。hook を写した偽の repo で起こす
 # (hook は自分の置き場の ../.. を repo とみなす。src/ja-writing は go.mod の無い空のフォルダにして、ビルドの無い状態を作る)
 fake="$TMP_ROOT/fake"

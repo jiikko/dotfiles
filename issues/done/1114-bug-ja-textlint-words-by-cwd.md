@@ -66,3 +66,7 @@ hook の冒頭のコメントも「書いたファイルの repo が自分の .y
   - `jw_in` の cd を `cd -P` にした (物理のパスで `..` を解く)。テストに、cwd が symlink のフォルダの中で `../x.md` を渡すケースを足した。
     `mutate-verify` で `cd -P` を論理の cd に戻すと、このケースだけが落ちる (dotfiles の一覧が渡り project_term が出ない) ことを確かめた
   - 直していないもの: hook (`_claude/hooks/ja-textlint-on-edit.sh`) の `jw` も論理の cd だが、hook は絶対パスだけを受け、`..` を含む形は Claude Code の道具から来ないので触らない
+- 2026-11-27: セルフレビューで、hook (`_claude/hooks/ja-textlint-on-edit.sh` の `jw`) に、この issue で bin/ja-textlint から直した 2 つの形が残っていたのを直した
+  - フォルダを `$(dirname "$file")` で取っていた (末尾の改行が落ちる) → 文字列の展開 (`${file%/*}`) で取る
+  - 論理の cd だった (symlink のフォルダの中のファイルで、ja-writing が symlink の置き場のパスから一覧を探し、bin/ja-textlint と答えが食い違う) → `cd -P`
+  - tests/claude/test_ja_textlint_on_edit.sh に、symlink のフォルダの中のファイルで実体の repo の一覧 (allow.txt の「土台」) を使うケースを足した。`mutate-verify` で論理の cd に戻すと、このケースだけが落ちる (「3 slop_vocabulary」が出る)。改行で終わるフォルダ名は、hook の入力 (Claude Code の道具のパス) で作りにくいのでテストを足していない

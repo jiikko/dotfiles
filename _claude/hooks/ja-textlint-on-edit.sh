@@ -122,11 +122,17 @@ jw_rules='["bold_not_rendered", "translated_term", "calque", "metaphor_verb", "s
 jw_tmp=$(mktemp -d 2>/dev/null) || jw_tmp=""
 if [ -n "$jw_tmp" ]; then
   trap 'rm -rf "$jw_tmp"' EXIT
+  # 書いたファイルのフォルダ。$(dirname …) で取らない (コマンド置換はフォルダ名の末尾の改行を落とし、別のフォルダに入る)。
+  # file は絶対パスなので、/ を必ず含む
+  file_dir=${file%/*}
+  [ -n "$file_dir" ] || file_dir=/
   jw() { # <出力のファイル> <ja-writing lint の引数>... (書いたファイルのフォルダで、ビルドせずに起こす)
     local o=$1
     shift
+    # cd -P: symlink を辿った先 (物理のパス) に入る。論理の cd だと ja-writing は symlink の置き場のパスから一覧を探し、
+    # bin/ja-textlint (物理のパスで探す) と答えが食い違う
     # shellcheck disable=SC2016  # 単一引用符の中は zsh -c のプログラム ($1 は zsh の引数)
-    (cd "$(dirname "$file")" && "$runtimeout" 1 zsh -c 'source "$1"; shift; go_autobuild_exec --no-build "$1" ja-writing -- "${@:2}"' \
+    (cd -P -- "$file_dir" && "$runtimeout" 1 zsh -c 'source "$1"; shift; go_autobuild_exec --no-build "$1" ja-writing -- "${@:2}"' \
       _ "$hook_repo/bin/lib/go_autobuild.zsh" "$hook_repo/src/ja-writing" lint --json "$@" - <"$file" >"$o" 2>/dev/null)
   }
   jrc=0
