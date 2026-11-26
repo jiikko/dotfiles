@@ -717,8 +717,14 @@ func TestReloadAllAsksFirst(t *testing.T) {
 	m := newModel(l)
 	run(m, m.Init())
 	press(m, "R")
-	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "全部を読み直す") || !strings.Contains(screen, "時間がかかります") {
+	screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), "")
+	if !strings.Contains(screen, "全部を読み直す") {
 		t.Fatalf("確認の板が出ない:\n%s", screen)
+	}
+	for _, line := range reloadAllBody(len(m.chans)) {
+		if !strings.Contains(screen, line) {
+			t.Errorf("確認の板の本文の行 %q が切れずに出ていない:\n%s", line, screen)
+		}
 	}
 	if l.calls["C1"] != 1 || l.calls["C2"] != 0 {
 		t.Fatalf("確かめる前に読み直した: %v", l.calls)

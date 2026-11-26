@@ -982,8 +982,7 @@ func (m *Model) Lines() []string {
 		lines = layout.OverlayCentered(lines, box, m.w, len(lines), true)
 	}
 	if m.reloadAll {
-		body := []string{fmt.Sprintf("%d チャンネルの発言を、期間全体から", len(m.chans)), "取り直します。スレッドの多いチャンネルでは", "時間がかかります。読み直しますか？"}
-		lines = layout.OverlayCentered(lines, confirm.Dialog(" 全部を読み直す ", body, confirm.HintYesNo, m.w, true), m.w, len(lines), true)
+		lines = layout.OverlayCentered(lines, confirm.Dialog(" 全部を読み直す ", reloadAllBody(len(m.chans)), confirm.HintYesNo, m.w, true), m.w, len(lines), true)
 	}
 	if box := m.toast.BoxLines(true, max(len(lines)-1-helpRows, 1), m.w); len(box) > 0 && len(lines) > len(box)+helpRows {
 		lines = layout.OverlayRight(lines, box, m.w, true, len(lines)-helpRows-len(box)) // キーの案内の上
@@ -1349,6 +1348,12 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 		m.toast.Show(gone.Label()+" の購読を外した (s でまた付けられる)", true)
 	}
 	return cmd
+}
+
+// reloadAllBody は全部を読み直す確認の板の本文。confirm.Dialog は板の幅の上限 (confirm.MaxWidth) を超えた行を … で切るので、
+// 1 行を全角 19 字 (39 桁) までに詰める。
+func reloadAllBody(tabs int) []string {
+	return []string{fmt.Sprintf("%d チャンネルの発言を、期間全体から", tabs), "取り直します。スレッドの多い", "チャンネルでは時間がかかります。", "読み直しますか？"}
 }
 
 const allLoadingNote = "どのチャンネルも読み込み中なので、読み直せない (終わってからもう一度押す)"

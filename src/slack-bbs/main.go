@@ -70,10 +70,11 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
   -lookback <期間>  期間より前に始まったスレッドを、どこまで遡って探すか (既定 30d)
   -model <名前>     分類に使う claude のモデル (既定 sonnet)
   -max <数>         1 チャンネルで LLM に送る発言の上限。超えたら送らずに止める (既定 500)
-  -dry-run          LLM を呼ばず、送る件数と文字数だけを出す
+  -dry-run          LLM を呼ばず、送る件数と文字数・取得の所要と前回の板と同じスレッドの数を出す
   -json             話題に組んだ結果 (中間表現) を JSON で出す
   -md               端末でも読む画面を開かず、Markdown を出す (パイプの先では既定で Markdown)
-  -no-cache         キャッシュを読まない (前回の板を出さず、新しい発言が無くても分類し直す)。書くのは続ける
+  -no-cache         キャッシュを読まない (前回の板を出さず、新しい発言が無くても分類し直す)。書くのは続ける。
+                    -dry-run が出す「前回の板と同じスレッド」の数は、-no-cache でも前回の板と比べる
 
 読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。前回の板 (キャッシュ) があればすぐ出して、裏で読み直す。
   r で今のチャンネル、R で全部を読み直す (確認の板で y / Enter。取り直して、新しい発言・編集された発言があれば claude -p で分類し直す)。
@@ -564,7 +565,7 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		if o.dryRun {
 			fmt.Fprintf(stdout, "%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
 				c.page.Label(), len(c.units), c.sent, c.threads, c.chars)
-			r := compareFetch(c.fetch, c.page.Channel, st)
+			r := compareFetch(c.fetch, c.page.Channel, c.units, st)
 			fmt.Fprintf(stdout, "  %s\n", r)
 			total.add(r)
 			return nil
