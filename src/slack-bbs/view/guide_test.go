@@ -258,7 +258,7 @@ func TestPickerAndTinyTerminalFollowTUIGuide(t *testing.T) {
 func TestMentionsMakeTopicUnread(t *testing.T) {
 	a := topicAt("a", day0)
 	var mentions []render.Mention
-	load := func(context.Context, subs.Channel) (render.Page, error) {
+	load := func(context.Context, subs.Channel, bool) (render.Page, error) {
 		return render.Page{Channel: "C1", ChannelName: "dev", Since: day0, Until: day0, Lookback: day0,
 			Topics: []board.Topic{a, topicAt("b", day0.Add(-time.Hour))}, Mentions: mentions}, nil
 	}

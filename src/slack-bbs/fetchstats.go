@@ -13,7 +13,8 @@ import (
 // 差分の取得にしたときに減らせる量を見積もる材料にする (-dry-run が出す)。
 type fetchStats struct {
 	histMsgs                   int
-	need                       int // 読み直したスレッドの本数 (読めなかったものを含む)
+	need                       int // 読み直したスレッドの本数 (読めなかったもの・前回の返信を使ったものを含む)
+	reused                     int // そのうち前回の返信を使い、slack-cli を呼ばなかった本数
 	history, threads, mentions time.Duration
 	marks                      []threadMark // 親が history に在るスレッドだけ (親が無いものは前回と比べる材料が無い)
 }
@@ -28,19 +29,25 @@ type threadMark struct {
 func (f *fetchStats) add(g fetchStats) {
 	f.histMsgs += g.histMsgs
 	f.need += g.need
+	f.reused += g.reused
 	f.history += g.history
 	f.threads += g.threads
 	f.mentions += g.mentions
 	f.marks = append(f.marks, g.marks...)
 }
 
-func threadMarks(ch string, history []source.Message, need []string) []threadMark {
+// threadParents は history のスレッドの親を ts で引く表。
+func threadParents(history []source.Message) map[string]source.Message {
 	parents := map[string]source.Message{}
 	for _, m := range history {
 		if m.IsThreadParent() {
 			parents[m.Ts] = m
 		}
 	}
+	return parents
+}
+
+func threadMarks(ch string, parents map[string]source.Message, need []string) []threadMark {
 	var out []threadMark
 	for _, ts := range need {
 		if p, ok := parents[ts]; ok {

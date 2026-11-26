@@ -32,7 +32,7 @@ func topicAt(title string, at time.Time, labels ...board.Label) board.Topic {
 // datedModel は topics を出す 1 チャンネルの画面 (読み込み済み)。
 func datedModel(t *testing.T, topics func() []board.Topic) *Model {
 	t.Helper()
-	load := func(context.Context, subs.Channel) (render.Page, error) {
+	load := func(context.Context, subs.Channel, bool) (render.Page, error) {
 		return render.Page{Channel: "C1", ChannelName: "dev", Since: day0, Until: day0, Lookback: day0, Topics: topics()}, nil
 	}
 	m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, load, nil, func() time.Time { return day0 }))
@@ -299,7 +299,7 @@ func TestAddedChannelTracksReads(t *testing.T) {
 // o は Slack で開けたときだけ既読にする (リンクを組めない・開けないときは読めていない)。
 func TestOpenMarksReadOnlyWhenOpened(t *testing.T) {
 	var openErr error
-	load := func(context.Context, subs.Channel) (render.Page, error) {
+	load := func(context.Context, subs.Channel, bool) (render.Page, error) {
 		return render.Page{Channel: "C1", ChannelName: "dev", Base: "https://ws.slack.com/", Since: day0, Until: day0, Lookback: day0,
 			Topics: []board.Topic{topicAt("a", day0)}}, nil
 	}
@@ -696,7 +696,7 @@ func TestEmptyListSaysWhy(t *testing.T) {
 	left := func(m *Model) string {
 		return plain.ReplaceAllString(strings.Join(m.leftLines(), "\n"), "")
 	}
-	never := func(context.Context, subs.Channel) (render.Page, error) { select {} }
+	never := func(context.Context, subs.Channel, bool) (render.Page, error) { select {} }
 	mk := func() *Model {
 		m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}, never, nil, func() time.Time { return day0 }))
 		m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})

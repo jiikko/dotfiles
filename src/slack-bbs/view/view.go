@@ -35,8 +35,9 @@ import (
 	"subproc"
 )
 
-// Loader は 1 チャンネルを読み、話題に組んだ板を返す。画面の外の goroutine で呼ばれる。
-type Loader func(ctx context.Context, ch subs.Channel) (render.Page, error)
+// Loader は 1 チャンネルを読み、話題に組んだ板を返す。画面の外の goroutine で呼ばれる。full は全部を取り直すか (R)。
+// 偽なら、前回から変わっていないスレッドを読み直さない (差分の取得。途中の返信の編集は取り逃がす)。
+type Loader func(ctx context.Context, ch subs.Channel, full bool) (render.Page, error)
 
 type chanState struct {
 	ch       subs.Channel
@@ -190,7 +191,10 @@ const toastInfoColor = sgr.DefaultFg
 
 // reload はチャンネル i の読み直しを頼み、始めたことを知らせる (終わりは loaded が知らせる)。返す Cmd は画面の状態を触らない
 // (Loader と照合用の値だけを持つ)。
-func (m *Model) reload(i int) tea.Cmd {
+func (m *Model) reload(i int) tea.Cmd { return m.load1(i, false) }
+
+// load1 は reload の本体。full は全部を取り直すか (R の確認の後だけ真)。
+func (m *Model) load1(i int, full bool) tea.Cmd {
 	c := &m.chans[i]
 	verb := "読み直しています…"
 	if c.page == nil {
@@ -203,7 +207,7 @@ func (m *Model) reload(i int) tea.Cmd {
 	c.err = nil // 前の失敗は、この読み直しの結果で決め直す
 	gen, ch, load, ctx, now := c.gen, c.ch, m.load, m.ctx, m.now
 	return func() tea.Msg {
-		p, err := load(ctx, ch)
+		p, err := load(ctx, ch, full)
 		return loadedMsg{ch: ch.ID, gen: gen, page: p, err: err, at: now()}
 	}
 }
@@ -1372,7 +1376,7 @@ func (m *Model) confirmReloadAll(k string) tea.Cmd {
 			busy++
 			continue
 		}
-		cmds = append(cmds, m.reload(i))
+		cmds = append(cmds, m.load1(i, true))
 	}
 	// 始めたことはチャンネルごとでなく 1 枚で知らせる (reload が出した 1 枚ずつの知らせは、中立の知らせが次の知らせで退くので残らない)
 	switch {

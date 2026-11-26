@@ -21,7 +21,7 @@ func BenchmarkLinesBigTopic(b *testing.B) {
 	for i := range 10 {
 		chans = append(chans, subs.Channel{ID: fmt.Sprintf("C%d", i), Name: fmt.Sprintf("ch%d", i)})
 	}
-	load := func(_ context.Context, ch subs.Channel) (render.Page, error) {
+	load := func(_ context.Context, ch subs.Channel, _ bool) (render.Page, error) {
 		var ts []board.Topic
 		for k := range 40 {
 			n := 3

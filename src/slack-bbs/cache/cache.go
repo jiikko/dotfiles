@@ -240,7 +240,7 @@ func (s Store) saveMarks(ch, kind string, units map[string]string, now time.Time
 const CacheKeep = 14 * 24 * time.Hour
 
 // Expire は置き場の中で、書き換えの無いまま残す期間を過ぎたキャッシュのファイルを消し、消した数を返す。
-//   - <ID>.raw.json と .summary.json は組で数え、新しい方の時刻から CacheKeep を過ぎたら両方消す。summary だけで数えない:
+//   - <ID>.raw.json と .summary.json (と、前回読んだスレッドの .threads.json) は組で数え、新しい方の時刻から CacheKeep を過ぎたら両方消す。summary だけで数えない:
 //     分類を使い回した読み直し (main.go の classify) は raw だけを書き直すので、毎日読んでいるチャンネルの summary も古い時刻のまま残る
 //   - <ID>.read.json と .hidden.json は ReadKeep
 //   - 書きかけで残った一時ファイル (atomicfile の <名前>.tmp.<乱数>。チャンネルの一覧 channels.json と最後に見ていた所 view.json のものも) は CacheKeep
@@ -345,7 +345,7 @@ func expireGroup(name string) (key string, keep time.Duration, ok bool) {
 		return "", 0, false
 	}
 	switch kind {
-	case "raw", "summary":
+	case "raw", "summary", "threads":
 		return "board:" + id, CacheKeep, true
 	case "read":
 		return "read:" + id, ReadKeep, true

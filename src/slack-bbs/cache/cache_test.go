@@ -10,6 +10,7 @@ import (
 
 	"slack-bbs/board"
 	"slack-bbs/render"
+	"slack-bbs/source"
 )
 
 func units(msgs ...board.Msg) []board.Unit {
@@ -56,6 +57,27 @@ func TestRoundTripAndVersion(t *testing.T) {
 	}
 	if _, ok, err := (Store{}).LoadRaw("C1"); ok || err != nil || (Store{}).SaveRaw("C1", Raw{}) != nil {
 		t.Errorf("置き場が空なのに読み書きした")
+	}
+}
+
+// 前回読んだスレッドを書いて読み戻せる。版の違うファイルは使わない (中身も返さない)。
+func TestThreadsRoundTripAndVersion(t *testing.T) {
+	st := Store{Dir: filepath.Join(t.TempDir(), "c")}
+	th := Threads{Items: []Thread{{Ch: "C1", Ts: "1.000000", ReplyCount: 1, LatestReply: "2.000000", Msgs: []source.Message{{Ts: "1.000000"}, {Ts: "2.000000"}}}}}
+	if err := st.SaveThreads("grp0123abcd", th); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := st.LoadThreads("grp0123abcd")
+	if err != nil || !ok || len(got.Items) != 1 || len(got.Items[0].Msgs) != 2 || got.Items[0].LatestReply != "2.000000" {
+		t.Fatalf("読み戻せない: %+v %v %v", got, ok, err)
+	}
+	p := filepath.Join(st.Dir, "grp0123abcd.threads.json")
+	b, _ := os.ReadFile(p)
+	if err := os.WriteFile(p, []byte(strings.Replace(string(b), fmt.Sprintf(`"version":%d`, ThreadsVersion), `"version":99`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok, err := st.LoadThreads("grp0123abcd"); ok || err != nil || len(got.Items) != 0 {
+		t.Errorf("版の違うスレッドを使った・中身を返した: ok=%v err=%v %+v", ok, err, got)
 	}
 }
 
@@ -157,6 +179,8 @@ func TestExpire(t *testing.T) {
 	age := map[string]time.Duration{
 		"COLD.raw.json":         CacheKeep + time.Hour, // 消す
 		"COLD.summary.json":     CacheKeep + time.Hour, // 消す
+		"COLD.threads.json":     CacheKeep + time.Hour, // 前回読んだスレッドも組で消す
+		"USED.threads.json":     CacheKeep * 3,         // 組 (USED) の raw が新しいので残す
 		"USED.summary.json":     CacheKeep * 3,         // 分類を使い回していて raw だけが新しい: 組で数えて残す
 		"USED.raw.json":         time.Hour,
 		"COLD.raw.json.tmp.123": CacheKeep + time.Hour, // 書きかけで残った一時ファイル: 消す
@@ -186,15 +210,15 @@ func TestExpire(t *testing.T) {
 		}
 	}
 	n, err := st.Expire(now)
-	if err != nil || n != 8 {
-		t.Fatalf("Expire = %d, %v; want 8 件", n, err)
+	if err != nil || n != 9 {
+		t.Fatalf("Expire = %d, %v; want 9 件", n, err)
 	}
 	var left []string
 	ents, _ := os.ReadDir(dir)
 	for _, e := range ents {
 		left = append(left, e.Name())
 	}
-	want := "COLD.hidden.json,COLD.read.json,USED.raw.json,USED.summary.json,WARM.raw.json,WARM.raw.json.tmp.456,channels.json,notes.json,notes.json.tmp.654,slack-cli.lock,view.json,x.y.json"
+	want := "COLD.hidden.json,COLD.read.json,USED.raw.json,USED.summary.json,USED.threads.json,WARM.raw.json,WARM.raw.json.tmp.456,channels.json,notes.json,notes.json.tmp.654,slack-cli.lock,view.json,x.y.json"
 	if got := strings.Join(left, ","); got != want {
 		t.Errorf("残ったファイル: %s, want %s", got, want)
 	}

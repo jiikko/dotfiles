@@ -35,12 +35,19 @@ func page(ch, title string) render.Page {
 // loader は呼ばれた回数を数え、チャンネルごとに決まった板 (または誤り) を返す。
 type loader struct {
 	calls map[string]int
+	full  map[string]int // calls のうち全部を取り直す (full) 読み直しの数
 	err   map[string]error
 	title string
 }
 
-func (l *loader) load(_ context.Context, ch subs.Channel) (render.Page, error) {
+func (l *loader) load(_ context.Context, ch subs.Channel, full bool) (render.Page, error) {
 	l.calls[ch.ID]++
+	if full {
+		if l.full == nil {
+			l.full = map[string]int{}
+		}
+		l.full[ch.ID]++
+	}
 	if err := l.err[ch.ID]; err != nil {
 		return render.Page{}, err
 	}
@@ -188,7 +195,7 @@ func TestTinyTerminal(t *testing.T) {
 func TestReloadKeepsSelectedTopic(t *testing.T) {
 	order := [][]string{{"a", "b"}, {"b", "a"}}
 	n := 0
-	load := func(context.Context, subs.Channel) (render.Page, error) {
+	load := func(context.Context, subs.Channel, bool) (render.Page, error) {
 		var ts []board.Topic
 		for _, id := range order[min(n, 1)] {
 			ts = append(ts, board.Topic{Title: id, State: board.StateInfo, Units: []board.Unit{{ID: id, Msgs: []board.Msg{{Ts: id}}}}})
@@ -273,7 +280,7 @@ func TestLinesStripControls(t *testing.T) {
 // o は選んだ話題の最後の発言を開く (スレッドの返信は thread_ts 付きの permalink)。
 func TestOpenSelectedOpensLatestMessage(t *testing.T) {
 	// 話題に単位が 2 つあり、最後の発言は先頭でない単位 (スレッド) の返信にある
-	load := func(context.Context, subs.Channel) (render.Page, error) {
+	load := func(context.Context, subs.Channel, bool) (render.Page, error) {
 		thread := board.Unit{ID: "1.000000", Thread: true, Msgs: []board.Msg{{Ts: "1.000000"}, {Ts: "9.000000"}}}
 		single := board.Unit{ID: "5.000000", Msgs: []board.Msg{{Ts: "5.000000"}}}
 		return render.Page{Channel: "C1", Base: "https://ws.slack.com/",
@@ -428,8 +435,8 @@ func TestPreloadedBoardIsShownThenReloaded(t *testing.T) {
 // 前回の分類を使い回した板は、分類した時刻を見出しに添える (取得は新しくても、見出しやラベルは古い)。
 func TestHeaderShowsReusedClassificationTime(t *testing.T) {
 	l := &loader{calls: map[string]int{}}
-	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, func(ctx context.Context, ch subs.Channel) (render.Page, error) {
-		p, err := l.load(ctx, ch)
+	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, func(ctx context.Context, ch subs.Channel, full bool) (render.Page, error) {
+		p, err := l.load(ctx, ch, full)
 		p.ClassifiedAt = t0.Add(-3 * time.Hour)
 		return p, err
 	}, nil, func() time.Time { return t0 })
@@ -612,7 +619,7 @@ func TestNarrowWrapDoesNotFakeHeading(t *testing.T) {
 	u := board.Unit{ID: "1.000000", Msgs: []board.Msg{{Ts: "1.000000", Name: "tanaka", Text: "本文\nabcdef▍見出しのふり", New: true}}}
 	p := render.Page{Channel: "C1", ChannelName: "dev", Since: t0, Until: t0, Lookback: t0,
 		Topics: []board.Topic{{Title: "t", State: board.StateInfo, Units: []board.Unit{u}}}}
-	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, func(context.Context, subs.Channel) (render.Page, error) {
+	m := New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}}, func(context.Context, subs.Channel, bool) (render.Page, error) {
 		return p, nil
 	}, nil, func() time.Time { return t0 })
 	m.Update(tea.WindowSizeMsg{Width: 45, Height: 40}) // 本文を折り返す幅 12: 続きの行「      abcdef」の後で折れる
@@ -738,6 +745,14 @@ func TestReloadAllAsksFirst(t *testing.T) {
 	run(m, press(m, "enter"))
 	if l.calls["C1"] != 2 || l.calls["C2"] != 1 {
 		t.Fatalf("Enter で全部を読み直していない: %v", l.calls)
+	}
+	// R だけが全部を取り直す (前回のスレッドを使わない)。起動と r の読み直しは差分で取る
+	if l.full["C1"] != 1 || l.full["C2"] != 1 {
+		t.Errorf("R の読み直しが全部を取り直していない・起動の読み直しまで全部を取り直した: full=%v calls=%v", l.full, l.calls)
+	}
+	run(m, press(m, "r"))
+	if l.calls["C1"] != 3 || l.full["C1"] != 1 {
+		t.Errorf("r の読み直しが全部を取り直した: full=%v calls=%v", l.full, l.calls)
 	}
 
 	// 板を描ける最も狭い端末でも、本文の行は切れない (板の中身の幅は端末の幅で狭くなる)。画面の上では、読み直しの知らせが
@@ -895,7 +910,7 @@ func TestStartRestoresLastTopic(t *testing.T) {
 		return render.Page{Channel: ch, ChannelName: ch, Since: day0, Until: day0, Lookback: day0, Topics: topics}
 	}
 	mk := func() *Model {
-		load := func(_ context.Context, ch subs.Channel) (render.Page, error) { return pg(ch.ID), nil }
+		load := func(_ context.Context, ch subs.Channel, _ bool) (render.Page, error) { return pg(ch.ID), nil }
 		m := quiet(New(context.Background(), []subs.Channel{{ID: "C1", Name: "dev"}, {ID: "C2", Name: "ops"}}, load, nil, func() time.Time { return day0 }))
 		m.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
 		return m

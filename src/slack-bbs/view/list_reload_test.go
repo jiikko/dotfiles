@@ -288,7 +288,7 @@ type reloadBoard struct {
 func boardModel(t *testing.T, chans ...string) (*Model, *reloadBoard, func(time.Duration)) {
 	t.Helper()
 	b := &reloadBoard{added: map[string]int{}, gone: map[string]int{}, day: day0}
-	load := func(_ context.Context, ch subs.Channel) (render.Page, error) {
+	load := func(_ context.Context, ch subs.Channel, _ bool) (render.Page, error) {
 		var ts []board.Topic
 		for i := range b.added[ch.ID] {
 			ts = append(ts, topicAt(fmt.Sprintf("%s-新しい話題%02d", ch.ID, i), day0.Add(time.Duration(b.added[ch.ID]-i)*time.Minute)))

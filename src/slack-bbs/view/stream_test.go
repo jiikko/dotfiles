@@ -15,7 +15,7 @@ import (
 // streamModel は 2 つのチャンネルのタブを持つ画面。dev は読み込み済み、ops は loadOps が呼ばれるまで板が無い。
 func streamModel(t *testing.T, dev, ops []board.Topic, loads map[string]int) *Model {
 	t.Helper()
-	load := func(_ context.Context, ch subs.Channel) (render.Page, error) {
+	load := func(_ context.Context, ch subs.Channel, _ bool) (render.Page, error) {
 		loads[ch.ID]++
 		ts := dev
 		if ch.ID == "C2" {

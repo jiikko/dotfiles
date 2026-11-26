@@ -73,11 +73,12 @@ const usage = `slack-bbs - Slack のチャンネルの会話を話題ごとに�
   -dry-run          LLM を呼ばず、送る件数と文字数・取得の所要と前回の板と同じスレッドの数を出す
   -json             話題に組んだ結果 (中間表現) を JSON で出す
   -md               端末でも読む画面を開かず、Markdown を出す (パイプの先では既定で Markdown)
-  -no-cache         キャッシュを読まない (前回の板を出さず、新しい発言が無くても分類し直す)。書くのは続ける。
+  -no-cache         キャッシュを読まない (前回の板を出さず、前回のスレッドも使わず、新しい発言が無くても分類し直す)。書くのは続ける。
                     -dry-run が出す「前回の板と同じスレッド」の数は、-no-cache でも前回の板と比べる
 
 読む画面 (端末で打ったとき): 左に話題の一覧、右に中身。前回の板 (キャッシュ) があればすぐ出して、裏で読み直す。
   r で今のチャンネル、R で全部を読み直す (確認の板で y / Enter。取り直して、新しい発言・編集された発言があれば claude -p で分類し直す)。
+  起動と r は、返信の数も最後の返信も前回と同じスレッドを読み直さない (途中の返信の編集は R で拾う)。
   j/k: 移動  l/Enter: 本文を読む  h/q/Esc/Enter: 本文から一覧へ  J/K: 本文を開いたまま隣の話題へ
   Tab / Shift-Tab: 次・前のタブ (最後のタブ「🆕 新着」は全部のタブの話題を新しい順に並べる)
   o: Slack で開く  u: 既読と未読の切り替え  x: 話題を隠す  z: 隠した話題も出す  s: 購読するチャンネルを選ぶ
@@ -508,10 +509,12 @@ type collected struct {
 	chars   int
 	threads int // スレッドを取り直した回数
 	fetch   fetchStats
+	// threadsRead は読み直した・使い回したスレッド (次の読み直しで使い回すために残す)
+	threadsRead []cache.Thread
 }
 
 // eachChannel は読むチャンネルごとに集めて fn へ渡す。1 チャンネルの失敗では止めず、最後に失敗したチャンネルを返す。
-func eachChannel(ctx context.Context, o options, d deps, stderr io.Writer, fn func(c collected) error) error {
+func eachChannel(ctx context.Context, o options, d deps, tr threadReuse, stderr io.Writer, fn func(c collected) error) error {
 	targets, _, err := channelsToRead(o, d)
 	if err != nil {
 		return err
@@ -528,7 +531,7 @@ func eachChannel(ctx context.Context, o options, d deps, stderr io.Writer, fn fu
 	var failed []string
 	for _, ch := range targets {
 		err := func() error {
-			c, err := collect(ctx, o, cli, me, us, ch)
+			c, err := collect(ctx, o, cli, me, us, ch, tr)
 			if err != nil {
 				return err
 			}
@@ -561,7 +564,10 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 	}
 	var pages []render.Page
 	var total fetchReport
-	err := eachChannel(ctx, o, d, stderr, func(c collected) error {
+	// -no-cache は前回のスレッドも使わない (全部取り直す)。-dry-run も使わず書かない: 全部のスレッドを読んで、前回の板と
+	// 比べたときに使い回せた本数と、使い回すと取り逃がす返信の本文の変化を数える (compareFetch) のが -dry-run の役目
+	tr := threadReuse{st: st, read: !o.noCache && !o.dryRun, write: !o.dryRun}
+	err := eachChannel(ctx, o, d, tr, stderr, func(c collected) error {
 		if o.dryRun {
 			fmt.Fprintf(stdout, "%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
 				c.page.Label(), len(c.units), c.sent, c.threads, c.chars)
@@ -746,7 +752,7 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 	g := newGuard()
 	defer g.closeAndWait(cancel)
 	start := g.start
-	load := func(ctx context.Context, ch subs.Channel) (render.Page, error) {
+	load := func(ctx context.Context, ch subs.Channel, full bool) (render.Page, error) {
 		done, ok := start()
 		if !ok {
 			return render.Page{}, context.Canceled
@@ -764,7 +770,7 @@ func browse(ctx context.Context, o options, d deps, st cache.Store, stderr io.Wr
 		if err != nil {
 			return render.Page{}, err
 		}
-		c, err := collect(ctx, o, cli, me, us, ch)
+		c, err := collect(ctx, o, cli, me, us, ch, browseThreads(o, st, full))
 		if err != nil {
 			return render.Page{}, err
 		}
@@ -890,7 +896,8 @@ func prepare(ctx context.Context, o options, dir string, d deps, stdout, stderr 
 		return err
 	}
 	out := prepared{Dir: dir, Key: m.Key()}
-	err = eachChannel(ctx, o, d, stderr, func(c collected) error {
+	// 2 段の実行はキャッシュを持たない (分類と板の組み立ては別のプロセスの show がする)ので、スレッドも毎回全部取る
+	err = eachChannel(ctx, o, d, threadReuse{}, stderr, func(c collected) error {
 		if err := checkMax(c, o.max); err != nil {
 			return err
 		}
@@ -1016,9 +1023,25 @@ const maxThreadErrNotes = 3
 
 // collect は板 ch (チャンネルかグループ) の発言を集めて単位にまとめ直す。グループはメンバーのチャンネルごとに集めて 1 つの板に合わせる
 // (分類はまとめて 1 回。ユーザーの決定 2026-11-11: チャンネルをまたいだ話題にしてよい)。
-func collect(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel) (collected, error) {
+func collect(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel, tr threadReuse) (collected, error) {
+	prev, note := tr.load(ch.ID)
+	c, err := collectBoard(ctx, o, cli, me, us, ch, prev)
+	if err != nil {
+		return collected{}, err
+	}
+	if note != "" {
+		c.page.Notes = append(c.page.Notes, note)
+	}
+	if n := tr.save(ch.ID, o.until, c.threadsRead); n != "" {
+		c.page.Notes = append(c.page.Notes, n)
+	}
+	return c, nil
+}
+
+// collectBoard は collect の本体。prev は板が前回読んだスレッド (使い回せるものは読み直さない)。
+func collectBoard(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel, prev threadIndex) (collected, error) {
 	if !ch.IsGroup() {
-		return collectChannel(ctx, o, cli, me, us, ch)
+		return collectChannel(ctx, o, cli, me, us, ch, prev)
 	}
 	c := collected{me: me.UserID, page: render.Page{
 		Channel: ch.ID, ChannelName: ch.Name, Since: o.since, Until: o.until, Lookback: o.lookback, Base: me.URL,
@@ -1032,7 +1055,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 	var mentions []render.Mention
 	for _, mem := range ch.Members {
 		c.page.Members[mem.ID] = mem.Name
-		mc, err := collectChannel(ctx, o, cli, me, us, mem)
+		mc, err := collectChannel(ctx, o, cli, me, us, mem, prev)
 		if err != nil {
 			if ctx.Err() != nil {
 				return collected{}, err
@@ -1053,6 +1076,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 		}
 		c.sent, c.chars, c.threads = c.sent+mc.sent, c.chars+mc.chars, c.threads+mc.threads
 		c.fetch.add(mc.fetch)
+		c.threadsRead = append(c.threadsRead, mc.threadsRead...)
 	}
 	if len(failed) == len(ch.Members) {
 		return collected{}, fmt.Errorf("グループのどのチャンネルも読めなかった: %s", strings.Join(failed, " "))
@@ -1072,7 +1096,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 }
 
 // collectChannel はチャンネル ch 1 つの発言を集めて単位にまとめ直す。
-func collectChannel(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel) (collected, error) {
+func collectChannel(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel, prev threadIndex) (collected, error) {
 	sinceTs := board.TsOf(o.since.Unix())
 	start := time.Now()
 	hist, err := cli.History(ctx, ch.ID, board.TsOf(o.lookback.Unix()))
@@ -1090,9 +1114,18 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 	threads := map[string][]source.Message{}
 	failed := 0
 	need := board.NeedThreads(hist.Msgs, sinceTs)
-	fs.need, fs.marks = len(need), threadMarks(ch.ID, hist.Msgs, need)
+	parents := threadParents(hist.Msgs)
+	fs.need, fs.marks = len(need), threadMarks(ch.ID, parents, need)
+	var read []cache.Thread
 	start = time.Now()
 	for _, ts := range need {
+		p, known := parents[ts]
+		if t, ok := prev.reusable(ch.ID, p); known && ok {
+			threads[ts] = t.Msgs
+			read = append(read, t)
+			fs.reused++
+			continue
+		}
 		th, err := cli.Thread(ctx, ch.ID, ts)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1106,6 +1139,9 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 			continue
 		}
 		threads[ts] = th.Msgs
+		if known { // 親が history に無いスレッドは、次の読み直しで比べる値が無いので残さない
+			read = append(read, cache.Thread{Ch: ch.ID, Ts: ts, ReplyCount: p.ReplyCount, LatestReply: p.LatestReply, Msgs: th.Msgs})
+		}
 		if th.Warning != "" {
 			notes = append(notes, "slack-cli の警告 (スレッド "+ts+"): "+th.Warning)
 		}
@@ -1118,7 +1154,7 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 	if err != nil {
 		return collected{}, err
 	}
-	c := collected{me: me.UserID, units: units, threads: len(threads), fetch: fs, page: render.Page{
+	c := collected{me: me.UserID, units: units, threads: len(threads) - fs.reused, fetch: fs, threadsRead: read, page: render.Page{
 		Channel: ch.ID, ChannelName: ch.Name, Since: o.since, Until: o.until, Lookback: o.lookback, Base: me.URL,
 	}}
 	for _, u := range units {
