@@ -160,7 +160,35 @@ func (p *Pattern) GroupIndex() map[string]int {
 type Text struct{ runes []rune }
 
 // NewText は文字列 (WTF-8) を Text にする。
-func NewText(s string) Text { return Text{pyunicode.Runes(s)} }
+// 同じ行に多くのパターンを当てるので、直近に直した文字列と並びを textCacheSize 本まで覚えて使い回す。
+// 並びは共有するので、Text と照合 (regexp2 も) は並びを読むだけにする (書き換えると、同じ文字列の別の Text が変わる)。
+func NewText(s string) Text {
+	textCache.mu.Lock()
+	defer textCache.mu.Unlock()
+	for i := range textCache.entries {
+		if e := &textCache.entries[i]; e.ok && e.s == s {
+			return e.t
+		}
+	}
+	t := Text{pyunicode.Runes(s)}
+	textCache.entries[textCache.next] = textCacheEntry{s: s, t: t, ok: true}
+	textCache.next = (textCache.next + 1) % textCacheSize
+	return t
+}
+
+const textCacheSize = 8
+
+type textCacheEntry struct {
+	s  string
+	t  Text
+	ok bool
+}
+
+var textCache struct {
+	mu      sync.Mutex
+	entries [textCacheSize]textCacheEntry
+	next    int
+}
 
 // Len はコードポイントの数。
 func (t Text) Len() int { return len(t.runes) }
