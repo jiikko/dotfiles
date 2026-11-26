@@ -75,6 +75,12 @@ func TestLoadRejectsBrokenAndPathLikeID(t *testing.T) {
 	if r, ok, err := st.LoadRaw("C1"); ok || err == nil || r.Me != "" {
 		t.Errorf("型の合わないファイル: ok=%v err=%v me=%q", ok, err, r.Me)
 	}
+	if err := os.WriteFile(filepath.Join(st.Dir, "C1.summary.json"), []byte(fmt.Sprintf(`{"version":%d,"model":"m","basis":"x"}`, Version)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if sum, ok, err := st.LoadSummary("C1"); ok || err == nil || sum.Model != "" {
+		t.Errorf("型の合わない分類のファイル: ok=%v err=%v model=%q", ok, err, sum.Model)
+	}
 	if err := st.SaveRaw("../x", Raw{}); err == nil {
 		t.Errorf("パスの区切りを含む ID で書いた")
 	}
