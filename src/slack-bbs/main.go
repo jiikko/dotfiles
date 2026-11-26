@@ -506,6 +506,7 @@ type collected struct {
 	sent    int // LLM へ送る発言の数 (文脈の発言を含む)
 	chars   int
 	threads int // スレッドを取り直した回数
+	fetch   fetchStats
 }
 
 // eachChannel は読むチャンネルごとに集めて fn へ渡す。1 チャンネルの失敗では止めず、最後に失敗したチャンネルを返す。
@@ -558,10 +559,14 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		return browse(ctx, o, d, st, stderr)
 	}
 	var pages []render.Page
+	var total fetchReport
 	err := eachChannel(ctx, o, d, stderr, func(c collected) error {
 		if o.dryRun {
 			fmt.Fprintf(stdout, "%s: 単位 %d / 送る発言 %d (スレッドの取得 %d 回) / 本文 %d 文字\n",
 				c.page.Label(), len(c.units), c.sent, c.threads, c.chars)
+			r := compareFetch(c.fetch, c.page.Channel, st)
+			fmt.Fprintf(stdout, "  %s\n", r)
+			total.add(r)
 			return nil
 		}
 		if err := checkMax(c, o.max); err != nil {
@@ -584,6 +589,9 @@ func read(ctx context.Context, o options, d deps, stdout, stderr io.Writer) erro
 		}
 		return writeMarkdown(stdout, p)
 	})
+	if o.dryRun && total.boards > 1 {
+		fmt.Fprintf(stdout, "全体 (%d 板): %s\n", total.boards, total)
+	}
 	if o.json && !o.dryRun {
 		if jerr := writeJSON(stdout, pages); jerr != nil {
 			return jerr
@@ -1043,6 +1051,7 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 			notes = append(notes, "#"+mem.Name+": "+n)
 		}
 		c.sent, c.chars, c.threads = c.sent+mc.sent, c.chars+mc.chars, c.threads+mc.threads
+		c.fetch.add(mc.fetch)
 	}
 	if len(failed) == len(ch.Members) {
 		return collected{}, fmt.Errorf("グループのどのチャンネルも読めなかった: %s", strings.Join(failed, " "))
@@ -1064,10 +1073,12 @@ func collect(ctx context.Context, o options, cli source.Client, me source.Me, us
 // collectChannel はチャンネル ch 1 つの発言を集めて単位にまとめ直す。
 func collectChannel(ctx context.Context, o options, cli source.Client, me source.Me, us source.Users, ch subs.Channel) (collected, error) {
 	sinceTs := board.TsOf(o.since.Unix())
+	start := time.Now()
 	hist, err := cli.History(ctx, ch.ID, board.TsOf(o.lookback.Unix()))
 	if err != nil {
 		return collected{}, err
 	}
+	fs := fetchStats{histMsgs: len(hist.Msgs), history: time.Since(start)}
 	var notes []string
 	if hist.MaybeOld {
 		notes = append(notes, source.OldSlackCLINote)
@@ -1077,7 +1088,10 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 	}
 	threads := map[string][]source.Message{}
 	failed := 0
-	for _, ts := range board.NeedThreads(hist.Msgs, sinceTs) {
+	need := board.NeedThreads(hist.Msgs, sinceTs)
+	fs.need, fs.marks = len(need), threadMarks(ch.ID, hist.Msgs, need)
+	start = time.Now()
+	for _, ts := range need {
 		th, err := cli.Thread(ctx, ch.ID, ts)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1095,6 +1109,7 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 			notes = append(notes, "slack-cli の警告 (スレッド "+ts+"): "+th.Warning)
 		}
 	}
+	fs.threads = time.Since(start)
 	if failed > maxThreadErrNotes {
 		notes = append(notes, fmt.Sprintf("ほか %d 本のスレッドも読めなかった", failed-maxThreadErrNotes))
 	}
@@ -1102,7 +1117,7 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 	if err != nil {
 		return collected{}, err
 	}
-	c := collected{me: me.UserID, units: units, threads: len(threads), page: render.Page{
+	c := collected{me: me.UserID, units: units, threads: len(threads), fetch: fs, page: render.Page{
 		Channel: ch.ID, ChannelName: ch.Name, Since: o.since, Until: o.until, Lookback: o.lookback, Base: me.URL,
 	}}
 	for _, u := range units {
@@ -1118,7 +1133,9 @@ func collectChannel(ctx context.Context, o options, cli source.Client, me source
 		// 言及の検索の失敗ではチャンネルを止めない (板は出し、注記で知らせる)。取り消しは止める
 		// after: は日付で、その日を含まず、日の境はローカルの日付とずれる (実測 2026-11-11: after:11-09 の最も古い結果が 11-09 23:49 UTC)。
 		// 2 日の余裕を取り、期間の始まりより前の結果は findMentions が捨てる
+		start = time.Now()
 		ms, truncated, err := findMentions(ctx, cli, ch, sinceTs, o.since.AddDate(0, 0, -2).Format("2006-01-02"), units, me.UserID, us)
+		c.fetch.mentions = time.Since(start)
 		if err != nil && ctx.Err() != nil {
 			return collected{}, err
 		}
