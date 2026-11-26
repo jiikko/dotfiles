@@ -1,7 +1,5 @@
 # 1115 (bug): ja-writing の !race のテスト 1 本が make test でも CI でも走らない
 
-> 🚨 **担当中: kojiM3MBP (glogx)**（2026-11-26〜）
-
 起票日: 2026-11-26
 
 ## 概要
