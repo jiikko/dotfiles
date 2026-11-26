@@ -16,4 +16,4 @@ issue 1102 の敵対的レビューも `$TMPDIR/tmp.EpG1Lb7GJ3` (中身は out.t
   plan をこの 2 つに絞ると apply が「plan の中身が ID と合わない」で止める (書き換えの検出)。ゴミ箱へ移す操作も hook (一時領域の浅い所を消す・移すのを止める) が止めた。
   どちらも意図して守られた所なので回避しない。ユーザーが端末で 2 つを消すのを待つ (中身は確かめた: p5rt-mtnm22f6 は空、tmp.EpG1Lb7GJ3 は
   out.txt・err.txt・repo/.git・repo/sub。どちらも開いているプロセスは無い)
-- 残り: ユーザーが消したら 2 つとも無いことを確かめ、`scripts/issue_done.sh 1104` で done へ送る
+- 2026-11-26: ユーザーが端末で 2 つを消した。`ls -d` で 2 つとも「No such file or directory」になったのを確かめた。残りなし
