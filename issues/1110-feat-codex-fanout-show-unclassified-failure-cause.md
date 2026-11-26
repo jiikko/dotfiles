@@ -41,6 +41,27 @@
 
 ## 進捗
 
-- [ ] 要約への原因の行
-- [ ] クレジット切れの分類 (log の形を測ってから)
-- [ ] テストと変異
+- [x] 要約への原因の行 (commit「feat(codex-fanout): 分類しない失敗の原因の候補を要約に出す」)
+- [ ] クレジット切れの分類 (log の形を測ってから) — 未着手。本物のクレジット切れの log・events をまだ取れていない。取れたら `credits` の分類と、空でない `cause` を一律「利用上限」と出す分岐の分割を同じ変更で行う
+- [x] テストと変異
+
+## 結果 (2026-11-26)
+
+- 候補の行: `codex-fanout: 分類しなかった失敗の原因の候補 (…):` の見出しの下に `  <label>: <行>` を 1 run 1 行。stderr に出し、全滅・merger の失敗・digest が空・末尾の要約の 4 経路すべてで出す (`report_failure_causes`)。
+  `cause` 列・merger のプロンプトは変えない。時間切れ (rc=124) と上限に分類した run には出さない
+- 候補の選び方: log の最後の ERROR の塊の最後の行 (上限の判定と同じ `last_error_block` を共用) → -J なら `codex-events error-text <meta.json>` の文を " / " でつないだもの
+- `codex-events error-text` (新設): 文を持つ `error` (`.message`) / `turn.failed` (`.error.message`) の文を起きた順に 1 行ずつ (続けて同じ文は 1 行)。無ければ最初の `parse_errors`、無ければ `read_error`
+- 上限の判定の events 側を「events.jsonl のどこかの error / turn.failed の行に上限の語」から「`error-text` の最後の行に上限の語」へ変えた (テスト③の要件)
+- テスト: bats 3 本 (①全滅で候補 ②時間切れと ④プロンプトの echo だけの run で出さない、merger の失敗・digest 空・一部失敗の経路) + 上限の run に候補を出さない assert。Go: driver の `TestDriverJSONUnclassifiedFailureShowsCauseCandidate` (③ CASE_LIMIT_THEN_OTHER・CASE_LIMIT_THEN_GENERIC・CASE_QUOTED_MARK・CASE_FAIL) と `TestErrorTextListsEventMessagesInOrder`
+- 変異 (mutate-verify で全部想定の assert が red): 全滅の経路の report を消す / failure_hint の rc=124 の除外を消す / events の上限の判定を旧実装 (どこかの行) に戻す / 候補の順を events 優先にする / error-text の走査を先頭からにする / 台帳の `elif` を `if` にする (上限の run に候補が重なる) / error-text が最後の 1 行だけを出す / digest 空の経路の report を消す
+- 敵対的レビュー (opus) を 2 周。1 周目の P2 1 件・P3 7 件のうち、P2-1 (候補が汎用の文に隠れる)・P3-1 (meta.json を読めないことの握り潰し)・P3-2 (digest 空の経路)・P3-6 (入口の文書)・P3-7 (上限の run の候補のテスト) を直した
+
+## 未確認のリスク (敵対的レビューで出て、直していないもの)
+
+- **-J で error が上限の文、後の turn.failed が汎用の文 ("failure") だけを持つ形は、上限に分類しない** (候補には上限の文が残る)。旧実装は分類した。
+  判定は「codex exec の JSONL が最後の error の文を turn.failed にそのまま写す」という仮説 (upstream の実装の記憶。未実測) に立つ。仮説の下ではこの形は本物で起きない。
+  再提起の条件: 本物の -J の上限の run で turn.failed の文が error と違う events.jsonl。そのときは判定を「上限の文がどこかの行に在り、その後に別の具体的な原因が無い」に変える (`src/codexevents/errortext.go` の冒頭のコメントにも同じことを書いた)
+- 次の形では候補が出ないか、引用を候補に出す (どれも本物で起きるかは未実測): log が空行で終わる / CRLF / `ERROR: ` で始まらない致命的なエラー (`Error:` `error:`) / `{"type":"error","error":"文字列"}` / 124 以外で echo の直後に死んだ run (基点から上限の判定も同じ形)
+- 塊の最後が上限の行で、その前に別の原因の ERROR がある run は、上限の行を「分類しなかった失敗の候補」として出す (表示の見出しと中身がずれる)
+- meta.json を読めない run では `codex-events: <path>: …` が 1 run につき 2 回 stderr に出る (上限の判定と候補で 2 回呼ぶ)
+- 候補の 1 行は events の文の数に比例して伸びる (連続しない同じ文はまとめない。上限は付けていない)

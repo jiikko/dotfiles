@@ -41,6 +41,9 @@ if [ "$prompt" = CASE_SILENT_DEATH ]; then printf 'user\nこれを直して:\nER
 if [ "$prompt" = CASE_LIMIT_STDERR ]; then echo "ERROR: You've hit your usage limit. try again at Oct 10th" >&2; exit 1; fi
 # 上限の文字列はコマンドの出力にあるだけで、失敗は上限ではない
 if [ "$prompt" = CASE_QUOTED_FAIL ]; then echo '{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"ERROR: You\u2019ve hit your usage limit."}}'; echo '{"type":"turn.failed","error":{"message":"failure"}}'; exit 9; fi
+# 上限の文の error の後に、別の原因の turn.failed / 汎用の文だけの turn.failed が続く
+if [ "$prompt" = CASE_LIMIT_THEN_GENERIC ]; then echo '{"type":"error","message":"You\u2019ve hit your usage limit. try again at Oct 10th"}'; echo '{"type":"turn.failed","error":{"message":"failure"}}'; exit 1; fi
+if [ "$prompt" = CASE_LIMIT_THEN_OTHER ]; then echo '{"type":"error","message":"You\u2019ve hit your usage limit. try again at Oct 10th"}'; echo '{"type":"turn.failed","error":{"message":"Your workspace is out of credits."}}'; exit 1; fi
 if [ "$prompt" = CASE_FAIL ]; then echo '{"type":"turn.failed","error":{"message":"failure"}}'; exit 9; fi
 exit 0
 `
@@ -297,6 +300,30 @@ func TestDriverJSONUsageLimitIgnoresAppendedBodyAndSilentDeath(t *testing.T) {
 		}
 		if strings.Contains(d.read("out/runs.tsv"), "usage_limit") {
 			t.Errorf("%s: 上限でない失敗を上限と読んだ: %q", c, d.read("out/runs.tsv"))
+		}
+	}
+}
+
+// 分類しなかった失敗は、原因の候補を要約に出す。events は文を持つ最後のイベントで上限かを読み (上限の文の後に別の原因が続く run を上限にしない)、
+// 候補には events の文を全部出す (後のイベントが汎用の文だけでも、前の具体的な文が残る)。
+// stderr の最後の ERROR の行があれば、汎用の "failure" しか持たない events より先にそちらを出す
+func TestDriverJSONUnclassifiedFailureShowsCauseCandidate(t *testing.T) {
+	for _, c := range []struct{ name, want string }{
+		{"CASE_LIMIT_THEN_OTHER", "  ro: You’ve hit your usage limit. try again at Oct 10th / Your workspace is out of credits."},
+		{"CASE_LIMIT_THEN_GENERIC", "  ro: You’ve hit your usage limit. try again at Oct 10th / failure"},
+		{"CASE_QUOTED_MARK", "  ro: ERROR: stream disconnected before completion"},
+		{"CASE_FAIL", "  ro: failure"},
+	} {
+		d := newDriver(t)
+		rc, out := d.invoke(c.name, "ro", "-J")
+		if rc != 1 {
+			t.Fatalf("%s: rc=%d %s", c.name, rc, out)
+		}
+		if strings.Contains(d.read("out/runs.tsv"), "usage_limit") || strings.Contains(out, "利用上限") {
+			t.Errorf("%s: 上限と読んだ: runs.tsv=%q out=%s", c.name, d.read("out/runs.tsv"), out)
+		}
+		if !strings.Contains(out, "失敗の原因の候補") || !strings.Contains(out, c.want+"\n") {
+			t.Errorf("%s: 候補 %q が要約に無い: %s", c.name, c.want, out)
 		}
 	}
 }

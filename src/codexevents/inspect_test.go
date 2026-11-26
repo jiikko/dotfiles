@@ -163,3 +163,36 @@ func TestInspectMain(t *testing.T) {
 		t.Errorf("引数の誤りで rc=%d", rc)
 	}
 }
+
+// error-text: 文を持つ error / turn.failed を順に (続けて同じ文は 1 行)。無ければ最初の parse_errors、無ければ read_error
+func TestErrorTextListsEventMessagesInOrder(t *testing.T) {
+	dir := t.TempDir()
+	at := func(n string) string { return filepath.Join(dir, n) }
+	cases := []struct {
+		name, events string
+		rc           int
+		want         string
+	}{
+		{"起きた順に並べ、改行は畳む", `{"type":"error","message":"limit"}` + "\n" + `{"type":"turn.failed","error":{"message":"out of\ncredits"}}`, 0, "limit\nout of credits\n"},
+		{"文の無いイベントは飛ばし、続けて同じ文は 1 行", `{"type":"error","message":"limit"}` + "\n" + `{"type":"turn.failed"}` + "\n" + `{"type":"turn.failed","error":{"message":"limit"}}` + "\n" + `{"type":"turn.failed","error":{"message":" "}}`, 0, "limit\n"},
+		{"文が無ければ parse の失敗", `{"type":"turn.failed","error":{}}` + "\nnot json\n", 0, "events の 2 行目を読めない: "},
+		{"失敗が無ければ何も出さない", `{"type":"turn.completed"}`, 1, ""},
+	}
+	for _, c := range cases {
+		must(t, os.WriteFile(at("ev"), []byte(c.events), 0o644))
+		var stderr, stdout strings.Builder
+		run([]string{"inspect", at("ev"), at("missing"), at("meta.json"), at("log")}, &stderr, &stderr)
+		rc := run([]string{"error-text", at("meta.json")}, &stdout, &stderr)
+		if rc != c.rc || !strings.HasPrefix(stdout.String(), c.want) || (strings.HasSuffix(c.want, "\n") && stdout.String() != c.want) || (c.want == "" && stdout.String() != "") {
+			t.Errorf("%s: rc=%d out=%q (want rc=%d %q) stderr=%s", c.name, rc, stdout.String(), c.rc, c.want, stderr.String())
+		}
+	}
+	var stderr, stdout strings.Builder
+	run([]string{"inspect", at("none"), at("missing"), at("m2.json"), at("log")}, &stderr, &stderr)
+	if rc := run([]string{"error-text", at("m2.json")}, &stdout, &stderr); rc != 0 || !strings.HasPrefix(stdout.String(), "events か応答を読めない: ") {
+		t.Errorf("read_error: rc=%d out=%q", rc, stdout.String())
+	}
+	if rc := run([]string{"error-text", at("absent.json")}, &stdout, &stderr); rc != 2 {
+		t.Errorf("読めない meta.json で rc=%d", rc)
+	}
+}

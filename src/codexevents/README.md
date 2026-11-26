@@ -6,7 +6,11 @@
 ```sh
 codex-events inspect <events.jsonl> <最後の応答のファイル> <meta.json> <log>   # 完了なら rc=0、未完了・読めないなら 1
 codex-events is-object <file>                                                    # JSON のオブジェクトなら rc=0
+codex-events error-text <meta.json>                                              # 失敗の原因の文を起きた順に。無ければ rc=1
 ```
+
+`error-text` は、文を持つ `error` (`.message`) / `turn.failed` (`.error.message`) のイベントの文を起きた順に 1 行ずつ出す (続けて同じ文は 1 行)。
+無ければ最初の `parse_errors`、無ければ `read_error` を 1 行出す。codex-fanout は最後の行で利用上限かを判定し、分類しなかった失敗では全部の行を原因の候補として要約に出す。
 
 スクリプトからは `bin/lib/codex_events.sh` の `codex_events_resolve` で起動時に 1 回だけ解決し、`"$CODEX_EVENTS"` で呼ぶ
 (理由は `bin/lib/go_tool.sh` の冒頭)。

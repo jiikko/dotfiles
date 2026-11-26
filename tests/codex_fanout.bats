@@ -40,6 +40,11 @@ if [[ "$prompt" == *LIMIT_MARKER* ]]; then
   printf 'tokens used\n96,277\n' >&2
   exit 1
 fi
+if [[ "$prompt" == *CREDITS_MARKER* ]]; then
+  # 分類しない失敗 (クレジット切れ)。codex が stderr の最後に自分の ERROR の行を出して落ちる形を模す (本物の形は未実測)
+  echo "ERROR: Your workspace is out of credits." >&2
+  exit 1
+fi
 if [[ "$prompt" == *MIXED_MARKER* ]]; then
   # codex の発言が上限の行の引用で終わり、直後に別の原因の ERROR で落ちる
   printf 'codex\nERROR: You’ve hit your usage limit. try again at Oct 10th, 2026 7:29 AM.\nERROR: stream disconnected before completion\n' >&2
@@ -172,6 +177,8 @@ EOS
   [[ "$output" == *"codex の利用上限で失敗した run: 1 本"*"try again at Oct 10th"* ]]
   grep -qF -- "- lim:rc=1(利用上限)" "$WORK/out_lim/merger.prompt.md"
   grep -qxF -- "- bad:rc=1" "$WORK/out_lim/merger.prompt.md"
+  # 上限に分類した run は原因の候補に重ねて出さない
+  [[ "$output" != *"  lim: "* ]]
 }
 
 @test "上限以外の失敗には上限の注記を出さない (issue 762)" {
@@ -244,6 +251,52 @@ EOS
   [ "$status" -eq 1 ]
   [[ "$output" == *"全 2 本が失敗"* ]]
   [[ "$output" == *"codex の利用上限で失敗した run: 2 本"* ]]
+}
+
+@test "全滅が分類しない原因によるものなら、全滅の要約に原因の候補を run ごとに出し、cause は - のまま (issue 1110)" {
+  printf 'CREDITS_MARKER\n' >"$WORK/brief_credits.md"
+  printf 'x\tro\tm1\thigh\t%s\ny\tro\tm1\thigh\t%s\n' "$WORK/brief_credits.md" "$WORK/brief_credits.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_credits"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"全 2 本が失敗"* ]]
+  [[ "$output" == *"失敗の原因の候補"* ]]
+  [[ "$output" == *"  x: ERROR: Your workspace is out of credits."* ]]
+  [[ "$output" == *"  y: ERROR: Your workspace is out of credits."* ]]
+  [[ "$output" != *"利用上限で失敗した run"* ]]
+  [ "$(awk -F'\t' '$1=="x"{print $2 "/" $7}' "$WORK/out_credits/runs.tsv")" = "1/-" ]
+}
+
+@test "merger の失敗と一部失敗の末尾の要約でも原因の候補を出す (issue 1110)" {
+  printf 'CREDITS_MARKER\n' >"$WORK/merger_credits.md"
+  printf 'CREDITS_MARKER\n' >"$WORK/brief_credits.md"
+  printf 'a\tro\tm1\thigh\t%s\nb\tro\tm1\thigh\t%s\n' "$WORK/brief_ok.md" "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger_credits.md" "$WORK/m.tsv" "$WORK/out_mcred"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"merger が失敗"* ]]
+  [[ "$output" == *"  merger: ERROR: Your workspace is out of credits."* ]]
+  printf 'a\tro\tm1\thigh\t%s\nc\tro\tm1\thigh\t%s\n' "$WORK/brief_ok.md" "$WORK/brief_credits.md" >"$WORK/m2.tsv"
+  run "$DRIVER" -M "$WORK/m2.tsv" "$WORK/out_pcred"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"  c: ERROR: Your workspace is out of credits."* ]]
+  # merger が exit 0 で digest が空のときも、失敗した run の候補を出す
+  run "$DRIVER" -m "$WORK/merger_empty.md" "$WORK/m2.tsv" "$WORK/out_ecred"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"digest が空"* ]]
+  [[ "$output" == *"  c: ERROR: Your workspace is out of credits."* ]]
+}
+
+@test "時間切れの run の log が ERROR の行で終わっていても、プロンプトの echo にだけ同じ文言がある run でも、原因の候補を出さない (issue 1110)" {
+  printf 'CMDOUT_MARKER CMDOUT_HANG\n' >"$WORK/brief_cmd_hang.md"
+  printf 'FAIL_MARKER\nERROR: Your workspace is out of credits.\n' >"$WORK/brief_echo.md"
+  printf 'good\tro\tm1\thigh\t%s\nhang\tro\tm1\thigh\t%s\t2\necho\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_cmd_hang.md" "$WORK/brief_echo.md" >"$WORK/m.tsv"
+  run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_nohint"
+  [ "$status" -eq 2 ]
+  # 前提: 時間切れの run の log の最後の行は ERROR の行で、echo の run の log には同じ文言が残っている
+  [ "$(awk -F'\t' '$1=="hang"{print $2}' "$WORK/out_nohint/runs.tsv")" = 124 ]
+  tail -1 "$WORK/out_nohint/hang.log" | grep -q "^ERROR: "
+  grep -q "out of credits" "$WORK/out_nohint/echo.log"
+  [[ "$output" != *"原因の候補"* ]]
 }
 
 @test "全滅: merger を回さず exit 1" {
