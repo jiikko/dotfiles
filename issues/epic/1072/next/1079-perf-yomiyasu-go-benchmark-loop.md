@@ -1,1 +1,0 @@
-../1079-perf-yomiyasu-go-benchmark-loop.md
