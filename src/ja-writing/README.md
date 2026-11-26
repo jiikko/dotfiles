@@ -526,6 +526,7 @@ dotfiles では `_claude/settings.json` の 5 つのイベント (本家の `--p
 
 ```sh
 make -C src/ja-writing lint test    # CI と同じ (Python は動かさない)
+./norace_tests.sh                   # test の後半だけ: `//go:build !race` のファイルのテストを集めて race なしで回す (--help に rc の意味)
 make -C src/ja-writing golden       # 記録を作り直す (Python と ネットワークが要る。UPDATE=1 で環境の違いを許す)
                                     #   TMPDIR は、上に .git・.yomiyasu-words・.yomiyasu が無い場所に向ける (repo の中の tmp/ は使えない)
 go run ./oracle/cmd/golden -only check-base   # check の部品の関数の記録 (check-base.json。約 5 秒)。-only casemap は大文字小文字の表 (internal/pyunicode/case_gen.go) と casemap.json
