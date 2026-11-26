@@ -50,6 +50,8 @@ bench/pybench.sh -n 5 -g before=<dir>/jw-before -g after=<dir>/jw-after <入力�
 - pprof で lint の内訳を見るときは `lint/lint_bench_test.go` の `BenchmarkLintFile` (`JA_WRITING_BENCH_FILE` に入力を渡す)。
   繰り返す in-process の計測では、プロセスごとに 1 回だけ払う準備 (正規表現の compile) が償却されて見えない。
   そこで 1 回目だけのプロファイルを、プロセスを分けて集める (`-test.benchtime 1x` を何回も打ち、`go tool pprof` に全部を渡す)
+- diff と check の内訳は `diff/diff_bench_test.go` の `BenchmarkDiffPair` (`JA_WRITING_BENCH_BEFORE` と `JA_WRITING_BENCH_AFTER` に組の入力を渡す)。
+  check は diff と lint を子のプロセスとして起こすので、check を in-process で測っても子の分は見えない。check の所要の大半は diff なので、こちらで見る
 
 ## 実際の文書で答えの一致と所要を比べる (`docbench.py`)
 
