@@ -36,7 +36,7 @@ bench/pybench.sh [-n <周の数>] <入力の dir> <結果の dir>   # 周の数�
 ## Go と比べる (`pybench.sh -g`)
 
 ```sh
-go build -o <dir>/jw-before . ; (直す) ; go build -o <dir>/jw-after .
+git worktree add --detach <wt> <直す前の commit> && (cd <wt>/src/ja-writing && go build -o <dir>/jw-before .)  # 直した後も commit から同じ形で作る
 bench/pybench.sh -n 5 -g before=<dir>/jw-before -g after=<dir>/jw-after <入力の dir> <結果の dir>
 ```
 
@@ -45,6 +45,9 @@ bench/pybench.sh -n 5 -g before=<dir>/jw-before -g after=<dir>/jw-after <入力�
 - `runs.tsv` には stdout と stderr の SHA-256 も残す。Go のケースの stdout・stderr が本家の同名のケースと 1 周でも違うと、`summarize.py` が rc 1 で落ちる。
   答えの一致の正本は `make test` の記録の比べで、これは計測の入力で答えがずれていないことの確かめ
 - 同じバイナリを 2 つの名前で渡すと、同じコードでの揺れが分かる。揺れはケースごとに違う (1 周で 2〜13%) ので、比べる run に毎回入れる
+- この揺れは、別々にビルドしたバイナリどうしの差 (同じコードでも 1〜4%) を含まない。前の周と比べるときは、別のビルドも対照に入れる。
+  対象の経路のコードが前の周と同じビルド (戻した直しのバイナリなど) で、その組の比も並べて読む (1079 の 6 周目)
+- バイナリは作業ツリーではなく commit から作る。作業ツリーで作ると、当てたままのパッチが混ざる
 - 比べるのは `python3 -I bench/compare.py <runs.tsv> <after> <before> [<揺れ a> <揺れ b>]`。ケースごとに中央値の比・after が速かった周の数・揺れの比を出し、
   比が揺れの帯の外で過半数の周で同じ向きなら「速い」「遅い」と出す。起動を引いた値は使わない (準備を起動の側へ移すと、全体は変わらないのに速く見える)
 - pprof で lint の内訳を見るときは `lint/lint_bench_test.go` の `BenchmarkLintFile` (`JA_WRITING_BENCH_FILE` に入力を渡す)。
