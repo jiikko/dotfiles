@@ -91,7 +91,9 @@ type Model struct {
 	// unsub は d で購読を外すか確かめているチャンネルの ID (確かめていなければ空)。チャンネルは ID で持つ
 	// (確かめている間に読み直し・購読の保存でタブの番号がずれても、別のチャンネルを外さない)
 	unsub string
-	w, h  int
+	// reloadAll は R で全部を読み直すか確かめているか (全部を期間全体から取り直すので時間がかかる。確認の板を挟む)
+	reloadAll bool
+	w, h      int
 	// toast は右下に数秒出す知らせ (読み直しの始まりと終わり・開けなかった・読み込み中で読み直せない等)。中立の知らせ (ShowInfo) は
 	// 既定の水色が背景が青い端末で沈むので (style.go の色の約束)、端末の文字色 (toastInfoColor) で出す
 	toast toast.Stack
@@ -317,6 +319,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.unsub = ""
 			m.toast.Show("購読を外すのをやめた (購読の画面を開いた)", false)
 		}
+		if m.reloadAll {
+			m.reloadAll = false // 購読を外す確認と同じく、隠れた確認に購読の画面のキーで答えさせない
+			m.toast.Show("全部の読み直しをやめた (購読の画面を開いた)", false)
+		}
 		m.picker = msg.p
 		return m, m.startFetch()
 	case subs.LastPostMsg:
@@ -335,6 +341,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true // どの画面 (購読の画面・検索の欄の中) からでも、すぐ終わる (TUI ガイド §1)
 		case m.unsub != "":
 			cmd = m.confirmUnsubscribe(msg.String())
+		case m.reloadAll:
+			cmd = m.confirmReloadAll(msg.String())
 		case m.picker != nil:
 			cmd = m.pickKey(msg.String(), msg.Text)
 		default:
@@ -557,25 +565,12 @@ func (m *Model) key(k string) tea.Cmd {
 		}
 		return m.reload(oi)
 	case "R":
-		var cmds []tea.Cmd
-		busy := 0
-		for i := range m.chans {
-			if m.chans[i].loading {
-				busy++
-				continue
-			}
-			cmds = append(cmds, m.reload(i))
+		if !slices.ContainsFunc(m.chans, func(c chanState) bool { return !c.loading }) {
+			m.toast.Show(allLoadingNote, false)
+			return nil
 		}
-		// 始めたことはチャンネルごとでなく 1 枚で知らせる (reload が出した 1 枚ずつの知らせは、中立の知らせが次の知らせで退くので残らない)
-		switch {
-		case busy == len(m.chans):
-			m.toast.Show("どのチャンネルも読み込み中なので、読み直せない (終わってからもう一度押す)", false)
-		case busy > 0:
-			m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています… (読み込み中の %d チャンネルは読み直さない)", len(cmds), busy))
-		default:
-			m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています…", len(cmds)))
-		}
-		return tea.Batch(cmds...)
+		m.reloadAll = true
+		return nil
 	case "tab", "shift+tab":
 		d := 1
 		if k == "shift+tab" {
@@ -979,9 +974,16 @@ func (m *Model) Lines() []string {
 		// 小さい端末の画面は 1 行なので板が収まらない。問いと答え方を 1 行で出す
 		return []string{termwidth.Truncate(m.chans[i].ch.Label()+unsubVerb(m.chans[i].ch)+"？ y/Enter: はい  その他: やめる", max(m.w, 1), "…")}
 	}
+	if m.reloadAll && m.tiny() {
+		return []string{termwidth.Truncate("全部のチャンネルを読み直す？ y/Enter: はい  その他: やめる", max(m.w, 1), "…")}
+	}
 	if i := m.unsubIndex(); i >= 0 {
 		box := confirm.Dialog(" 購読を外す ", append([]string{m.chans[i].ch.Label()}, unsubBody(m.chans[i].ch)...), confirm.HintYesNo, m.w, true)
 		lines = layout.OverlayCentered(lines, box, m.w, len(lines), true)
+	}
+	if m.reloadAll {
+		body := []string{fmt.Sprintf("%d チャンネルの発言を、期間全体から", len(m.chans)), "取り直します。スレッドの多いチャンネルでは", "時間がかかります。読み直しますか？"}
+		lines = layout.OverlayCentered(lines, confirm.Dialog(" 全部を読み直す ", body, confirm.HintYesNo, m.w, true), m.w, len(lines), true)
 	}
 	if box := m.toast.BoxLines(true, max(len(lines)-1-helpRows, 1), m.w); len(box) > 0 && len(lines) > len(box)+helpRows {
 		lines = layout.OverlayRight(lines, box, m.w, true, len(lines)-helpRows-len(box)) // キーの案内の上
@@ -1347,6 +1349,36 @@ func (m *Model) confirmUnsubscribe(k string) tea.Cmd {
 		m.toast.Show(gone.Label()+" の購読を外した (s でまた付けられる)", true)
 	}
 	return cmd
+}
+
+const allLoadingNote = "どのチャンネルも読み込み中なので、読み直せない (終わってからもう一度押す)"
+
+// confirmReloadAll は全部を読み直す確認の板のキー: y / Enter で読み込み中でないチャンネルを全部読み直し、それ以外は取り消す。
+func (m *Model) confirmReloadAll(k string) tea.Cmd {
+	m.reloadAll = false
+	if !confirm.IsYes(k) {
+		m.toast.Show("全部の読み直しをやめた", true)
+		return nil
+	}
+	var cmds []tea.Cmd
+	busy := 0
+	for i := range m.chans {
+		if m.chans[i].loading {
+			busy++
+			continue
+		}
+		cmds = append(cmds, m.reload(i))
+	}
+	// 始めたことはチャンネルごとでなく 1 枚で知らせる (reload が出した 1 枚ずつの知らせは、中立の知らせが次の知らせで退くので残らない)
+	switch {
+	case len(cmds) == 0:
+		m.toast.Show(allLoadingNote, false)
+	case busy > 0:
+		m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています… (読み込み中の %d チャンネルは読み直さない)", len(cmds), busy))
+	default:
+		m.toast.ShowInfo(fmt.Sprintf("%d チャンネルを読み直しています…", len(cmds)))
+	}
+	return tea.Batch(cmds...)
 }
 
 // selKey は選んだ話題の鍵 (持ち主のタブの ID と最初の単位の ID。reselect に渡す)。選んでいなければ空。

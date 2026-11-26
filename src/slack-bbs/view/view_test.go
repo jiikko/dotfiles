@@ -112,6 +112,7 @@ func TestLoadsLazilyAndReloadScope(t *testing.T) {
 		t.Fatalf("r は今のチャンネルだけ: %v", l.calls)
 	}
 	run(m, press(m, "R"))
+	run(m, press(m, "y"))
 	if l.calls["C1"] != 3 || l.calls["C2"] != 2 {
 		t.Fatalf("R は全部: %v", l.calls)
 	}
@@ -137,6 +138,7 @@ func TestReloadAllSkipsLoading(t *testing.T) {
 	m := newModel(l)
 	pending := m.Init() // C1 は読み込み中のまま
 	run(m, press(m, "R"))
+	run(m, press(m, "y"))
 	if l.calls["C1"] != 0 || l.calls["C2"] != 1 {
 		t.Errorf("R が読み込み中の C1 も読んだ: %v", l.calls)
 	}
@@ -705,6 +707,55 @@ func TestUnsubscribeConfirmVsPickerAndTiny(t *testing.T) {
 	press(m, "d")
 	if lines := m.Lines(); len(lines) != 1 || !strings.Contains(lines[0], "購読を外す？") || !strings.Contains(lines[0], "y/Enter") {
 		t.Errorf("小さい端末の確認: %q", lines)
+	}
+}
+
+// R は全部を期間全体から取り直すので、確認の板で確かめてから読み直す。y / Enter で読み込み中でないチャンネルを全部読み直し、
+// それ以外のキーは何も読まずに取り消す。確かめている間に購読の画面が開いたら確かめるのをやめ、小さい端末では問いを 1 行で出す。
+func TestReloadAllAsksFirst(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	m := newModel(l)
+	run(m, m.Init())
+	press(m, "R")
+	if screen := sgrRe.ReplaceAllString(strings.Join(m.Lines(), "\n"), ""); !strings.Contains(screen, "全部を読み直す") || !strings.Contains(screen, "時間がかかります") {
+		t.Fatalf("確認の板が出ない:\n%s", screen)
+	}
+	if l.calls["C1"] != 1 || l.calls["C2"] != 0 {
+		t.Fatalf("確かめる前に読み直した: %v", l.calls)
+	}
+	press(m, "n")
+	if l.calls["C1"] != 1 || l.calls["C2"] != 0 || strings.Contains(strings.Join(m.Lines(), "\n"), "全部を読み直す") {
+		t.Fatalf("取り消したのに読み直した・板が残った: %v", l.calls)
+	}
+	press(m, "R")
+	run(m, press(m, "enter"))
+	if l.calls["C1"] != 2 || l.calls["C2"] != 1 {
+		t.Fatalf("Enter で全部を読み直していない: %v", l.calls)
+	}
+
+	m.Update(tea.WindowSizeMsg{Width: MinWidth, Height: MinHeight - 1})
+	press(m, "R")
+	if lines := m.Lines(); len(lines) != 1 || !strings.Contains(lines[0], "全部のチャンネルを読み直す？") || !strings.Contains(lines[0], "y/Enter") {
+		t.Errorf("小さい端末の確認: %q", lines)
+	}
+	press(m, "q")
+}
+
+// R の確認の板が出ている間に購読の画面が開いたら、確かめるのをやめる (隠れた確認に購読の画面の Enter・y で答えさせない)。
+func TestReloadAllConfirmVsPicker(t *testing.T) {
+	l := &loader{calls: map[string]int{}}
+	var saved [][]subs.Channel
+	opened := 0
+	m := subsModel(l, &saved, &opened)
+	run(m, m.Init())
+	pending := press(m, "s")
+	press(m, "R")
+	run(m, pending)
+	if m.picker == nil {
+		t.Fatal("購読の画面が開かない")
+	}
+	if m.reloadAll || !strings.Contains(m.LastToast(), "全部の読み直しをやめた") {
+		t.Errorf("購読の画面が開いても全部の読み直しを確かめ続けている: reloadAll=%v 知らせ %q", m.reloadAll, m.LastToast())
 	}
 }
 

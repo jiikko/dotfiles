@@ -175,7 +175,8 @@ func TestReloadAllToasts(t *testing.T) {
 	l := &loader{calls: map[string]int{}}
 	m := newModel(l)
 	pending := m.Init() // C1 は読み込み中
-	press(m, "R")       // C2 を読み直す。結果を渡さないので、C1 も C2 も読み込み中のまま
+	press(m, "R")
+	press(m, "y") // C2 を読み直す。結果を渡さないので、C1 も C2 も読み込み中のまま
 	if got := m.LastToast(); got != "1 チャンネルを読み直しています… (読み込み中の 1 チャンネルは読み直さない)" {
 		t.Errorf("一部が読み込み中の R の知らせ = %q", got)
 	}
