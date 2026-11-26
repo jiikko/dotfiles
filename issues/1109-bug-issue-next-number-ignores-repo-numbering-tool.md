@@ -28,7 +28,7 @@ obaket は `issues/` と `macOS/issues/` で番号を共有し、採番は `bin/
 - テスト: 一時の repo に偽の `bin/next-issue-number` を置いて、番号を出さず案内して rc≠0 になること (偽のコマンドが実行されないこと) / 入れ子の `x/issues/` があれば警告が出ること / どちらも無ければ今までどおり数えること、の 3 本。
   変異で断る分岐を外して red を見る
 - 関連して見つけたもの (この issue の外): obaket の `.claude/rules/issue-placement.md` に、採番の説明として「3 桁ちょうど」「自分の作業ツリーだけ」が残っている。
-  `bin/next-issue-number` は 3 桁以上を数え、origin の ref も数える。obaket 側で直す
+  `bin/next-issue-number` は 3 桁以上を数え、origin の ref も数える。2026-11-26 に obaket の commit「docs(rules): issue-placement の採番の説明を bin/next-issue-number の今の挙動に合わせる」で直した
 
 ## 進捗
 
