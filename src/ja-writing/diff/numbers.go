@@ -340,7 +340,8 @@ func hourWordBefore(text []rune, start int) bool {
 
 // kanjiExcludedRepl は kanjiExcluded に当たった語を同じ長さの「＃」にする。「十分」は、直前が漢数字 (三十分) か、あとが「間」(十分間) なら残す。
 // ただし「十分間に合う」の「間」は十分間にしない。「一時」は時刻 (十一時、午前一時) のときだけ残す。
-func kanjiExcludedRepl(text []rune) func(*pyre.Match) string {
+func kanjiExcludedRepl(nt ctext) func(*pyre.Match) string {
+	text := nt.rs
 	return func(m *pyre.Match) string {
 		word := runeSlice(text, m.Start(0), m.End(0))
 		start, end := m.Start(0), m.End(0)
@@ -349,7 +350,7 @@ func kanjiExcludedRepl(text []rune) func(*pyre.Match) string {
 				(hasPrefixAt(text, end, "間") && !hasPrefixAt(text, end, "間に合")) {
 				return word
 			}
-			hour, err := kanjiHourBefore.Get().Search(runesText(text), max(0, start-kanjiChainReach), start)
+			hour, err := kanjiHourBefore.Get().Search(nt.t, max(0, start-kanjiChainReach), start)
 			if err != nil {
 				panic(err)
 			}
@@ -374,16 +375,17 @@ func kanjiExcludedRepl(text []rune) func(*pyre.Match) string {
 	}
 }
 
-// kanjiBeforeOK は kanjiText の start から始まる漢数字を、直前の字で数として取るか。直前が漢字でないか、kanjiBefore の字か、直前の 2 字が元号などの語か、
+// kanjiBeforeOK は nt の並びの start から始まる漢数字を、直前の字で数として取るか。直前が漢字でないか、kanjiBefore の字か、直前の 2 字が元号などの語か、
 // 漢数字に続いた助数詞 (kanjiChain) なら取る。
-func kanjiBeforeOK(text []rune, start int) bool {
+func kanjiBeforeOK(nt ctext, start int) bool {
+	text := nt.rs
 	if start == 0 || !isKanjiChar(text[start-1]) || strings.ContainsRune(kanjiBefore, text[start-1]) {
 		return true
 	}
 	if kanjiBeforeWords[runeSlice(text, max(0, start-2), start)] {
 		return true
 	}
-	m, err := kanjiChain.Get().Search(runesText(text), max(0, start-kanjiChainReach), start)
+	m, err := kanjiChain.Get().Search(nt.t, max(0, start-kanjiChainReach), start)
 	if err != nil {
 		panic(err)
 	}
@@ -412,9 +414,10 @@ func wholePeriod(text []rune, start int, counter string) bool {
 }
 
 // kanjiHeadOK は kanjiRangeHead に当たった、範囲や並べの前の漢数字を数として取るか。
-func kanjiHeadOK(text []rune, head *pyre.Match, taken [][2]int, found []number) (string, bool) {
+func kanjiHeadOK(nt ctext, head *pyre.Match, taken [][2]int, found []number) (string, bool) {
+	text := nt.rs
 	start := head.Start(1)
-	if !kanjiBeforeOK(text, start) {
+	if !kanjiBeforeOK(nt, start) {
 		return "", false
 	}
 	for _, t := range taken {
@@ -431,7 +434,8 @@ func kanjiHeadOK(text []rune, head *pyre.Match, taken [][2]int, found []number) 
 }
 
 // kanaNumberOK は kanaNumber に当たった平仮名の数を、前後の字で数として取るか。
-func kanaNumberOK(text []rune, m *pyre.Match) bool {
+func kanaNumberOK(nt ctext, m *pyre.Match) bool {
+	text := nt.rs
 	word, _ := m.Group(0)
 	end := m.End(0)
 	strict := kanaNumberStrict[word]
@@ -451,7 +455,7 @@ func kanaNumberOK(text []rune, m *pyre.Match) bool {
 	if end == len(text) || !isHiraganaChar(text[end]) {
 		return true
 	}
-	if mustMatch(kanaNumberNotNext, runesText(text), end) != nil {
+	if mustMatch(kanaNumberNotNext, nt.t, end) != nil {
 		return false
 	}
 	return !strict || hasAnyPrefixAt(text, end, kanaNumberNextStrict)
@@ -557,7 +561,8 @@ func findNumbers(text []rune, a *visibility.Analysis, maskedKinds map[string]boo
 // findNumbersWith は単位の正規表現 units を指定する findNumbers (本家の _find_numbers の unit_pattern。資料との照合は秒の書き方を足した groundUnit を渡す)。
 func findNumbersWith(text []rune, a *visibility.Analysis, maskedKinds map[string]bool, units *pyre.Lazy) []number {
 	masked := numberMask(text, a, maskedKinds)
-	t := runesText(masked)
+	mt := ctextOfRunes(masked)
+	t := mt.t
 	var found []number
 	var taken [][2]int
 	arabics, err := arabicNumber.Get().Finditer(t, 0, pyre.NoEnd)
@@ -631,15 +636,16 @@ func findNumbersWith(text []rune, a *visibility.Analysis, maskedKinds map[string
 		}
 		found = append(found, number{start: m.Start(0), end: follow, value: plainNumber(strings.ReplaceAll(digits, ",", "")), unit: canon(unitText)})
 	}
-	kanjiRunes := pyunicode.Runes(mustSubFunc(kanjiExcluded, t, kanjiExcludedRepl(masked)))
-	kt := runesText(kanjiRunes)
+	kanjiRunes := pyunicode.Runes(mustSubFunc(kanjiExcluded, t, kanjiExcludedRepl(mt)))
+	k := ctextOfRunes(kanjiRunes)
+	kt := k.t
 	kanjis, err := kanjiNumber.Get().Finditer(kt, 0, pyre.NoEnd)
 	if err != nil {
 		panic(err)
 	}
 	for _, m := range kanjis {
 		counter, _ := m.Group(2)
-		if !kanjiBeforeOK(kanjiRunes, m.Start(0)) && (counter != "時" || !hourWordBefore(kanjiRunes, m.Start(0))) {
+		if !kanjiBeforeOK(k, m.Start(0)) && (counter != "時" || !hourWordBefore(kanjiRunes, m.Start(0))) {
 			continue
 		}
 		skip := false
@@ -671,7 +677,7 @@ func findNumbersWith(text []rune, a *visibility.Analysis, maskedKinds map[string
 			panic(err)
 		}
 		if head != nil {
-			if headValue, ok := kanjiHeadOK(kanjiRunes, head, taken, found); ok {
+			if headValue, ok := kanjiHeadOK(k, head, taken, found); ok {
 				found = append(found, number{start: head.Start(1), end: head.End(1), value: headValue})
 			}
 		}
@@ -690,7 +696,7 @@ func findNumbersWith(text []rune, a *visibility.Analysis, maskedKinds map[string
 		panic(err)
 	}
 	for _, m := range kanas {
-		if kanaNumberOK(kanjiRunes, m) {
+		if kanaNumberOK(k, m) {
 			word, _ := m.Group(0)
 			vu := kanaNumbers[word]
 			n := number{start: m.Start(0), end: m.End(0), value: vu[0], unit: vu[1]}

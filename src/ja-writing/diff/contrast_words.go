@@ -143,6 +143,13 @@ func newCtext(s string) ctext {
 	return ctext{s, pyunicode.Runes(s), pyre.NewText(s)}
 }
 
+// ctextOfRunes は並びから作る ctext (rs をそのまま持つ)。候補ごとに並び全体から照合の形を作り直すと、長い文書で候補の数 x 文書の長さの割り当てになるので、
+// 呼び出し元で 1 度だけ作って渡す。作った後に rs を書き換えない。
+func ctextOfRunes(rs []rune) ctext {
+	s := pyunicode.FromRunes(rs)
+	return ctext{s, rs, pyre.NewText(s)}
+}
+
 // sub は Python の text[a:b] (範囲の外は詰める。a・b は 0 以上)。
 func (c ctext) sub(a, b int) ctext { return newCtext(runeSlice(c.rs, a, b)) }
 
