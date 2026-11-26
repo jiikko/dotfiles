@@ -122,15 +122,18 @@ func TestDryRunCountsThreadsUnchangedSinceCachedBoard(t *testing.T) {
 }
 
 // グループの板では、単位の ID が "<チャンネル>/<ts>" になる。前回の板の単位は、メンバーのチャンネルと親の ts で突き合わせる
-// (2 つのメンバーで同じ ts のスレッドも別のものとして数える)。
+// (2 つのメンバーで同じ ts のスレッドも別のものとして数える)。親の本文の変化は数えず、変わった返信はそのチャンネルのスレッドだけで数える。
 func TestDryRunComparesGroupThreadsByMemberChannel(t *testing.T) {
 	since := now.Add(-48 * time.Hour).Unix()
 	at := ts(since + 10) // 2 つのチャンネルで同じ ts
 	parent := fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"親","reply_count":1,"latest_reply":%q}]`, at, at, ts(since+20))
+	thread := func(parentText, reply string) map[string]string {
+		return map[string]string{at: fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":%q},{"ts":%q,"thread_ts":%q,"user":"U1","text":%q}]`,
+			at, at, parentText, ts(since+20), at, reply)}
+	}
 	sl := &fakeSlack{
-		histByCh: map[string]string{"C1": parent, "C2": parent},
-		threads: map[string]string{at: fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"親"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"返信"}]`,
-			at, at, ts(since+20), at)},
+		histByCh:    map[string]string{"C1": parent, "C2": parent},
+		threadsByCh: map[string]map[string]string{"C1": thread("親", "返信"), "C2": thread("親", "返信")},
 	}
 	cl := &fakeClaude{out: claudeOut(fmt.Sprintf(`{"topics":[{"title":"話題","state":"info","theme":"other","members":["C1/%s","C2/%s"],"background":[],"labels":[]}]}`, at, at))}
 	d := newDeps(t, sl, cl)
@@ -153,9 +156,12 @@ func TestDryRunComparesGroupThreadsByMemberChannel(t *testing.T) {
 	if out := dry(); !strings.Contains(out, "スレッド 2 本") || !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 0 本) / 前回の板に無い 0 本") {
 		t.Errorf("グループのスレッドを前回の板と突き合わせていない:\n%s", out)
 	}
-	sl.threads[at] = fmt.Sprintf(`[{"ts":%q,"thread_ts":%q,"user":"U1","text":"親"},{"ts":%q,"thread_ts":%q,"user":"U1","text":"直した返信"}]`,
-		at, at, ts(since+20), at)
-	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 2 本)") {
-		t.Errorf("グループのスレッドの返信の本文の変化を数えていない:\n%s", out)
+	sl.threadsByCh["C1"] = thread("直した親", "返信")
+	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 0 本)") {
+		t.Errorf("グループのスレッドの親の本文の変化を数えた:\n%s", out)
+	}
+	sl.threadsByCh["C1"], sl.threadsByCh["C2"] = thread("親", "返信"), thread("親", "直した返信")
+	if out := dry(); !strings.Contains(out, "同じ 2 本 (うち返信の本文が変わった 1 本)") {
+		t.Errorf("グループの片方のチャンネルの返信の変化を 1 本と数えていない:\n%s", out)
 	}
 }

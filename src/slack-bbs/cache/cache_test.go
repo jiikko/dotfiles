@@ -24,7 +24,7 @@ func resp(ids ...string) board.Response {
 	return board.Response{Topics: []board.RespTopic{{Title: "t", State: board.StateInfo, Members: ids}}}
 }
 
-// 書いたものを読み戻せる。版の違うファイルは使わない (誤りではない)。置き場が空ならキャッシュしない。
+// 書いたものを読み戻せる。版の違うファイルは使わない (誤りではない。中身も返さない)。置き場が空ならキャッシュしない。
 func TestRoundTripAndVersion(t *testing.T) {
 	st := Store{Dir: filepath.Join(t.TempDir(), "c")}
 	us := units(board.Msg{Ts: "1.000000", Text: "a", New: true})
@@ -43,8 +43,16 @@ func TestRoundTripAndVersion(t *testing.T) {
 	if err := os.WriteFile(p, []byte(strings.Replace(string(b), fmt.Sprintf(`"version":%d`, Version), `"version":99`, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := st.LoadSummary("C1"); ok || err != nil {
-		t.Errorf("版の違う分類を使った: ok=%v err=%v", ok, err)
+	if sum, ok, err := st.LoadSummary("C1"); ok || err != nil || sum.Model != "" || len(sum.Basis) != 0 {
+		t.Errorf("版の違う分類を使った・中身を返した: ok=%v err=%v %+v", ok, err, sum)
+	}
+	rp := filepath.Join(st.Dir, "C1.raw.json")
+	b, _ = os.ReadFile(rp)
+	if err := os.WriteFile(rp, []byte(strings.Replace(string(b), fmt.Sprintf(`"version":%d`, Version), `"version":99`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok, err := st.LoadRaw("C1"); ok || err != nil || len(r.Units) != 0 || !r.SavedAt.IsZero() {
+		t.Errorf("版の違う発言を使った・中身を返した: ok=%v err=%v %+v", ok, err, r)
 	}
 	if _, ok, err := (Store{}).LoadRaw("C1"); ok || err != nil || (Store{}).SaveRaw("C1", Raw{}) != nil {
 		t.Errorf("置き場が空なのに読み書きした")
@@ -59,6 +67,13 @@ func TestLoadRejectsBrokenAndPathLikeID(t *testing.T) {
 	}
 	if _, ok, err := st.LoadRaw("C1"); ok || err == nil {
 		t.Errorf("壊れたファイル: ok=%v err=%v", ok, err)
+	}
+	// 欄の型が合わないと json.Unmarshal は他の欄を埋めたまま誤りを返す。埋まった分も返さない
+	if err := os.WriteFile(filepath.Join(st.Dir, "C1.raw.json"), []byte(fmt.Sprintf(`{"version":%d,"me":"U1","units":"x"}`, Version)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok, err := st.LoadRaw("C1"); ok || err == nil || r.Me != "" {
+		t.Errorf("型の合わないファイル: ok=%v err=%v me=%q", ok, err, r.Me)
 	}
 	if err := st.SaveRaw("../x", Raw{}); err == nil {
 		t.Errorf("パスの区切りを含む ID で書いた")

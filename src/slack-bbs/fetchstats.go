@@ -81,7 +81,6 @@ func compareFetch(f fetchStats, id string, units []board.Unit, st cache.Store) f
 	r := fetchReport{boards: 1, histMsgs: f.histMsgs, need: f.need, history: f.history, threads: f.threads, mentions: f.mentions,
 		noParent: f.need - len(f.marks)}
 	prev := map[[2]string]board.Unit{}
-	// LoadRaw は版が違う・JSON の型が合わないときも途中まで埋めた Raw を返すので、ok のときだけ単位を使う
 	switch raw, ok, err := st.LoadRaw(id); {
 	case err != nil:
 		r.prevErr = 1
