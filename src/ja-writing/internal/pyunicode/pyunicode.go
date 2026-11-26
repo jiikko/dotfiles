@@ -40,9 +40,23 @@ func Category(r rune) string {
 	return categoryNames[categoryRuns[i].index]
 }
 
+// lint は 1 字ごとに呼ぶので、sort.Search (比べるたびに closure を呼ぶ) を使わずに探す。表の両端の外は探さずに返す
+// (空白・改行の表は仮名や漢字より前で終わる)。DecimalValue と添字を返す関数に分けると、この関数が IsSpace などの呼び出し元へ
+// インライン展開されなくなり、lint-len-1024k で 1 回 473 ms → 490〜515 ms に遅くなった。分けるなら展開されることを go build -gcflags=-m で確かめる。
 func inRanges(rs []runeRange, r rune) bool {
-	i := sort.Search(len(rs), func(i int) bool { return rs[i].hi >= r })
-	return i < len(rs) && rs[i].lo <= r
+	if len(rs) == 0 || r < rs[0].lo || r > rs[len(rs)-1].hi {
+		return false
+	}
+	lo, hi := 0, len(rs)
+	for lo < hi {
+		m := int(uint(lo+hi) >> 1)
+		if rs[m].hi < r {
+			lo = m + 1
+		} else {
+			hi = m
+		}
+	}
+	return rs[lo].lo <= r
 }
 
 // IsSpace は Python の chr(r).isspace()。
