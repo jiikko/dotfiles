@@ -530,5 +530,103 @@ else
   fail "壊れた repo の一覧: rc=$rc (期待 2): $(cat "$work/wb.out" "$work/wb.err")"
 fi
 
+# 語の一覧を探す場所は、起動した cwd でなくファイルのフォルダ (hook の _claude/hooks/ja-textlint-on-edit.sh と同じ)。
+# fl は flag の語 (りんご) だけを持つ repo。own は allow の語 (土台) だけを持つ repo。out は一覧を持たない
+jw_part() { # <出力> <名前>: その名前の ja-writing lint の見出しから、次の見出しの手前までを出す
+  awk -v h="ja-writing lint: $2" '$0 == h { on = 1; next } /^ja-writing lint: / { on = 0 } on' "$1"
+}
+mkdir -p "$work/fl/.git" "$work/fl/.yomiyasu-words"
+printf 'りんご\n' >"$work/fl/.yomiyasu-words/flag.txt"
+printf '# 用語\n\nりんごを食べた。正本に書く。土台を作る。\n' >"$work/fl/x.md"
+cp "$work/fl/x.md" "$work/out/x.md"
+
+# cwd (out) と別の repo (fl・own) のファイル: ファイルの repo の一覧を使う
+rc=0
+(cd "$work/out" && "$BIN" "$work/fl/x.md" "$work/own/t.md") >"$work/wf.out" 2>"$work/wf.err" || rc=$?
+jw_part "$work/wf.out" "$work/fl/x.md" >"$work/wf.fl"
+jw_part "$work/wf.out" "$work/own/t.md" >"$work/wf.own"
+if [ "$rc" -eq 0 ] && jw_ran "$work/wf.out" "$work/fl/x.md" && jw_ran "$work/wf.out" "$work/own/t.md" \
+  && grep -qF 'project_term' "$work/wf.fl" && grep -qF 'りんご' "$work/wf.fl" && grep -qF '「正本」' "$work/wf.fl" \
+  && grep -qF '「正本」' "$work/wf.own" && ! grep -qF '「土台」' "$work/wf.own"; then
+  ok "cwd と別の repo のファイルには、ファイルの repo の .yomiyasu-words/ を使う (flag の語を指摘し、allow の語を指摘しない)"
+else
+  fail "別の repo のファイル: rc=$rc: $(cat "$work/wf.out" "$work/wf.err")"
+fi
+
+# cwd の repo (fl) に一覧があっても、別のフォルダのファイル (out。一覧なし) には当てず、dotfiles の一覧を渡す。
+# 同じ起動の中で、fl のファイルには fl の一覧を使う (確かめはフォルダごと)
+rc=0
+(cd "$work/fl" && "$BIN" "$work/out/x.md" x.md) >"$work/wc.out" 2>"$work/wc.err" || rc=$?
+jw_part "$work/wc.out" "$work/out/x.md" >"$work/wc.o"
+jw_part "$work/wc.out" x.md >"$work/wc.f"
+if [ "$rc" -eq 0 ] && jw_ran "$work/wc.out" "$work/out/x.md" && jw_ran "$work/wc.out" x.md \
+  && ! grep -qF 'project_term' "$work/wc.o" && ! grep -qF '「正本」' "$work/wc.o" && grep -qF '「土台」' "$work/wc.o" \
+  && grep -qF 'project_term' "$work/wc.f" && grep -qF '「正本」' "$work/wc.f"; then
+  ok "cwd の repo の一覧は別のフォルダのファイルに当てず、一覧の無いフォルダのファイルには dotfiles の一覧を渡す"
+else
+  fail "cwd の一覧と別のフォルダのファイル: rc=$rc: $(cat "$work/wc.out" "$work/wc.err")"
+fi
+
+# 相対パス (フォルダを含む) で渡したファイルも読めて、そのフォルダの一覧で検査される
+rc=0
+(cd "$work" && "$BIN" own/t.md ./fl/../fl/x.md) >"$work/wr.out" 2>"$work/wr.err" || rc=$?
+jw_part "$work/wr.out" own/t.md >"$work/wr.own"
+jw_part "$work/wr.out" ./fl/../fl/x.md >"$work/wr.fl"
+if [ "$rc" -eq 0 ] && jw_ran "$work/wr.out" own/t.md && jw_ran "$work/wr.out" ./fl/../fl/x.md \
+  && grep -qF '「正本」' "$work/wr.own" && ! grep -qF '「土台」' "$work/wr.own" && grep -qF 'project_term' "$work/wr.fl"; then
+  ok "相対パスで渡したファイルを読み、そのフォルダの一覧で検査する"
+else
+  fail "相対パスのファイル: rc=$rc: $(cat "$work/wr.out" "$work/wr.err")"
+fi
+
+# 標準入力の文は置き場所が無いので、起動した cwd (fl) の一覧で検査する
+rc=0
+(cd "$work/fl" && "$BIN" --stdin --stdin-filename s.md <x.md) >"$work/wsi.out" 2>"$work/wsi.err" || rc=$?
+if [ "$rc" -eq 0 ] && jw_ran "$work/wsi.out" s.md && grep -qF 'project_term' "$work/wsi.out"; then
+  ok "標準入力の文は起動した cwd の repo の一覧で検査する"
+else
+  fail "標準入力と cwd の一覧: rc=$rc: $(cat "$work/wsi.out" "$work/wsi.err")"
+fi
+
+# 改行で終わる名前のフォルダ: その名前のまま入る。改行を落とした名前の隣のフォルダ (nl。一覧なし) の答えを使わない
+nl="$work/nl"$'\n'
+mkdir -p "$work/nl" "$nl/.git" "$nl/.yomiyasu-words"
+printf 'りんご\n' >"$nl/.yomiyasu-words/flag.txt"
+cp "$work/fl/x.md" "$nl/x.md"
+rc=0
+(cd "$work/out" && "$BIN" "$nl/x.md") >"$work/wnl.out" 2>"$work/wnl.err" || rc=$?
+if [ "$rc" -eq 0 ] && grep -qF '表現・書式の検査を実行しました' "$work/wnl.out" && grep -qF 'project_term' "$work/wnl.out" && grep -qF '「正本」' "$work/wnl.out"; then
+  ok "改行で終わる名前のフォルダのファイルにも、そのフォルダの一覧を使う"
+else
+  fail "改行で終わるフォルダ: rc=$rc (期待 0 で project_term): $(cat "$work/wnl.out" "$work/wnl.err")"
+fi
+
+# CDPATH があっても、相対パスのファイルのフォルダは起動した cwd から辿る。CDPATH の先の同じ名前のフォルダ (cp2/sub。flag の語を持つ) の一覧を当てない
+mkdir -p "$work/cp1/sub" "$work/cp2/sub/.yomiyasu-words"
+printf 'りんご\n' >"$work/cp2/sub/.yomiyasu-words/flag.txt"
+cp "$work/fl/x.md" "$work/cp1/sub/x.md"
+rc=0
+(cd "$work/cp1" && CDPATH="$work/cp2" "$BIN" sub/x.md) >"$work/wcp.out" 2>"$work/wcp.err" || rc=$?
+if [ "$rc" -eq 0 ] && jw_ran "$work/wcp.out" sub/x.md && ! grep -qF 'project_term' "$work/wcp.out" && grep -qF '「土台」' "$work/wcp.out" \
+  && ! grep -qF '「正本」' "$work/wcp.out"; then
+  ok "CDPATH があっても、相対パスのファイルに CDPATH の先のフォルダの一覧を当てない"
+else
+  fail "CDPATH と相対パス: rc=$rc: $(cat "$work/wcp.out" "$work/wcp.err")"
+fi
+
+# cwd が symlink のフォルダの中で ../x.md を渡す: textlint は物理の cwd (symlink を辿った先) から読むので、読まれるのは sy/b/repo/x.md。
+# その repo の一覧を使い、論理の $PWD から .. を縮めた先 (sy/a) の一覧を使わない (dotfiles の一覧が渡ると project_term が出ない)
+mkdir -p "$work/sy/a" "$work/sy/b/repo/c" "$work/sy/b/repo/.git" "$work/sy/b/repo/.yomiyasu-words"
+printf 'りんご\n' >"$work/sy/b/repo/.yomiyasu-words/flag.txt"
+cp "$work/fl/x.md" "$work/sy/b/repo/x.md"
+ln -s "$work/sy/b/repo/c" "$work/sy/a/link"
+rc=0
+(cd "$work/sy/a/link" && "$BIN" ../x.md) >"$work/wsy.out" 2>"$work/wsy.err" || rc=$?
+if [ "$rc" -eq 0 ] && grep -qF '表現・書式の検査を実行しました' "$work/wsy.out" && grep -qF 'project_term' "$work/wsy.out"; then
+  ok "symlink を含むパスの .. でも、読まれるファイルの repo の一覧を使う"
+else
+  fail "symlink と ..: rc=$rc (期待 0 で project_term): $(cat "$work/wsy.out" "$work/wsy.err")"
+fi
+
 [ "$fails" -eq 0 ] || { printf '✗ %d 件失敗\n' "$fails" >&2; exit 1; }
 echo "OK: ja-textlint"

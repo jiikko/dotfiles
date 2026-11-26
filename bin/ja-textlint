@@ -23,8 +23,11 @@
 #     (_claude/hooks/ja-textlint-on-edit.sh は -f json を jq で読む)。
 #   -h・-v・--init・--print-config・--mcp は textlint だけで、何も足さない。
 #   JA_TEXTLINT_NO_INSTALL を付けると、ビルド済みで入力と合うバイナリだけを使い (go_autobuild_exec --no-build)、無ければ掛けずに rc 3。
-#   語の一覧: その repo が自分の .yomiyasu-words/ を持つ (ja-writing lint が git の最上位か cwd で見つける) ならそれを使い、
-#   無ければ dotfiles で定義した用語の一覧 (_claude/skills/ja-writing/words/) を --words で渡す (どの repo から呼んでも、定義した用語を指摘しない)。
+#   語の一覧: 検査するファイルの置かれた repo が自分の .yomiyasu-words/ を持つならそれを使い、
+#   無ければ dotfiles で定義した用語の一覧 (_claude/skills/ja-writing/words/) を --words で渡す (どの repo のファイルでも、定義した用語を指摘しない)。
+#   探す場所はファイルと標準入力で違う。ファイルは、そのファイルのフォルダで ja-writing lint を起こす (起動した cwd は見ない。
+#   ja-writing lint がそのフォルダの git の最上位かそのフォルダで見つける。_claude/hooks/ja-textlint-on-edit.sh と同じ)。
+#   標準入力の文は置き場所が無いので、起動した cwd から探す (cwd の repo の一覧が当たる)。
 #
 # 見ないもの: 主語・目的語の抜け、語が機能を言い表しているか、直訳の硬さ (構文として整った文は素通りする)。
 # そこは skill ja-writing の手順 (人と Claude が読んで直す) が受け持つ。
@@ -172,10 +175,56 @@ jw() {
     "$root/bin/ja-writing" "$@"
   fi
 }
-lint_one() { # <表示の名前> <中身のファイル>
+# <フォルダ> を cwd にして jw を起こす (空なら起動した cwd のまま)。ja-writing lint は語の一覧を cwd から探す。
+# 🚨 入力のリダイレクトは呼び出しの側 (cd の前) に書く。この中で開くと、相対パスの名前を cd した先で開いて読めない
+jw_in() { # <フォルダ> <ja-writing の引数>...
+  local d="$1"
+  shift
+  if [ -n "$d" ]; then
+    # -P: symlink を辿った先 (物理のパス) で .. を解く。textlint と ja-writing はファイルを物理のパスで読むので、論理の cd だと
+    # `link/../x.md` で読むファイルと一覧を探すフォルダが別になる
+    (cd -P -- "$d" && jw "$@")
+  else
+    jw "$@"
+  fi
+}
+# ファイルのフォルダを絶対パスで返す (REPLY)。相対のまま cd に渡すと CDPATH で別のフォルダに入る。
+# dirname のコマンド置換で取らない: 置換は末尾の改行を落とすので、改行で終わる名前のフォルダが別のフォルダの名前になる
+dir_of() { # <ファイルの名前>
+  case "$1" in
+    */*) REPLY="${1%/*}"; [ -n "$REPLY" ] || REPLY=/ ;;
+    *) REPLY=. ;;
+  esac
+  case "$REPLY" in /*) ;; *) REPLY="$PWD/$REPLY" ;; esac
+}
+# <フォルダ> (空なら起動した cwd) で起こす ja-writing lint に渡す --words を words に入れる。答えはフォルダごとに違うので、フォルダごとに 1 回確かめる。
+# 一覧の探し方を写さない: 見つけたかは ja-writing lint の --json の context.words で見る (一覧を使ったときだけ出る)
+# 確かめが失敗したら (repo の一覧が読めない等) 差し替えない。差し替えると壊れた一覧が気づかれないまま別の一覧で通る。
+# そのまま lint に進み、ja-writing lint 自身が誤り (rc 2) を出す
+probed_dirs=()
+probed_need=()
+words_for() { # <フォルダ>
+  local i need=0 probe=0
+  words=()
+  for i in ${probed_dirs[@]+"${!probed_dirs[@]}"}; do
+    if [ "${probed_dirs[$i]}" = "$1" ]; then
+      [ "${probed_need[$i]}" -eq 0 ] || words=(--words "$root/_claude/skills/ja-writing/words")
+      return 0
+    fi
+  done
+  jw_in "$1" lint --json - </dev/null >"$work/words.json" 2>/dev/null || probe=$?
+  if [ "$probe" -eq 0 ] && ! grep -qF '"words": {' "$work/words.json"; then
+    need=1
+    words=(--words "$root/_claude/skills/ja-writing/words")
+  fi
+  probed_dirs+=("$1")
+  probed_need+=("$need")
+}
+lint_one() { # <表示の名前> <中身のファイル> <起こすフォルダ (空なら起動した cwd)>
   local r=0
   printf '\nja-writing lint: %s\n' "$1"
-  jw lint --fail-on error ${words[@]+"${words[@]}"} - <"$2" >"$work/jw.out" || r=$?
+  words_for "$3"
+  jw_in "$3" lint --fail-on error ${words[@]+"${words[@]}"} - <"$2" >"$work/jw.out" || r=$?
   cat "$work/jw.out"
   # rc 1 で見出しが無いのはビルドの失敗 (go_autobuild_exec)。rc 2 は入力の誤り (UTF-8 で読めない等) のまま 2 にする
   if [ "$r" -eq 1 ] && ! grep -qF '表現・書式の検査を実行しました' "$work/jw.out"; then
@@ -206,19 +255,10 @@ if [ "$lint" -gt 0 ]; then
     [ "$wrc" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けられない (bin/ja-writing のビルドに失敗した。理由は上の行)" >&2
   fi
   if [ "$wrc" -eq 0 ]; then
-    # 一覧の探し方を写さない: 見つけたかは ja-writing lint の --json の context.words で見る (一覧を使ったときだけ出る)
-    # 確かめが失敗したら (repo の一覧が読めない等) 差し替えない。差し替えると壊れた一覧が気づかれないまま別の一覧で通る。
-    # そのまま lint に進み、ja-writing lint 自身が誤り (rc 2) を出す
-    words=()
-    probe=0
-    printf '' | jw lint --json - >"$work/words.json" 2>/dev/null || probe=$?
-    if [ "$probe" -eq 0 ] && ! grep -qF '"words": {' "$work/words.json"; then
-      words=(--words "$root/_claude/skills/ja-writing/words")
-    fi
     for k in "${!kinds[@]}"; do
       case "${kinds[$k]}" in
-        T) lint_one "${vals[$k]}" "${vals[$k]}" ;;
-        I) lint_one "${vals[$k]}" "$stdin_file" ;;
+        T) dir_of "${vals[$k]}"; lint_one "${vals[$k]}" "${vals[$k]}" "$REPLY" ;;
+        I) lint_one "${vals[$k]}" "$stdin_file" "" ;;
       esac
     done
   fi
