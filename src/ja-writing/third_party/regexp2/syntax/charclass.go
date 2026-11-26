@@ -1169,9 +1169,14 @@ func (set1 *CharSet) MayOverlap(set2 *CharSet) bool {
 
 	// If set2 can be easily enumerated (e.g. no unicode categories), then enumerate it and
 	// check if any of its members are in set1.  Otherwise, the same for set1.
+	// 両方とも数えられるなら、字の少ない方を回す (上流に無い。third_party/regexp2/README.md の「直した所」の 3。答えは向きによらない)
+	set1Enumerable := !set1.HasSubtraction() && len(set1.categories) == 0
 	if !set2.HasSubtraction() && len(set2.categories) == 0 {
+		if set1Enumerable && rangeCharCount(set1) < rangeCharCount(set2) {
+			return mayOverlapByEnumeration(set2, set1)
+		}
 		return mayOverlapByEnumeration(set1, set2)
-	} else if !set1.HasSubtraction() && len(set1.categories) == 0 {
+	} else if set1Enumerable {
 		return mayOverlapByEnumeration(set2, set1)
 	}
 
@@ -1192,6 +1197,15 @@ func knownDistinctSets(set1, set2 *CharSet) bool {
 // 超えたら調べ切らずに「重なりうる」と答える。上限が無いと、補集合の形の大きい集合 (100 万字を超える) を回し、パターン 1 つの compile に 18 ms かかっていた。
 // 呼び出し元は tree.go の canBeMadeAtomic の 3 か所で、どれも「重なりうる」で atomic にしない (README の「直した所」の 2)。
 const enumerationBudget = 4096
+
+// rangeCharCount は set の範囲の字の数 (上流に無い)。
+func rangeCharCount(set *CharSet) int {
+	n := 0
+	for _, r := range set.ranges {
+		n += int(r.Last-r.First) + 1
+	}
+	return n
+}
 
 func mayOverlapByEnumeration(set1, set2 *CharSet) bool {
 	budget := enumerationBudget

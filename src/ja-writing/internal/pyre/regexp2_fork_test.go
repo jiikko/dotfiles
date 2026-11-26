@@ -45,3 +45,23 @@ func TestRegexp2BackreferenceAfterNullableLoopMatchesPython(t *testing.T) {
 		}
 	}
 }
+
+// 大きい集合の後ろに 0 回からの小さい集合のループが来る形は、小さい方を回して重ならないと知り、前のループを atomic にする
+// (third_party/regexp2/README.md の「直した所」の 3。大きい方を回すと上限で「重なりうる」に倒れ、長い漢字の並びで約 6 倍遅くなる)。
+// lint の本番のパターン (片仮名・漢字の語の後ろに平仮名の送り) と同じ形。
+func TestRegexp2EnumeratesTheSmallerSet(t *testing.T) {
+	tree, err := syntax.Parse(`[\x{3005}-\x{3006}\x{30A1}-\x{30F6}\x{30FC}\x{4E00}-\x{9FA5}]*[\x{3041}-\x{3093}]*(?=\n?\z)`, syntax.ParseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop := tree.Root
+	for loop.T != syntax.NtSetloop && loop.T != syntax.NtSetloopatomic {
+		if len(loop.Children) == 0 {
+			t.Fatalf("ループのノードが見つからない (%v)", loop.T)
+		}
+		loop = loop.Children[0]
+	}
+	if loop.T != syntax.NtSetloopatomic {
+		t.Fatalf("前のループが %v になった (atomic でない)。MayOverlap が字の少ない方を回していない", loop.T)
+	}
+}
