@@ -45,3 +45,12 @@ issue 1079 (epic 1072) の「ベンチマークで Go を改善するループ�
 - D: 既にある `perf-claims-need-measurement.md` の「測った経路がユーザーの実経路と同じかを、数字を書く前に確かめる」の項が当てはまる。in-process で子のプロセスの分が抜けるのは、その項の言う経路の違い。
   発動点 (計測を作る前) を踏み損ねただけなので、規範は足さない
 - E: 局所的なこと (Go のインライン展開の予算)。理由と測った値は `src/ja-writing/internal/pyunicode/pyunicode.go` の `inRanges` のコメントに書いた
+
+## 決着 (2026-11-26。提案の採否は fable の係の判断をユーザーの指示で採った)
+
+- 1・2: 1 つの子項目にまとめ、`_claude/rules/perf-claims-need-measurement.md` の「別の時間帯の run どうしで比べない」の下に足した。
+  B の原因の半分は A (戻した理由の「遅い」がビルドどうしの揺れだった) なので分けない。実例は同じ名前の rationale に節を足した
+- 3: 却下。1 回きりで、計測の前に気づいた。一般形は `verify-execution-not-just-exit-code.md` の「作る前と違う状態になったことを機械で確認する」と、
+  `instrument-before-second-fix.md` の「今走っている実体はどれか」で言えている。直接の原因は `src/ja-writing/bench/README.md` が作業ツリーでのビルドを案内していたことで、
+  README を commit から作る形に直した。別ビルドを対照に入れる案内も同じ README に足した
+- 残課題は無い。done へ移す
