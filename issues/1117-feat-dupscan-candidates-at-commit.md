@@ -68,7 +68,10 @@ B を入れても、名前の違う同じ役割 (`typedPath` と `TypedPathResol
 - [x] 計測のログの入口の列と report: 同上
 - [x] C: CLAUDE.md: 同上
 - [x] 入口の文書 (docs/dupscan-overview.md・skill dupscan・src/dupscan/README.md): 同上 (skill-eval dupscan PASS)
-- [ ] push して本体を pull し、新しいセッションで注入を観測する
+- [x] push して本体を pull し、新しいセッションで注入を観測する (2026-11-27): `~/dotfiles` を origin に追いつかせた後、一時の repo で
+  `claude -p --model haiku` に Bash で関数を足して commit させた。transcript の attachment に PostToolUse:Bash の注入
+  (「`collectWidgetsFast` に近い既存の定義: src/a/c.go:3 collectWidgets」。足した定義そのものは出ない) があり、hook は 172 ms で終わった。
+  同じセッションに C の CLAUDE.md の文も読み込まれていた
 
 ### 敵対的レビュー (codex, 3 周) の結果
 
