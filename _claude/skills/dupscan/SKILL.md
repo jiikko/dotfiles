@@ -32,6 +32,7 @@ dupscan evidence bucket                       # 上で見つからないとき: 
 Claude Code では、Go / Swift のファイルへ新しい `func` や型を書く直前に、hook (`inject-dupscan-candidates-on-new-func.sh`) が
 名前の近い既存の関数と、同じ名前の型の宣言を注入する。型の注入が出たら、衝突する範囲 (Go は同じ package、Swift は同じ module の top-level どうしか同じ型の中。Swift の private / fileprivate の型は同じファイルの中だけ) なら build で落ちるので、名前を変えるか既存の型を使う。
 関数の注入は名前が近いだけのことがあるので、役割を確かめてから使う (署名で引き直すなら上の `index -returns` / `search`)。
+Bash (python / sed) で足した関数にはこの hook が走らない。commit の後に `inject-dupscan-candidates-on-commit.sh` が同じ照合で候補を出すので、出たら push の前に寄せるかを決める (書く前に見るため、関数は Edit / Write で足す)。
 
 ## 2. 調べもの (grep の前に)
 

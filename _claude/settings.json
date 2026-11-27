@@ -55,6 +55,11 @@
             "command": "~/dotfiles/_claude/hooks/next-claim-push.sh",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/inject-dupscan-candidates-on-commit.sh",
+            "timeout": 10,
+            "type": "command"
           }
         ],
         "matcher": "Bash"
@@ -90,6 +95,11 @@
           },
           {
             "command": "~/dotfiles/_claude/hooks/next-claim-push.sh",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/inject-dupscan-candidates-on-commit.sh",
             "timeout": 10,
             "type": "command"
           }

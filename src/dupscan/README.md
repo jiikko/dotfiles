@@ -470,5 +470,5 @@ text だけ。実測 (2026-11-04、各 2 回) は `src/glogx` で 0.34 秒、`sr
 
 ## 利用の測定
 
-`scripts/dupscan_usage_report.py` が Claude Code の transcript (`~/.claude/projects/*/*.jsonl`) から、識別子らしい `grep` / `rg` と dupscan の探索 (`gate` は除く) の回数・言語別・hook の案内の直後 3 手以内の探索・`index` の直後の `Read` の範囲指定・新しい関数を足す直前に候補を注入する hook (`inject-dupscan-candidates-on-new-func.sh`) の注入の回数 (`~/.cache/claude-dupscan-inject.log`。`--inject-log` で変える) を数える (`--days N` `--split ISO8601` `--by-day` `--json`)。dupscan 自身を開発しているセッションは除く。
+`scripts/dupscan_usage_report.py` が Claude Code の transcript (`~/.claude/projects/*/*.jsonl`) から、識別子らしい `grep` / `rg` と dupscan の探索 (`gate` は除く) の回数・言語別・hook の案内の直後 3 手以内の探索・`index` の直後の `Read` の範囲指定・新しい関数を足す直前と commit の後に候補を注入する hook (`inject-dupscan-candidates-on-new-func.sh`・`inject-dupscan-candidates-on-commit.sh`) の注入の回数 (`~/.cache/claude-dupscan-inject.log`。`--inject-log` で変える) を数える (`--days N` `--split ISO8601` `--by-day` `--json`)。dupscan 自身を開発しているセッションは除く。
 案内を出したことや利用が増えたことを効果とせず、「grep が dupscan に替わったか」を前後で比べる。数え方は `tests/scripts/test_dupscan_usage_report.sh` が固定している。

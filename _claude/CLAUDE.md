@@ -9,6 +9,8 @@
 - 変更を入れる前に、依頼が名指ししていない関連ソース (その領域の issue・`docs/`・周辺の CLAUDE.md) も開いて、見つけた制約を使う。すぐ手を動かす方へ寄りやすく、依頼文にない前提を取りこぼす
   - **独自の lint の規則を持つ repo で新しいファイルを書く前に、規則の一覧 (名前とメッセージ) を読む**。対象は SwiftLint の `custom_rules` と opt-in の規則、Makefile の lint の target。lint を早く回しても、規則を知らずに書いた分は書き直しになる
   - 🚨 **Bash (python / sed) でファイルを編集するなら、先にそのディレクトリの CLAUDE.md を Read する**。下位の CLAUDE.md は Read ツールで触れたときにしか読み込まれないので、スクリプトだけで編集するとそのディレクトリの規約 (GUI 必須の作業など) を素通りする
+    - **Write / Edit にだけ掛かる hook も通らない**。新しい関数・型を書く直前に名前の近い既存の定義を出す hook (`inject-dupscan-candidates-on-new-func.sh`) はその 1 つで、
+      Bash で足した関数には何も出ない (commit の後の `inject-dupscan-candidates-on-commit.sh` が拾うが、書き終えた後になる)。**関数・型を足す編集は Edit / Write で行う**
 - **起動した cwd の外の repo を触るなら、編集の前にその repo の CLAUDE.md と `.claude/rules/` を Read する**。repo の規約は cwd がその repo に入るまで注入されない
 
 ## Git 禁止操作

@@ -43,11 +43,12 @@ repo の中で、局所名やリテラルの違いを正規化すると本体が
 ## 1.6 Claude がコードを書く流れのどこで呼ばれるか
 
 dupscan を止める側で自動に走らせるのは導入先の検査 (`make test`・CI の `gate`) だけ。編集を止める hook は保留 (issue 902)。
-それ以外は Claude が skill dupscan (issue 903) の手順に従って自分で呼ぶ。呼び忘れを補うため、dotfiles の Claude Code の設定には**知らせるだけ** (止めない) の PreToolUse の hook が 3 本ある:
+それ以外は Claude が skill dupscan (issue 903) の手順に従って自分で呼ぶ。呼び忘れを補うため、dotfiles の Claude Code の設定には**知らせるだけ** (止めない) の hook が 4 本ある (commit の後の 1 本は PostToolUse、ほかは PreToolUse):
 
 | hook | いつ | 何を出すか |
 |---|---|---|
 | `inject-dupscan-candidates-on-new-func.sh` (948 A1・961) | Go / Swift のファイルへ新しい `func` や型を足す Write / Edit の直前 | 名前の近い既存の定義を `dupscan index` で引いて、最大 3 行注入する (前方一致は短い方が 2 語以上のときだけ。Go の別の module のテストの非公開の helper は呼べず寄せられないので出さない。985)。新しい型は、同じ言語のファイルに同じ名前の型の宣言があれば `git grep` で引いて注入する。候補が無ければ無音 |
+| `inject-dupscan-candidates-on-commit.sh` (1117) | Bash の `git commit` の後 (いま作った commit の repo だけ) | その commit で足した `func` と型に、上と同じ照合で名前の近い既存の定義を注入する。Bash (python / sed) で足した関数は上の hook を通らないので、push の前に拾う。足した定義そのものは候補から除き、Edit の時点で引いた名前は繰り返さない |
 | `suggest-dupscan-for-symbol-grep.sh` (939・941) | 識別子らしい語の grep / rg | 同じ名前を引く `dupscan def` / `refs` (Swift) か `index` / `callers` (Go) の案内。session と言語ごとに 900 秒に 1 回 |
 | `suggest-dupscan-for-go-edit.sh` | dotfiles の `src/` の `.go` を Write / Edit したとき | 書く前の `index` と commit 前の `gate` の案内。session に 1 回 |
 

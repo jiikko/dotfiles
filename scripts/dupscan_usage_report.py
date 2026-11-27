@@ -252,17 +252,19 @@ def count(uses, nudged, bucket_of):
 
 
 def inject_summary(path, since):
-    """hook inject-dupscan-candidates-on-new-func.sh の計測ログ (時刻 session 名前 候補数 [引き方]) を数える。無ければ None。
-    5 列目の引き方 (name / returns) は後から足した列で、4 列の古い行も数える。"""
+    """候補の注入の hook (inject-dupscan-candidates-on-new-func.sh と inject-dupscan-candidates-on-commit.sh) の計測ログ
+    (時刻 session 名前 候補数 [引き方 [入口]]) を数える。無ければ None。
+    5 列目の引き方 (name / returns) と 6 列目の入口 (edit / commit) は後から足した列で、4・5 列の古い行も数える (入口は edit)。
+    数えるのは引いた名前の数で、画面に出した回数ではない (候補 0 件の名前も 1 と数える)。"""
     try:
         lines = open(path, encoding="utf-8").read().splitlines()
     except OSError:
         return None
-    total = with_hits = by_returns = 0
+    total = with_hits = by_returns = at_commit = at_commit_with_hits = 0
     sessions = set()
     for line in lines:
         f = line.split("\t")
-        if len(f) not in (4, 5) or not f[3].isdigit():
+        if len(f) not in (4, 5, 6) or not f[3].isdigit():
             continue
         try:
             t = datetime.datetime.fromisoformat(f[0])
@@ -272,9 +274,13 @@ def inject_summary(path, since):
             continue
         total += 1
         with_hits += int(f[3]) > 0
-        by_returns += len(f) == 5 and f[4] == "returns" and int(f[3]) > 0
+        by_returns += len(f) >= 5 and f[4] == "returns" and int(f[3]) > 0
+        commit = len(f) == 6 and f[5] == "commit"
+        at_commit += commit
+        at_commit_with_hits += commit and int(f[3]) > 0
         sessions.add(f[1])
-    return {"injections": total, "with_candidates": with_hits, "with_candidates_by_returns": by_returns, "sessions": len(sessions)}
+    return {"injections": total, "with_candidates": with_hits, "with_candidates_by_returns": by_returns,
+            "at_commit": at_commit, "at_commit_with_candidates": at_commit_with_hits, "sessions": len(sessions)}
 
 
 def main(argv=None):
@@ -344,9 +350,10 @@ def main(argv=None):
         print(f"  dupscan index の直後 {NEARBY} 手以内の Read: {r} 回のうち範囲指定 (offset/limit) あり {w} 回")
     inj = report["inject"]
     if inj is None:
-        print("\n候補の注入 (hook inject-dupscan-candidates-on-new-func): 計測ログなし")
+        print("\n候補の注入 (hook inject-dupscan-candidates-on-new-func / -on-commit): 計測ログなし")
     else:
-        print(f"\n候補の注入 (hook inject-dupscan-candidates-on-new-func): {inj['injections']} 回 / 候補あり {inj['with_candidates']} 回 (うち戻り型で引いた {inj['with_candidates_by_returns']} 回) / セッション {inj['sessions']} 本")
+        print(f"\n候補の注入 (hook inject-dupscan-candidates-on-new-func / -on-commit): {inj['injections']} 回 / 候補あり {inj['with_candidates']} 回 (うち戻り型で引いた {inj['with_candidates_by_returns']} 回) / "
+              f"commit の後に引いた {inj['at_commit']} 回 (候補あり {inj['at_commit_with_candidates']} 回) / セッション {inj['sessions']} 本")
     return 0
 
 

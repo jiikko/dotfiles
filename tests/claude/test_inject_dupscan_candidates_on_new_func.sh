@@ -242,8 +242,8 @@ else
 fi
 
 # 数えるのは注入の行 (5 列目が name / returns) だけ。warn 行が混ざっても注入の行の欠けを埋めない
-n=$(grep -c -E $'\t(name|returns)$' "$TMP_ROOT/cache/claude-dupscan-inject.log" || true)
-if [ "$n" -ge 5 ] && grep -q $'\treadCookies\t1\tname$' "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
+n=$(grep -c -E $'\t(name|returns)\tedit$' "$TMP_ROOT/cache/claude-dupscan-inject.log" || true)
+if [ "$n" -ge 5 ] && grep -q $'\treadCookies\t1\tname\tedit$' "$TMP_ROOT/cache/claude-dupscan-inject.log"; then
   echo "✓ 注入の計測ログに「session 名前 候補数 引き方」が残る"; ok=$((ok+1))
 else
   echo "✗ 計測ログが想定と違う (行数 $n)"; fail=$((fail+1))
