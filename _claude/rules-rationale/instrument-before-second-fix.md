@@ -141,3 +141,11 @@ nvim --headless --server "$sock" --remote-expr 'luaeval("...")'
 - 出力を読んだ順と処理が起きた順を分ける項: retro 687
 - 「今は X」と書く前に値の時系列を並べる項: screen-share-app retro 926
 - プロセスを止めて読む道具も消える操作になる項: screen-share-app retro 926
+
+## 外部の道具が自分で残す記録を先に探す (2026-11-27 追記)
+
+vlc-multi-video-player の issue 611 (retro 613)。fastlane の deliver でスクリーンショットを送った後の並びが崩れる件で、「絵の処理の途中で上書きされる」という
+仮説を未確認として issue と skill に書いた。fastlane (spaceship) は通信の記録を毎回 `/tmp/spaceship<時刻>_<pid>_*.log` に残していて、3 回分が最初から在った。
+読むと、deliver 自身が並べ替えの PATCH で崩れた順を書いていることが 1 回で分かった (naturally の並べ方が原因)。手順 3 の文は自分の repo のログの grep と
+CI のログしか挙げておらず、外部の道具の記録を探す、という手が出てこなかった。
+
