@@ -63,9 +63,25 @@ B を入れても、名前の違う同じ役割 (`typedPath` と `TypedPathResol
 
 ## 進捗
 
-- [ ] 判定の本体を lib へ移す (今の hook のテストが緑のまま)
-- [ ] commit の時点の hook とテスト (変異で赤を見る)
-- [ ] 計測のログの入口の列と report
-- [ ] C: CLAUDE.md
-- [ ] 入口の文書 (docs/dupscan-overview.md・skill dupscan・src/dupscan/README.md)
+- [x] 判定の本体を lib へ移す (今の hook のテストが緑のまま): feat(hooks): commit の後に、その commit で足した関数の dupscan の候補を出す
+- [x] commit の時点の hook とテスト (変異で赤を見る): 同上。テスト 30 件、変異 17 本で狙ったテストだけが赤
+- [x] 計測のログの入口の列と report: 同上
+- [x] C: CLAUDE.md: 同上
+- [x] 入口の文書 (docs/dupscan-overview.md・skill dupscan・src/dupscan/README.md): 同上 (skill-eval dupscan PASS)
 - [ ] push して本体を pull し、新しいセッションで注入を観測する
+
+### 敵対的レビュー (codex, 3 周) の結果
+
+- 1 周目で直したもの: commit を含まない巨大なコマンドで判定の走査に 17 秒 (「commit」を含まないものは走査の前に抜ける) / cwd を無条件に見て、別の repo への
+  `git -C` の commit で cwd 側の新しい commit を出す (commit の行き先だけを見る) / 移動を新しいファイルと読む (-M) / 未来の時刻の reflog を通す /
+  HOME 未設定で rc=1 / テストの穴 (既存ファイルへの追記・stage 後の作業ツリーの変更・偽の dupscan が引数を見ない・settings.json の配線)
+- 2 周目で直したもの: 共有の hook_strip_heredocs がコメントの中の `<<EOF` で本物の commit の行まで落とす (heredoc を落とすのをやめた) /
+  長い message の heredoc と多バイトの字で上限を素通り (上限を 20,000 バイトで数える) / 引用符で囲まれた移動元のパス (-z)
+- 3 周目で直したもの: heredoc の本文に git commit を並べると行き先の数だけ rev-parse を打つ (行き先の重複除去) / UTF-8 でないパスで全体が黙り、
+  CR が LF に変わる (バイトで受けて surrogateescape で読む)
+- 受け入れた制限 (hook の冒頭の「検出しない形」に書いた): heredoc の本文の `cd`・`git -C B commit` (B の reflog が 2 分以内のときだけ表に出る。
+  直すには heredoc の構文解析が要り、共有の除去の処理は本物の commit を落とす) / 実行されなかった commit (`false && git commit`・`--dry-run`) /
+  `cd B | cat; git commit` (検出器の既知の制限) / 類似度 50% 未満の移動 / 20 KB を超えるコマンド / merge・cherry-pick・rebase / HOME が無いときの `~`
+- 記録だけにしたもの: 本物の dupscan が本体の checkout で自動ビルドする経路 (Write / Edit の入口も前から同じ) / commit の印 (SHA) は読み直しを省くだけで、
+  出力は名前の印で決まる (外す変異はテストで区別できない) / 偽の dupscan は固定の行を返す (候補が実在するかは本物の index に任せる) /
+  UTF-8 でないパスのテスト (macOS の APFS がその名前のファイルを作らない)
