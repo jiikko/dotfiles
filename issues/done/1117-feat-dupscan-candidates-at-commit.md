@@ -41,9 +41,9 @@ C. **共通の CLAUDE.md の「Bash (python / sed) でファイルを編集す�
 見送り: B (名前の照合を「後ろに含む」まで広げる)。候補が増えて読み流されるかを測ってから決める。A の計測のログで、commit の時点の候補の数を見てから再提起する。
 B を入れても、名前の違う同じ役割 (`typedPath` と `TypedPathResolver.resolve`) は拾えない。それは定期の監査 (`/audit` の duplication・entry-parity) の担当
 
-先行の判断との関係: [902](epic/890/pending/902-feat-dupscan-claude-code-hook.md) (書いた直後に本体の形で照合する hook) はユーザーの決定 (2026-10-24) で保留し、
+先行の判断との関係: [902](../epic/890/pending/902-feat-dupscan-claude-code-hook.md) (書いた直後に本体の形で照合する hook) はユーザーの決定 (2026-10-24) で保留し、
 形の写しを止める網は `make test` と CI の gate に置いた。A は形の照合ではなく、既にある名前の候補 (948 A1) を出す時点を 1 つ増やすもので、902 の保留を解かない
-([1009](epic/932/pending/1009-design-dupscan-post-write-body-similarity-candidates.md) も同じ)
+([1009](../epic/932/pending/1009-design-dupscan-post-write-body-similarity-candidates.md) も同じ)
 
 ### 反証レビュー (codex, 2026-11-27) で直したこと
 
