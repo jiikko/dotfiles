@@ -57,12 +57,15 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
    (`questions` の 2 つ目。「次も対象にするか」、`multiSelect: true`、選択肢は「使っていない git worktree (件数と容量)」「Preferences の UUID 入りの plist (件数と形の数)」の
    うち手順 2 で在ったもの) に分ける。1 問目と 2 問目は 1 回の呼び出しで一緒に聞く。
    ここで選ばれたものだけを以降で扱う。何も選ばれない・回答が無いなら、何も消さずに数えた結果だけを報告して終える
-4. **候補を作る**: 一時領域か DerivedData が選ばれていたら `tmpclean plan -kinds <種類> -out <D> > <D>/plan-out.txt 2>&1; echo rc=$?` (何も動かさない)。
+4. **候補を作る**: plan は作ってから 1 時間で使えなくなるので、時間のかかる分類 (Preferences の形・worktree) を先に済ませ、plan は手順 5 の質問の直前に作る。
+   一時領域か DerivedData が選ばれていたら `tmpclean plan -kinds <種類> -out <D> > <D>/plan-out.txt 2>&1; echo rc=$?` (何も動かさない)。
    種類は一時領域なら `session,tmpdir`、DerivedData なら `derived-data` (両方なら `session,tmpdir,derived-data`)。どちらも選ばれていなければ plan は作らない。候補は 1 件 1 行で出るので
    ファイルに落とし、`id:` と `plan:` の行、`candidates.<種類>:` の件数、`kept (<理由>): <件数>` を読む。`lsof` の全体を取るので 30〜60 秒かかる。
    rc≠0 なら止まった理由が出力の `止めた:` の行にある (rc=2 = 生きている claude を見分けられない等、rc=3 = 実行環境の失敗)。理由を伝えて先へ進まない。
    ただし `止めた:` が claude の cwd・project の行 (`session` を止める判定。`src/tmpclean/README.md` の「判定不能で止める」) なら、
    止まるのは `session` だけなので、`-kinds` から `session` を外して作り直してよい。手順 5 の質問に、`session` を外した理由 (止めた claude の pid と cwd) を書く。
+   `止めた: 自分の scratchpad (<ID>) が根の下に 1 つだけ見つからない (<数> 個)` も `session` だけを止める判定で、同じように `session` を外して作り直してよい
+   (同じ session id の dir が 2 つの project の下に在る。デスクトップアプリのセッションで起きた。2026-11-27)。この行は pid と cwd を出さないので、質問には見つかった数と、`ls -d /private/tmp/claude-<uid>/*/<ID>` で見えた dir を書く。
    worktree が選ばれていたら、下の「worktree の数え方と分け方」で、候補・別に聞くもの・実体の無い登録・残すものに分ける (tmpclean は使わない)。
    Preferences が選ばれていたら、下の「Preferences の形の分け方」で形を「根拠あり」「根拠なし」に分け、根拠ありの形を `-prefs-shape <形>` で全部並べて
    `tmpclean plan -kinds prefs -prefs-shape <形> … -out <D> > <D>/plan-prefs-out.txt 2>&1; echo rc=$?` を打つ (空のものだけが候補になる)。
@@ -84,6 +87,7 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
      選択肢は「根拠ありの形の空の plist を移す (plan の ID・件数)」と「移さない」。根拠なしの形は表の下に件数だけ並べ、「候補にしていない。移すなら Other に形を書く」と書く
      (Other に形が書かれたら、その形の根拠を確かめ直して手順 4 から plan を作り直し、承認を取り直す)。
      中身ありの plan を作ったなら、それを**さらに別の問い**にし、「空のものに加えて、中身のある plist (テストの値) も移す (plan の ID・件数)」と「移さない」から選ばせる。
+     この plan の件数は空のものを含む。空かを判定できないもの (`unknown`。壊れている・大きすぎる・読めない) も一緒に候補になるので、0 件でなければ質問にその件数を書く。
      失うもの: テストが残した suite の値 (中身ありの plan だけ)。移し先は同じ `~/.Trash/tmpclean-<日時>-<ID>/prefs/`。
      所要: 1 件ずつの `lsof` を取らない (1 件ごとに移した記録を fsync する。1 万件での所要は未実測なので、数百件を超えるなら手順 6 のとおり背景で走らせる)
    - 手順 3 で dotfiles の `tmp/` (`repo-tmp`) が選ばれていたら**別の質問**にする。🚨 こちらはゴミ箱を経由せず**消す** (戻せない) と説明に書く。`make clean-tmp DRY_RUN=1` の件数と、
@@ -129,7 +133,8 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
    Preferences を移したなら、`tmpclean prefs-shapes -json > <D>/prefs-shapes-after.json 2> <D>/prefs-shapes-after.err` を取り直して `prefs-shapes-before.json` と形ごとに前後を並べ、次の 2 つを添える:
    その suite を開いたままの process が居れば、メモリに残った値を書いて plist を元の場所に作り直すことがある (UserDefaults は先にメモリを書き、ディスクへは後で書く)。
    戻すときは `moved-<ID>.jsonl` で元の場所を見て、同じ名前が作り直されていたら上書きせずに比べる (tmpclean は Finder の「戻す」の情報を付けない)。
-   溜めている元 (テストの helper) が分かっていれば、その repo と helper を 1 行で添えるApple container を消したなら `container system df` を取り直して前後を並べる。
+   溜めている元 (テストの helper) が分かっていれば、その repo と helper を 1 行で添える。
+   Apple container を消したなら `container system df` を取り直して前後を並べる。
    worktree を消したなら、消した path が無いこと・`git -C <repo> worktree list` から消えたこと・作った `attic/` の branch を確かめ、消した件数と
    容量の合計、残した branch を出す (`attic/` の branch は push していない。要らなくなったら消すと添える)
 
@@ -143,6 +148,10 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
   (`git log -S '<接頭辞>'`) に、その形を作っていたテストの helper の記録があれば根拠にしてよい。どちらも出典 (repo・パス・行か issue 番号) を表に書く
 - **根拠なし**: 接頭辞が出てくるだけのもの (掃除の対象から断る assert・コメント・文書)・production のコードが同じ接頭辞の名前を組み立てているもの
   (アプリの profile の suite など。テストも同じ接頭辞を使っていても根拠なしにする)・どこにも出てこないもの
+- helper が名前を組み立てる形 (`<接頭辞>.<テストの関数名>.<UUID>` など。完全な名前はどこにも書かれていない) は、次の 2 つが揃えば根拠ありにしてよい:
+  helper の生成規則がコードか issue に記録されている / その接頭辞を production のコードが 1 か所も使っていない (テスト以外を `rg --fixed-strings` で引いて 0 件)。
+  表の出典に両方を書く。接頭辞が一致するだけ (生成規則の記録が無い) の形は根拠なしのまま
+- 形が数十を超えるなら、形ごとの検索を 1 本のスクリプトにまとめ、形・区分・出典を `<D>/prefs-evidence.tsv` に残す (質問の表と、後から区分を確かめ直すときの出典になる)
 - 1 つの形を両方の repo が作っていてもよい (根拠はどちらか 1 つで足りる)。根拠なしの形は候補にしない
 
 ## worktree の数え方と分け方
@@ -152,7 +161,10 @@ commit を確かめずに消す。消すのは repo の道具に任せ、判定�
   `git -C <repo> submodule foreach --quiet --recursive 'echo $toplevel/$sm_path'` で submodule の checkout も足す。repo と submodule ごとに
   `git -C <repo> worktree list --porcelain` を取り、**先頭の `worktree` の行 (main) 以外**を全部拾う。🚨 worktree は根の外にもある
   (`bin/wt` は `<main の親>/<repo 名>-wt-…` に作るので、dotfiles の worktree は `~/` の直下にできる)。根の下を `.git` ファイルで探す方法では見つからない。
-  submodule の main は `.git/modules/<path>` の path で出るが、先頭の行なので数えない。`prunable` の行は実体の無い登録
+  submodule の main は `.git/modules/<path>` の path で出るが、先頭の行なので数えない。`prunable` の行は実体の無い登録。
+  🚨 `submodule foreach --recursive` は、入れ子の submodule の 1 つで失敗するとそこで止まり、後ろの submodule を列挙しない (stderr に `fatal: run_command returned non-zero status`)。
+  stderr を捨てずに読み、fatal が出たら `.gitmodules` の path を 1 つずつ回す形 (`git config -f .gitmodules --get-regexp '\.path$'`。入れ子は 1 段ずつ) で数え直す。
+  列挙が途中で止まったまま「0 件」と書かない。見た repo と submodule の数を `<D>/worktrees.txt` の先頭に残す
 - **登録の無い残骸**: 根の下の `.git` が**ファイル**で、`gitdir:` が `/worktrees/` を含み、その dir が無いもの (`find <根> -maxdepth 8 -name .git -type f`。
   `gitdir:` が相対 path なら `.git` ファイルの dir から解決してから見る。そのまま見ると在るものも残骸に数える)。
   登録が消えて実体だけ残った worktree で、git の道具では消せない。「残す」に入れて path と容量を報告する (消すかはユーザーが決める)
