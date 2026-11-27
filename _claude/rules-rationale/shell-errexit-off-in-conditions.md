@@ -44,3 +44,22 @@ bash の `out=$(f)` も f の途中の失敗を通した (3.2 と 5.3)。
 `shellcheck -o check-set-e-suppressed` が `f || exit 1` に SC2310 を出すことを確かめた (2026-11-27)。既定では無効。
 `f || true` のように途中の失敗を通したい形にも出るので、repo 全体で有効にするかは別に決める。
 - 2 周目 (事実・使う人の目): zsh の `! f` と EXIT の trap の書き方が言い過ぎだったので、rule を bash の話に限り、zsh は確かめるよう書いた。`$(f)`・`elif`・`until`・`set -e` の無いスクリプトの扱いと、後片付けの 2 つの形を足した
+
+## 逆向きの形 (次の文の `$?` で rc を受ける) の起源と実測
+
+dotfiles issue 1117 (2026-11-27)。`set -euo pipefail` のテスト (`tests/claude/test_inject_dupscan_candidates_on_commit.sh` の最初の書き方) で
+`<検査>; check "名前" $?` と書いた。変異で検査が落ちると、その場でテストが止まり、✗ も集計も出なかった (変異の検証の出力が空になり判定できなかった)。
+そのテストは `-e` を外して直した (`set -uo pipefail`)。`-e` を残すなら `rc=0; cmd || rc=$?` で受ける (`test_deny_piped_push_then_destroy.sh` などの既存のテストの書き方)。
+
+実測 (macOS の /bin/bash 3.2.57 と Homebrew の bash 5.3.9 で同じ結果):
+
+```
+set -e; false; check a $?; echo after              # 何も出ずに rc 1
+set -e; rc=0; false || rc=$?; check a $rc; echo after   # FAIL a と after が出て rc 0
+set -e; out=$(false); check a $?; echo after       # 何も出ずに rc 1
+```
+
+反証レビュー (2026-11-27。5 観点・read-only のサブエージェント): 挙動は 3.2 と 5.3 で再現。`local out=$(cmd) || rc=$?` は local の rc を受けるので例外として足した。
+上の項の `( set -e; f ) || rc=$?` の禁止と矛盾して見えるので、外部コマンド 1 つは「条件の中で呼んでよいもの」に当たると書いた。
+機械化は見送り: shellcheck は既定でも `-o all` でもこの形に何も出さない。tests/ に今この形は 0 件で、起源の事故は `bin/mutate-verify` が集計行の無い run を判定不能として出したので見えた。
+同じ事故が 2 回目に起きたら、tests/ に限った字面の検査 (check / assert で始まり `$?` で終わる行) を足す。
