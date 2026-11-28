@@ -78,3 +78,11 @@ main を ESM へ移した後、常に exit 1 になった module-boundary の li
 - 同じ種類の検査の張り直しが 2 回続いたら作り替える項: obaket retro 1516
 - テストを module の境界を越えて移す項: vlc-multi-video-player retro 561
 - 常に失敗する検査を黙らせる項: dropbox-player retro 228 (前提のずれで warning にした lint が 6 か月そのままだった)
+
+## 判定の述語を狭めるのも、鍵の置き換えと同じ (2026-11-28, dotfiles retro 1121)
+
+dotfiles issue 1110 で、codex-fanout の利用上限の判定の events 側を「events のどこかの error / turn.failed の行に上限の語」から
+「最後の文に上限の語」へ狭めた (上限の文の後に別の原因が続く run を上限と読まないため)。旧い述語では上限になり新しい述語ではならない形
+(具体的な error の後に、汎用の文だけの turn.failed) を着手前に挙げず、敵対的レビューで 2 周続けて「回帰」として出た。
+最後は未実測の仮説 (codex は最後の error の文を turn.failed に写す) に立つと決め、`src/codexevents/errortext.go` の冒頭に再提起の条件を書いた。
+着手前に旧新の差を並べていれば、仮説に立つかの判断を 1 周目のレビューの前にできた。
