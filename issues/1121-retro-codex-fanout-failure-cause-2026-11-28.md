@@ -26,8 +26,8 @@ issue 1110 (codex-fanout が、利用上限に分類しない失敗の原因の�
   未実測の前提に立つかを着手前に書く。→ 既存の rule `_claude/rules/list-masked-failure-modes-before-removing-guard.md` の
   「判定の鍵を別の鍵へ置き換えるときも発動する」の項に追記した (鍵と同じ発動点・同じ手順なので新しい rule にしない)
 - **B (2 から)**: memory を置いても再発したので、Stop hook で最後の応答の言語を機械で見る。→ 新規 issue 1122
-- 却下 (3 から): 規範は既にある (dotfiles の CLAUDE.md「Bash で書いたコメントは commit の前に `scripts/check_comment_provenance.sh --list` を打つ」と、
-  `~/.claude/CLAUDE.md` の「関数・型を足す編集は Edit / Write で行う」)。今回は打ち忘れで、足す規範が無い
+- 却下 (3 から): 規範は既にある (dotfiles の CLAUDE.md「Bash で書いたコメントは commit の前に `scripts/check_comment_provenance.sh --list` を打つ」)。
+  今回は打ち忘れで、足す規範が無い
 - 却下 (4 から): 規範は既にある (`~/.claude/CLAUDE.md`「一時ファイルの配置」)。その場で消した
 - 局所 (5 から): 直さない。エラーの文が `--syntax` の例を出しており、1 回で回し直せた
 
