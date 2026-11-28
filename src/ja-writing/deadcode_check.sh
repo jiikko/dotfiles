@@ -43,8 +43,6 @@ internal/pystr/pystr.go:IsNumeric|IsAlpha と同じ
 internal/pyre/pattern.go:Match.GroupDict|re の Match の groupdict。pyre が写す範囲として README の表にあり、pyre.json の記録と比べる
 internal/pyre/pattern.go:Pattern.Pattern|lint と visibility のテスト (別の package) が、組んだパターンの文字列を記録と比べるのに呼ぶ。export_test.go は自分のフォルダのテストにしか入らない
 internal/pyre/lazy.go:Lazy.Flags|lint と diff のテスト (別の package) が、パターンのフラグを記録と比べるのに呼ぶ。export_test.go は自分のフォルダのテストにしか入らない
-internal/pyre/pattern.go:Match.Pos|Python の match.pos。テストからも呼ばれない。消すかどうかは issue 1116 で決めていない
-internal/pyre/pattern.go:Match.EndPos|Match.Pos と同じ (match.endpos)
 internal/pyjson/round.go:RoundInt|round(x)。pyjson が写す範囲として README の表にあり、json.json の記録 (503 件) と比べる
 internal/difflib/difflib.go:SequenceMatcher.FindLongestMatch|difflib の find_longest_match。写すメソッドの 1 つとして README にあり、difflib.json の記録と比べる
 ALLOWEOF

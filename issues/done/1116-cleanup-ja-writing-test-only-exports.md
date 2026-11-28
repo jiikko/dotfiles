@@ -78,3 +78,4 @@ silent か: コンパイルもテストも通るので、増えても誰も気�
 - 2026-11-27: 敵対的レビュー (opus) で P1・P2 は見つからなかった (テストの本数は変更の前後で 269 本ずつ一致・generics の関数とメソッドも検査に出る・deadcode が落ちると rc=1・go.mod は書き換わらない)。
   P3 の 3 件 (テストの道具の main だけが呼ぶ関数・interface のメソッドと同じ名前のメソッド・中に go.mod を置いたフォルダ) は、検査が見ないものとして `deadcode_check.sh` の冒頭に書いた。root の `make test` は rc=0
 - 残したもの: `pyre.Match.Pos`・`Match.EndPos` はテストからも呼ばれない。re の Match の写しとして ALLOW に残し、消すかは決めていない
+- 2026-11-28: 残していた `pyre.Match.Pos`・`Match.EndPos` を消した (ユーザー決定)。読んでいたのがこの 2 つだけだった `Match` の欄 `pos`・`endpos` も消し、`deadcode_check.sh` の ALLOW から 2 行を外した (ALLOW は 10 件)。root の `make test` は rc=0

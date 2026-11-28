@@ -201,21 +201,13 @@ func (t Text) String() string { return pyunicode.FromRunes(t.runes) }
 
 // Match は re.Match。
 type Match struct {
-	re     *Pattern
-	text   Text
-	pos    int
-	endpos int
-	spans  []int // 2 * (グループ数 + 1)。参加しなかったグループは -1, -1
+	re    *Pattern
+	text  Text
+	spans []int // 2 * (グループ数 + 1)。参加しなかったグループは -1, -1
 }
 
 // Pattern はこの一致を作ったパターン。
 func (m *Match) Pattern() *Pattern { return m.re }
-
-// Pos と EndPos は探索の範囲 (Python の match.pos / match.endpos)。
-func (m *Match) Pos() int { return m.pos }
-
-// EndPos は探索の範囲の終わり。
-func (m *Match) EndPos() int { return m.endpos }
 
 // Span は group 番号のグループの [start, end)。参加しなかったグループは -1, -1。範囲外の番号も -1, -1。
 func (m *Match) Span(group int) (start, end int) {
@@ -327,7 +319,7 @@ func (p *Pattern) run(f form, t Text, pos, endpos int) (*Match, error) {
 			spans[2*g], spans[2*g+1] = grp.RuneIndex, grp.RuneIndex+grp.RuneLength
 		}
 	}
-	return &Match{re: p, text: t, pos: pos, endpos: endpos, spans: spans}, nil
+	return &Match{re: p, text: t, spans: spans}, nil
 }
 
 // Search は pattern.search(string, pos, endpos)。一致しなければ nil。
