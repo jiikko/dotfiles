@@ -52,3 +52,6 @@ hook の lib (`issue_hook_resolve_dir`) が見る入れ子の 1 段 (`<root>/*/i
     `ISSUES_DIR` のテストを対象の repo の中から呼び、元のファイルが消えたことも見る / issue-sync の Step 6 に、道具が案内して止まったときの手順を書く
   - 採らなかったもの: `scripts/` だけを写した起動で採番が `bin/lib/git_location_env.sh` を読めずに落ちる。利用者は完全な checkout の `~/dotfiles/scripts/` から呼ぶ (start-issues-ops の案内)。
     写して使うのはテストだけで、テストは `bin/lib` も写す
+  - 評価: obaket で dotfiles の道具を打っても、「見つからない (既に done/ に在る?)」と誤った答えを返さず、使うべき `bin/` の道具を名指して何もせずに止まる。
+    採番は入れ子の側の番号を取り直す経路が無くなった (obaket では番号を出さない)。入れ子の repo を扱えるようにはしていない (ユーザー決定どおり)。
+    増えたのは判定の lib 1 本 (31 行) と 3 本の分岐。未確認: 他のマシン・別の repo の実物での案内 (obaket・DualNoteApp・dotfiles の 3 つで確かめた)
