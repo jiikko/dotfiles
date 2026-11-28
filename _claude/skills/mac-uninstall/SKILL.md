@@ -71,7 +71,7 @@ brew の管理下 (cask・formula) は `brew uninstall`、それ以外 (App Stor
   要らなければ人が Finder で消す
 - **formula の「使われているかもしれない」の範囲**: 入口は 3 つ。①シェル・tmux の設定から `source` / `.` / `source-file` / `run-shell` の
   引数に出たパスを 2 段まで (絶対パスと `${VAR:-既定}` の既定も辿る)、②`~/.claude/settings.json` の `command` と、そこから呼ぶスクリプトの
-  本文に出る `~` / `$HOME` / 自分の置き場 (`$(dirname "$0")` など) からのパスを 2 段まで、③`~/.config` の下 (直下の symlink の dir も辿る。
+  本文に出る `~` / `$HOME` / 自分の置き場 (`${0:A:h}`・`${BASH_SOURCE%/*}`・`dirname` でスクリプトの dir を取る形) からのパスを 2 段まで、③`~/.config` の下 (直下の symlink の dir も辿る。
   道具ごとに 3 段目・300 ファイル・1 ファイル 1MB まで)。`~/Library`・履歴 (`*_history`)・補完のキャッシュ・バイナリは読まない。
   読む量は合計 32MB まで (超えたら一覧の判定不能に出る)。当たり方はコマンドの名前 (`bin` の中身) が語として出るか、
   `Cellar/` `opt/` `share/` `plugins/` の直後に formula の名前が出るか。それ以外 (cron・repo の Makefile やスクリプト・nvim が runtimepath

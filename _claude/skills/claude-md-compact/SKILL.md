@@ -30,8 +30,10 @@ Claude Code は起動時に、常時読み込む指示ファイルの合計が�
 節ごとの大きさは次で出す (ファイル名は置き換える)。
 
 ```sh
-LC_ALL=en_US.UTF-8 awk '/^## /{if(h)printf "%6d %s\n",n,h; h=$0; n=0} {n+=length($0)+1} END{printf "%6d %s\n",n,h}' <file> | sort -rn
+LC_ALL=en_US.UTF-8 awk -F'\n' '/^## /{if(h)printf "%6d %s\n",n,h; h=$NF; n=0} {n+=length()+1} END{printf "%6d %s\n",n,h}' <file> | sort -rn
 ```
+
+(`-F'\n'` で 1 行を 1 つのフィールドにし、行全体を `$NF` で取る。ドル記号に数字を続けると、Claude Code が skill を読み込むときに起動の引数で置き換える。issue 1120)
 
 前の値は `skill-tmpdir claude-md-compact` の dir にファイルで残す (報告の本文にだけ書かない)。どの層を縮めると効果があるか (global か repo か、どのセッションが上限に近いか) を、値を並べてユーザーに一文で示してから始める。
 global 層 (`~/.claude/` の CLAUDE.md・rules) の実体は link 先の repo (dotfiles) にある。縮めるならその repo の規約 (worktree・push の手順) で作業する。
