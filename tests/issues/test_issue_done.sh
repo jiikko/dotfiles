@@ -353,9 +353,10 @@ d6="$work/owntool"; make_fixture "$d6"
 mkdir -p "$d6/bin" && printf '#!/bin/sh\n' > "$d6/bin/issue-done" && chmod +x "$d6/bin/issue-done"
 rc=0; (cd "$d6" && "$SCRIPT" 347) > "$work/owntool.log" 2>&1 || rc=$?
 [ "$rc" -eq 2 ] || { cat "$work/owntool.log" >&2; fail "自分の完了の道具を持つ repo で rc=$rc (2 を期待)"; }
-grep -qF "$d6/bin/issue-done を使う" "$work/owntool.log" || { cat "$work/owntool.log" >&2; fail "repo の完了の道具を案内していない"; }
+grep -qF "/bin/issue-done を使う" "$work/owntool.log" || { cat "$work/owntool.log" >&2; fail "repo の完了の道具を案内していない"; }
 [ -f "$d6/issues/347-refactor-a.md" ] && [ -L "$d6/issues/next/347-refactor-a.md" ] || fail "自分の完了の道具を持つ repo で issue を動かした"
 ISSUES_DIR="$d6/issues" "$SCRIPT" 347 > "$work/owntool-explicit.log" 2>&1 ||
   { cat "$work/owntool-explicit.log" >&2; fail "ISSUES_DIR を指定したのに repo の完了の道具へ案内した"; }
+[ -f "$d6/issues/done/347-refactor-a.md" ] || fail "ISSUES_DIR を指定したのに 347 を done/ へ移していない"
 
 printf '✓ issue_done.sh: 正常系 (global / group / 4 桁の番号 / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help / ISSUES_DIR なしは cwd の repo・repo の外は拒否・継承した GIT_DIR を無視) / 入れ子の issues/ の案内 / repo の完了の道具への案内 / baseline 赤の拒否 / 変異 8 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary・バナー除去) すべて red (バナー除去は検査側で red。それ以外は rollback 済み)\n'

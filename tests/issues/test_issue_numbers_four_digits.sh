@@ -64,7 +64,7 @@ g "$d" update-ref -d refs/remotes/origin/master
 : > "$d/issues/160-x.md"; g "$d" add -A; g "$d" commit -qm other
 g "$d" update-ref refs/remotes/origin/main HEAD; g "$d" reset -q --hard HEAD~1
 g "$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
-mkdir -p "$d/sub/dir"; cp -R "$ROOT_DIR/scripts" "$d/scripts"
+mkdir -p "$d/sub/dir" "$d/bin"; cp -R "$ROOT_DIR/scripts" "$d/scripts"; cp -RL "$ROOT_DIR/bin/lib" "$d/bin/lib" # 採番の道具は bin/lib/git_location_env.sh (devtool/lib への symlink) も読む
 got="$(cd "$d/sub/dir" && ../../scripts/issue_next_number.sh)" || fail "サブディレクトリから相対パスで起動して落ちた"
 [ "$got" = 161 ] || fail "ref を省いたとき origin/HEAD (origin/main) の 160 を数えない: $got"
 
@@ -75,7 +75,11 @@ mkdir -p "$d/bin" && printf '#!/bin/sh\n' > "$d/bin/next-issue-number" && chmod 
 rc=0; next_in "$d" > "$work/owntool.out" 2> "$work/owntool.err" || rc=$?
 [ "$rc" -eq 2 ] || fail "自分の採番の道具を持つ repo で rc=$rc (2 を期待)"
 [ ! -s "$work/owntool.out" ] || fail "自分の採番の道具を持つ repo で番号を出した: $(cat "$work/owntool.out")"
-grep -qF "$d/bin/next-issue-number を使う" "$work/owntool.err" || { cat "$work/owntool.err" >&2; fail "repo の採番の道具を案内していない"; }
+grep -qF "/bin/next-issue-number を使う" "$work/owntool.err" || { cat "$work/owntool.err" >&2; fail "repo の採番の道具を案内していない"; }
+
+# ① 継承した GIT_DIR / GIT_WORK_TREE は外し、cwd の repo の道具を案内する (別の repo の番号を出さない)
+rc=0; (cd "$d" && GIT_DIR="$work/three/.git" GIT_WORK_TREE="$work/three" "$NEXT" origin/master) > "$work/gitdir.out" 2>&1 || rc=$?
+[ "$rc" -eq 2 ] || { cat "$work/gitdir.out" >&2; fail "継承した GIT_DIR に従って別の repo を数えた (rc=$rc)"; }
 
 # ② 4 桁の重複を落とす / 4 桁でも別の番号なら通る
 d="$work/dup4"; mkdir -p "$d/issues/done"; : > "$d/issues/1000-a.md"; : > "$d/issues/done/1000-b.md"; : > "$d/issues/999-c.md"

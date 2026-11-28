@@ -2,9 +2,9 @@
 # その repo の決まりへ渡すための判定。source して使う (set -e の下で呼んでよい)。
 #
 # dotfiles の道具は「repo 直下の issues/ を 1 つの番号の列として扱う」repo の道具。入れ子の issues/ の扱いは repo ごとに違い
-# (obaket は issues/ と macOS/issues/ で通し番号、DualNoteApp は iOS/・macOS/ で別々に 001 から、umbrella の project-templates/issues/ は
+# (obaket は issues/ と macOS/issues/ で通し番号、DualNoteApp は issues/ と macOS/issues/ が通しで iOS/issues/ だけ 001 からの別の列、umbrella の project-templates/issues/ は
 # submodule の別の repo)、外から決められない。だから入れ子の dir は操作せず、repo が自分の道具を持つならそちらへ案内して止まる。
-# 入れ子の dir を一律に数える形にしない: DualNoteApp では別の列の番号を最大値に混ぜ、umbrella では submodule の issue を動かす。
+# 入れ子の dir を一律に数える形にしない: DualNoteApp では iOS/ の列の番号を最大値に混ぜ、umbrella では submodule の issue を動かす。
 
 # repo_issue_tool_owned <repo> <tool>: <repo>/bin/<tool> (実行できるファイル) があれば 0 を返し、パスを stdout に出す。
 # 🚨 dotfiles の bin/issue-claim は issue_claim.sh の部品なので、claim の道具の判定には使わない (dotfiles の中で自分を案内して止まる)
