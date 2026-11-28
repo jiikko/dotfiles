@@ -82,6 +82,8 @@ unset CDPATH
 export LC_ALL=C
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" # 道具の置き場 (dotfiles)。操作する repo ではない
+# shellcheck source=scripts/lib/repo_issue_tools.sh
+. "$ROOT_DIR/scripts/lib/repo_issue_tools.sh" || { echo "issue_done: scripts/lib/repo_issue_tools.sh を読めない" >&2; exit 2; }
 BANNER_AWK="$ROOT_DIR/scripts/lib/claim_banner.awk" # 担当者バナーの判定規則 (tests/issues/test_next_claims_have_banner.sh と共用)
 # 🚨 hook などから継承した GIT_DIR / GIT_WORK_TREE は `git -C` より優先され、既定の repo の解決も移動も別の repo に向く
 # shellcheck source=bin/lib/git_location_env.sh
@@ -97,6 +99,9 @@ usage: scripts/issue_done.sh <NNN> [<NNN>...]
   他 issue からの参照の張り直し) を 1 コマンドで行い、リンク検査が落ちたら移動を戻す。
 
   ISSUES_DIR=<dir>   検査・操作の対象ディレクトリ (既定: cwd の git repo の root の issues)
+
+  ISSUES_DIR を指定せずに呼んで、repo が bin/issue-done を持つなら、それを案内して何もせずに止まる (rc=2)。
+  入れ子の issues/ (obaket の macOS/issues/ など) は扱わない。見つからない issue が入れ子にあれば場所を出す
 USAGE
 }
 
@@ -272,6 +277,10 @@ if [ -z "${ISSUES_DIR:-}" ]; then
   repo="$(git rev-parse --show-toplevel 2>/dev/null)" ||
     { printf '✗ git の repo の中で実行するか、ISSUES_DIR を指定する (何も動かしていない)\n' >&2; exit 2; }
   ISSUES_DIR="$repo/issues"
+  # repo が自分の完了の道具を持つなら、そちらが repo の決まり (入れ子の issues/・repo だけの検査) を知っている。dotfiles の手順では動かさない
+  if own="$(repo_issue_tool_owned "$repo" issue-done)"; then
+    printf '✗ この repo は自分の完了の道具を持つ。%s を使う (何も動かしていない)\n' "$own" >&2; exit 2
+  fi
 fi
 while [ "${ISSUES_DIR%/}" != "$ISSUES_DIR" ]; do ISSUES_DIR="${ISSUES_DIR%/}"; done
 [ -d "$ISSUES_DIR" ] || { printf '✗ 対象ディレクトリが無い: %s\n' "$ISSUES_DIR" >&2; exit 1; }
@@ -364,7 +373,11 @@ for num in "$@"; do
     done | sort || true)"
   count="$(printf '%s' "$matches" | grep -c . || true)"
   if [ "$count" -eq 0 ]; then
-    printf '✗ issue %s の実体が見つからない (探した場所: %s。既に done/ に在る?)\n' "$num" "$ISSUES_DIR" >&2; exit 1
+    printf '✗ issue %s の実体が見つからない (探した場所: %s。既に done/ に在る?)\n' "$num" "$ISSUES_DIR" >&2
+    if nested="$(repo_issue_nested_matches "$BASE_DIR" "$num")"; then
+      printf '  入れ子の issues/ にある (この道具は repo 直下の issues/ だけを扱う。その repo の issues/README の完了の手順に従う):\n%s\n' "$nested" >&2
+    fi
+    exit 1
   fi
   if [ "$count" -ne 1 ]; then
     printf '✗ issue %s の実体が %d 件ある (番号の衝突):\n%s\n' "$num" "$count" "$matches" >&2; exit 1

@@ -275,8 +275,21 @@ grep -q 'pre-push: 検査が赤い' "$work/hookrace.log" || { cat "$work/hookrac
 if [ -n "$(git -C "$work/hookrace/origin.git" ls-tree master -- issues/next/101-feat-a.md)" ]; then fail "pre-push が落ちたのに claim が載った"; fi
 no_leftovers hookrace || fail "pre-push と競合: 一時 worktree / 一時ディレクトリが残った"
 
+# --- 7.14 入れ子の issues/ にしか無い issue は claim せず、その場所を出す (探すのは origin から切った一時 worktree の中) ---
+setup nested
+c="$work/nested/clone"
+mkdir -p "$c/macOS/issues"
+printf '# 106 (feat): n\n\n## 概要\n' > "$c/macOS/issues/106-feat-n.md"
+git -C "$c" add macOS/issues/106-feat-n.md && git -C "$c" commit -qm nested && git -C "$c" push -q origin master
+before="$(git -C "$work/nested/origin.git" rev-parse master)"
+if (cd "$c" && "$SCRIPT" 106) > "$work/nested.log" 2>&1; then fail "入れ子の issues/ にしか無い issue を claim した"; fi
+grep -q '入れ子の issues/ にある' "$work/nested.log" && grep -q '^macOS/issues/106-feat-n.md$' "$work/nested.log" ||
+  { cat "$work/nested.log" >&2; fail "入れ子の issue の場所を出していない"; }
+[ "$(git -C "$work/nested/origin.git" rev-parse master)" = "$before" ] || fail "入れ子の issue で何か push した"
+no_leftovers nested || fail "入れ子: 一時 worktree / 一時ディレクトリが残った"
+
 # --- 8. 引数の誤り ---------------------------------------------------------------------------
 if (cd "$work/ok/clone" && "$SCRIPT" 12) >/dev/null 2>&1; then fail "3 桁未満の番号を受け付けた"; fi
 if (cd "$work" && "$SCRIPT" 101) >/dev/null 2>&1; then fail "git の repo の外で動いた"; fi
 
-printf '✓ issue_claim.sh: 正常系 (手元を触らない) / claim 済み・done・pending・番号の衝突・実体なし・接頭辞つきの ID の拒否 / epic / 再試行 (fetch first・non-fast-forward・pre-push の間の cannot lock ref) と上限 (各回の出力) / pre-push の失敗 (同時に origin が進んでも再試行しない) / commit は本文と目印だけ / pushurl の rc=3 / 継承した GIT_DIR / push 中の SIGTERM / ref の更新後の中断 (push は rc≠0) / 関係の無い ref の lock / Claim-Id / 引数の誤り。どれも一時 worktree と一時ディレクトリを残さない\n'
+printf '✓ issue_claim.sh: 正常系 (手元を触らない) / claim 済み・done・pending・番号の衝突・実体なし・接頭辞つきの ID の拒否 / epic / 再試行 (fetch first・non-fast-forward・pre-push の間の cannot lock ref) と上限 (各回の出力) / pre-push の失敗 (同時に origin が進んでも再試行しない) / commit は本文と目印だけ / pushurl の rc=3 / 継承した GIT_DIR / push 中の SIGTERM / ref の更新後の中断 (push は rc≠0) / 関係の無い ref の lock / Claim-Id / 入れ子の issues/ の案内 / 引数の誤り。どれも一時 worktree と一時ディレクトリを残さない\n'

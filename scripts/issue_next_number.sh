@@ -6,12 +6,19 @@
 # 作業ツリーの issues/ と <ref> の issues/ の両方を数える (push 済みの他のセッションの採番は作業ツリーに見えない)。
 # fetch はしない: 打つ前に `git fetch origin` しておく。番号を取ったら即 commit & push する (issue 規約)。
 # 他の repo でも、その repo の中から ~/dotfiles/scripts/issue_next_number.sh で呼べる。
+# repo 直下の issues/ だけを数える。repo が bin/next-issue-number を持つなら、それを案内して何も出さずに止まる (rc=2)。
+# 入れ子の issues/ と通しで採番する repo (obaket) で直下だけを数えると、入れ子の側の番号を取り直すため。
 set -euo pipefail
 
 # lib の場所は cd の前に解決する (cd の後だと、サブディレクトリから相対パスで起動したときに $0 が解決できない)
 # shellcheck source=scripts/lib/issue_numbers.sh
 . "$(dirname "$(readlink -f "$0")")/lib/issue_numbers.sh"
+# shellcheck source=scripts/lib/repo_issue_tools.sh
+. "$(dirname "$(readlink -f "$0")")/lib/repo_issue_tools.sh"
 root="$(git rev-parse --show-toplevel)"
+if own="$(repo_issue_tool_owned "$root" next-issue-number)"; then
+  echo "issue_next_number: この repo は自分の採番の道具を持つ。$own を使う" >&2; exit 2
+fi
 cd "$root" || exit 1
 ref="${1:-$(issue_default_ref)}"
 git rev-parse --verify -q "$ref^{commit}" >/dev/null || { echo "issue_next_number: $ref が無い (git fetch してから回す)" >&2; exit 1; }

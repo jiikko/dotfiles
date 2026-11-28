@@ -68,6 +68,15 @@ mkdir -p "$d/sub/dir"; cp -R "$ROOT_DIR/scripts" "$d/scripts"
 got="$(cd "$d/sub/dir" && ../../scripts/issue_next_number.sh)" || fail "サブディレクトリから相対パスで起動して落ちた"
 [ "$got" = 161 ] || fail "ref を省いたとき origin/HEAD (origin/main) の 160 を数えない: $got"
 
+# ① repo が自分の採番の道具 (bin/next-issue-number) を持つなら、番号を出さずにそれを案内する (入れ子の issues/ と通しで採番する repo で
+#    直下だけを数えると、入れ子の側の番号を取り直す)
+d="$work/owntool"; new_repo "$d" 170-a.md
+mkdir -p "$d/bin" && printf '#!/bin/sh\n' > "$d/bin/next-issue-number" && chmod +x "$d/bin/next-issue-number"
+rc=0; next_in "$d" > "$work/owntool.out" 2> "$work/owntool.err" || rc=$?
+[ "$rc" -eq 2 ] || fail "自分の採番の道具を持つ repo で rc=$rc (2 を期待)"
+[ ! -s "$work/owntool.out" ] || fail "自分の採番の道具を持つ repo で番号を出した: $(cat "$work/owntool.out")"
+grep -qF "$d/bin/next-issue-number を使う" "$work/owntool.err" || { cat "$work/owntool.err" >&2; fail "repo の採番の道具を案内していない"; }
+
 # ② 4 桁の重複を落とす / 4 桁でも別の番号なら通る
 d="$work/dup4"; mkdir -p "$d/issues/done"; : > "$d/issues/1000-a.md"; : > "$d/issues/done/1000-b.md"; : > "$d/issues/999-c.md"
 if bash "$UNIQUE" "$d/issues" > "$work/dup4.log" 2>&1; then
@@ -77,4 +86,4 @@ grep -qF '番号 1000:' "$work/dup4.log" || { cat "$work/dup4.log" >&2; fail "�
 d="$work/uniq4"; mkdir -p "$d/issues"; : > "$d/issues/1000-a.md"; : > "$d/issues/1001-b.md"; : > "$d/issues/100-c.md"
 bash "$UNIQUE" "$d/issues" > "$work/uniq4.log" 2>&1 || { cat "$work/uniq4.log" >&2; fail "1000・1001・100 を重複と読んだ"; }
 
-printf '✓ issue 番号の 4 桁: 採番 (3 桁のゼロ埋め・999 と 1000 の跨ぎ・ref にだけある番号・番号でないファイルと日付の記録・ref にだけある非 ASCII の名前・既定の ref と相対パスでの起動) / 重複の検査 (4 桁の重複・別の番号)\n'
+printf '✓ issue 番号の 4 桁: 採番 (3 桁のゼロ埋め・999 と 1000 の跨ぎ・ref にだけある番号・番号でないファイルと日付の記録・ref にだけある非 ASCII の名前・既定の ref と相対パスでの起動・repo の採番の道具への案内) / 重複の検査 (4 桁の重複・別の番号)\n'

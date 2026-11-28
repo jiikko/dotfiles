@@ -19,7 +19,7 @@
 #   - pre-push で落ちたら --no-verify は使わずに止める (issue を触る push は、無関係な issue の赤でも止まる)
 #
 # 目印とバナーを置くのは bin/issue-claim (src/glogx/cmd/issue-claim。glogx の viewer の `n` と同じ issues.MoveToSubdir)。
-# 既に claim 済み・直下に無い・done・番号の衝突はそちらが拒否する (rc=1)。
+# 既に claim 済み・直下に無い・done・番号の衝突はそちらが拒否する (rc=1)。入れ子の issues/ (obaket の macOS/issues/ など) は扱わず、拒否した issue が入れ子にあれば場所を出す。
 #
 # 環境変数: ISSUE_CLAIM_BRANCH (push 先。既定は origin/HEAD が指すブランチ) / ISSUE_CLAIM_ATTEMPTS
 #   ISSUE_CLAIM_TEST_BEFORE_PUSH: テスト専用。commit の後・push の前に bash -c で走らせる (origin を先へ進めて non-fast-forward を作る)
@@ -50,6 +50,8 @@ num="$1"
 [[ "$num" =~ ^[0-9]{3,}$ ]] || die "issue 番号は 3 桁以上の数字で指定する: $num"
 
 TOOL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" # bin/issue-claim の置き場 (dotfiles)
+# shellcheck source=scripts/lib/repo_issue_tools.sh
+. "$TOOL_ROOT/scripts/lib/repo_issue_tools.sh" || die "$TOOL_ROOT/scripts/lib/repo_issue_tools.sh を読めない"
 repo="$(git rev-parse --show-toplevel 2>/dev/null)" || die "git の repo の中で実行する"
 [ -d "$repo/issues" ] || die "issues/ が無い: $repo"
 
@@ -115,6 +117,9 @@ for ((i = 1; i <= attempts; i++)); do
   "$ISSUE_CLAIM" "$wt/issues" "$num" >"$work/claim.out" 2>"$work/claim.err" || claim_rc=$?
   if [ "$claim_rc" -ne 0 ]; then
     cat "$work/claim.err" >&2
+    if nested="$(repo_issue_nested_matches "$wt" "$num")"; then
+      printf 'issue_claim: 入れ子の issues/ にある (この道具は repo 直下の issues/ だけを扱う。その repo の issues/README の手順に従う):\n%s\n' "$nested" >&2
+    fi
     die "issue $num を claim しなかった (何も push していない)" 1
   fi
 
