@@ -22,8 +22,21 @@ if [ -n "$want" ] && [ "$want" = "$got" ]; then pass "settings.json の配線が
 
 TMP_ROOT=$(cd "$(mktemp -d)" && pwd -P) || exit 1
 trap 'rm -rf "$TMP_ROOT"' EXIT
-# 包みはビルドしないので、先に 1 回ビルドしておく (本番も同じ: bin/ja-writing を一度打てば入る)
-"$ROOT_DIR/bin/ja-writing" hook --version >/dev/null
+# 包みはビルドしないので、先にビルドしておく (本番も同じ: bin/ja-writing を打てば入る)。
+# 1 回では足りないことがある: go:embed を持つ module の最初のビルドは、embed の記録を書いた後に「次の起動で 1 回作り直す」印を付ける
+# (bin/lib/go_autobuild.zsh の _go_autobuild_build)。何もビルドされていない木 (CI・新しい worktree) では、1 回目の後の --no-build が
+# 「バイナリが古い」で何もせずに終わる。ビルドしない形で起こせるまで、上限 3 回ビルドする
+built=0
+for _ in 1 2 3; do
+  "$ROOT_DIR/bin/ja-writing" hook --version >/dev/null
+  # shellcheck disable=SC2016  # 単一引用符の中は zsh -c のプログラム ($1 は zsh の引数)
+  if zsh -c 'source "$1"; shift; go_autobuild_exec --no-build "$1" ja-writing -- "${@:2}"' \
+    _ "$ROOT_DIR/bin/lib/go_autobuild.zsh" "$ROOT_DIR/src/ja-writing" hook --version >/dev/null 2>&1; then
+    built=1
+    break
+  fi
+done
+[ "$built" -eq 1 ] || { echo "✗ 3 回ビルドしても、ビルドしない形で ja-writing を起こせない" >&2; exit 1; }
 
 # 登録の流れ: 原稿を名指した UserPromptSubmit で登録の文が出る (stdin が hook に届き、出力が返る)
 proj="$TMP_ROOT/proj"
