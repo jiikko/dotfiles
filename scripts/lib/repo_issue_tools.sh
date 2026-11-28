@@ -1,5 +1,6 @@
 # repo_issue_tools.sh — dotfiles の issue の道具 (issue_done.sh・issue_next_number.sh・issue_claim.sh) を他の repo から呼んだときに、
 # その repo の決まりへ渡すための判定。source して使う (set -e の下で呼んでよい)。
+# shellcheck shell=bash
 #
 # dotfiles の道具は「repo 直下の issues/ を 1 つの番号の列として扱う」repo の道具。入れ子の issues/ の扱いは repo ごとに違い
 # (obaket は issues/ と macOS/issues/ で通し番号、DualNoteApp は issues/ と macOS/issues/ が通しで iOS/issues/ だけ 001 からの別の列、umbrella の project-templates/issues/ は
@@ -20,7 +21,7 @@ repo_issue_nested_matches() {
   for dir in "$repo"/*/issues "$repo"/*/issue; do
     [ -d "$dir" ] || continue
     top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || continue
-    [ "$(cd "$top" && pwd -P)" = "$(cd "$repo" && pwd -P)" ] || continue
+    [ "$(CDPATH='' cd "$top" && pwd -P)" = "$(CDPATH='' cd "$repo" && pwd -P)" ] || continue
     while IFS= read -r m; do
       [ -n "$m" ] || continue
       printf '%s\n' "${m#"$repo"/}"
