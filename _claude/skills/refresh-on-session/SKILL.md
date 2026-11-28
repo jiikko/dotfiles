@@ -152,10 +152,12 @@ git log --oneline "$mb"..HEAD
   ```sh
   grep '^+' "$d/diff.patch" | grep -v '^+++' \
     | grep -oE '[A-Za-z][A-Za-z0-9_-]{2,}' | sort -u \
-    | awk '{ k=$0; gsub(/[A-Z]/, " &", k); gsub(/[_-]/, " ", k); k=tolower(k); gsub(/ +/, " ", k); sub(/^ /, "", k)
-             f[k]=f[k] " " $0; n[k]++ }
+    | awk '{ k=$NF; gsub(/[A-Z]/, " &", k); gsub(/[_-]/, " ", k); k=tolower(k); gsub(/ +/, " ", k); sub(/^ /, "", k)
+             f[k]=f[k] " " $NF; n[k]++ }
            END { for (k in n) if (n[k] > 1) print k ":" f[k] }' > "$d/spelling-groups.txt"
   # 例: "item list: item_list item-list itemList ItemList"
+  # 1 行 1 語なので、行全体ではなく最後のフィールド ($NF) で語を取る。ドル記号に数字を続けると、
+  # Claude Code が skill を読み込むときに引数で置き換え、式が壊れる
   ```
 
   🚨 この検出は**綴りの形しか見ない**。同義語 (`load` と `fetch`) と日本語の表記揺れは拾えないので、用語集の方で見る
