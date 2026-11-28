@@ -25,7 +25,7 @@ hook の lib (`issue_hook_resolve_dir`) が見る入れ子の 1 段 (`<root>/*/i
 入れ子の dir を一律に数えると、DualNoteApp では `iOS/` の列の番号を最大値に混ぜ、umbrella では submodule の issue を動かす。だから dotfiles の道具は入れ子を操作せず:
 
 - repo が `bin/issue-done`・`bin/next-issue-number` を持つなら、何もせずにそれを案内して止まる (rc=2)。`issue_done.sh` は `ISSUES_DIR` を指定したときは案内しない
-- 見つからない issue が入れ子の 1 段 (`<repo>/*/issues`・`*/issue`) にあれば、場所を出す (別の repo の dir は出さない)
+- 見つからない issue が入れ子の 1 段 (`<repo>/*/issues`・`*/issue`) にあれば、場所を出す (入口の dir が別の repo なら出さない)
 - claim は repo 自前の道具を案内しない (dotfiles の `bin/issue-claim` は `issue_claim.sh` の部品で、dotfiles の中で自分を案内してしまう)
 - 規約の 2 か所 (claim の rule の完了の項・`issue-rules.md` の採番) に「repo の道具があればそちら」を書く。issue-sync は触らない。issue-sync の例外は「`issues/README.md` が別の完了コマンドを定めていれば」で、obaket の README は `bin/issue-done` を名指していない (`.claude/rules/issue-done-on-completion.md` が名指す)。issue-sync の手順で obaket で打っても、道具が `bin/issue-done` を案内して止まる (rc=2)
 
@@ -42,8 +42,13 @@ hook の lib (`issue_hook_resolve_dir`) が見る入れ子の 1 段 (`<root>/*/i
   - 変異を当てていないもの: `ISSUES_DIR` を指定したときに案内しない分岐 (テストはある)
   - 敵対レビュー (codex、P1 0・P2 5・P3 3)。直したもの: 採番の道具が継承した `GIT_DIR` / `GIT_WORK_TREE` を外していなかった (done と claim は外す。別の repo の番号を数え、道具の判定もすり抜ける) /
     `ISSUES_DIR` を指定したときのテストが rc しか見ていなかった / テストの案内のパスの照合 (`/var` と `/private/var`) / DualNoteApp の番号の列の事実 / issue-sync の記述
-  - 記録だけで直さないもの (発火に作った形が要る。再提起するなら実在する repo の形を添える):
+  - 記録だけで直さないもの (最後の claim の 1 件を除き、発火に作った形が要る。再提起するなら実在する repo の形を添える):
     - `<repo>/bin` が別の repo の `bin/` への symlink だと、案内した道具が別の repo を操作する
     - 入れ子の `issues/` の下に別の repo (submodule) があると、その中の issue も案内に出る (所属は入れ子の `issues/` の入口でだけ確かめる)
     - 直下に `issues/` が無い repo、入れ子の `issues/` が symlink の repo では、入れ子の案内が出ない。claim は origin から切った一時 worktree を探すので、手元にだけある issue も案内しない
     - claim のテストは手元と origin の両方に同じ issue を置くので、探す先を一時 worktree から手元に変える変異を見分けない
+    - `bin/issue-done` などが dir や実行できないファイルだと案内しない。`ISSUES_DIR=` (空) は指定なしと同じに扱う
+  - 2 周目の敵対レビュー (codex、P1 0)。直したもの: テストの案内の照合に repo のパスまで含める (緩めた照合は別の repo の案内も通した) / `GIT_DIR` のテストで案内の中身を見る /
+    `ISSUES_DIR` のテストを対象の repo の中から呼び、元のファイルが消えたことも見る / issue-sync の Step 6 に、道具が案内して止まったときの手順を書く
+  - 採らなかったもの: `scripts/` だけを写した起動で採番が `bin/lib/git_location_env.sh` を読めずに落ちる。利用者は完全な checkout の `~/dotfiles/scripts/` から呼ぶ (start-issues-ops の案内)。
+    写して使うのはテストだけで、テストは `bin/lib` も写す

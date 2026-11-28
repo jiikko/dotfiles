@@ -148,7 +148,7 @@ AskUserQuestion で「これらの issue を `done/` へ移動しますか？」
 ユーザーが承認した場合:
 
 1. **dotfiles の `scripts/issue_done.sh <NNN>` を使う**（他の repo でも、その repo の中から `~/dotfiles/scripts/issue_done.sh` で呼べる。
-   対象は cwd の repo の issues/。`issue/` の repo では `ISSUES_DIR="$PWD/issue"` を repo root で渡す）。その repo の `issues/README.md` が別の完了コマンドを定めていれば、そちらを使う。
+   対象は cwd の repo の issues/。`issue/` の repo では `ISSUES_DIR="$PWD/issue"` を repo root で渡す）。その repo の `issues/README.md` が別の完了コマンドを定めていれば、そちらを使う。repo が `bin/issue-done` を持つと `issue_done.sh` はそれを案内して何もせずに止まる (rc=2) ので、案内された道具で移す。
    移動 / claim symlink の削除 / 本文の相対リンクの張り直し / **他 issue からこの issue への参照の
    張り直し** の 4 つを 1 コマンドで行い、リンク検査が落ちたら移動を戻す。
    実測 2026-09-09（retro 345）: 手作業だと 12 件中 **4 回**取りこぼし、1 回は CI を赤くした。

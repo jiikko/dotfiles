@@ -75,11 +75,12 @@ mkdir -p "$d/bin" && printf '#!/bin/sh\n' > "$d/bin/next-issue-number" && chmod 
 rc=0; next_in "$d" > "$work/owntool.out" 2> "$work/owntool.err" || rc=$?
 [ "$rc" -eq 2 ] || fail "自分の採番の道具を持つ repo で rc=$rc (2 を期待)"
 [ ! -s "$work/owntool.out" ] || fail "自分の採番の道具を持つ repo で番号を出した: $(cat "$work/owntool.out")"
-grep -qF "/bin/next-issue-number を使う" "$work/owntool.err" || { cat "$work/owntool.err" >&2; fail "repo の採番の道具を案内していない"; }
+grep -qF "$(cd "$d" && pwd -P)/bin/next-issue-number を使う" "$work/owntool.err" || { cat "$work/owntool.err" >&2; fail "repo の採番の道具を案内していない"; }
 
 # ① 継承した GIT_DIR / GIT_WORK_TREE は外し、cwd の repo の道具を案内する (別の repo の番号を出さない)
 rc=0; (cd "$d" && GIT_DIR="$work/three/.git" GIT_WORK_TREE="$work/three" "$NEXT" origin/master) > "$work/gitdir.out" 2>&1 || rc=$?
-[ "$rc" -eq 2 ] || { cat "$work/gitdir.out" >&2; fail "継承した GIT_DIR に従って別の repo を数えた (rc=$rc)"; }
+[ "$rc" -eq 2 ] && grep -qF "$(cd "$d" && pwd -P)/bin/next-issue-number を使う" "$work/gitdir.out" ||
+  { cat "$work/gitdir.out" >&2; fail "継承した GIT_DIR に従って別の repo を数えた (rc=$rc)"; }
 
 # ② 4 桁の重複を落とす / 4 桁でも別の番号なら通る
 d="$work/dup4"; mkdir -p "$d/issues/done"; : > "$d/issues/1000-a.md"; : > "$d/issues/done/1000-b.md"; : > "$d/issues/999-c.md"
