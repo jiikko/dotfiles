@@ -249,7 +249,7 @@ done
 if [ "$lint" -gt 0 ]; then
   if [ -n "${JA_TEXTLINT_NO_INSTALL:-}" ]; then
     jw lint --version >/dev/null 2>&1 || wrc=3
-    [ "$wrc" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けられない (ビルドが無いか古い。JA_TEXTLINT_NO_INSTALL なのでビルドしない。bin/ja-writing を一度打つとビルドする)" >&2
+    [ "$wrc" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けられない (ビルドが無いか古い。JA_TEXTLINT_NO_INSTALL なのでビルドしない。bin/ja-writing を打つとビルドする。初めてのビルドの後はもう 1 回作り直すので 2 回打つ)" >&2
   else
     jw lint --version >/dev/null || wrc=3
     [ "$wrc" -eq 0 ] || echo "ja-textlint: ja-writing lint を掛けられない (bin/ja-writing のビルドに失敗した。理由は上の行)" >&2

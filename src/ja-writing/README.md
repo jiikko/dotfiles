@@ -426,7 +426,7 @@ driver は本家の hook が呼ぶたびに読み直す check (`spec_from_file_l
 
 dotfiles では `_claude/settings.json` の 5 つのイベント (本家の `--print-config claude-code` と同じイベント・matcher・上限) から
 `_claude/hooks/ja-writing-hook.sh` が `ja-writing hook --host claude-code` を起こす (ユーザー決定 2026-11-25。issue 1078)。包みはビルドしない
-(ビルドが無い・古いときは何もせず rc 0。`bin/ja-writing` を一度打つとビルドする)。配線が `--print-config` と同じことは `tests/claude/test_ja_writing_hook.sh` が見る。
+(ビルドが無い・古いときは何もせず rc 0。`bin/ja-writing` を打つとビルドする。何もビルドされていない木では 2 回打つ: go:embed を持つ module の最初のビルドは、次の起動で 1 回作り直す印を付ける)。配線が `--print-config` と同じことは `tests/claude/test_ja_writing_hook.sh` が見る。
 原稿を登録していないときの 1 回の所要は、Go の本体 6〜7 ms に包み (go_autobuild の確かめ) の約 33 ms が足される。
 
 ### hook の揃わない範囲

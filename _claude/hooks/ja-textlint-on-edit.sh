@@ -17,7 +17,8 @@
 # 🚨 **preset の指摘 (文の長さ・助詞の重複など) は知らせない**。dotfiles の文書には何百件もあり、毎回の知らせが埋もれる。
 #   全部を見たいときは ja-textlint を手で打つ (skill ja-writing)。
 # 🚨 **依存が入っていなければ入れない** (JA_TEXTLINT_NO_INSTALL)。編集のたびに npm を走らせない。一度手で ja-textlint を打てば入る。
-# 🚨 **ja-writing lint もビルドしない** (go_autobuild_exec --no-build)。ビルドが無いか古ければ黙る。一度 bin/ja-writing を打てば入る。
+# 🚨 **ja-writing lint もビルドしない** (go_autobuild_exec --no-build)。ビルドが無いか古ければ黙る。bin/ja-writing を打てば入る
+#   (何もビルドされていない木では 2 回。初めてのビルドの後は 1 回作り直す。ja-textlint を 1 回打っても、中で 2 回起こすので入る)。
 #   --async にしない: 古いバイナリの結果を今の結果と取り違える。時間は 1 回 1 秒で止める (3000 行で 0.4 秒。一覧の無い repo では 2 回起こす。
 #   jq 3 + textlint 10 + 1 + 1 で hook の上限 15 秒に収める)。
 #   行の番号は ja-writing lint の数え方で、U+2028・U+2029 を改行に数えない。それを含む行より後ろの ja-writing の知らせは、範囲 (textlint に合わせて数える) と
